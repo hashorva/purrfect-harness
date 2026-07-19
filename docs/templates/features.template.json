@@ -1,0 +1,27 @@
+{
+  "mission": "{{MISSION_NAME}}",
+  "rules": "Agents may ONLY flip 'passes' from false to true, after verifying every step. Editing or removing descriptions/steps is unacceptable and will be treated as a failed task.",
+  "features": [
+    {
+      "id": "F001",
+      "category": "functional",
+      "priority": 1,
+      "description": "{{User-visible behavior, e.g.: Fund Detail page renders Overview tab with fund name, category badge, and ISC figures fetched from GET /finduck/funds/:id}}",
+      "steps": [
+        "{{Navigate to /funds/<known-id> while logged in}}",
+        "{{Verify fund name and COVIP category render}}",
+        "{{Verify ISC 10yr and 35yr figures match the DB row}}",
+        "{{Verify no direct Supabase call from the browser (network tab: only Worker origin)}}"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F002",
+      "category": "non-functional",
+      "priority": 2,
+      "description": "{{e.g.: All new UI uses Luma-styled shadcn components — verified per shadcn-luma skill checklist}}",
+      "steps": ["{{...}}"],
+      "passes": false
+    }
+  ]
+}

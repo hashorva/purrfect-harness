@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Guard — tag must match CHANGELOG head
+        run: |
+          TAG_V="${GITHUB_REF_NAME#v}"
+          CHANGELOG_V=$(grep -m1 '^## ' CHANGELOG.md | sed 's/## //;s/ .*//')
+          echo "tag=$TAG_V changelog=$CHANGELOG_V"
+          [ "$TAG_V" = "$CHANGELOG_V" ] || { echo "::error::Tag v$TAG_V != CHANGELOG $CHANGELOG_V — update CHANGELOG first (RELEASING.md)"; exit 1; }
+
+      - name: Extract release notes from CHANGELOG
+        run: |
+          awk '/^## /{n++} n==1' CHANGELOG.md > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+      - name: Build kit archive
+        run: |
+          SLUG="purrfect-harness-${GITHUB_REF_NAME}"
+          mkdir -p "/tmp/$SLUG"
+          rsync -a --exclude '.git' --exclude '.github' ./ "/tmp/$SLUG/"
+          (cd /tmp && zip -qr "$GITHUB_WORKSPACE/$SLUG.zip" "$SLUG")
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "purrfect-harness $GITHUB_REF_NAME" \
+            --notes-file RELEASE_NOTES.md \
+            "purrfect-harness-${GITHUB_REF_NAME}.zip"

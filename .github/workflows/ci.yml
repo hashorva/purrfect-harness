@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shellcheck all scripts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck scripts/*.sh tests/*.sh
+
+      - name: Validate JSON templates
+        run: |
+          python3 -c "import json; json.load(open('docs/templates/features.template.json'))"
+          python3 -c "import json; json.load(open('.claude/settings.json'))"
+
+      - name: Version consistency (README vs CHANGELOG)
+        run: |
+          README_V=$(grep -m1 '^version:' README.md | awk '{print $2}')
+          CHANGELOG_V=$(grep -m1 '^## ' CHANGELOG.md | sed 's/## //;s/ .*//')
+          echo "README=$README_V CHANGELOG=$CHANGELOG_V"
+          [ "$README_V" = "$CHANGELOG_V" ] || { echo "::error::Version mismatch"; exit 1; }
+
+      - name: End-to-end install/update test
+        run: bash tests/run-tests.sh

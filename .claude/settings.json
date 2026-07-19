@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run typecheck*)",
+      "Bash(npm run build*)",
+      "Bash(npm run lint*)",
+      "Bash(npm test*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(supabase migration list*)",
+      "Bash(supabase db push --dry-run*)",
+      "Bash(tail*)",
+      "Bash(mkdir -p .tasks*)",
+      "Bash(codex exec*)",
+      "Bash(agent -p*)",
+      "Bash(agy*)",
+      "Bash(claude -p*)",
+      "Bash(python3 -c import json*)"
+    ],
+    "deny": [
+      "Bash(rm -rf*)",
+      "Bash(supabase db reset*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Read(.env*)",
+      "Read(**/.dev.vars)",
+      "Read(**/secrets*)"
+    ]
+  }
+}
