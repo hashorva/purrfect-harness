@@ -1,5 +1,11 @@
 # Changelog — agent-harness kit
 
+## 2.0.1 (2026-07-27)
+- FIX `scripts/sync-skills.sh`: if `.claude/skills` (etc.) is a legacy parent symlink to
+  `.agents/skills`, replace it with a real directory before writing per-skill links.
+  Previously sync corrupted canonical skills into self-symlink loops. install-harness
+  no longer creates the parent symlink — it runs sync-skills instead.
+
 ## 2.0.0 (2026-07-27)
 - **BREAKING — mission layout:** orchestration lives under `docs/missions/`. Protocol +
   `MODEL_ROUTING.md` + templates move there; instance missions are

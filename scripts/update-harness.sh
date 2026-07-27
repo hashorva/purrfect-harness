@@ -78,6 +78,9 @@ echo "$VERSION" > "$TARGET/.harness-version"
 chmod +x "$TARGET/scripts/active-mission.sh" "$TARGET/scripts/spawn-worker.sh" 2>/dev/null || true
 chmod +x "$TARGET/scripts/sync-skills.sh" "$TARGET/scripts/update-harness.sh" 2>/dev/null || true
 
+# Refresh discovery symlinks safely (handles legacy parent-symlink layout)
+( cd "$TARGET" && bash scripts/sync-skills.sh )
+
 echo ""
 echo "Done. NOT auto-committed. Next steps in $TARGET:"
 echo "  1. git diff                      # review everything"

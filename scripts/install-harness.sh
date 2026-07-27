@@ -55,12 +55,10 @@ else
   echo "  installed: AGENTS.md (FILL every {{placeholder}} before committing)"
 fi
 
-# ---- skill discovery symlinks (skip any that already exist) ----
-for tool in .claude .cursor .gemini; do
-  mkdir -p "$TARGET/$tool"
-  [ -e "$TARGET/$tool/skills" ] || ln -s ../.agents/skills "$TARGET/$tool/skills"
-done
-echo "  symlinks : .claude/.cursor/.gemini skills -> ../.agents/skills"
+# ---- skill discovery paths: real dirs of per-skill symlinks (never parent symlink) ----
+# Parent symlink (.claude/skills -> ../.agents/skills) + naive sync used to corrupt CANON.
+( cd "$TARGET" && bash "$HARNESS/scripts/sync-skills.sh" )
+echo "  symlinks : per-skill links under .claude/.cursor/.gemini/.codex skills/"
 
 echo "$VERSION" > "$TARGET/.harness-version"
 chmod +x "$TARGET/scripts/active-mission.sh" "$TARGET/scripts/spawn-worker.sh" 2>/dev/null || true
