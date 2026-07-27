@@ -1,6 +1,6 @@
 ---
 title: Agent Harness Kit
-version: 2.2.0
+version: 2.2.1
 updated: 2026-07-27
 ---
 
@@ -26,14 +26,24 @@ flowchart TD
   You["You + brief plan in Cursor"] --> Opus["Opus brain: mission-init"]
   Opus --> Inv["fleet-inventory seat map"]
   Inv --> Gate0{"GATE 0: approve features + binds?"}
+
   Gate0 -->|no| Opus
   Gate0 -->|yes| Dispatch["dispatch-worker"]
+
   Dispatch --> Spawn["spawn-worker.sh --tier"]
   Spawn --> Workers["Grok premium / Composer economy"]
   Workers --> Files["edit + commit + PROGRESS.md"]
   Files --> Review["Opus review vs AGENTS.md"]
-  Review -->|fail| Rewrite["rewrite task max 2"] --> Dispatch
+
+  Review -->|fail| Rewrite["rewrite task max 2"]
+  Rewrite --> Dispatch
+
   Review -->|pass| Flip["flip passes:true in features.json"]
+
+  %% Invisible layout constraint:
+  %% keeps Flip below Rewrite without drawing a visible connection
+  Rewrite ~~~ Flip
+
   Flip --> More{"features left?"}
   More -->|yes| Dispatch
   More -->|no| HumanGate["Human gates / status done"]

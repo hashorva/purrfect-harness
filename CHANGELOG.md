@@ -1,5 +1,9 @@
 # Changelog — agent-harness kit
 
+## 2.2.1 (2026-07-27)
+- README hero mermaid: invisible `Rewrite ~~~ Flip` layout link so pass/fail
+  arrows from Opus review do not cross.
+
 ## 2.2.0 (2026-07-27)
 - **Dispatch proof:** `scripts/spawn-brain.sh` (Claude Opus brain), `write-receipt.sh`,
   and `verify-mission.sh`. Workers/brain writes `.tasks/receipts/*.json`; GATE /
