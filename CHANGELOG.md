@@ -1,5 +1,9 @@
 # Changelog — agent-harness kit
 
+## 2.0.2 (2026-07-27)
+- FIX `scripts/sync-skills.sh`: per-skill discovery links use relative paths
+  (`../../.agents/skills/<name>`), not absolute machine paths.
+
 ## 2.0.1 (2026-07-27)
 - FIX `scripts/sync-skills.sh`: if `.claude/skills` (etc.) is a legacy parent symlink to
   `.agents/skills`, replace it with a real directory before writing per-skill links.

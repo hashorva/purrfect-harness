@@ -48,9 +48,11 @@ for target in $TARGETS; do
     [ -d "$skill" ] || continue
     name="$(basename "$skill")"
     dest="$dest_dir/$name"
-    # remove stale copy/link, then symlink to absolute canonical path
+    # remove stale copy/link, then symlink with a RELATIVE path (portable across machines)
     if [ -L "$dest" ] || [ -e "$dest" ]; then rm -rf "$dest"; fi
-    ln -s "$CANON_REAL/$name" "$dest"
+    # From .claude/skills/foo → ../../.agents/skills/foo (same for .cursor/.gemini/.codex)
+    rel_target="../../.agents/skills/$name"
+    ln -s "$rel_target" "$dest"
   done
 
   # prune links to skills that no longer exist
