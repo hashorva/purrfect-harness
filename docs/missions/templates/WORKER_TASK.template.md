@@ -1,7 +1,7 @@
 ---
 task_id: T-{{NNN}}
 feature: {{F00X from features.json}}
-worker: cursor | codex | agy | claude
+worker: agent | codex | agy | claude
 invocation: {{optional — overrides the GOAL.md Fleet row for this task only; also set on escalation}}
 max_attempts: 2
 ---
@@ -10,7 +10,8 @@ max_attempts: 2
 
 ## Before you write any code
 1. Read `AGENTS.md` (root) — hard rules are binding.
-2. Read `PROGRESS.md` (last 3 entries) and run `git log --oneline -10`.
+2. Read this mission's `PROGRESS.md` (last 3 entries) and run `git log --oneline -10`.
+   Mission dir: `docs/missions/{{slug}}/` (or `$(bash scripts/active-mission.sh)`).
 3. Read these skills and follow them exactly:
    - `.agents/skills/{{skill-1}}/SKILL.md`
    - `.agents/skills/{{skill-2}}/SKILL.md`
@@ -35,7 +36,7 @@ the worker must not need to ask anything.}}
 - [ ] `{{TYPECHECK_CMD}}` green
 - [ ] `{{TEST_CMD}}` green
 - [ ] Commit with message `{{type}}: {{short description}} (T-{{NNN}})`
-- [ ] PROGRESS.md entry appended
+- [ ] Mission PROGRESS.md entry appended
 
 ## Iteration policy
 Max {{2}} attempts. If exit criteria still fail, STOP, commit nothing further, write a

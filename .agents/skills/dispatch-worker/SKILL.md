@@ -1,12 +1,12 @@
 ---
 name: dispatch-worker
 description: >
-  How the orchestrator (Claude Code) dispatches a WORKER_TASK to a worker CLI
-  (codex, agent/Cursor, agy/Antigravity, claude -p) and processes the result.
-  MUST be used in the DISPATCH and REVIEW steps of the orchestration loop,
-  whenever spawning a worker, choosing which worker gets a task, or handling a
-  worker failure, quota exhaustion, or stall. Orchestrator-only; workers never
-  dispatch other workers.
+  How the orchestrator dispatches a WORKER_TASK to a local worker CLI
+  (codex, agent/Cursor, agy/Antigravity, claude -p) via scripts/spawn-worker.sh
+  and processes the result. MUST be used in the DISPATCH and REVIEW steps of the
+  orchestration loop, whenever spawning a worker, choosing which worker gets a
+  task, or handling a worker failure, quota exhaustion, or stall.
+  Orchestrator-only; workers never dispatch other workers.
 ---
 
 # Dispatch a worker (orchestrator only)
@@ -18,24 +18,24 @@ explicitly. Dispatching on account defaults (flagship model, high effort) is a
 failed dispatch — the harness removes ambiguity from tasks precisely so cheap
 tiers succeed.
 
-| CLI | Agent | Pinned invocation | Best at |
+| CLI | Agent | Economy spawn | Best at |
 |---|---|---|---|
-| `codex exec --profile worker` | Codex | profile pins cheap model + `model_reasoning_effort="medium"` (see setup below); inline alternative: `codex exec -m <mini-model> -c model_reasoning_effort="medium"` | tight, verifiable tasks |
-| `agent -p ... --model composer` | Cursor Composer | Composer IS the fast/cheap model — pin it explicitly | multi-file work, repo-wide context |
-| `agy -p ... -m <flash-tier>` | Antigravity | pin the Flash-class model; verify flag via `agy --help` (CLI is new) | cheap bulk: boilerplate, translations |
-| `claude -p ... --model claude-haiku-4-5` | Claude Haiku | already pinned | small tasks, strong instruction-following |
+| `codex` | Codex | `bash scripts/spawn-worker.sh codex <mission>/tasks/T-XXX.md` | tight, verifiable tasks |
+| `agent` | Cursor Agent | `bash scripts/spawn-worker.sh agent <mission>/tasks/T-XXX.md` | multi-file work, repo-wide context |
+| `agy` | Antigravity | `bash scripts/spawn-worker.sh agy <mission>/tasks/T-XXX.md` | cheap bulk: boilerplate, translations |
+| `claude` | Claude Haiku | `bash scripts/spawn-worker.sh claude <mission>/tasks/T-XXX.md` | small tasks, strong instruction-following |
+
+`scripts/spawn-worker.sh` pins economy defaults (composer / medium effort /
+haiku), writes `.tasks/logs/T-XXX.log`, and prints only `exit=` + tail. Prefer
+it over hand-rolled CLI lines so Mac Mini PATH + flags stay consistent.
 
 **Invocation precedence (most specific wins):**
 1. `invocation:` in the WORKER_TASK frontmatter (per-task override / escalation)
-2. the `## Fleet` table in GOAL.md (mission tier, chosen by the human at GATE 0)
-3. machine economy defaults (`~/.codex/worker.config.toml` profile, composer, flash, haiku)
+2. the `## Fleet` table in the mission's GOAL.md (chosen at GATE 0)
+3. `scripts/spawn-worker.sh` economy defaults
 
-Before every spawn: read the Fleet table in GOAL.md and use its row for the
-chosen worker unless the task frontmatter overrides it. The table above shows
-the ECONOMY defaults. One-time machine setup: create `~/.codex/worker.config.toml`
-with the cheap model + `model_reasoning_effort = "medium"` + `sandbox_mode =
-"workspace-write"` so `--profile worker` carries everything.
-
+Before every spawn: resolve the active mission (`bash scripts/active-mission.sh`),
+read its Fleet table, and use that row unless the task frontmatter overrides.
 First use of ANY worker CLI in an environment: run `<cli> --help` and verify
 flags still exist — these CLIs change fast. Never assume.
 
@@ -44,46 +44,50 @@ task rewrite after a CAPABILITY failure, one tier at a time, noted in the task
 frontmatter (`escalated: true`) and in PROGRESS.md. Frequent escalation =
 under-specified task files (flywheel signal), not a fleet problem. The
 orchestrator itself is the only always-premium brain in the loop (Opus or Sol
-per docs/MODEL_ROUTING.md; Fable only via its escalation triggers there).
+per docs/missions/MODEL_ROUTING.md; Fable only via its escalation triggers there).
 
 ## Step 0 — Preconditions
 
-- Mission active (GOAL.md + features.json at repo root).
+- Active mission: `MISSION=$(bash scripts/active-mission.sh)` with
+  `status: in-progress` (or set `approved` → `in-progress` on first dispatch).
 - Working tree CLEAN (`git status`). Dirty → commit or stash first; never
   dispatch on top of uncommitted changes (diffs must be attributable).
-- WORKER_TASK file exists and names exactly one feature.
+- WORKER_TASK file exists under `$MISSION/tasks/` and names exactly one feature.
+- Target CLI is on PATH (`command -v`); if not, reassign or stop — do not
+  silently implement the task inside the orchestrator session as a substitute
+  unless the human explicitly waives fleet dispatch for that task.
 
 ## Step 1 — Choose the worker (three-question routing)
 
 1. Needs judgment beyond what's written in task/skills? → don't dispatch; the
    orchestrator handles it or splits further.
-2. Many files / repo-wide context? → `agent` (Cursor).
+2. Many files / repo-wide context? → `agent` (Cursor Agent CLI).
 3. Tight scope, mechanically verifiable? → `codex`.
-4. High-volume, low-judgment? → `agy` or `claude -p` (haiku).
+4. High-volume, low-judgment? → `agy` or `claude` (haiku).
 
 ## Step 2 — Spawn (blocking call, output to log — never to context)
 
 ```bash
-mkdir -p .tasks/logs
-codex exec --profile worker "Read docs/tasks/T-XXX.md and complete it exactly. Follow AGENTS.md \
-and the skills the task names. Do not touch files outside the allow-list." \
-  > .tasks/logs/T-XXX.log 2>&1
+MISSION=$(bash scripts/active-mission.sh)
+# ensure status is in-progress before first spawn
+bash scripts/spawn-worker.sh codex "$MISSION/tasks/T-XXX.md"
 echo "exit=$?"
 ```
 
-Variants: `agent -p "<same prompt>"` (+ documented write-enable flag) ·
-`agy -p "<same prompt>"` (+ its auto-approve flag) ·
-`claude -p "<same prompt>" --model claude-haiku-4-5 --allowedTools "Read,Write,Edit,Bash(npm*)"`.
+Variants: replace `codex` with `agent` | `agy` | `claude`. If the task
+frontmatter has `invocation:`, run that exact command instead (still redirect
+to `.tasks/logs/` yourself if it bypasses spawn-worker.sh).
+
 The Bash call BLOCKS until the worker process exits — completion detection is
-the exit itself; no polling. Sandbox notes: codex defaults read-only, escalate
-to workspace-write deliberately, NEVER danger-full-access outside a container.
-NEVER pass secrets in prompts (prompts end up in transcripts).
+the exit itself; no polling. Sandbox notes: codex uses `workspace-write` via
+spawn-worker; NEVER `danger-full-access` outside a container. NEVER pass secrets
+in prompts (prompts end up in transcripts).
 
 ## Step 3 — Judge by effects, not transcript
 
-Read ONLY: exit code, `tail -20` of the log, `git status`, `git diff --stat`.
-Never load the full worker transcript into orchestrator context.
-Then run REVIEW: delegate `git diff` to the code-reviewer subagent
+Read ONLY: exit code, `tail -20` of `.tasks/logs/T-XXX.log`, `git status`,
+`git diff --stat`. Never load the full worker transcript into orchestrator
+context. Then run REVIEW: delegate `git diff` to the code-reviewer subagent
 (.claude/agents/code-reviewer.md) against AGENTS.md hard rules + task deny-list.
 
 ## Step 4 — Outcome (two failure classes — treat them differently)
@@ -99,6 +103,16 @@ Then run REVIEW: delegate `git diff` to the code-reviewer subagent
   does NOT consume an attempt. Recover: `git checkout .` if the tree is dirty,
   log the event in PROGRESS.md, reassign the SAME task file to the next worker
   in routing order. If all workers are exhausted → stop and report to human.
+
+## Human gates mid-mission
+
+When GOAL.md says the next milestone is a human gate (or all features pass and
+a merge/deploy gate remains):
+
+1. Set GOAL `status: awaiting-gate`.
+2. **Ask the human** for an explicit GATE n verdict before ending the session.
+3. Append `## {{DATE}} — Human — GATE n` to PROGRESS.md.
+4. Set `status: done` or resume `in-progress`.
 
 ## Parallelism rules
 
@@ -117,3 +131,6 @@ Then run REVIEW: delegate `git diff` to the code-reviewer subagent
 - Never let a worker edit features.json descriptions, AGENTS.md, docs/, or
   .agents/skills/ — orchestrator/human territory.
 - Never re-run an identical failed command hoping for a different result.
+- Never "dispatch" by doing the worker's job inside the orchestrator chat when
+  the Fleet CLI for that task is installed and healthy — that breaks the cost
+  model and the audit trail (`.tasks/logs/`).

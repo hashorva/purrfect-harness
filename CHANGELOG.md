@@ -1,5 +1,26 @@
 # Changelog — agent-harness kit
 
+## 2.0.0 (2026-07-27)
+- **BREAKING — mission layout:** orchestration lives under `docs/missions/`. Protocol +
+  `MODEL_ROUTING.md` + templates move there; instance missions are
+  `docs/missions/<YYYYMMDD-slug>/{GOAL,features,PROGRESS,tasks/}`. Root `GOAL.md` /
+  `features.json` are obsolete. Stubs remain at `docs/ORCHESTRATION.md`,
+  `docs/MODEL_ROUTING.md`, `docs/templates/README.md` for old links.
+- **Active mission** = exactly one folder with GOAL `status: in-progress|awaiting-gate`
+  (`scripts/active-mission.sh`). Status lifecycle: `draft` → `approved` →
+  `in-progress` → `awaiting-gate` → `done`.
+- **Human GATE registration** required in PROGRESS.md; session-end rule: agents must
+  ask before ending when a gate is pending. Chat approval alone is not the record.
+- **Local CLI spawn:** `scripts/spawn-worker.sh` runs `codex` / `agent` / `agy` /
+  `claude` on the machine PATH with economy pins and `.tasks/logs/`. dispatch-worker +
+  mission-init require real CLI inventory (`command -v`) — orchestrators must not
+  silently absorb fleet work into one chat when CLIs are available.
+- `update-harness.sh` / install copy kit-owned mission *protocol* paths only — never
+  wipe project mission folders. AGENTS.md skeleton ports the new layout (manual merge
+  in consuming repos).
+- MAJOR: consuming repos need AGENTS.md section port + move any root mission into
+  `docs/missions/<slug>/` before relying on the loop.
+
 ## 1.11.0 (2026-07-19)
 - NEW `docs/MODEL_ROUTING.md` — four routing criteria (horizon, silent-error cost, verifiability, volume); orchestrator policy: Opus (alias `--model opus`, effort high/extra) OR GPT-5.6 Sol (effort high) chosen per mission at GATE 0; Fable 5 demoted to evidence-gated escalation (2x review failure, mission stall, features churn, declared task class, or manual override) — self-reported confidence explicitly rejected as a trigger
 - Alias doctrine: invocations use CLI aliases so new flagships (Opus 5, ...) are adopted automatically at the NEXT GATE 0, never mid-mission; resolved model+version logged in PROGRESS.md; deliberate pin bumps = PATCH

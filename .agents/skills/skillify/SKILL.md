@@ -15,7 +15,7 @@ description: >
 
 Read: PROGRESS.md (whole mission), the mission's review findings / flywheel
 notes, `git log --oneline` for the mission's commits, and the task files in
-docs/tasks/. Session memory is unreliable (compaction); the loop's artifacts
+docs/missions/<slug>/tasks/. Session memory is unreliable (compaction); the loop's artifacts
 are the record.
 
 ## Step 2 — Graduation criteria (ALL must hold, else stop)

@@ -14,8 +14,14 @@ VERSION="$(grep -m1 '^## ' CHANGELOG.md | sed 's/## //;s/ .*//')"
 # ---- kit-owned manifest (the ONLY paths this script may overwrite) ----
 KIT_SKILLS="supabase-migration shadcn-luma react-conventions mcp-hygiene \
 cloudflare-deploy dispatch-worker mission-init skillify"
-KIT_PATHS="docs/ORCHESTRATION.md docs/MODEL_ROUTING.md docs/templates .claude/rules .claude/agents \
-scripts/sync-skills.sh scripts/update-harness.sh"
+# Kit-owned mission *protocol* paths only. Never list docs/missions as a whole —
+# instance folders (YYYYMMDD-*) are project-owned and must survive updates.
+KIT_PATHS="docs/missions/ORCHESTRATION.md docs/missions/MODEL_ROUTING.md \
+docs/missions/README.md docs/missions/templates \
+docs/ORCHESTRATION.md docs/MODEL_ROUTING.md docs/templates \
+.claude/rules .claude/agents \
+scripts/sync-skills.sh scripts/update-harness.sh \
+scripts/active-mission.sh scripts/spawn-worker.sh"
 
 # ---- preflight ----
 [ -f "$HARNESS/CHANGELOG.md" ] || { echo "Run from the purrfect-harness repo root."; exit 1; }
@@ -68,10 +74,15 @@ fi
 
 echo "$VERSION" > "$TARGET/.harness-version"
 
+# Ensure mission helper scripts are executable
+chmod +x "$TARGET/scripts/active-mission.sh" "$TARGET/scripts/spawn-worker.sh" 2>/dev/null || true
+chmod +x "$TARGET/scripts/sync-skills.sh" "$TARGET/scripts/update-harness.sh" 2>/dev/null || true
+
 echo ""
 echo "Done. NOT auto-committed. Next steps in $TARGET:"
 echo "  1. git diff                      # review everything"
 echo "  2. diff .claude/settings.json .claude/settings.json.new   # if it exists"
 echo "  3. Check CHANGELOG ($OLD_VERSION -> $VERSION) for AGENTS.md skeleton"
 echo "     changes to port manually (AGENTS.md is project-owned, never touched)."
-echo "  4. git add -A && git commit -m 'chore: harness $VERSION' && merge to dev"
+echo "  4. Port AGENTS.md 'Orchestrated missions' section to docs/missions/ layout if upgrading from <2.0.0"
+echo "  5. git add -A && git commit -m 'chore: harness $VERSION' && merge to dev"

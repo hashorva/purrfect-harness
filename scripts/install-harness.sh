@@ -35,9 +35,13 @@ copy_one() {
 }
 
 # ---- kit payload (README/CHANGELOG/RELEASING stay in the harness repo only) ----
-PAYLOAD=$(cd "$HARNESS" && find .agents/skills docs/templates .claude/rules .claude/agents -type f; \
-          echo "docs/ORCHESTRATION.md"; echo "docs/MODEL_ROUTING.md"; echo ".claude/settings.json"; \
-          echo "scripts/sync-skills.sh"; echo "CLAUDE.md"; echo "GEMINI.md")
+PAYLOAD=$(cd "$HARNESS" && find .agents/skills docs/missions/templates .claude/rules .claude/agents -type f; \
+          echo "docs/missions/ORCHESTRATION.md"; echo "docs/missions/MODEL_ROUTING.md"; \
+          echo "docs/missions/README.md"; \
+          echo "docs/ORCHESTRATION.md"; echo "docs/MODEL_ROUTING.md"; echo "docs/templates/README.md"; \
+          echo ".claude/settings.json"; \
+          echo "scripts/sync-skills.sh"; echo "scripts/active-mission.sh"; echo "scripts/spawn-worker.sh"; \
+          echo "CLAUDE.md"; echo "GEMINI.md")
 
 for f in $PAYLOAD; do copy_one "$f"; done
 
@@ -59,6 +63,8 @@ done
 echo "  symlinks : .claude/.cursor/.gemini skills -> ../.agents/skills"
 
 echo "$VERSION" > "$TARGET/.harness-version"
+chmod +x "$TARGET/scripts/active-mission.sh" "$TARGET/scripts/spawn-worker.sh" 2>/dev/null || true
+chmod +x "$TARGET/scripts/sync-skills.sh" 2>/dev/null || true
 
 echo ""
 echo "Install of $VERSION staged on branch chore/harness-install."

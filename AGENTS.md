@@ -84,30 +84,41 @@ skill already covers is a failed task.
   your current hypothesis, and request human intervention. Never guess on schema,
   security, or architecture.
 
-## Orchestrated missions (GOAL/features loop — active only when the files exist)
+## Orchestrated missions (GOAL/features loop — active only when a mission is)
 
-Some work runs as an orchestrator/worker loop. Full protocol: `docs/ORCHESTRATION.md`.
-A mission is **active** when `GOAL.md` and `features.json` exist at the repo root.
+Some work runs as an orchestrator/worker loop. Full protocol:
+`docs/missions/ORCHESTRATION.md`. A mission is **active** when exactly one folder
+under `docs/missions/<slug>/` has `GOAL.md` status `in-progress` or
+`awaiting-gate` (`bash scripts/active-mission.sh`). Model routing lives only at
+`docs/missions/MODEL_ROUTING.md` — load at GATE 0 / mission advance, not casually.
 When active, these rules apply on top of everything above:
 
-- **Session start (bearings):** read `PROGRESS.md` (last 3 entries), `features.json`,
-  and `git log --oneline -10` before editing anything. Verify baseline (typecheck)
-  before implementing; if the repo is broken, fix/report that first.
-- **One feature per session.** Pick the assigned (or highest-priority) `passes: false`
-  feature. Never start a second one in the same session.
-- **`features.json` is append-only truth.** Agents may only flip `"passes": false → true`
-  after verifying every step end-to-end. Editing or removing descriptions/steps is a
-  failed task. `GOAL.md` is narrative; if they disagree, `features.json` wins.
+- **Session start (bearings):** resolve the active mission dir; read its
+  `PROGRESS.md` (last 3 entries), `features.json`, and `git log --oneline -10`
+  before editing anything. Verify baseline (typecheck) before implementing; if
+  the repo is broken, fix/report that first.
+- **One feature per session.** Pick the assigned (or highest-priority)
+  `passes: false` feature. Never start a second one in the same session.
+- **`features.json` is append-only truth.** Agents may only flip
+  `"passes": false → true` after verifying every step end-to-end. Editing or
+  removing descriptions/steps is a failed task. `GOAL.md` is narrative; if they
+  disagree, `features.json` wins.
 - **Session end (clean state):** typecheck green, tests green, committed with a
-  descriptive message, one entry appended to `PROGRESS.md`.
-- **WORKER_TASK files are binding.** If you received one, it is your entire scope; its
-  file allow/deny lists override any broader interpretation of the goal. Respect its
-  iteration policy, then STOP and report — never keep grinding.
+  descriptive message, one entry appended to the mission `PROGRESS.md`. If a
+  human gate is pending, **ask** to register the Human GATE verdict in
+  PROGRESS.md and update GOAL `status` before ending — chat alone is not the record.
+- **WORKER_TASK files are binding.** If you received one, it is your entire scope;
+  its file allow/deny lists override any broader interpretation of the goal.
+  Respect its iteration policy, then STOP and report — never keep grinding.
+- **Local CLI workers.** Orchestrators spawn work via
+  `scripts/spawn-worker.sh` / Fleet invocations using CLIs on this machine
+  (`claude`, `codex`, `agent`, `agy`) — not by silently absorbing every feature
+  into one chat when those CLIs are available.
 
 ## Repo structure (key paths)
 
 - {{src/pages/... — main routes}}
 - {{src/types/... — canonical types}}
 - `.agents/skills/` — canonical agent skills (symlinked into per-tool paths)
-- `docs/ORCHESTRATION.md` — orchestrator/worker loop protocol
-- `docs/templates/` — GOAL / features.json / PROGRESS / WORKER_TASK templates
+- `docs/missions/` — orchestration protocol, MODEL_ROUTING, templates, mission folders
+- `scripts/active-mission.sh` / `scripts/spawn-worker.sh` — mission discovery + CLI spawn

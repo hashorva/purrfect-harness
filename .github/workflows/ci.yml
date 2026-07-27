@@ -19,7 +19,7 @@ jobs:
 
       - name: Validate JSON templates
         run: |
-          python3 -c "import json; json.load(open('docs/templates/features.template.json'))"
+          python3 -c "import json; json.load(open('docs/missions/templates/features.template.json'))"
           python3 -c "import json; json.load(open('.claude/settings.json'))"
 
       - name: Version consistency (README vs CHANGELOG)

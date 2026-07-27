@@ -1,7 +1,7 @@
 ---
 title: Agent Harness Kit
-version: 1.11.0
-updated: 2026-07-19
+version: 2.0.0
+updated: 2026-07-27
 ---
 
 # Agent Harness Kit
@@ -15,7 +15,7 @@ Claude/Fable (orchestrator), Cursor Composer, Codex, Gemini — reads the same c
 1. **AGENTS.md** = always-loaded RULES (short; every session pays for it)
 2. **docs/** = on-demand KNOWLEDGE (architecture, domain, design — loaded when relevant)
 3. **.agents/skills/** = portable PROCEDURES (v2 universal skills; single source, cloned per repo)
-4. **docs/templates/** = the dormant LOOP (activates only when GOAL.md + features.json exist at root)
+4. **docs/missions/** = the dormant LOOP (activates when a mission folder has status in-progress|awaiting-gate)
 
 If content is in the wrong layer, move it — a fat AGENTS.md is context rot by design.
 
@@ -56,7 +56,7 @@ dirty trees, both work on a branch, neither ever commits — the human owns hist
 flowchart TD
   H[("purrfect-harness clone")] -->|"bash scripts/install-harness.sh TARGET"| I["installer"]
   I --> P1["Layer 3 skills<br/>.agents/skills/"]
-  I --> P2["Layer 2 knowledge<br/>docs/ORCHESTRATION.md + docs/templates/"]
+  I --> P2["Layer 2 knowledge<br/>docs/missions/ (protocol + templates)"]
   I --> P3["Enforcement<br/>.claude/ settings + rules + agents"]
   I --> P4["Layer 1 rules<br/>AGENTS.md with placeholders + thin CLAUDE.md / GEMINI.md"]
   P1 --> SYM["symlinks<br/>.claude/.cursor/.gemini skills point to .agents/skills"]
@@ -169,7 +169,7 @@ flowchart TB
     GW["GEMINI.md (thin)"] --> AG
   end
   subgraph L2["Layer 2 — on-demand KNOWLEDGE: docs/"]
-    ORCH["ORCHESTRATION.md<br/>loop protocol + contract"]
+    ORCH["missions/ORCHESTRATION.md<br/>+ MODEL_ROUTING + templates"]
     KD["ARCHITECTURE / DATABASE /<br/>DESIGN / DOMAIN"]
   end
   subgraph L3["Layer 3 — portable PROCEDURES: .agents/skills/"]
@@ -178,8 +178,8 @@ flowchart TB
     SKF["skillify"]
     PS["supabase-migration · shadcn-luma ·<br/>react-conventions · mcp-hygiene · cloudflare-deploy"]
   end
-  subgraph L4["Layer 4 — dormant LOOP: docs/templates/"]
-    TPL["GOAL · features.json ·<br/>PROGRESS · WORKER_TASK"]
+  subgraph L4["Layer 4 — dormant LOOP: docs/missions/"]
+    TPL["ORCHESTRATION · MODEL_ROUTING · templates/<br/>+ YYYYMMDD-slug/ instances"]
   end
   subgraph ENF[".claude/ — enforcement (Claude Code only)"]
     SET["settings.json<br/>allow / deny"]
@@ -204,11 +204,11 @@ flowchart TB
 ```mermaid
 flowchart TD
   U["You: 'Start a mission: … (fleet tier)'"] --> MI["mission-init skill"]
-  MI -->|"copies from docs/templates/"| F["GOAL.md (+ Fleet table)<br/>features.json · docs/tasks/T-001.md"]
+  MI -->|"copies from docs/missions/templates/"| F["docs/missions/slug/<br/>GOAL + features + PROGRESS + tasks/T-001"]
   F --> G0{"GATE 0<br/>you approve features + fleet?"}
   G0 -- no --> MI
   G0 -- yes --> DW["dispatch-worker skill"]
-  DW -->|"precedence: task > Fleet > machine"| SPAWN["Bash spawns worker CLI<br/>output → .tasks/logs/T-00x.log"]
+  DW -->|"precedence: task > Fleet > spawn-worker.sh"| SPAWN["scripts/spawn-worker.sh<br/>codex|agent|agy|claude → .tasks/logs/"]
   SPAWN --> W["Worker (codex/agent/agy/claude -p)<br/>reads AGENTS.md + T-00x + named skills"]
   W -->|"edits, commits"| REPO[("git repo")]
   REPO --> REV["code-reviewer subagent<br/>diff vs hard rules + deny-list"]
@@ -227,13 +227,14 @@ flowchart TD
 |---|---|
 | `AGENTS.md` | Universal root context (project block + agnostic rules) |
 | `CLAUDE.md`, `GEMINI.md` | Thin wrappers → AGENTS.md |
-| `docs/ORCHESTRATION.md` | The loop: orchestrator protocol, worker dispatch, review gates |
-| `docs/templates/GOAL.template.md` | Mission narrative + constraints |
-| `docs/templates/features.template.json` | Binary checklist the loop runs on |
-| `docs/templates/PROGRESS.template.md` | Session log workers append to |
-| `docs/templates/WORKER_TASK.template.md` | Paste-ready task prompt format |
+| `docs/missions/ORCHESTRATION.md` | The loop: orchestrator protocol, worker dispatch, review gates |
+| `docs/missions/MODEL_ROUTING.md` | GATE 0 / mission-advance model routing (mission-scoped only) |
+| `docs/missions/templates/` | GOAL / features / PROGRESS / WORKER_TASK templates |
+| `docs/missions/<slug>/` | Instance mission (project-owned; updater never deletes) |
 | `.agents/skills/` | Canonical skills (portable, agnostic core) |
 | `scripts/sync-skills.sh` | Symlinks skills into every tool's path |
+| `scripts/active-mission.sh` | Resolve the single active mission folder |
+| `scripts/spawn-worker.sh` | Spawn local CLI workers with economy pins + logs |
 
 ## Claude Code enforcement layer (.claude/)
 
@@ -263,10 +264,11 @@ Deliberately NOT included (see docs: code.claude.com/docs/en/claude-directory):
 
 Every path has exactly one owner, and ownership decides what an update may touch:
 KIT-OWNED (overwritten by updates): the manifest skills in .agents/skills/,
-docs/ORCHESTRATION.md, docs/templates/, .claude/rules/, .claude/agents/, scripts/.
-PROJECT-OWNED (never touched): AGENTS.md, CLAUDE.md/GEMINI.md, all other docs/,
-GOAL/features/PROGRESS, project-specific skills. MERGED: .claude/settings.json —
-updates write a .new file for manual diff, never overwrite.
+docs/missions/{ORCHESTRATION,MODEL_ROUTING,README,templates}, path stubs,
+.claude/rules/, .claude/agents/, kit scripts (sync/update/active-mission/spawn-worker).
+PROJECT-OWNED (never touched): AGENTS.md, CLAUDE.md/GEMINI.md, product docs/,
+docs/missions/<YYYYMMDD-*>/ instance folders, project-specific skills. MERGED:
+.claude/settings.json — updates write a .new file for manual diff, never overwrite.
 
 Two laws: (1) never edit a kit-owned file inside a consuming repo — project
 specifics go in docs/ or a project-only skill; (2) improvements flow UPSTREAM
@@ -278,12 +280,12 @@ commit decision to you.
 
 ## Rules of ownership
 
-- **Orchestrator (Claude/Fable):** writes GOAL.md + features.json, writes worker tasks,
-  reviews diffs, updates AGENTS.md when decisions change. Never implements directly
-  unless the task is trivial.
-- **Workers (Cursor / Codex / Gemini):** implement exactly one task file at a time,
-  follow skills, commit, append to PROGRESS.md. Never edit features.json descriptions —
-  only flip `passes` after verification.
+- **Orchestrator (Opus/Sol; Fable on escalation):** writes mission folder GOAL + features,
+  writes worker tasks, spawns local CLIs via spawn-worker.sh, reviews diffs, updates
+  AGENTS.md when decisions change. Never absorbs fleet work into one chat when CLIs exist.
+- **Workers (agent / Codex / agy / Claude Haiku):** implement exactly one task file at a
+  time via their CLI, follow skills, commit, append to mission PROGRESS.md. Never edit
+  features.json descriptions — only flip `passes` after verification.
 - **You (human):** approve the feature list, review at gates, merge. Every correction
   you make in code review is a missing line in AGENTS.md or a skill — add it there,
   not just in the diff.
