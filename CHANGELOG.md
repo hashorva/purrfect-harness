@@ -1,5 +1,13 @@
 # Changelog — agent-harness kit
 
+## 2.2.0 (2026-07-27)
+- **Dispatch proof:** `scripts/spawn-brain.sh` (Claude Opus brain), `write-receipt.sh`,
+  and `verify-mission.sh`. Workers/brain writes `.tasks/receipts/*.json`; GATE /
+  `passes:true` / `status: done` require `verify-mission.sh` exit 0. PROGRESS prose
+  is not evidence. Waiver path for “already on Opus in this chat” is explicit and
+  labeled. spawn-worker gains `--feature` for per-feature receipts.
+- mission-init / dispatch-worker / ORCHESTRATION / AGENTS updated for the receipt rule.
+
 ## 2.1.2 (2026-07-27)
 - README first screen for newbies: shields.io badges under H1, orchestration
   mermaid (Opus → GATE 0 → Grok/Composer → review), intro aligned to 2.1.x routing.

@@ -110,12 +110,12 @@ When active, these rules apply on top of everything above:
 - **WORKER_TASK files are binding.** If you received one, it is your entire scope;
   its file allow/deny lists override any broader interpretation of the goal.
   Respect its iteration policy, then STOP and report — never keep grinding.
-- **Local CLI workers.** Orchestrators spawn work via
-  `scripts/spawn-worker.sh --tier economy|premium` using CLIs on this machine
-  (`claude`, `codex`, `agent`, `agy`). Cursor: Grok = premium, Composer = economy.
-  Run `scripts/fleet-inventory.sh` at GATE 0 and show the map for human confirm/swap.
-  Default brain is Opus unless the human names Fable/Sol/current-chat or skips
-  orchestration. Do not silently absorb fleet work into one chat when CLIs exist.
+- **Local CLI workers + receipts.** Brain via `scripts/spawn-brain.sh` (Claude Opus
+  by default). Workers via `scripts/spawn-worker.sh --tier … --feature F00X`.
+  Both write `.tasks/logs/` + `.tasks/receipts/`. Before GATE greenlight or
+  flipping `passes`/`status: done`: `bash scripts/verify-mission.sh` must exit 0.
+  PROGRESS prose is not proof. Cursor: Grok = premium, Composer = economy;
+  agy = UI lane. Do not absorb fleet work into one chat when CLIs exist.
 
 ## Repo structure (key paths)
 
@@ -123,4 +123,4 @@ When active, these rules apply on top of everything above:
 - {{src/types/... — canonical types}}
 - `.agents/skills/` — canonical agent skills (symlinked into per-tool paths)
 - `docs/missions/` — orchestration protocol, MODEL_ROUTING, templates, mission folders
-- `scripts/active-mission.sh` / `scripts/spawn-worker.sh` / `scripts/fleet-inventory.sh`
+- `scripts/active-mission.sh` / `scripts/spawn-brain.sh` / `scripts/spawn-worker.sh` / `scripts/fleet-inventory.sh` / `scripts/verify-mission.sh`

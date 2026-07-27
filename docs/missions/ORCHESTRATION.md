@@ -1,6 +1,6 @@
 ---
 title: Orchestration Protocol
-version: 2.1.0
+version: 2.2.0
 ---
 
 # Orchestration Protocol — Orchestrator + Cheap Workers
@@ -34,10 +34,11 @@ configs per-tool only when there is a forcing event (quota lockout, model
 superiority) — not speculatively.
 
 **Local CLI rule:** when the loop runs on a Mac with studio CLIs installed, the
-orchestrator MUST spawn workers via those CLIs (`scripts/spawn-worker.sh` or the
-exact Fleet invocations). Doing all features inside one Cursor chat without a
-spawn is a failed dispatch — the fleet never gets exercised and cost pinning is
-fiction.
+orchestrator MUST spawn the **brain** via `scripts/spawn-brain.sh` and workers via
+`scripts/spawn-worker.sh` (or exact Fleet invocations). Each spawn writes a receipt
+under `.tasks/receipts/`. Before flipping `passes` or registering a human GATE as
+done, `bash scripts/verify-mission.sh` must exit 0. Doing all features inside one
+Cursor chat without spawns is a failed dispatch — PROGRESS prose is not proof.
 
 ## Roles & dispatch table
 
@@ -108,6 +109,13 @@ with `bash scripts/active-mission.sh`.
 ```
 
 ## Human GATE registration (binding)
+
+Before presenting a gate for approval (and before `status: done`):
+
+```bash
+bash scripts/verify-mission.sh   # must exit 0 — receipts required
+```
+
 
 When the human approves or rejects a gate (staging sign-off, merge permission,
 deploy), the orchestrator MUST:

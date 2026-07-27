@@ -52,13 +52,23 @@ bash scripts/fleet-inventory.sh    # seat → model map; write .tasks/fleet-inve
 
 Always show the map at GATE 0; human may remapp binds. See MODEL_ROUTING.md.
 
+## Brain + worker receipts (proof of CLI)
+
+```bash
+bash scripts/spawn-brain.sh <mission> mission-init   # Claude Opus → log + receipt
+bash scripts/spawn-worker.sh agent <task> --tier premium --feature F00X
+bash scripts/verify-mission.sh <mission>             # must exit 0 before greenlight
+```
+
+PROGRESS alone is not evidence. Greenlight requires `.tasks/receipts/*.json`.
+
 ## Spawning a worker on this machine
 
 Orchestrators must call the real CLIs installed on the Mac (not re-implement
 inside one Cursor chat). Prefer:
 
 ```bash
-bash scripts/spawn-worker.sh <codex|agent|agy|claude> docs/missions/<slug>/tasks/T-XXX.md --tier premium|economy
+bash scripts/spawn-worker.sh <codex|agent|agy|claude> docs/missions/<slug>/tasks/T-XXX.md --tier premium|economy --feature F00X
 ```
 
 See `.agents/skills/dispatch-worker/SKILL.md` and `MODEL_ROUTING.md` (mission

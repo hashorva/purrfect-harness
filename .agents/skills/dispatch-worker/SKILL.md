@@ -24,10 +24,19 @@ failed dispatch.
 | `claude` | haiku | sonnet |
 
 ```bash
-bash scripts/spawn-worker.sh agent "$MISSION/tasks/T-XXX.md" --tier premium
-bash scripts/spawn-worker.sh agent "$MISSION/tasks/T-XXX.md" --tier economy
-bash scripts/spawn-worker.sh codex "$MISSION/tasks/T-XXX.md" --tier economy
+bash scripts/spawn-worker.sh agent "$MISSION/tasks/T-XXX.md" --tier premium --feature F00X
+bash scripts/spawn-worker.sh agent "$MISSION/tasks/T-XXX.md" --tier economy --feature F00X
+bash scripts/spawn-worker.sh codex "$MISSION/tasks/T-XXX.md" --tier economy --feature F00X
 ```
+
+Each spawn writes `.tasks/logs/…` **and** `.tasks/receipts/worker-*.json`.
+Before flipping `passes: true` or asking for a human GATE:
+
+```bash
+bash scripts/verify-mission.sh "$MISSION"
+```
+
+No receipt → not greenlit. PROGRESS claims without receipts are a protocol failure.
 
 **Invocation precedence:** task `invocation:` > GOAL Fleet bind > inventory seat
 > MODEL_ROUTING family fallback.
@@ -99,3 +108,7 @@ Cross-repo parallel OK.
 - Never let workers edit features.json descriptions, AGENTS.md, docs/, skills.
 - Never skip inventory-approved binds without a task `invocation:` override.
 - Never auto-escalate to Fable.
+- Never flip `passes: true` without `verify-mission.sh` green and a worker receipt
+  tagged `--feature F00X` for that feature (bootstrap F001 may be brain-only).
+- Never implement the worker allow-list inside the orchestrator chat when the
+  Fleet CLI is installed — that produces no receipt and fails verify.

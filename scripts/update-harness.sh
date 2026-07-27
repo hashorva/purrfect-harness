@@ -21,7 +21,8 @@ docs/missions/README.md docs/missions/templates \
 docs/ORCHESTRATION.md docs/MODEL_ROUTING.md docs/templates \
 .claude/rules .claude/agents \
 scripts/sync-skills.sh scripts/update-harness.sh \
-scripts/active-mission.sh scripts/spawn-worker.sh scripts/fleet-inventory.sh"
+scripts/active-mission.sh scripts/spawn-worker.sh scripts/fleet-inventory.sh \
+scripts/spawn-brain.sh scripts/verify-mission.sh scripts/write-receipt.sh"
 
 # ---- preflight ----
 [ -f "$HARNESS/CHANGELOG.md" ] || { echo "Run from the purrfect-harness repo root."; exit 1; }
@@ -76,7 +77,8 @@ echo "$VERSION" > "$TARGET/.harness-version"
 
 # Ensure mission helper scripts are executable
 chmod +x "$TARGET/scripts/active-mission.sh" "$TARGET/scripts/spawn-worker.sh" 2>/dev/null || true
-chmod +x "$TARGET/scripts/fleet-inventory.sh" 2>/dev/null || true
+chmod +x "$TARGET/scripts/fleet-inventory.sh" "$TARGET/scripts/spawn-brain.sh" 2>/dev/null || true
+chmod +x "$TARGET/scripts/verify-mission.sh" "$TARGET/scripts/write-receipt.sh" 2>/dev/null || true
 chmod +x "$TARGET/scripts/sync-skills.sh" "$TARGET/scripts/update-harness.sh" 2>/dev/null || true
 
 # Refresh discovery symlinks safely (handles legacy parent-symlink layout)

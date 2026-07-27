@@ -2,7 +2,7 @@
 # spawn-worker.sh — run a WORKER_TASK via a real local CLI agent (Mac Mini / studio).
 # Usage (from the consuming repo root):
 #   bash scripts/spawn-worker.sh <codex|agent|agy|claude> <path-to-task.md> \
-#        [--tier economy|premium] [--model <id>] [extra prompt...]
+#        [--tier economy|premium] [--model <id>] [--feature F00X] [extra prompt...]
 #
 # Model resolution order:
 #   1. --model
@@ -10,11 +10,12 @@
 #   3. family fallbacks from MODEL_ROUTING.md
 #
 # Cursor: premium=Grok (fallback Composer), economy=Composer.
-# Logs to .tasks/logs/<task-basename>.log — orchestrators read exit + tail only.
+# Logs to .tasks/logs/<task-basename>.log and receipts to .tasks/receipts/.
+# Orchestrators read exit + tail + receipt — never the full transcript.
 set -euo pipefail
 
 usage() {
-  echo "Usage: spawn-worker.sh <codex|agent|agy|claude> <task.md> [--tier economy|premium] [--model <id>]" >&2
+  echo "Usage: spawn-worker.sh <codex|agent|agy|claude> <task.md> [--tier economy|premium] [--model <id>] [--feature ID]" >&2
   exit 2
 }
 
@@ -25,11 +26,13 @@ shift 2
 
 TIER=""
 MODEL_OVERRIDE=""
+FEATURE=""
 EXTRA_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --tier) TIER="${2:?}"; shift 2 ;;
     --model) MODEL_OVERRIDE="${2:?}"; shift 2 ;;
+    --feature) FEATURE="${2:?}"; shift 2 ;;
     *) EXTRA_ARGS+=("$1"); shift ;;
   esac
 done
@@ -41,8 +44,19 @@ TASK_ABS="$(cd "$(dirname "$TASK")" && pwd)/$(basename "$TASK")"
 TASK_REL="${TASK_ABS#"$ROOT"/}"
 BASE="$(basename "$TASK" .md)"
 
-mkdir -p "$ROOT/.tasks/logs"
-LOG="$ROOT/.tasks/logs/${BASE}.log"
+# Infer mission from task path when under docs/missions/<slug>/tasks/
+MISSION=""
+if [[ "$TASK_REL" == docs/missions/*/tasks/* ]]; then
+  MISSION="$(echo "$TASK_REL" | awk -F/ '{print $1"/"$2"/"$3}')"
+fi
+if [ -z "$MISSION" ] && [ -x "$ROOT/scripts/active-mission.sh" ]; then
+  MISSION="$(bash "$ROOT/scripts/active-mission.sh" 2>/dev/null || true)"
+fi
+[ -n "$MISSION" ] || MISSION="docs/missions/unknown"
+
+mkdir -p "$ROOT/.tasks/logs" "$ROOT/.tasks/receipts"
+LOG_REL=".tasks/logs/${BASE}.log"
+LOG="$ROOT/$LOG_REL"
 INV="$ROOT/.tasks/fleet-inventory.json"
 
 need() {
@@ -135,7 +149,7 @@ MODEL="$(resolve_model "$WORKER" "$TIER" "$MODEL_OVERRIDE")"
 PROMPT="Read ${TASK_REL} and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder. ${EXTRA}"
 
 {
-  echo "spawn-worker: worker=$WORKER tier=$TIER model=$MODEL task=$TASK_REL log=$LOG"
+  echo "spawn-worker: worker=$WORKER tier=$TIER model=$MODEL task=$TASK_REL feature=${FEATURE:-} mission=$MISSION log=$LOG_REL"
   echo "prompt: $PROMPT"
   echo "----"
 } | tee "$LOG"
@@ -186,5 +200,17 @@ esac
 
 echo "----" | tee -a "$LOG"
 echo "exit=$EC" | tee -a "$LOG"
+
+ARGV_JSON="$(python3 -c "import json; print(json.dumps(['$WORKER','--tier','$TIER','--model','$MODEL']))")"
+REC_ARGS=(
+  --role worker --cli "$WORKER" --model "$MODEL" --mission "$MISSION"
+  --action "task-${BASE}" --exit "$EC" --log "$LOG_REL" --task "$TASK_REL"
+  --tier "$TIER" --argv "$ARGV_JSON"
+)
+if [ -n "$FEATURE" ]; then
+  REC_ARGS+=(--feature "$FEATURE")
+fi
+REC="$(bash "$ROOT/scripts/write-receipt.sh" "${REC_ARGS[@]}")"
+echo "receipt=$REC"
 echo "tail:"; tail -20 "$LOG"
 exit "$EC"

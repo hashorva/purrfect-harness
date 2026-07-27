@@ -61,12 +61,13 @@ Spawn helpers (prefer these so logs land in `.tasks/logs/`):
 Per-task `invocation:` / `--model` overrides this table for one spawn.
 
 ## Human gates
-- GATE 0: feature list + **fleet inventory map** approved before any dispatch
+- GATE 0: feature list + **fleet inventory map** + **brain receipt** (`verify-mission.sh`) approved before any dispatch
 - GATE {{n}}: {{e.g. staging review before merging to main}}
 
-When a human gate is reached: set `status: awaiting-gate`, get the human verdict,
-append a **Human — GATE n** entry to PROGRESS.md, then set `status: done` or
-`in-progress`. Chat approval alone is not the record.
+When a human gate is reached: run `bash scripts/verify-mission.sh` (must exit 0),
+set `status: awaiting-gate`, get the human verdict, append a **Human — GATE n**
+entry to PROGRESS.md, then set `status: done` or `in-progress`. Chat approval
+alone is not the record — receipts are.
 
 ## Source of truth
 The binary checklist lives in `features.json` in this mission folder. This file

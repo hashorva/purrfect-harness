@@ -77,21 +77,35 @@ Only create `tasks/T-001.md` at init (later tasks after reviews).
 
 ## Step 3 — GATE 0 (mandatory stop)
 
+**Brain CLI proof (mandatory unless human names current-chat chair):**
+
+```bash
+bash scripts/fleet-inventory.sh
+bash scripts/spawn-brain.sh "$MISSION" mission-init   # real claude --model opus
+# If human said "you are the orchestrator" / already on Opus in this chat:
+#   bash scripts/spawn-brain.sh "$MISSION" waiver --reason "already on Opus in Cursor"
+bash scripts/verify-mission.sh "$MISSION"             # must pass before greenlight
+```
+
+PROGRESS prose is not proof. Greenlight = `.tasks/receipts/brain-*.json` with
+`exit: 0` and `cli: claude` (or documented `waiver`).
+
 Present:
 
 1. Feature list (id + description + priority)
 2. **Full fleet inventory map** (seat / CLI / model / family) — confirm or swap
-3. Resolved brain + concrete model
+3. Resolved brain + concrete model + **brain receipt path**
 4. T-001 worker + tier (premium Grok vs economy Composer for Cursor, etc.)
 5. Assumptions
 
-DO NOT dispatch until the human approves the features **and** the bind map.
+DO NOT dispatch until the human approves the features **and** the bind map
+**and** `verify-mission.sh` is green for brain.
 
 On approval:
-1. Append Human — GATE 0 PROGRESS entry (include approved binds).
+1. Append Human — GATE 0 PROGRESS entry (include approved binds + receipt path).
 2. Set GOAL `status: approved` → `in-progress` on first spawn.
 3. Follow `.agents/skills/dispatch-worker/SKILL.md` with
-   `scripts/spawn-worker.sh … --tier …`.
+   `scripts/spawn-worker.sh … --tier … --feature F00X`.
 
 ## Never
 
@@ -100,3 +114,6 @@ On approval:
 - Never auto-escalate to Fable.
 - Never put mission files at repo root.
 - Never skip showing the inventory map at GATE 0.
+- Never flip `passes: true` or `status: done` without `bash scripts/verify-mission.sh` green.
+- Never claim Claude/Cursor CLI ran without a matching `.tasks/receipts/*.json`.
+- Never implement allow-listed worker files in the orchestrator chat when spawn-worker is available.
