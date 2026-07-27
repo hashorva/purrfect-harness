@@ -1,5 +1,9 @@
 # Changelog — agent-harness kit
 
+## 2.1.2 (2026-07-27)
+- README first screen for newbies: shields.io badges under H1, orchestration
+  mermaid (Opus → GATE 0 → Grok/Composer → review), intro aligned to 2.1.x routing.
+
 ## 2.1.1 (2026-07-27)
 - Antigravity (`agy`) is first-class: inventory binds `agy.premium` (Gemini Pro-class)
   and `agy.economy` (Flash-class); dispatch prefers agy for UI/shadcn/Luma tasks;

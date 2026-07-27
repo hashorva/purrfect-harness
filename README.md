@@ -1,14 +1,43 @@
 ---
 title: Agent Harness Kit
-version: 2.1.1
+version: 2.1.2
 updated: 2026-07-27
 ---
 
 # Agent Harness Kit
 
-A portable orchestrator/worker setup for AI-assisted development. Drop it into any repo
-(FinDuck, shyft.me, consulenza360, ...), fill one project block, and every agent —
-Claude/Fable (orchestrator), Cursor Composer, Codex, Gemini — reads the same contract.
+[![version](https://img.shields.io/github/v/release/hashorva/purrfect-harness?display_name=tag&label=version)](https://github.com/hashorva/purrfect-harness/releases)
+[![license](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-lightgrey)](LICENSE)
+[![orchestrator](https://img.shields.io/badge/orchestrator-Opus-blue)](docs/missions/MODEL_ROUTING.md)
+[![workers](https://img.shields.io/badge/workers-Grok%20%2B%20Composer%20%2B%20fleet-green)](docs/missions/MODEL_ROUTING.md)
+[![loop](https://img.shields.io/badge/loop-docs%2Fmissions-purple)](docs/missions/README.md)
+[![skills](https://img.shields.io/badge/skills-Agent%20Skills-orange)](https://agentskills.io)
+[![CI](https://img.shields.io/github/actions/workflow/status/hashorva/purrfect-harness/ci.yml?branch=main&label=CI)](https://github.com/hashorva/purrfect-harness/actions/workflows/ci.yml)
+
+A portable orchestrator/worker setup for AI-assisted development. Drop it into any
+repo (FinDuck, shyft.me, consulenza360, …), fill one project block in `AGENTS.md`,
+and every agent reads the same contract. **Opus** chairs missions by default;
+**Cursor Grok** (premium) and **Composer** (economy) implement via local CLIs —
+Codex and Antigravity (`agy`) are also in the fleet when you assign them. The loop
+lives under `docs/missions/` (not repo-root GOAL files).
+
+```mermaid
+flowchart TD
+  You["You + brief plan in Cursor"] --> Opus["Opus brain: mission-init"]
+  Opus --> Inv["fleet-inventory seat map"]
+  Inv --> Gate0{"GATE 0: approve features + binds?"}
+  Gate0 -->|no| Opus
+  Gate0 -->|yes| Dispatch["dispatch-worker"]
+  Dispatch --> Spawn["spawn-worker.sh --tier"]
+  Spawn --> Workers["Grok premium / Composer economy"]
+  Workers --> Files["edit + commit + PROGRESS.md"]
+  Files --> Review["Opus review vs AGENTS.md"]
+  Review -->|fail| Rewrite["rewrite task max 2"] --> Dispatch
+  Review -->|pass| Flip["flip passes:true in features.json"]
+  Flip --> More{"features left?"}
+  More -->|yes| Dispatch
+  More -->|no| HumanGate["Human gates / status done"]
+```
 
 ## The four layers (the studio operating rule)
 

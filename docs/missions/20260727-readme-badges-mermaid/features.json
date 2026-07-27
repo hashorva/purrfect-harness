@@ -1,0 +1,63 @@
+{
+  "goal": "Newbie-friendly harness README: badges under H1 + orchestration mermaid + current routing intro",
+  "features": [
+    {
+      "id": "F001",
+      "description": "Mission folder active at docs/missions/20260727-readme-badges-mermaid/ with GOAL, features, PROGRESS; GATE 0 fleet shows Opus brain + Grok premium + Composer economy",
+      "steps": [
+        "test -f docs/missions/20260727-readme-badges-mermaid/GOAL.md",
+        "test -f docs/missions/20260727-readme-badges-mermaid/features.json",
+        "bash scripts/active-mission.sh | grep -q 20260727-readme-badges-mermaid",
+        "grep -q 'cursor-grok-4.5-high' docs/missions/20260727-readme-badges-mermaid/GOAL.md",
+        "grep -q 'composer-2.5' docs/missions/20260727-readme-badges-mermaid/GOAL.md"
+      ],
+      "passes": true,
+      "priority": 1
+    },
+    {
+      "id": "F002",
+      "description": "README H1 is immediately followed by a shields.io badge row (version, license, loop, skills, CI)",
+      "steps": [
+        "python3 -c \"import re; t=open('README.md').read(); m=re.search(r'# Agent Harness Kit\\n\\n(.+?)\\n\\n', t, re.S); assert m and 'img.shields.io' in m.group(1)\"",
+        "grep -q 'img.shields.io' README.md",
+        "grep -q 'CC%20BY--NC--SA%204.0\\|CC_BY' README.md || grep -qi 'by-nc-sa' README.md",
+        "grep -q 'github/actions/workflow/status' README.md || grep -q 'workflow/ci.yml' README.md"
+      ],
+      "passes": true,
+      "priority": 2
+    },
+    {
+      "id": "F003",
+      "description": "Newbie orchestration mermaid appears after the intro and before 'The four layers'; valid flowchart covering Opus \u2192 GATE 0 \u2192 workers \u2192 review \u2192 next/done",
+      "steps": [
+        "python3 -c \"t=open('README.md').read(); i=t.index('# Agent Harness Kit'); a=t.index('## The four layers'); block=t[i:a]; assert '```mermaid' in block and 'flowchart' in block\"",
+        "grep -A80 '```mermaid' README.md | head -40 | grep -E 'GATE 0|Opus|Composer|Grok|Dispatch|dispatch' ",
+        "grep -n '## The four layers' README.md | head -1"
+      ],
+      "passes": true,
+      "priority": 3
+    },
+    {
+      "id": "F004",
+      "description": "Opening paragraph matches 2.1.x routing: Opus default brain, Grok/Composer Cursor workers, no Fable-as-default / root-GOAL wording",
+      "steps": [
+        "grep -A5 '# Agent Harness Kit' README.md | grep -qi opus",
+        "! grep -A8 '# Agent Harness Kit' README.md | grep -qi 'Fable (orchestrator)'",
+        "grep -A8 '# Agent Harness Kit' README.md | grep -qiE 'Grok|Composer'"
+      ],
+      "passes": true,
+      "priority": 4
+    },
+    {
+      "id": "F005",
+      "description": "Human skim GATE: badges + diagram make sense without reading the rest; docs PATCH 2.1.2 tagged when approved",
+      "steps": [
+        "grep -q 'Human \u2014 GATE 1' docs/missions/20260727-readme-badges-mermaid/PROGRESS.md",
+        "grep -m1 '^version:' README.md | grep -q '2.1.2'",
+        "grep -m1 '^## ' CHANGELOG.md | grep -q '2.1.2'"
+      ],
+      "passes": true,
+      "priority": 5
+    }
+  ]
+}
