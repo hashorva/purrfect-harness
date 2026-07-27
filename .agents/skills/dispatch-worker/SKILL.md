@@ -20,8 +20,8 @@ failed dispatch.
 |---|---|---|
 | `agent` | Composer (`--tier economy`) | **Grok** (`--tier premium`; Composer if Grok unavailable) |
 | `codex` | inventory `codex.economy` (Luna-class) | inventory `codex.premium` (Terra-class) |
+| `agy` | Gemini Flash-class (`agy.economy`) | Gemini Pro-class (`agy.premium`) — **prefer for UI / shadcn / Luma** |
 | `claude` | haiku | sonnet |
-| `agy` | flash-class when available | pro-class when available |
 
 ```bash
 bash scripts/spawn-worker.sh agent "$MISSION/tasks/T-XXX.md" --tier premium
@@ -52,10 +52,17 @@ Delegate small safe work to Composer (economy) — do not burn Grok on boilerpla
 ## Step 1 — Choose worker + tier
 
 1. Needs judgment beyond task/skills? → orchestrator handles or splits.
-2. Many files / repo context? → `agent` **premium** (Grok).
-3. Small safe / boilerplate? → `agent` **economy** (Composer) or `claude`/`codex` economy.
-4. Tight verifiable scope? → `codex` with inventory tier.
-5. High-volume low-judgment? → economy seats.
+2. **UI / shadcn / Luma / appearance / chatbuilding** and agy healthy? → `agy`
+   (premium for multi-file layout; economy for polish) — spend Antigravity credits
+   on purpose unless the human pinned Cursor/Codex for that feature.
+3. Many files / repo context (non-UI)? → `agent` **premium** (Grok).
+4. Small safe / boilerplate (non-UI)? → `agent` **economy** (Composer) or economy seats.
+5. Tight verifiable scope? → `codex` with inventory tier.
+6. Human said “use agy” / GATE 0 UI lane → `agy` even for non-UI if they want.
+7. High-volume low-judgment? → economy seats (`agy` flash, Composer, Luna, Haiku).
+
+Home-fleet reminder: Cursor intake → default Grok/Composer; Codex chair → default
+Terra/Luna; neither excludes agy when UI (or explicit) says so.
 
 ## Step 2 — Spawn (blocking; log never to context)
 

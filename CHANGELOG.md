@@ -1,5 +1,11 @@
 # Changelog — agent-harness kit
 
+## 2.1.1 (2026-07-27)
+- Antigravity (`agy`) is first-class: inventory binds `agy.premium` (Gemini Pro-class)
+  and `agy.economy` (Flash-class); dispatch prefers agy for UI/shadcn/Luma tasks;
+  home-fleet note — Cursor→Grok/Composer, Codex→Terra/Luna, agy opt-in or UI lane.
+- spawn-worker resolves agy `--tier`; GOAL template lists agy seats.
+
 ## 2.1.0 (2026-07-27)
 - MODEL_ROUTING rewrite: **Opus default brain**; Cursor intake → Opus weighs & orchestrates;
   Fable / Sol only when human names them (no Fable auto-escalate); “no orchestration” escape.

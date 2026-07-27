@@ -1,6 +1,6 @@
 ---
 title: Model Routing Policy
-version: 2.1.0
+version: 2.1.1
 updated: 2026-07-27
 ---
 
@@ -84,17 +84,34 @@ Seats are **inventory-classified** (names may change). Today’s families:
 If the human asks “Sol as brain, Terra premium, Luna economy,” the inventory
 must bind those families for real and GATE 0 must show them for confirm/swap.
 
+### Antigravity (`agy`) — first-class, especially UI
+
+Not a leftover. Use studio Antigravity credits when the human asks for `agy`,
+or when the task is **UI / shadcn / Luma / appearance / chatbuilding** and agy
+is on PATH with a healthy inventory bind.
+
+| Seat | Family (typical today) | Notes |
+|---|---|---|
+| Premium | Gemini **Pro**-class (e.g. `gemini-*-pro-high`), else Sonnet on agy | Heavier UI / multi-file layout |
+| Economy | Gemini **Flash**-class (e.g. `gemini-*-flash-high`) | Fast UI passes, polish, boilerplate components |
+
+**Home-fleet defaults (intake context):**
+
+| You’re working from… | Default workers | agy |
+|---|---|---|
+| Cursor | Grok premium / Composer economy | Opt-in, or prefer for UI tasks |
+| Codex | Terra premium / Luna economy (Sol = brain if named) | Opt-in, or prefer for UI tasks |
+| Explicit “use agy” / GATE 0 UI lane | — | Primary for those features |
+
+GATE 0 must list `agy.premium` / `agy.economy` whenever `agy` is present so the
+human can assign UI features there and spend those credits on purpose.
+
 ### Claude (`claude -p` workers — not the chair)
 
 | Seat | Family |
 |---|---|
 | Premium | `sonnet` alias |
 | Economy | `haiku` alias |
-
-### Antigravity (`agy`)
-
-Inventory classifies flash-class → economy, pro-class → premium when the CLI
-is logged in; otherwise strike the row.
 
 ## Fleet inventory (mandatory at GATE 0)
 
@@ -124,6 +141,9 @@ Prefer:
 bash scripts/spawn-worker.sh agent  docs/missions/<slug>/tasks/T-XXX.md --tier premium
 bash scripts/spawn-worker.sh agent  docs/missions/<slug>/tasks/T-XXX.md --tier economy
 bash scripts/spawn-worker.sh codex  docs/missions/<slug>/tasks/T-XXX.md --tier premium
+bash scripts/spawn-worker.sh codex  docs/missions/<slug>/tasks/T-XXX.md --tier economy
+bash scripts/spawn-worker.sh agy    docs/missions/<slug>/tasks/T-XXX.md --tier premium
+bash scripts/spawn-worker.sh agy    docs/missions/<slug>/tasks/T-XXX.md --tier economy
 bash scripts/spawn-worker.sh claude docs/missions/<slug>/tasks/T-XXX.md --tier economy
 ```
 

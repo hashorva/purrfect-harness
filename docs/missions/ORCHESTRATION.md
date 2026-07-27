@@ -46,7 +46,7 @@ fiction.
 | **Orchestrator / brain** (Opus default; Fable or Sol only when human names them — see MODEL_ROUTING.md) | Weigh intake plan → features.json, WORKER_TASK files, review diffs, arbitrate, update AGENTS.md when decisions change | The GOAL, review requests, "what next" |
 | **Cursor Agent** (`agent`) | Multi-file work: **Grok** = premium, **Composer** = economy (Grok falls back to Composer) | WORKER_TASK files; small safe tasks → Composer |
 | **Codex** (`codex`) | Inventory seats: Sol = brain when named; Terra ≈ premium; Luna ≈ economy | Tight allow-lists / verifiable tasks |
-| **Antigravity** (`agy`) | Cheap bulk when logged in | High-volume low-judgment tasks |
+| **Antigravity** (`agy`) | **UI lane** (shadcn/Luma/appearance) + opt-in workers; Flash economy / Pro premium | UI WORKER_TASKs; or when human says use agy |
 | **Claude** (`claude -p`) | Haiku economy / Sonnet premium workers (not the default chair) | Tight allow-list tasks |
 
 Rule of thumb: **judgment up, volume down.** Anything requiring a decision that isn't

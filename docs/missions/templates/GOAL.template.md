@@ -44,6 +44,8 @@ Verified local CLIs:
 | cursor.economy | agent | {{composer-…}} | composer |
 | codex.premium | codex | {{gpt-…-terra}} | terra |
 | codex.economy | codex | {{gpt-…-luna}} | luna |
+| agy.premium | agy | {{gemini-…-pro-…}} | gemini-pro (UI lane) |
+| agy.economy | agy | {{gemini-…-flash-…}} | gemini-flash (UI polish) |
 | claude.premium | claude | sonnet | sonnet |
 | claude.economy | claude | haiku | haiku |
 
@@ -53,6 +55,7 @@ Spawn helpers (prefer these so logs land in `.tasks/logs/`):
 |---|---|---|
 | agent | `bash scripts/spawn-worker.sh agent <task> --tier economy` | `... --tier premium` (Grok; Composer fallback) |
 | codex | `bash scripts/spawn-worker.sh codex <task> --tier economy` | `... --tier premium` |
+| agy | `bash scripts/spawn-worker.sh agy <task> --tier economy` (Flash) | `... --tier premium` (Pro) — prefer for UI |
 | claude | `bash scripts/spawn-worker.sh claude <task> --tier economy` | `... --tier premium` |
 
 Per-task `invocation:` / `--model` overrides this table for one spawn.

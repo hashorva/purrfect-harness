@@ -59,6 +59,9 @@ check "spawn-worker rejects unknown worker" sh -c "cd '$TARGET' && ! bash script
 check "fleet-inventory writes json" sh -c "cd '$TARGET' && bash scripts/fleet-inventory.sh --json >/dev/null && test -f .tasks/fleet-inventory.json"
 check "inventory binds cursor.premium grok-family" sh -c "cd '$TARGET' && python3 -c \"import json; s=json.load(open('.tasks/fleet-inventory.json'))['seats']['cursor.premium']; assert 'grok' in (s.get('family') or '') or 'grok' in (s.get('model') or '').lower()\""
 check "inventory binds brain opus" sh -c "cd '$TARGET' && python3 -c \"import json; assert json.load(open('.tasks/fleet-inventory.json'))['seats']['brain']['family']=='opus'\""
+check "inventory has agy seats when CLI present" sh -c "cd '$TARGET' && python3 -c \"import json; d=json.load(open('.tasks/fleet-inventory.json'));
+import shutil; 
+assert 'agy.premium' in d['seats'] and 'agy.economy' in d['seats']\""
 
 # ---- legacy parent-symlink must be migrated safely ----
 echo "== sync-skills parent-symlink migration"

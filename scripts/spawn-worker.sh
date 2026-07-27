@@ -85,6 +85,8 @@ seat_key = {
     ("agent", "economy"): "cursor.economy",
     ("codex", "premium"): "codex.premium",
     ("codex", "economy"): "codex.economy",
+    ("agy", "premium"): "agy.premium",
+    ("agy", "economy"): "agy.economy",
     ("claude", "premium"): "claude.premium",
     ("claude", "economy"): "claude.economy",
 }.get((worker, tier))
@@ -94,6 +96,8 @@ fallbacks = {
     ("agent", "economy"): "composer-2.5",
     ("codex", "premium"): "gpt-5.6-terra",
     ("codex", "economy"): "gpt-5.6-luna",
+    ("agy", "premium"): "gemini-3.1-pro-high",
+    ("agy", "economy"): "gemini-3.6-flash-high",
     ("claude", "premium"): "sonnet",
     ("claude", "economy"): "haiku",
 }

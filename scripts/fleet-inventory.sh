@@ -159,34 +159,54 @@ if agent_path:
 else:
     clis["agent"] = {"present": False, "error": "not on PATH"}
 
-# --- agy (optional; do not block inventory on auth hang) ---
+# --- agy (UI lane; allow slow list, parse even if exit != 0) ---
 agy_path = which("agy")
 if agy_path:
-    code, text = run(["agy", "models"], timeout=8)
+    code, text = run(["agy", "models"], timeout=25)
     ids = []
-    if code == 0:
-        for line in text.splitlines():
-            line = line.strip()
-            m = re.match(r"^([A-Za-z0-9._:/-]+)\s*$", line)
-            if m and len(m.group(1)) > 3:
-                ids.append(m.group(1))
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or " " in line or line.startswith("E0") or line.startswith("I0") or line.startswith("W0"):
+            continue
+        if re.match(r"^[A-Za-z0-9._:/-]+$", line) and len(line) > 3:
+            ids.append(line)
+    # de-dupe preserve order
+    seen = set()
+    ids = [i for i in ids if not (i in seen or seen.add(i))]
     clis["agy"] = {
         "present": True,
         "path": agy_path,
         "models": ids,
-        "source": "agy models" if ids else "skipped/unauth/timeout — strike agy rows until login",
+        "source": "agy models" if ids else f"probe weak: {text[:160]}",
     }
+    if not ids:
+        notes.append("agy: model list empty — strike agy seats or use --model override")
 else:
     clis["agy"] = {"present": False, "error": "not on PATH"}
 
 agent_ids = clis.get("agent", {}).get("models") or []
 codex_ids = clis.get("codex", {}).get("models") or []
+agy_ids = clis.get("agy", {}).get("models") or []
 
 grok = pick_family(agent_ids, "grok")
 composer = pick_family(agent_ids, "composer")
 sol = pick_family(codex_ids, "sol") or ("gpt-5.6-sol" if clis.get("codex", {}).get("present") else None)
 terra = pick_family(codex_ids, "terra")
 luna = pick_family(codex_ids, "luna")
+
+def pick_agy_premium(ids):
+    # Gemini Pro-class first, then Sonnet on agy, then thinking Opus on agy
+    pro = [i for i in ids if re.search(r"(^|[-_])pro($|[-_])", i.lower())]
+    if pro:
+        return pick_family(pro, "pro")
+    return pick_family(ids, "sonnet") or pick_family(ids, "opus")
+
+def pick_agy_economy(ids):
+    flash = [i for i in ids if "flash" in i.lower()]
+    return pick_family(flash, "flash") if flash else None
+
+agy_prem = pick_agy_premium(agy_ids)
+agy_econ = pick_agy_economy(agy_ids)
 
 # Fallbacks when probe empty but CLI present
 if clis.get("agent", {}).get("present"):
@@ -196,6 +216,9 @@ if clis.get("codex", {}).get("present"):
     sol = sol or "gpt-5.6-sol"
     terra = terra or "gpt-5.6-terra"
     luna = luna or "gpt-5.6-luna"
+if clis.get("agy", {}).get("present"):
+    agy_prem = agy_prem or "gemini-3.1-pro-high"
+    agy_econ = agy_econ or "gemini-3.6-flash-high"
 
 seats = {
     "brain": {
@@ -239,6 +262,18 @@ seats = {
         "cli": "codex",
         "model": luna,
         "family": "luna",
+    },
+    "agy.premium": {
+        "cli": "agy",
+        "model": agy_prem,
+        "family": "gemini-pro",
+        "note": "UI / layout preferred lane; Pro-class (else Sonnet on agy)",
+    },
+    "agy.economy": {
+        "cli": "agy",
+        "model": agy_econ,
+        "family": "gemini-flash",
+        "note": "Fast UI polish / component boilerplate",
     },
     "claude.premium": {
         "cli": "claude",

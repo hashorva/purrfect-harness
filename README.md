@@ -1,6 +1,6 @@
 ---
 title: Agent Harness Kit
-version: 2.1.0
+version: 2.1.1
 updated: 2026-07-27
 ---
 
