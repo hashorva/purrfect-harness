@@ -44,13 +44,21 @@ Follow `.agents/skills/mission-init/SKILL.md`. It creates the dated folder from
 templates, verifies local worker CLIs (`claude`, `codex`, `agent`, `agy`), and
 stops at GATE 0.
 
+## Fleet inventory (GATE 0)
+
+```bash
+bash scripts/fleet-inventory.sh    # seat → model map; write .tasks/fleet-inventory.json
+```
+
+Always show the map at GATE 0; human may remapp binds. See MODEL_ROUTING.md.
+
 ## Spawning a worker on this machine
 
 Orchestrators must call the real CLIs installed on the Mac (not re-implement
 inside one Cursor chat). Prefer:
 
 ```bash
-bash scripts/spawn-worker.sh <codex|agent|agy|claude> docs/missions/<slug>/tasks/T-XXX.md
+bash scripts/spawn-worker.sh <codex|agent|agy|claude> docs/missions/<slug>/tasks/T-XXX.md --tier premium|economy
 ```
 
 See `.agents/skills/dispatch-worker/SKILL.md` and `MODEL_ROUTING.md` (mission

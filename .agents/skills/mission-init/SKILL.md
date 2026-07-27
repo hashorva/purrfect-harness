@@ -7,8 +7,9 @@ description: >
   "new goal", "bootstrap the loop", "let's run the orchestration on X", or asks
   to begin orchestrated work of any kind. Also use to re-scope an existing
   mission. Produces files mechanically from docs/missions/templates/ — never
-  freestyle the formats. Verifies local CLI agents (claude, codex, agent, agy)
-  so dispatch can truly spawn workers on this machine.
+  freestyle the formats. Runs fleet-inventory at GATE 0 and always shows the
+  seat→model map for human confirm/swap. Default chair is Opus (Cursor intake
+  plans briefly; Opus weighs and orchestrates) unless the human names otherwise.
 ---
 
 # Mission init (orchestrator only)
@@ -22,33 +23,43 @@ description: >
   or delete them first.
 - Read AGENTS.md (hard rules constrain every feature) and skim docs/ filenames
   so features reference real docs.
-- Load `docs/missions/MODEL_ROUTING.md` once for this GATE 0 decision (not as
-  ambient session context).
+- Load `docs/missions/MODEL_ROUTING.md` once for this GATE 0 decision.
 
-## Step 0b — Local CLI inventory (mandatory on this machine)
+## Chair resolution (before writing files)
+
+Default brain = **Opus**. Exceptions (human must say, or session already is):
+
+| Signal | Chair |
+|---|---|
+| Already on Opus (Claude Code **or** Cursor UI) | This session |
+| “You are the orchestrator” / “no handoff” | Current model |
+| “No orchestration — just execute” | STOP mission-init; implement in chat |
+| “Orchestrator = Fable” | Fable (**named only** — never auto-escalate) |
+| “Orchestrator = Codex highest” / Sol | Inventory `brain_codex` / family `sol` |
+
+**Cursor intake:** if a brief plan exists in a Cursor (often Grok) chat, Opus
+reads it, weighs whether the split looks balanced, then continues mission-init.
+Do not treat the intake chat as the orchestrator unless named above.
+
+## Step 0b — Local CLI inventory (mandatory)
 
 ```bash
 command -v claude; command -v codex; command -v agent; command -v agy
-claude --version; codex --version; agent -v; agy --version
+bash scripts/fleet-inventory.sh
 ```
 
-Record which CLIs are present in GOAL.md Fleet ("Verified local CLIs"). Missing
-a CLI is fine — strike that row — but do not invent invocations for tools that
-are not installed. First use of a present CLI: `<cli> --help` and confirm flags
-still match `scripts/spawn-worker.sh` / dispatch-worker.
+Always present the printed seat→model map at GATE 0. Human may remap any seat
+(economy ↔ premium, or brain) before approval. Copy approved binds into GOAL
+Fleet. Missing a CLI → strike that row; do not invent invocations.
 
 ## Step 1 — Extract the mission (interview only if needed)
 
-From the user's paragraph, determine: outcome (what will be TRUE at the end),
-forcing function, explicit out-of-scope, human gates, ORCHESTRATOR BRAND
-(opus | sol — apply MODEL_ROUTING.md criteria; fable only by manual override or
-declared task-class trigger), and FLEET TIER — economy (default), premium
-(hard/risky missions), or mixed (per-worker). Slug: `YYYYMMDD-short-kebab-name`
-using today's date. If the user didn't state a tier, propose one with a reason;
-never silently assume premium. Missing pieces → ask AT MOST 3 questions in one
-message. Do not start writing files until the outcome is unambiguous.
+From the user's paragraph (and any Cursor intake brief), determine: outcome,
+forcing function, out-of-scope, human gates, chair (above), fleet tier
+(economy | premium | mixed). Slug: `YYYYMMDD-short-kebab-name`. At most 3
+clarifying questions. Do not write files until the outcome is unambiguous.
 
-## Step 2 — Write the mission folder FROM TEMPLATES (never from memory)
+## Step 2 — Write the mission folder FROM TEMPLATES
 
 ```bash
 SLUG="{{YYYYMMDD-short-name}}"
@@ -60,42 +71,32 @@ cp docs/missions/templates/PROGRESS.template.md "$MISSION/PROGRESS.md"
 cp docs/missions/templates/WORKER_TASK.template.md "$MISSION/tasks/T-001.md"
 ```
 
-1. Fill every `{{placeholder}}` in GOAL.md. Keep mission text to 2–4 sentences of
-   OUTCOME, not tasks. Set `status: draft`. Fill Fleet with verified CLI paths /
-   `scripts/spawn-worker.sh` invocations.
-2. Replace example features in features.json. Rules for each feature:
-   - description = user-observable behavior ("page renders X from Y"), never
-     implementation ("add a useEffect")
-   - steps = executable checks a worker can literally perform (navigate, run,
-     grep, curl) — no vibes ("works correctly" is forbidden)
-   - priority encodes the dependency DAG: structure before styling, schema
-     before UI, low number = first
-   - 3–10 features; bigger missions get split into two missions
-   - every feature starts "passes": false
-   - validate: `python3 -c "import json; json.load(open('$MISSION/features.json'))"`
-3. Fill `tasks/T-001.md` for the priority-1 feature ONLY. Allow/deny lists from
-   real repo paths (verify they exist), name the skills the task needs,
-   `max_attempts: 2`.
+Fill placeholders. Set `status: draft`. Paste inventory binds into Fleet.
+Validate: `python3 -c "import json; json.load(open('$MISSION/features.json'))"`.
+Only create `tasks/T-001.md` at init (later tasks after reviews).
 
 ## Step 3 — GATE 0 (mandatory stop)
 
-Present to the human: the feature list (id + description + priority only),
-the Fleet table (tier + exact spawn commands), which CLIs were found on PATH,
-the resolved orchestrator model+version (alias resolution logged to PROGRESS.md),
-which worker T-001 is routed to and why (per dispatch-worker skill), and any
-assumption made. DO NOT dispatch anything until the human approves.
+Present:
+
+1. Feature list (id + description + priority)
+2. **Full fleet inventory map** (seat / CLI / model / family) — confirm or swap
+3. Resolved brain + concrete model
+4. T-001 worker + tier (premium Grok vs economy Composer for Cursor, etc.)
+5. Assumptions
+
+DO NOT dispatch until the human approves the features **and** the bind map.
 
 On approval:
-1. Append a Human — GATE 0 PROGRESS entry (verdict approved).
-2. Set GOAL `status: approved` (then `in-progress` when the first spawn starts).
-3. Follow `.agents/skills/dispatch-worker/SKILL.md` — spawn via
-   `scripts/spawn-worker.sh`, never by re-doing the work solely inside the
-   orchestrator chat when a worker CLI is available for that task class.
+1. Append Human — GATE 0 PROGRESS entry (include approved binds).
+2. Set GOAL `status: approved` → `in-progress` on first spawn.
+3. Follow `.agents/skills/dispatch-worker/SKILL.md` with
+   `scripts/spawn-worker.sh … --tier …`.
 
 ## Never
 
-- Never invent file formats — templates are the only source of structure.
-- Never write features the repo's AGENTS.md forbids.
-- Never create more than the first WORKER_TASK at init (later tasks are written
-  after earlier reviews, with real findings baked in).
-- Never put mission files at repo root (harness 2.0.0+).
+- Never invent file formats — templates only.
+- Never write features AGENTS.md forbids.
+- Never auto-escalate to Fable.
+- Never put mission files at repo root.
+- Never skip showing the inventory map at GATE 0.

@@ -1,5 +1,15 @@
 # Changelog — agent-harness kit
 
+## 2.1.0 (2026-07-27)
+- MODEL_ROUTING rewrite: **Opus default brain**; Cursor intake → Opus weighs & orchestrates;
+  Fable / Sol only when human names them (no Fable auto-escalate); “no orchestration” escape.
+- Cursor workers: **Grok = premium**, **Composer = economy** (Grok → Composer if unavailable).
+- Codex seats inventory-classified (Sol brain / Terra premium / Luna economy — names may change).
+- NEW `scripts/fleet-inventory.sh` — probe CLIs, bind seats, always show map at GATE 0 for
+  confirm/swap; writes `.tasks/fleet-inventory.json` (gitignored).
+- `spawn-worker.sh` gains `--tier economy|premium` and `--model`; resolves via inventory.
+- mission-init / dispatch-worker / GOAL template / ORCHESTRATION updated for the policy.
+
 ## 2.0.2 (2026-07-27)
 - FIX `scripts/sync-skills.sh`: per-skill discovery links use relative paths
   (`../../.agents/skills/<name>`), not absolute machine paths.

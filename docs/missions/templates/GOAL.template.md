@@ -1,8 +1,9 @@
 ---
 status: draft
 owner: {{HUMAN}}
-orchestrator: {{opus | sol | fable (manual)}}
+orchestrator: {{opus (default) | current-chat | fable (named) | sol (named)}}
 created: {{DATE}}
+intake: {{optional — Cursor/Grok brief that Opus weighed}}
 ---
 
 # Goal
@@ -26,24 +27,38 @@ Worker only, Luma-styled, live on staging behind auth.}}
 
 ## Fleet (worker invocations for THIS mission — dispatch-worker reads this table)
 
-Tier chosen at GATE 0: {{economy | premium | mixed}}
-Orchestrator: {{opus (alias, effort high/extra) | gpt-5.6-sol (effort high) | fable (manual override)}} — resolved model logged in PROGRESS.md
+Filled at GATE 0 from `bash scripts/fleet-inventory.sh` (human confirms or remaps).
 
-Verified local CLIs (mission-init ran `command -v` on this machine):
+Tier chosen at GATE 0: {{economy | premium | mixed}}
+Orchestrator (brain): {{opus default | fable named | sol named | current-chat}} — concrete bind logged in PROGRESS.md
+
+Verified local CLIs:
 {{paste: which claude / codex / agent / agy}}
 
-| Worker | Invocation |
-|---|---|
-| codex | {{`bash scripts/spawn-worker.sh codex docs/missions/<slug>/tasks/T-XXX.md` or Fleet override}} |
-| agent | {{`bash scripts/spawn-worker.sh agent ...` — Cursor Agent CLI (`agent`), model composer}} |
-| agy | {{`bash scripts/spawn-worker.sh agy ...` — Antigravity}} |
-| claude | {{`bash scripts/spawn-worker.sh claude ...` — haiku economy / sonnet premium}} |
+### Approved seat binds (from inventory — edit only with human GATE 0 approval)
 
-Prefer `scripts/spawn-worker.sh` so logs land in `.tasks/logs/` and flags stay pinned.
-Per-task `invocation:` frontmatter overrides this table.
+| Seat | CLI | Model | Family |
+|---|---|---|---|
+| brain | {{claude}} | {{opus}} | {{opus}} |
+| cursor.premium | agent | {{cursor-grok-…}} | grok |
+| cursor.economy | agent | {{composer-…}} | composer |
+| codex.premium | codex | {{gpt-…-terra}} | terra |
+| codex.economy | codex | {{gpt-…-luna}} | luna |
+| claude.premium | claude | sonnet | sonnet |
+| claude.economy | claude | haiku | haiku |
+
+Spawn helpers (prefer these so logs land in `.tasks/logs/`):
+
+| Worker | Economy | Premium |
+|---|---|---|
+| agent | `bash scripts/spawn-worker.sh agent <task> --tier economy` | `... --tier premium` (Grok; Composer fallback) |
+| codex | `bash scripts/spawn-worker.sh codex <task> --tier economy` | `... --tier premium` |
+| claude | `bash scripts/spawn-worker.sh claude <task> --tier economy` | `... --tier premium` |
+
+Per-task `invocation:` / `--model` overrides this table for one spawn.
 
 ## Human gates
-- GATE 0: feature list approved before any dispatch
+- GATE 0: feature list + **fleet inventory map** approved before any dispatch
 - GATE {{n}}: {{e.g. staging review before merging to main}}
 
 When a human gate is reached: set `status: awaiting-gate`, get the human verdict,

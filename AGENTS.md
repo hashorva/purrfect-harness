@@ -111,9 +111,11 @@ When active, these rules apply on top of everything above:
   its file allow/deny lists override any broader interpretation of the goal.
   Respect its iteration policy, then STOP and report — never keep grinding.
 - **Local CLI workers.** Orchestrators spawn work via
-  `scripts/spawn-worker.sh` / Fleet invocations using CLIs on this machine
-  (`claude`, `codex`, `agent`, `agy`) — not by silently absorbing every feature
-  into one chat when those CLIs are available.
+  `scripts/spawn-worker.sh --tier economy|premium` using CLIs on this machine
+  (`claude`, `codex`, `agent`, `agy`). Cursor: Grok = premium, Composer = economy.
+  Run `scripts/fleet-inventory.sh` at GATE 0 and show the map for human confirm/swap.
+  Default brain is Opus unless the human names Fable/Sol/current-chat or skips
+  orchestration. Do not silently absorb fleet work into one chat when CLIs exist.
 
 ## Repo structure (key paths)
 
@@ -121,4 +123,4 @@ When active, these rules apply on top of everything above:
 - {{src/types/... — canonical types}}
 - `.agents/skills/` — canonical agent skills (symlinked into per-tool paths)
 - `docs/missions/` — orchestration protocol, MODEL_ROUTING, templates, mission folders
-- `scripts/active-mission.sh` / `scripts/spawn-worker.sh` — mission discovery + CLI spawn
+- `scripts/active-mission.sh` / `scripts/spawn-worker.sh` / `scripts/fleet-inventory.sh`

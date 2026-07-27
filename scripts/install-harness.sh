@@ -41,6 +41,7 @@ PAYLOAD=$(cd "$HARNESS" && find .agents/skills docs/missions/templates .claude/r
           echo "docs/ORCHESTRATION.md"; echo "docs/MODEL_ROUTING.md"; echo "docs/templates/README.md"; \
           echo ".claude/settings.json"; \
           echo "scripts/sync-skills.sh"; echo "scripts/active-mission.sh"; echo "scripts/spawn-worker.sh"; \
+          echo "scripts/fleet-inventory.sh"; \
           echo "CLAUDE.md"; echo "GEMINI.md")
 
 for f in $PAYLOAD; do copy_one "$f"; done
@@ -62,6 +63,7 @@ echo "  symlinks : per-skill links under .claude/.cursor/.gemini/.codex skills/"
 
 echo "$VERSION" > "$TARGET/.harness-version"
 chmod +x "$TARGET/scripts/active-mission.sh" "$TARGET/scripts/spawn-worker.sh" 2>/dev/null || true
+chmod +x "$TARGET/scripts/fleet-inventory.sh" 2>/dev/null || true
 chmod +x "$TARGET/scripts/sync-skills.sh" 2>/dev/null || true
 
 echo ""

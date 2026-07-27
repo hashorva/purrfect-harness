@@ -1,6 +1,6 @@
 ---
 title: Model Routing Policy
-version: 2.0.0
+version: 2.1.0
 updated: 2026-07-27
 ---
 
@@ -9,73 +9,126 @@ updated: 2026-07-27
 > Mission-scoped. Load at GATE 0 / when advancing a mission — not on every
 > casual coding session. Lives only under `docs/missions/`.
 
-The whole point: match model quality to task complexity, so every mission gets
-the highest quality at the lowest price. Criteria are durable; prices are not.
+**Policy one-liner:** Opus chairs by default (or the current chat if it’s already
+Opus / you name the chair). Cursor workers: Grok premium, Composer economy.
+Concrete slugs come from a probed fleet inventory at GATE 0; families in this
+file are durable. Always show the map at GATE 0 so the human can swap binds.
+
 Prices live ONLY in the dated appendix. When they change, bump the appendix
 date — never let a stale number pose as current.
 
+## Durable seats (names rot; seats don’t)
+
+| Seat | Job |
+|---|---|
+| `brain` | Orchestrator — plans mission, writes features/tasks, reviews, flips `passes` |
+| `worker.premium` | Judgment-heavy implementation |
+| `worker.economy` | Volume / tight / safely delegable work |
+
+Concrete model IDs are **bound** by `scripts/fleet-inventory.sh` into families
+(`opus`, `fable`, `sol`, `grok`, `composer`, `terra`, `luna`, `sonnet`, `haiku`, …).
+GATE 0 always prints the bind map; the human may remap any seat before dispatch.
+Binds freeze for the mission (re-probe only at the next GATE 0).
+
+## Who chairs (`brain`)
+
+| Situation | Chair |
+|---|---|
+| **Default** | **Opus** (Claude Code *or* Cursor UI — same logic) |
+| Already chatting with Opus | This session is the chair (no handoff) |
+| Human: “you are the orchestrator” / “no handoff” | Current model chairs |
+| Human: “no orchestration — just execute” | Skip mission loop; current chat implements |
+| Human: “orchestrator = Fable” | Fable (**named only** — never auto-escalate; costly) |
+| Human: “orchestrator = Codex highest” / Sol | Inventory’s top Codex bind (family `sol`) |
+
+### Cursor → Opus handoff (default intake)
+
+1. Human + Cursor (often Grok) sketch a brief plan in chat.
+2. Opus reads that plan, weighs whether the split looks balanced/correct.
+3. Opus runs `mission-init` → GOAL / features / fleet / GATE 0 (shows inventory map).
+
+Cursor is **intake**, not the default orchestrator — unless the human names this
+chat as chair or the session is already Opus.
+
 ## The four routing criteria (apply in order)
 
-1. **Task horizon.** How many steps before a human checks the output?
-   Short + well-scoped → models are interchangeable, cheapest wins.
-   Long autonomous chains → capability gaps widen; premium earns its price.
-2. **Cost of a silent error.** Caught immediately in review → cheap is fine.
-   Ships unattended to a live product → calibrated caution beats raw IQ.
-3. **Verifiability.** Tests/steps exist → cheap model + verification beats
-   expensive model without it. No test possible (architecture, ambiguity) →
-   raw intelligence matters most; this is premium territory.
-4. **Volume.** Run hundreds of times → per-token price dominates, quality
-   differences wash out. Always economy tier.
+1. **Task horizon.** Short + well-scoped → cheapest seat wins. Long chains → brain / premium.
+2. **Cost of a silent error.** Caught in review → economy fine. Ships unattended → premium / brain.
+3. **Verifiability.** Tests exist → economy + verify beats premium without tests.
+4. **Volume.** High volume → always economy.
 
-Rule of thumb stays: **judgment up, volume down.**
+Rule of thumb: **judgment up, volume down.**
 
-## Orchestrator policy
+## Worker families (defaults; GATE 0 Fleet + inventory win)
 
-**Primary (choose ONE per mission, at GATE 0):**
+### Cursor (`agent` CLI)
 
-| Brand | Invocation | Notes |
+| Seat | Family | Fallback |
 |---|---|---|
-| Anthropic | `claude --model opus` — effort high/extra | Alias resolves to the latest Opus on the plan (today: Opus 4.8). Carries the ENFORCED layer (.claude/settings.json, rules, code-reviewer subagent). |
-| OpenAI | `codex -m gpt-5.6-sol -c model_reasoning_effort="high"` | Verify flags with `codex --help` first (CLIs change fast). Meets the orchestrator contract in GUIDANCE-ONLY mode — no enforcement layer binds it. |
+| Premium | **Grok** (prefer highest non-`-fast` match) | Composer if Grok off / unavailable / no tokens |
+| Economy | **Composer** | — |
 
-Both are best-in-class per brand and included in current subscriptions.
-**Alias doctrine:** invocations use aliases where the CLI supports them, so a
-new flagship (e.g. Opus 5) is picked up automatically. The orchestrator MUST
-resolve and log the concrete model + version in PROGRESS.md at GATE 0. A model
-alias is never allowed to change resolution MID-mission: if the vendor ships a
-new flagship while a mission is open, finish on the pinned resolution, adopt
-the new one at the next GATE 0. Between missions, a deliberate bump of a
-pinned name in this file is a PATCH release of the harness.
+Orchestrators should delegate small, safe tasks to Composer (economy), not burn
+Grok on boilerplate.
 
-**Escalation to Fable 5 (API credits — costs real money):**
+### Codex (`codex` CLI)
 
-Self-reported confidence is NOT a trigger — models are poorly calibrated about
-their own uncertainty. Fable engages only on observable evidence or explicit
-declaration:
+Seats are **inventory-classified** (names may change). Today’s families:
 
-- **Evidence triggers** (any one, noted in PROGRESS.md):
-  - orchestrator plan or diff failed human/gate review twice on the same feature
-  - mission stalled: same feature `passes: false` after 2 escalated worker attempts
-  - features.json churn: orchestrator restructured the list twice in one mission
-- **Task-class triggers** (declared at GATE 0 in GOAL.md):
-  - architecture decisions on a LIVE product (payments, auth, data model)
-  - cross-repo or cross-product migrations
-- **Manual override:** the human may start any mission directly on Fable
-  (CLI `claude --model fable` or VS Code extension). Record `orchestrator:
-  fable (manual)` in GOAL.md — it is a fleet decision like any other.
+| Seat | Family (typical) | Notes |
+|---|---|---|
+| Brain (when named) | `sol` | Highest Codex / frontier agentic |
+| Premium worker | `terra` (or inventory premium) | Everyday strong implement |
+| Economy worker | `luna` (or inventory economy) | Fast / affordable |
 
-Escalation is one mission-scope decision, not per-message; de-escalate at the
-next GATE 0 unless triggers persist.
+If the human asks “Sol as brain, Terra premium, Luna economy,” the inventory
+must bind those families for real and GATE 0 must show them for confirm/swap.
 
-## Worker tiers (defaults; Fleet table in GOAL.md wins)
+### Claude (`claude -p` workers — not the chair)
 
-- **Economy (default):** Cursor Composer (`--model composer`), Codex worker
-  profile, Gemini Flash tier, `claude --model haiku`.
-- **Premium workers:** `claude --model sonnet` (latest Sonnet — today Sonnet 5:
-  near-flagship agentic coding at mid-tier price), Codex `-m` flagship high
-  effort, Gemini Pro tier.
-- Escalation between worker tiers: per dispatch-worker skill — only after a
-  CAPABILITY failure, one tier at a time, `escalated: true` in frontmatter.
+| Seat | Family |
+|---|---|
+| Premium | `sonnet` alias |
+| Economy | `haiku` alias |
+
+### Antigravity (`agy`)
+
+Inventory classifies flash-class → economy, pro-class → premium when the CLI
+is logged in; otherwise strike the row.
+
+## Fleet inventory (mandatory at GATE 0)
+
+```bash
+bash scripts/fleet-inventory.sh          # print map + write .tasks/fleet-inventory.json
+bash scripts/fleet-inventory.sh --json   # JSON only
+```
+
+- Probe each CLI on PATH (`claude`, `codex`, `agent`, `agy`).
+- Classify into seats by **family regex**, not hard-pinned version strings.
+- **Always show** the map at GATE 0; human may interchange economy/premium (or
+  brain) binds before approval.
+- Log the approved binds in PROGRESS.md + the mission GOAL Fleet table.
+- Snapshot path `.tasks/fleet-inventory.json` is machine-local (gitignore
+  `.tasks/`); do not commit auth-specific lists.
+- If a probe fails: use last good snapshot + warn; if none, use family
+  fallbacks in this file and say so at GATE 0.
+
+**Alias / inventory doctrine:** mid-mission, do not re-bind. Finish on the
+approved map; adopt new vendor flagships at the next GATE 0.
+
+## Spawn
+
+Prefer:
+
+```bash
+bash scripts/spawn-worker.sh agent  docs/missions/<slug>/tasks/T-XXX.md --tier premium
+bash scripts/spawn-worker.sh agent  docs/missions/<slug>/tasks/T-XXX.md --tier economy
+bash scripts/spawn-worker.sh codex  docs/missions/<slug>/tasks/T-XXX.md --tier premium
+bash scripts/spawn-worker.sh claude docs/missions/<slug>/tasks/T-XXX.md --tier economy
+```
+
+`--model <id>` overrides inventory for one spawn. Task frontmatter `invocation:`
+still wins over Fleet when set.
 
 ## Appendix — price snapshot (verified 2026-07-19, DECAYS FAST)
 

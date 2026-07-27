@@ -1,15 +1,16 @@
 ---
 title: Orchestration Protocol
-version: 2.0.0
+version: 2.1.0
 ---
 
 # Orchestration Protocol — Orchestrator + Cheap Workers
 
-One orchestrator plans, decomposes, dispatches, and reviews — brand chosen per
-mission at GATE 0 per [`MODEL_ROUTING.md`](MODEL_ROUTING.md) (Opus via
-`--model opus` alias, or GPT-5.6 Sol high effort; Fable 5 = evidence-gated
-escalation on API credits). Cheap workers (Cursor `agent`, Codex, Antigravity
-`agy`, Claude Haiku) implement on the **local machine CLIs**.
+One orchestrator plans, decomposes, dispatches, and reviews — **Opus by
+default** per [`MODEL_ROUTING.md`](MODEL_ROUTING.md). Cursor (often Grok) may
+intake a brief plan; Opus weighs it and runs the mission loop. Human may name
+Fable or Codex/Sol as chair, or declare “no orchestration.” Cheap workers
+(Cursor `agent`: Grok premium / Composer economy; Codex Terra/Luna-class;
+`agy`; Claude Haiku/Sonnet) implement on **local machine CLIs**.
 
 The loop runs on three files **inside the mission folder**: `features.json`
 (what's true), `PROGRESS.md` (what happened), `GOAL.md` (narrative + fleet +
@@ -42,11 +43,11 @@ fiction.
 
 | Agent | Role | Send it |
 |---|---|---|
-| **Orchestrator** (Opus or Sol, high effort; Fable on escalation — see MODEL_ROUTING.md) | Decompose goal → features.json, write WORKER_TASK files, review diffs, arbitrate, update AGENTS.md when decisions change | The GOAL, review requests, "what next" |
-| **Cursor Agent** (`agent`) | Multi-file implementation inside the repo, refactors, UI wiring | WORKER_TASK files touching many files |
-| **Codex** (`codex`) | Well-specified, self-contained tasks; execution fallback when Cursor stalls | WORKER_TASK files with tight allow-lists |
-| **Antigravity** (`agy`) | Cheap bulk work: boilerplate, translations, test scaffolds, doc generation | High-volume low-judgment tasks |
-| **Claude Haiku** (`claude -p`) | Small tasks, strong instruction-following | Tight allow-list tasks |
+| **Orchestrator / brain** (Opus default; Fable or Sol only when human names them — see MODEL_ROUTING.md) | Weigh intake plan → features.json, WORKER_TASK files, review diffs, arbitrate, update AGENTS.md when decisions change | The GOAL, review requests, "what next" |
+| **Cursor Agent** (`agent`) | Multi-file work: **Grok** = premium, **Composer** = economy (Grok falls back to Composer) | WORKER_TASK files; small safe tasks → Composer |
+| **Codex** (`codex`) | Inventory seats: Sol = brain when named; Terra ≈ premium; Luna ≈ economy | Tight allow-lists / verifiable tasks |
+| **Antigravity** (`agy`) | Cheap bulk when logged in | High-volume low-judgment tasks |
+| **Claude** (`claude -p`) | Haiku economy / Sonnet premium workers (not the default chair) | Tight allow-list tasks |
 
 Rule of thumb: **judgment up, volume down.** Anything requiring a decision that isn't
 already written in AGENTS.md / a skill / the task file goes UP to the orchestrator, never
@@ -75,9 +76,9 @@ with `bash scripts/active-mission.sh`.
 ```
 ┌─ 1. INITIALIZER (orchestrator, once per mission)
 │    - Create docs/missions/<date>-<slug>/ from templates (mission-init skill)
-│    - Verify local CLIs: command -v claude codex agent agy
+│    - Verify local CLIs + run scripts/fleet-inventory.sh (ALWAYS show map at GATE 0)
 │    - Expand into features.json — every feature: description + verify steps + passes:false
-│    - Human approves feature list  ← GATE 0
+│    - Human approves feature list + seat binds  ← GATE 0
 │    - On approval: status → approved, then in-progress on first dispatch
 │
 ├─ 2. DISPATCH (orchestrator, each cycle)

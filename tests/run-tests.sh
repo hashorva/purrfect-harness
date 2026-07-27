@@ -41,6 +41,7 @@ check "missions templates installed"         test -f "$TARGET/docs/missions/temp
 check "stub ORCHESTRATION at old path"       test -f "$TARGET/docs/ORCHESTRATION.md"
 check "spawn-worker.sh installed +x"         test -x "$TARGET/scripts/spawn-worker.sh"
 check "active-mission.sh installed +x"       test -x "$TARGET/scripts/active-mission.sh"
+check "fleet-inventory.sh installed +x"      test -x "$TARGET/scripts/fleet-inventory.sh"
 check ".claude/skills is a real directory"   sh -c "[ ! -L '$TARGET/.claude/skills' ] && [ -d '$TARGET/.claude/skills' ]"
 check "per-skill link under .claude/skills"  test -L "$TARGET/.claude/skills/dispatch-worker"
 check "per-skill link under .cursor/skills"  test -L "$TARGET/.cursor/skills/dispatch-worker"
@@ -55,6 +56,9 @@ printf '%s\n' '---' 'status: in-progress' '---' '# Goal' > "$TARGET/docs/mission
 echo '{}' > "$TARGET/docs/missions/20990101-fixture/features.json"
 check "active-mission finds fixture" sh -c "cd '$TARGET' && bash scripts/active-mission.sh | grep -q 20990101-fixture"
 check "spawn-worker rejects unknown worker" sh -c "cd '$TARGET' && ! bash scripts/spawn-worker.sh nope docs/missions/20990101-fixture/GOAL.md"
+check "fleet-inventory writes json" sh -c "cd '$TARGET' && bash scripts/fleet-inventory.sh --json >/dev/null && test -f .tasks/fleet-inventory.json"
+check "inventory binds cursor.premium grok-family" sh -c "cd '$TARGET' && python3 -c \"import json; s=json.load(open('.tasks/fleet-inventory.json'))['seats']['cursor.premium']; assert 'grok' in (s.get('family') or '') or 'grok' in (s.get('model') or '').lower()\""
+check "inventory binds brain opus" sh -c "cd '$TARGET' && python3 -c \"import json; assert json.load(open('.tasks/fleet-inventory.json'))['seats']['brain']['family']=='opus'\""
 
 # ---- legacy parent-symlink must be migrated safely ----
 echo "== sync-skills parent-symlink migration"

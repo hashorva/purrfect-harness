@@ -3,134 +3,92 @@ name: dispatch-worker
 description: >
   How the orchestrator dispatches a WORKER_TASK to a local worker CLI
   (codex, agent/Cursor, agy/Antigravity, claude -p) via scripts/spawn-worker.sh
-  and processes the result. MUST be used in the DISPATCH and REVIEW steps of the
-  orchestration loop, whenever spawning a worker, choosing which worker gets a
-  task, or handling a worker failure, quota exhaustion, or stall.
+  and processes the result. MUST be used in the DISPATCH and REVIEW steps.
+  Cursor: Grok for premium, Composer for economy (Grok falls back to Composer).
+  Always prefer spawn-worker + fleet from fleet-inventory over hand-rolled flags.
   Orchestrator-only; workers never dispatch other workers.
 ---
 
 # Dispatch a worker (orchestrator only)
 
-## Worker fleet — cost pinning is MANDATORY
+## Cost pinning is MANDATORY
 
-Workers are cheap BY CONSTRUCTION: every dispatch must pin model + effort
-explicitly. Dispatching on account defaults (flagship model, high effort) is a
-failed dispatch — the harness removes ambiguity from tasks precisely so cheap
-tiers succeed.
+Every dispatch pins model + tier. Account defaults (flagship, max effort) are a
+failed dispatch.
 
-| CLI | Agent | Economy spawn | Best at |
-|---|---|---|---|
-| `codex` | Codex | `bash scripts/spawn-worker.sh codex <mission>/tasks/T-XXX.md` | tight, verifiable tasks |
-| `agent` | Cursor Agent | `bash scripts/spawn-worker.sh agent <mission>/tasks/T-XXX.md` | multi-file work, repo-wide context |
-| `agy` | Antigravity | `bash scripts/spawn-worker.sh agy <mission>/tasks/T-XXX.md` | cheap bulk: boilerplate, translations |
-| `claude` | Claude Haiku | `bash scripts/spawn-worker.sh claude <mission>/tasks/T-XXX.md` | small tasks, strong instruction-following |
+| CLI | Economy | Premium |
+|---|---|---|
+| `agent` | Composer (`--tier economy`) | **Grok** (`--tier premium`; Composer if Grok unavailable) |
+| `codex` | inventory `codex.economy` (Luna-class) | inventory `codex.premium` (Terra-class) |
+| `claude` | haiku | sonnet |
+| `agy` | flash-class when available | pro-class when available |
 
-`scripts/spawn-worker.sh` pins economy defaults (composer / medium effort /
-haiku), writes `.tasks/logs/T-XXX.log`, and prints only `exit=` + tail. Prefer
-it over hand-rolled CLI lines so Mac Mini PATH + flags stay consistent.
+```bash
+bash scripts/spawn-worker.sh agent "$MISSION/tasks/T-XXX.md" --tier premium
+bash scripts/spawn-worker.sh agent "$MISSION/tasks/T-XXX.md" --tier economy
+bash scripts/spawn-worker.sh codex "$MISSION/tasks/T-XXX.md" --tier economy
+```
 
-**Invocation precedence (most specific wins):**
-1. `invocation:` in the WORKER_TASK frontmatter (per-task override / escalation)
-2. the `## Fleet` table in the mission's GOAL.md (chosen at GATE 0)
-3. `scripts/spawn-worker.sh` economy defaults
+**Invocation precedence:** task `invocation:` > GOAL Fleet bind > inventory seat
+> MODEL_ROUTING family fallback.
 
-Before every spawn: resolve the active mission (`bash scripts/active-mission.sh`),
-read its Fleet table, and use that row unless the task frontmatter overrides.
-First use of ANY worker CLI in an environment: run `<cli> --help` and verify
-flags still exist — these CLIs change fast. Never assume.
+Before spawn: `MISSION=$(bash scripts/active-mission.sh)`; read Fleet; use
+`--tier` unless frontmatter overrides. First use of a CLI: `<cli> --help`.
 
-**Escalation rule:** raising model tier or effort is allowed ONLY as part of a
-task rewrite after a CAPABILITY failure, one tier at a time, noted in the task
-frontmatter (`escalated: true`) and in PROGRESS.md. Frequent escalation =
-under-specified task files (flywheel signal), not a fleet problem. The
-orchestrator itself is the only always-premium brain in the loop (Opus or Sol
-per docs/missions/MODEL_ROUTING.md; Fable only via its escalation triggers there).
+**Escalation:** raise tier only after a CAPABILITY failure, one step at a time,
+`escalated: true` in frontmatter + PROGRESS. Never escalate brain to Fable
+unless the human names Fable.
+
+Delegate small safe work to Composer (economy) — do not burn Grok on boilerplate.
 
 ## Step 0 — Preconditions
 
-- Active mission: `MISSION=$(bash scripts/active-mission.sh)` with
-  `status: in-progress` (or set `approved` → `in-progress` on first dispatch).
-- Working tree CLEAN (`git status`). Dirty → commit or stash first; never
-  dispatch on top of uncommitted changes (diffs must be attributable).
-- WORKER_TASK file exists under `$MISSION/tasks/` and names exactly one feature.
-- Target CLI is on PATH (`command -v`); if not, reassign or stop — do not
-  silently implement the task inside the orchestrator session as a substitute
-  unless the human explicitly waives fleet dispatch for that task.
+- Active mission `in-progress` (or promote `approved` on first spawn).
+- Working tree CLEAN.
+- Task under `$MISSION/tasks/` names one feature.
+- Target CLI on PATH; if not, reassign — do not silently absorb into orchestrator
+  chat when the Fleet CLI is healthy.
 
-## Step 1 — Choose the worker (three-question routing)
+## Step 1 — Choose worker + tier
 
-1. Needs judgment beyond what's written in task/skills? → don't dispatch; the
-   orchestrator handles it or splits further.
-2. Many files / repo-wide context? → `agent` (Cursor Agent CLI).
-3. Tight scope, mechanically verifiable? → `codex`.
-4. High-volume, low-judgment? → `agy` or `claude` (haiku).
+1. Needs judgment beyond task/skills? → orchestrator handles or splits.
+2. Many files / repo context? → `agent` **premium** (Grok).
+3. Small safe / boilerplate? → `agent` **economy** (Composer) or `claude`/`codex` economy.
+4. Tight verifiable scope? → `codex` with inventory tier.
+5. High-volume low-judgment? → economy seats.
 
-## Step 2 — Spawn (blocking call, output to log — never to context)
+## Step 2 — Spawn (blocking; log never to context)
 
 ```bash
 MISSION=$(bash scripts/active-mission.sh)
-# ensure status is in-progress before first spawn
-bash scripts/spawn-worker.sh codex "$MISSION/tasks/T-XXX.md"
+bash scripts/spawn-worker.sh agent "$MISSION/tasks/T-XXX.md" --tier premium
 echo "exit=$?"
 ```
 
-Variants: replace `codex` with `agent` | `agy` | `claude`. If the task
-frontmatter has `invocation:`, run that exact command instead (still redirect
-to `.tasks/logs/` yourself if it bypasses spawn-worker.sh).
+Judge by exit code, `tail -20` of `.tasks/logs/T-XXX.log`, `git status`,
+`git diff --stat`. Then code-reviewer subagent against AGENTS.md + deny-list.
 
-The Bash call BLOCKS until the worker process exits — completion detection is
-the exit itself; no polling. Sandbox notes: codex uses `workspace-write` via
-spawn-worker; NEVER `danger-full-access` outside a container. NEVER pass secrets
-in prompts (prompts end up in transcripts).
+## Step 3 — Outcomes
 
-## Step 3 — Judge by effects, not transcript
+- **PASS** → verify steps, flip `passes: true`, ensure PROGRESS entry.
+- **CAPABILITY FAIL** → consumes attempt; rewrite task (max 2) or reassign.
+- **INFRASTRUCTURE FAIL** (429 / auth / no edits) → does not consume attempt;
+  reassign; if Grok infra-fails on agent premium, retry `--tier economy`
+  (Composer) or next CLI.
 
-Read ONLY: exit code, `tail -20` of `.tasks/logs/T-XXX.log`, `git status`,
-`git diff --stat`. Never load the full worker transcript into orchestrator
-context. Then run REVIEW: delegate `git diff` to the code-reviewer subagent
-(.claude/agents/code-reviewer.md) against AGENTS.md hard rules + task deny-list.
+## Human gates
 
-## Step 4 — Outcome (two failure classes — treat them differently)
+Set `awaiting-gate` → ask for GATE n verdict → PROGRESS Human entry → `done` or
+`in-progress`.
 
-- **PASS** → verify the feature's steps, flip `passes: true`, ensure PROGRESS.md
-  entry exists (write it if the worker skipped it), next cycle.
-- **CAPABILITY FAIL** (worker produced wrong/incomplete work) → consumes an
-  attempt. Rewrite the task with the findings baked in (max 2 attempts total),
-  or reassign, or escalate to human. Recurring failure class → one line into
-  AGENTS.md or a skill (flywheel).
-- **INFRASTRUCTURE FAIL** (log tail shows 429 / rate limit / quota / usage
-  limit / auth error, or non-zero exit with no edits, or stall past timeout) →
-  does NOT consume an attempt. Recover: `git checkout .` if the tree is dirty,
-  log the event in PROGRESS.md, reassign the SAME task file to the next worker
-  in routing order. If all workers are exhausted → stop and report to human.
+## Parallelism
 
-## Human gates mid-mission
-
-When GOAL.md says the next milestone is a human gate (or all features pass and
-a merge/deploy gate remains):
-
-1. Set GOAL `status: awaiting-gate`.
-2. **Ask the human** for an explicit GATE n verdict before ending the session.
-3. Append `## {{DATE}} — Human — GATE n` to PROGRESS.md.
-4. Set `status: done` or resume `in-progress`.
-
-## Parallelism rules
-
-- **Never two workers in the same working tree simultaneously** — they corrupt
-  each other's files and git index, and diffs become unattributable.
-- **Pipelining is encouraged**: while a worker runs, the orchestrator writes the
-  next task file and reviews the previous diff.
-- **Cross-repo parallel is allowed** (different working trees).
-- Same-repo true parallelism requires git worktrees (one branch + checkout per
-  worker) — adopt only after the serial loop is proven; then revisit
-  `.worktreeinclude`.
+Never two workers in the same working tree. Pipeline task-writing while one runs.
+Cross-repo parallel OK.
 
 ## Never
 
-- Never stream a worker's stdout into the orchestrator context.
-- Never let a worker edit features.json descriptions, AGENTS.md, docs/, or
-  .agents/skills/ — orchestrator/human territory.
-- Never re-run an identical failed command hoping for a different result.
-- Never "dispatch" by doing the worker's job inside the orchestrator chat when
-  the Fleet CLI for that task is installed and healthy — that breaks the cost
-  model and the audit trail (`.tasks/logs/`).
+- Never stream full worker transcripts into orchestrator context.
+- Never let workers edit features.json descriptions, AGENTS.md, docs/, skills.
+- Never skip inventory-approved binds without a task `invocation:` override.
+- Never auto-escalate to Fable.
