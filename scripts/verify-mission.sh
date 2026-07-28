@@ -93,10 +93,11 @@ else:
     fail.append(f"missing {feat_path}")
 
 passed = [f for f in features if f.get("passes") is True]
-# Features that are allowed with brain-only proof (bootstrap)
+# Features allowed with brain-only proof must opt in explicitly.
+# Never infer bootstrap from free-text descriptions (a substring like
+# "mission files" falsely excused F007 from needing a worker receipt).
 def is_bootstrap(f):
-    desc = (f.get("description") or "").lower()
-    return f.get("id") == "F001" or "mission folder" in desc or "mission files" in desc
+    return f.get("bootstrap") is True
 
 need_worker = [f for f in passed if not is_bootstrap(f)]
 if require_workers or need_worker:

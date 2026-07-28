@@ -27,7 +27,14 @@ failed dispatch.
 bash scripts/spawn-worker.sh agent "$MISSION/tasks/T-XXX.md" --tier premium --feature F00X
 bash scripts/spawn-worker.sh agent "$MISSION/tasks/T-XXX.md" --tier economy --feature F00X
 bash scripts/spawn-worker.sh codex "$MISSION/tasks/T-XXX.md" --tier economy --feature F00X
+# Worker repo lives elsewhere (e.g. purrfect-worker): workspace only; logs/receipts stay here
+bash scripts/spawn-worker.sh agent "$MISSION/tasks/T-XXX.md" --tier premium --feature F00X \
+  --repo ~/Projects/purrfect-worker
 ```
+
+**Never dispatch a worker to edit `scripts/spawn-worker.sh` through `spawn-worker.sh`.**
+The wrapper re-execs from a snapshot (2.2.2+) so self-edits are safe, but prefer
+orchestrator-owned harness changes when possible.
 
 Each spawn writes `.tasks/logs/…` **and** `.tasks/receipts/worker-*.json`.
 Before flipping `passes: true` or asking for a human GATE:
@@ -109,6 +116,7 @@ Cross-repo parallel OK.
 - Never skip inventory-approved binds without a task `invocation:` override.
 - Never auto-escalate to Fable.
 - Never flip `passes: true` without `verify-mission.sh` green and a worker receipt
-  tagged `--feature F00X` for that feature (bootstrap F001 may be brain-only).
+  tagged `--feature F00X` for that feature (orchestrator-only features need
+  `"bootstrap": true` in features.json — never inferred from description text).
 - Never implement the worker allow-list inside the orchestrator chat when the
   Fleet CLI is installed — that produces no receipt and fails verify.

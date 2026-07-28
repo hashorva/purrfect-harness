@@ -57,6 +57,7 @@ Always show the map at GATE 0; human may remapp binds. See MODEL_ROUTING.md.
 ```bash
 bash scripts/spawn-brain.sh <mission> mission-init   # Claude Opus → log + receipt
 bash scripts/spawn-worker.sh agent <task> --tier premium --feature F00X
+bash scripts/spawn-worker.sh agent <task> --tier premium --feature F00X --repo ~/Projects/other-repo
 bash scripts/verify-mission.sh <mission>             # must exit 0 before greenlight
 ```
 

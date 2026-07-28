@@ -67,11 +67,12 @@ check "verify-mission.sh installed +x" test -x "$TARGET/scripts/verify-mission.s
 # receipt greenlight
 echo "== verify-mission receipts"
 FEAT="$TARGET/docs/missions/20990101-fixture"
-printf '%s\n' '{"goal":"t","features":[{"id":"F001","description":"Mission folder active","steps":[],"passes":true,"priority":1},{"id":"F002","description":"Real work","steps":[],"passes":true,"priority":2}]}' > "$FEAT/features.json"
+printf '%s\n' '{"goal":"t","features":[{"id":"F001","description":"Mission folder active","bootstrap":true,"steps":[],"passes":true,"priority":1},{"id":"F002","description":"Real work mentions mission files in prose only","steps":[],"passes":true,"priority":2}]}' > "$FEAT/features.json"
 check "verify fails without receipts" sh -c "cd '$TARGET' && ! bash scripts/verify-mission.sh docs/missions/20990101-fixture"
 ( cd "$TARGET" && bash scripts/write-receipt.sh --role brain --cli claude --model opus --mission docs/missions/20990101-fixture --action mission-init --exit 0 --log .tasks/logs/x.log --argv '["claude"]' >/dev/null )
 ( cd "$TARGET" && bash scripts/write-receipt.sh --role worker --cli agent --model composer-2.5 --mission docs/missions/20990101-fixture --action task-T-001 --exit 0 --log .tasks/logs/y.log --feature F002 --tier economy --argv '["agent"]' >/dev/null )
 check "verify passes with brain+worker receipts" sh -c "cd '$TARGET' && bash scripts/verify-mission.sh docs/missions/20990101-fixture"
+check "spawn-worker --repo rejects missing path" sh -c "cd '$TARGET' && bash scripts/spawn-worker.sh agent docs/missions/20990101-fixture/GOAL.md --repo /nope/does/not/exist; test \$? -eq 1"
 # ---- legacy parent-symlink must be migrated safely ----
 echo "== sync-skills parent-symlink migration"
 git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "harness install"

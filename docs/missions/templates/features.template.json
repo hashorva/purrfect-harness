@@ -6,6 +6,7 @@
       "id": "F001",
       "category": "functional",
       "priority": 1,
+      "bootstrap": false,
       "description": "{{User-visible behavior, e.g.: Fund Detail page renders Overview tab with fund name, category badge, and ISC figures fetched from GET /finduck/funds/:id}}",
       "steps": [
         "{{Navigate to /funds/<known-id> while logged in}}",

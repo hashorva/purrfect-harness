@@ -3,11 +3,12 @@
 # Usage (internal; called by spawn-brain / spawn-worker):
 #   bash scripts/write-receipt.sh --role brain|worker --cli NAME --model ID \
 #     --mission RELPATH --action NAME --exit N --log RELPATH \
-#     [--task RELPATH] [--feature ID] [--tier economy|premium] [--argv JSON_ARRAY]
+#     [--task RELPATH] [--feature ID] [--tier economy|premium] [--argv JSON_ARRAY] \
+#     [--repo ABS_PATH]
 set -euo pipefail
 
 ROLE=""; CLI=""; MODEL=""; MISSION=""; ACTION=""; EXIT_CODE=""; LOG=""
-TASK=""; FEATURE=""; TIER=""; ARGV="[]"
+TASK=""; FEATURE=""; TIER=""; ARGV="[]"; REPO=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -22,6 +23,7 @@ while [ $# -gt 0 ]; do
     --feature) FEATURE="${2:?}"; shift 2 ;;
     --tier) TIER="${2:?}"; shift 2 ;;
     --argv) ARGV="${2:?}"; shift 2 ;;
+    --repo) REPO="${2:?}"; shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -40,6 +42,7 @@ export RECEIPT_OUT="$OUT" RECEIPT_ROLE="$ROLE" RECEIPT_CLI="$CLI" RECEIPT_MODEL=
 export RECEIPT_MISSION="$MISSION" RECEIPT_ACTION="$ACTION" RECEIPT_EXIT="$EXIT_CODE"
 export RECEIPT_LOG="$LOG" RECEIPT_TASK="$TASK" RECEIPT_FEATURE="$FEATURE"
 export RECEIPT_TIER="$TIER" RECEIPT_ARGV="$ARGV" RECEIPT_TS="$TS"
+export RECEIPT_REPO="$REPO"
 
 python3 - <<'PY'
 import json, os
@@ -56,6 +59,7 @@ doc = {
     "task": os.environ.get("RECEIPT_TASK") or None,
     "feature": os.environ.get("RECEIPT_FEATURE") or None,
     "tier": os.environ.get("RECEIPT_TIER") or None,
+    "repo": os.environ.get("RECEIPT_REPO") or None,
     "log": os.environ["RECEIPT_LOG"],
     "started_at": None,
     "ended_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

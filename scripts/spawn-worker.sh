@@ -2,7 +2,8 @@
 # spawn-worker.sh — run a WORKER_TASK via a real local CLI agent (Mac Mini / studio).
 # Usage (from the consuming repo root):
 #   bash scripts/spawn-worker.sh <codex|agent|agy|claude> <path-to-task.md> \
-#        [--tier economy|premium] [--model <id>] [--feature F00X] [extra prompt...]
+#        [--tier economy|premium] [--model <id>] [--feature F00X] [--repo <path>] \
+#        [extra prompt...]
 #
 # Model resolution order:
 #   1. --model
@@ -10,12 +11,29 @@
 #   3. family fallbacks from MODEL_ROUTING.md
 #
 # Cursor: premium=Grok (fallback Composer), economy=Composer.
-# Logs to .tasks/logs/<task-basename>.log and receipts to .tasks/receipts/.
+# --repo sets the worker CLI workspace only; logs/receipts/mission stay in this repo.
+# Logs to .tasks/logs/<task-basename>-<utc>.log and receipts to .tasks/receipts/.
 # Orchestrators read exit + tail + receipt — never the full transcript.
+#
+# Self-edit safety: re-exec from a temp snapshot on first entry so a worker that
+# edits scripts/spawn-worker.sh cannot kill the running wrapper (bash re-reads
+# the live file by byte offset after the CLI returns).
+if [ -z "${SPAWN_WORKER_SNAPSHOT:-}" ]; then
+  _snap="$(mktemp -t spawn-worker.XXXXXX)"
+  cp "${BASH_SOURCE[0]}" "$_snap"
+  chmod +x "$_snap"
+  export SPAWN_WORKER_SNAPSHOT="$_snap"
+  exec bash "$_snap" "$@"
+fi
+# Delete only the snapshot copy — never the real scripts/spawn-worker.sh.
+if [ "$0" = "$SPAWN_WORKER_SNAPSHOT" ]; then
+  trap 'rm -f "$SPAWN_WORKER_SNAPSHOT"' EXIT
+fi
+
 set -euo pipefail
 
 usage() {
-  echo "Usage: spawn-worker.sh <codex|agent|agy|claude> <task.md> [--tier economy|premium] [--model <id>] [--feature ID]" >&2
+  echo "Usage: spawn-worker.sh <codex|agent|agy|claude> <task.md> [--tier economy|premium] [--model <id>] [--feature ID] [--repo <path>]" >&2
   exit 2
 }
 
@@ -27,12 +45,14 @@ shift 2
 TIER=""
 MODEL_OVERRIDE=""
 FEATURE=""
+REPO_IN=""
 EXTRA_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --tier) TIER="${2:?}"; shift 2 ;;
     --model) MODEL_OVERRIDE="${2:?}"; shift 2 ;;
     --feature) FEATURE="${2:?}"; shift 2 ;;
+    --repo) REPO_IN="${2:?}"; shift 2 ;;
     *) EXTRA_ARGS+=("$1"); shift ;;
   esac
 done
@@ -43,6 +63,19 @@ ROOT="$(pwd)"
 TASK_ABS="$(cd "$(dirname "$TASK")" && pwd)/$(basename "$TASK")"
 TASK_REL="${TASK_ABS#"$ROOT"/}"
 BASE="$(basename "$TASK" .md)"
+
+# Worker workspace: optional --repo; default is this repo (ROOT).
+if [ -n "$REPO_IN" ]; then
+  # Quoted ~/... is not expanded by the calling shell — expand manually.
+  REPO_IN="${REPO_IN/#\~/$HOME}"
+  WORKSPACE="$(cd "$REPO_IN" 2>/dev/null && pwd)" || true
+  if [ -z "$WORKSPACE" ] || [ ! -d "$WORKSPACE" ]; then
+    echo "ERROR: --repo path not found: $REPO_IN" >&2
+    exit 1
+  fi
+else
+  WORKSPACE="$ROOT"
+fi
 
 # Infer mission from task path when under docs/missions/<slug>/tasks/
 MISSION=""
@@ -55,7 +88,10 @@ fi
 [ -n "$MISSION" ] || MISSION="docs/missions/unknown"
 
 mkdir -p "$ROOT/.tasks/logs" "$ROOT/.tasks/receipts"
-LOG_REL=".tasks/logs/${BASE}.log"
+# Timestamped logs: nested/stub runs of the same task basename must not clobber
+# the real dispatch transcript (that happened on T-001 / F007).
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+LOG_REL=".tasks/logs/${BASE}-${STAMP}.log"
 LOG="$ROOT/$LOG_REL"
 INV="$ROOT/.tasks/fleet-inventory.json"
 
@@ -146,10 +182,16 @@ PY
 MODEL="$(resolve_model "$WORKER" "$TIER" "$MODEL_OVERRIDE")"
 [ -n "$MODEL" ] || { echo "ERROR: could not resolve model for $WORKER/$TIER" >&2; exit 1; }
 
-PROMPT="Read ${TASK_REL} and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder. ${EXTRA}"
+# Cross-repo workers cannot resolve TASK_REL against their workspace — use absolute path.
+if [ "$WORKSPACE" = "$ROOT" ]; then
+  PROMPT_TASK="$TASK_REL"
+else
+  PROMPT_TASK="$TASK_ABS"
+fi
+PROMPT="Read ${PROMPT_TASK} and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder. ${EXTRA}"
 
 {
-  echo "spawn-worker: worker=$WORKER tier=$TIER model=$MODEL task=$TASK_REL feature=${FEATURE:-} mission=$MISSION log=$LOG_REL"
+  echo "spawn-worker: worker=$WORKER tier=$TIER model=$MODEL task=$TASK_REL feature=${FEATURE:-} mission=$MISSION log=$LOG_REL repo=$WORKSPACE"
   echo "prompt: $PROMPT"
   echo "----"
 } | tee "$LOG"
@@ -158,7 +200,7 @@ case "$WORKER" in
   codex)
     need codex
     set +e
-    codex exec -C "$ROOT" -s workspace-write -m "$MODEL" \
+    codex exec -C "$WORKSPACE" -s workspace-write -m "$MODEL" \
       -c 'model_reasoning_effort="medium"' \
       "$PROMPT" >>"$LOG" 2>&1
     EC=$?
@@ -168,28 +210,44 @@ case "$WORKER" in
     need agent
     set +e
     # Cursor Agent CLI: -p print; --force auto-approves; --trust workspace.
-    agent -p --force --trust --workspace "$ROOT" --model "$MODEL" "$PROMPT" >>"$LOG" 2>&1
+    agent -p --force --trust --workspace "$WORKSPACE" --model "$MODEL" "$PROMPT" >>"$LOG" 2>&1
     EC=$?
     set -e
     ;;
   agy)
     need agy
     set +e
-    if [ -n "$MODEL" ]; then
-      agy -p --dangerously-skip-permissions --model "$MODEL" "$PROMPT" >>"$LOG" 2>&1
+    if [ "$WORKSPACE" = "$ROOT" ]; then
+      if [ -n "$MODEL" ]; then
+        agy -p --dangerously-skip-permissions --model "$MODEL" "$PROMPT" >>"$LOG" 2>&1
+      else
+        agy -p --dangerously-skip-permissions "$PROMPT" >>"$LOG" 2>&1
+      fi
+      EC=$?
     else
-      agy -p --dangerously-skip-permissions "$PROMPT" >>"$LOG" 2>&1
+      if [ -n "$MODEL" ]; then
+        ( cd "$WORKSPACE" && agy -p --dangerously-skip-permissions --model "$MODEL" "$PROMPT" ) >>"$LOG" 2>&1
+      else
+        ( cd "$WORKSPACE" && agy -p --dangerously-skip-permissions "$PROMPT" ) >>"$LOG" 2>&1
+      fi
+      EC=$?
     fi
-    EC=$?
     set -e
     ;;
   claude)
     need claude
     set +e
-    claude -p --model "$MODEL" \
-      --allowedTools "Read,Write,Edit,Bash" \
-      "$PROMPT" >>"$LOG" 2>&1
-    EC=$?
+    if [ "$WORKSPACE" = "$ROOT" ]; then
+      claude -p --model "$MODEL" \
+        --allowedTools "Read,Write,Edit,Bash" \
+        "$PROMPT" >>"$LOG" 2>&1
+      EC=$?
+    else
+      ( cd "$WORKSPACE" && claude -p --model "$MODEL" \
+        --allowedTools "Read,Write,Edit,Bash" \
+        "$PROMPT" ) >>"$LOG" 2>&1
+      EC=$?
+    fi
     set -e
     ;;
   *)
@@ -205,7 +263,7 @@ ARGV_JSON="$(python3 -c "import json; print(json.dumps(['$WORKER','--tier','$TIE
 REC_ARGS=(
   --role worker --cli "$WORKER" --model "$MODEL" --mission "$MISSION"
   --action "task-${BASE}" --exit "$EC" --log "$LOG_REL" --task "$TASK_REL"
-  --tier "$TIER" --argv "$ARGV_JSON"
+  --tier "$TIER" --argv "$ARGV_JSON" --repo "$WORKSPACE"
 )
 if [ -n "$FEATURE" ]; then
   REC_ARGS+=(--feature "$FEATURE")

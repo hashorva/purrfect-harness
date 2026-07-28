@@ -1,5 +1,20 @@
 # Changelog — agent-harness kit
 
+## 2.2.2 (2026-07-28)
+- **Cross-repo dispatch:** `spawn-worker.sh` gains `--repo <path>` — worker CLI
+  workspace can be another repo (e.g. `~/Projects/purrfect-worker`) while logs,
+  receipts, and mission files stay in the consuming repo. `write-receipt.sh`
+  records `repo` on each receipt.
+- **Self-edit safety:** `spawn-worker.sh` re-execs from a temp snapshot on entry so
+  a worker editing the script cannot kill the running wrapper (bash re-reads the
+  live file by byte offset after the CLI returns).
+- **Log isolation:** dispatch logs are timestamped (`T-001-20260728T….log`) so stub
+  re-runs of the same task basename cannot clobber the real transcript.
+- **verify-mission bootstrap gate:** brain-only features must opt in with
+  `"bootstrap": true` in `features.json`. Removed substring heuristic over
+  descriptions (`"mission files"` falsely excused harness features from needing
+  worker receipts).
+
 ## 2.2.1 (2026-07-27)
 - README hero mermaid: invisible `Rewrite ~~~ Flip` layout link so pass/fail
   arrows from Opus review do not cross.
