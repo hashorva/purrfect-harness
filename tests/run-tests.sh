@@ -73,6 +73,26 @@ check "verify fails without receipts" sh -c "cd '$TARGET' && ! bash scripts/veri
 ( cd "$TARGET" && bash scripts/write-receipt.sh --role worker --cli agent --model composer-2.5 --mission docs/missions/20990101-fixture --action task-T-001 --exit 0 --log .tasks/logs/y.log --feature F002 --tier economy --argv '["agent"]' >/dev/null )
 check "verify passes with brain+worker receipts" sh -c "cd '$TARGET' && bash scripts/verify-mission.sh docs/missions/20990101-fixture"
 check "spawn-worker --repo rejects missing path" sh -c "cd '$TARGET' && bash scripts/spawn-worker.sh agent docs/missions/20990101-fixture/GOAL.md --repo /nope/does/not/exist; test \$? -eq 1"
+
+# ---- agy prompt-flag regression (2.2.3) ----
+# Antigravity's CLI uses a Go flag parser: -p/--print/--prompt takes the PROMPT AS
+# ITS VALUE. `agy -p --dangerously-skip-permissions ... "$PROMPT"` set
+# print="--dangerously-skip-permissions", dropped the real prompt, and exited 0 — so
+# the wrapper reported success having done no work. -p must come last.
+echo "== agy prompt-flag order"
+STUBBIN="$TARGET/.stubbin"; mkdir -p "$STUBBIN"
+STUB_OUT="$TARGET/.agy-args"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" > "%s"\nexit 0\n' "$STUB_OUT" > "$STUBBIN/agy"
+chmod +x "$STUBBIN/agy"
+( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
+    bash scripts/spawn-worker.sh agy docs/missions/20990101-fixture/GOAL.md --tier premium ) >/dev/null 2>&1 || true
+check "agy receives the real prompt as the value of -p" \
+  sh -c "grep -q -- '-p Read ' '$STUB_OUT'"
+check "agy -p is not fed the permissions flag" \
+  sh -c "! grep -q -- '-p --dangerously-skip-permissions' '$STUB_OUT'"
+check "agy gets a print-timeout longer than the 5m default" \
+  sh -c "grep -q -- '--print-timeout' '$STUB_OUT'"
+
 # ---- legacy parent-symlink must be migrated safely ----
 echo "== sync-skills parent-symlink migration"
 git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "harness install"

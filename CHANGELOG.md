@@ -1,5 +1,22 @@
 # Changelog — agent-harness kit
 
+## 2.2.3 (2026-08-03)
+
+- **Fix: the `agy` lane never worked.** Antigravity's CLI uses a Go flag parser in
+  which `-p` / `--print` / `--prompt` **takes the prompt as its value**.
+  `spawn-worker.sh` called
+  `agy -p --dangerously-skip-permissions --model M "$PROMPT"`, so
+  `print="--dangerously-skip-permissions"` and the real prompt was discarded — agy
+  replied with prose about the flag, exited 0, and the wrapper reported success
+  having done no work. `-p` now comes last, with the prompt as its value.
+  **Any project on 2.1.1–2.2.2 that dispatched to `agy` got a silent no-op.**
+- `--print-timeout` now set to `30m` (Antigravity defaults to 5m, which truncates
+  multi-file UI tasks).
+- Regression test: a stub `agy` on `PATH` asserts the real prompt is the value of
+  `-p`, that `-p` is never fed the permissions flag, and that a print-timeout is passed.
+- Reminder this surfaced: `exit=0` from `spawn-worker.sh` means *the CLI exited 0*,
+  not *the work happened*. Review the diff, never the exit code alone.
+
 ## 2.2.2 (2026-07-28)
 - **Cross-repo dispatch:** `spawn-worker.sh` gains `--repo <path>` — worker CLI
   workspace can be another repo (e.g. `~/Projects/purrfect-worker`) while logs,
