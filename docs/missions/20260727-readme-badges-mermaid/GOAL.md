@@ -48,15 +48,15 @@ Verified local CLIs: claude, codex, agent, agy on PATH
 
 ### Approved seat binds
 
-| Seat | CLI | Model | Family |
-|---|---|---|---|
-| brain | claude | opus | opus |
-| cursor.premium | agent | cursor-grok-4.5-high | grok |
-| cursor.economy | agent | composer-2.5 | composer |
+| Seat           | CLI    | Model                | Family   |
+| -------------- | ------ | -------------------- | -------- |
+| brain          | claude | opus                 | opus     |
+| cursor.premium | agent  | cursor-grok-4.5-high | grok     |
+| cursor.economy | agent  | composer-2.5         | composer |
 
-| Worker | Economy | Premium |
-|---|---|---|
-| agent | `bash scripts/spawn-worker.sh agent <task> --tier economy` | `... --tier premium` |
+| Worker | Economy                                                    | Premium              |
+| ------ | ---------------------------------------------------------- | -------------------- |
+| agent  | `bash scripts/spawn-worker.sh agent <task> --tier economy` | `... --tier premium` |
 
 ## Human gates
 
