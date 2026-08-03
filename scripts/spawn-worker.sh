@@ -217,19 +217,20 @@ case "$WORKER" in
   agy)
     need agy
     set +e
+    # Antigravity CLI uses a Go flag parser: -p / --print / --prompt TAKES THE PROMPT
+    # AS ITS VALUE. The old order
+    #     agy -p --dangerously-skip-permissions --model M "$PROMPT"
+    # therefore set print="--dangerously-skip-permissions" and DROPPED the real
+    # prompt: agy answered a question about the flag, exited 0, and the wrapper
+    # reported success having done no work. -p MUST come last, with the prompt as
+    # its value. --print-timeout defaults to 5m, too short for multi-file UI tasks.
+    AGY_ARGS=(--dangerously-skip-permissions --print-timeout 30m)
+    [ -n "$MODEL" ] && AGY_ARGS+=(--model "$MODEL")
     if [ "$WORKSPACE" = "$ROOT" ]; then
-      if [ -n "$MODEL" ]; then
-        agy -p --dangerously-skip-permissions --model "$MODEL" "$PROMPT" >>"$LOG" 2>&1
-      else
-        agy -p --dangerously-skip-permissions "$PROMPT" >>"$LOG" 2>&1
-      fi
+      agy "${AGY_ARGS[@]}" -p "$PROMPT" >>"$LOG" 2>&1
       EC=$?
     else
-      if [ -n "$MODEL" ]; then
-        ( cd "$WORKSPACE" && agy -p --dangerously-skip-permissions --model "$MODEL" "$PROMPT" ) >>"$LOG" 2>&1
-      else
-        ( cd "$WORKSPACE" && agy -p --dangerously-skip-permissions "$PROMPT" ) >>"$LOG" 2>&1
-      fi
+      ( cd "$WORKSPACE" && agy "${AGY_ARGS[@]}" -p "$PROMPT" ) >>"$LOG" 2>&1
       EC=$?
     fi
     set -e
