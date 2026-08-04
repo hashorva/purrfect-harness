@@ -38,6 +38,15 @@ check "skills copied"                        test -f "$TARGET/.agents/skills/dis
 check "missions ORCHESTRATION installed"     test -f "$TARGET/docs/missions/ORCHESTRATION.md"
 check "missions MODEL_ROUTING installed"     test -f "$TARGET/docs/missions/MODEL_ROUTING.md"
 check "missions templates installed"         test -f "$TARGET/docs/missions/templates/GOAL.template.md"
+# 2.2.4: every template feature must ship the bootstrap field, and the rules string must
+# explain it. verify-mission requires a worker receipt unless bootstrap is true, so a
+# template that stops carrying the field lets orchestrator-only features go green on
+# another feature's receipt with only a WARN.
+check "template features all carry bootstrap" sh -c "python3 -c \"import json,sys; d=json.load(open('$TARGET/docs/missions/templates/features.template.json')); sys.exit(0 if all('bootstrap' in f for f in d['features']) else 1)\""
+check "template rules explain bootstrap"      sh -c "python3 -c \"import json,sys; d=json.load(open('$TARGET/docs/missions/templates/features.template.json')); sys.exit(0 if 'bootstrap' in d['rules'] else 1)\""
+# grep for the flag literal, not the word: the skill's own description already contains
+# "bootstrap the loop", so a bare word match would pass without any guidance present.
+check "mission-init skill documents bootstrap" sh -c "grep -q '\"bootstrap\": true' '$TARGET/.agents/skills/mission-init/SKILL.md'"
 check "stub ORCHESTRATION at old path"       test -f "$TARGET/docs/ORCHESTRATION.md"
 check "spawn-worker.sh installed +x"         test -x "$TARGET/scripts/spawn-worker.sh"
 check "active-mission.sh installed +x"       test -x "$TARGET/scripts/active-mission.sh"

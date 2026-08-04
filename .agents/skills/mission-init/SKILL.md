@@ -75,6 +75,31 @@ Fill placeholders. Set `status: draft`. Paste inventory binds into Fleet.
 Validate: `python3 -c "import json; json.load(open('$MISSION/features.json'))"`.
 Only create `tasks/T-001.md` at init (later tasks after reviews).
 
+### `"bootstrap"` — set it at authoring time, never after
+
+Every feature carries a `"bootstrap"` boolean. It is **not** cosmetic:
+`verify-mission.sh` requires a worker receipt for each `passes: true` feature
+**unless** that feature is `"bootstrap": true`.
+
+- **`false` (the default)** — anything a worker will implement. Needs a receipt.
+- **`true`** — features **no worker will ever run**: orchestrator-authored `AGENTS.md`
+  and docs edits, mission scaffolding, decisions recorded by the brain.
+
+**Keep the field on every feature you author.** The template ships it as `false` on each
+entry; when you write a real `features.json` it is tempting to drop it as noise. Don't —
+a missing field is not `true`, but it does mean the mission's own record no longer says
+whether a receipt was ever expected.
+
+Getting this wrong is quiet, not loud. A `passes: true` orchestrator-only feature with no
+`bootstrap` flag makes `verify-mission` fall back to accepting *any* worker receipt and
+emit only a WARN, so the mission goes green on a receipt that belongs to a different
+feature. That has already happened once in a real mission.
+
+**Decide it when you write the feature, not when the gate complains.** Adding
+`"bootstrap": true` after GATE 0 is an edit to an approved feature — the one thing
+`features.json`'s own rules forbid — so the honest fix at that point is to flag it and
+carry it to the next mission, which costs a whole cycle.
+
 ## Step 3 — GATE 0 (mandatory stop)
 
 **Brain CLI proof (mandatory unless human names current-chat chair):**
