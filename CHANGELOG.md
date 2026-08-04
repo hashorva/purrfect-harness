@@ -1,5 +1,21 @@
 # Changelog — agent-harness kit
 
+## 2.2.4 (2026-08-04)
+
+- **`"bootstrap"` authoring guidance.** 2.2.2 made `verify-mission.sh` require an explicit
+  `"bootstrap": true` for brain-only features, but nothing told the orchestrator *when* to
+  set it — so a real mission authored an orchestrator-only feature (an `AGENTS.md` edit)
+  without the field, and it went green on `verify-mission`'s any-worker fallback with only
+  a WARN. `mission-init/SKILL.md` now states the rule, why the failure is quiet rather than
+  loud, and that the decision belongs at authoring time: adding the flag after GATE 0 is an
+  edit to an approved feature, which `features.json`'s own rules forbid.
+- The template's `rules` string now carries the same instruction, so it is visible inside
+  every mission's `features.json` rather than only in the skill.
+- Tests: every template feature must ship the `bootstrap` field, the template `rules` must
+  explain it, and the `mission-init` skill must document it.
+- No behaviour change to `verify-mission.sh` — the gate was already correct; only the
+  guidance around it was missing.
+
 ## 2.2.3 (2026-08-03)
 
 - **Fix: the `agy` lane never worked.** Antigravity's CLI uses a Go flag parser in

@@ -1,6 +1,6 @@
 {
   "mission": "{{MISSION_NAME}}",
-  "rules": "Agents may ONLY flip 'passes' from false to true, after verifying every step. Editing or removing descriptions/steps is unacceptable and will be treated as a failed task.",
+  "rules": "Agents may ONLY flip 'passes' from false to true, after verifying every step. Editing or removing descriptions/steps is unacceptable and will be treated as a failed task. Keep the 'bootstrap' field on every feature: false (default) means a worker implements it and verify-mission requires a worker receipt; true means no worker will ever run it (orchestrator-authored docs, AGENTS.md, mission scaffolding). Set it when authoring — adding it after GATE 0 is an edit to an approved feature.",
   "features": [
     {
       "id": "F001",
@@ -20,6 +20,7 @@
       "id": "F002",
       "category": "non-functional",
       "priority": 2,
+      "bootstrap": false,
       "description": "{{e.g.: All new UI uses Luma-styled shadcn components — verified per shadcn-luma skill checklist}}",
       "steps": ["{{...}}"],
       "passes": false
