@@ -15,6 +15,24 @@ check() { # check <description> <command...>
   else echo "  FAIL : $desc"; FAIL=1; fi
 }
 
+# ---- kit version consistency (same extraction as .github/workflows/ci.yml) ----
+# Catch README/CHANGELOG drift before push. CI remains the backstop; this fails in
+# seconds locally. Forgotten twice at v2.2.4 and v2.2.5 — that is the bar.
+echo "== kit version consistency (README vs CHANGELOG)"
+README_V="$(grep -m1 '^version:' README.md | awk '{print $2}')"
+CHANGELOG_V="$(grep -m1 '^## ' CHANGELOG.md | sed 's/## //;s/ .*//')"
+check "README version matches CHANGELOG head" test "$README_V" = "$CHANGELOG_V"
+# Non-vacuous: identical extraction against deliberately mismatched files must fail.
+VERSION_MISMATCH="$(mktemp -d)"
+printf '%s\n' '---' 'version: 0.0.0' '---' > "$VERSION_MISMATCH/README.md"
+printf '%s\n' '## 9.9.9 (2099-01-01)' '- drift' > "$VERSION_MISMATCH/CHANGELOG.md"
+check "version mismatch fails the same extraction CI uses" sh -c "
+  RV=\$(grep -m1 '^version:' '$VERSION_MISMATCH/README.md' | awk '{print \$2}')
+  CV=\$(grep -m1 '^## ' '$VERSION_MISMATCH/CHANGELOG.md' | sed 's/## //;s/ .*//')
+  ! [ \"\$RV\" = \"\$CV\" ]
+"
+rm -rf "$VERSION_MISMATCH"
+
 TARGET="$(mktemp -d)"
 trap 'rm -rf "$TARGET"' EXIT
 

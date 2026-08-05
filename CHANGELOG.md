@@ -1,5 +1,15 @@
 # Changelog — agent-harness kit
 
+## 2.2.8 (2026-08-05)
+
+- **README/CHANGELOG version match enforced in `tests/run-tests.sh`.** Same extraction
+  as `.github/workflows/ci.yml` (`version:` vs top `##` heading), plus a non-vacuous
+  mismatch fixture so the check cannot pass vacuously. CI stays as the backstop —
+  this fails seconds before a push instead of minutes after one. Forgotten at v2.2.4
+  and v2.2.5; that is enough.
+- `docs/RELEASING.md` names the README bump and the local test as required release
+  steps, not optional memory.
+
 ## 2.2.7 (2026-08-05)
 
 - **Fix: the v2.2.6 codex stdin redirect was never applied.** The changelog and the

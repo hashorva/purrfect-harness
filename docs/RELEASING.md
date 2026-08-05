@@ -15,17 +15,20 @@ Versioning is SemVer, interpreted for a harness:
 ## Release procedure
 
 ```bash
-cd ~/Projects/purrfect-harness
+cd ~/dev/purrfect-harness   # or wherever the kit lives
 # 1. Make changes on a branch, merge to main
 # 2. Add a CHANGELOG.md entry at the TOP (## X.Y.Z (date) + bullets)
-# 3. Bump version: in README.md frontmatter
-# 4. Commit the release prep
+# 3. Bump version: in README.md frontmatter — REQUIRED. CI and
+#    tests/run-tests.sh both compare README 'version:' to the top CHANGELOG
+#    heading with the same extraction. Skipping this failed v2.2.4 and v2.2.5.
+# 4. Run bash tests/run-tests.sh (catches the version mismatch locally)
+# 5. Commit the release prep
 git add -A && git commit -m "release: vX.Y.Z"
-# 5. ANNOTATED tag (not lightweight — carries author/date/message)
+# 6. ANNOTATED tag (not lightweight — carries author/date/message)
 git tag -a vX.Y.Z -m "vX.Y.Z — one-line summary"
-# 6. Push commit AND tag (tags are NOT pushed by default!)
+# 7. Push commit AND tag (tags are NOT pushed by default!)
 git push && git push origin vX.Y.Z
-# 7. Optional, for the public showcase era:
+# 8. Optional, for the public showcase era:
 gh release create vX.Y.Z --title "vX.Y.Z" --notes-from-tag
 ```
 
