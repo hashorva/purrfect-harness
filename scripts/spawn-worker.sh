@@ -2,7 +2,7 @@
 # spawn-worker.sh — run a WORKER_TASK via a real local CLI agent (Mac Mini / studio).
 # Usage (from the consuming repo root):
 #   bash scripts/spawn-worker.sh <codex|agent|agy|claude> <path-to-task.md> \
-#        [--tier economy|premium] [--model <id>] [--feature F00X] [--repo <path>] \
+#        [--tier economy|premium] [--model <id>] [--effort <value>] [--feature F00X] [--repo <path>] \
 #        [extra prompt...]
 #
 # Model resolution order:
@@ -33,7 +33,7 @@ fi
 set -euo pipefail
 
 usage() {
-  echo "Usage: spawn-worker.sh <codex|agent|agy|claude> <task.md> [--tier economy|premium] [--model <id>] [--feature ID] [--repo <path>]" >&2
+  echo "Usage: spawn-worker.sh <codex|agent|agy|claude> <task.md> [--tier economy|premium] [--model <id>] [--effort <value>] [--feature ID] [--repo <path>]" >&2
   exit 2
 }
 
@@ -44,6 +44,7 @@ shift 2
 
 TIER=""
 MODEL_OVERRIDE=""
+EFFORT="medium"
 FEATURE=""
 REPO_IN=""
 EXTRA_ARGS=()
@@ -51,6 +52,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --tier) TIER="${2:?}"; shift 2 ;;
     --model) MODEL_OVERRIDE="${2:?}"; shift 2 ;;
+    --effort) EFFORT="${2:?}"; shift 2 ;;
     --feature) FEATURE="${2:?}"; shift 2 ;;
     --repo) REPO_IN="${2:?}"; shift 2 ;;
     *) EXTRA_ARGS+=("$1"); shift ;;
@@ -201,7 +203,7 @@ case "$WORKER" in
     need codex
     set +e
     codex exec -C "$WORKSPACE" -s workspace-write -m "$MODEL" \
-      -c 'model_reasoning_effort="medium"' \
+      -c "model_reasoning_effort=\"$EFFORT\"" \
       "$PROMPT" >>"$LOG" 2>&1
     EC=$?
     set -e

@@ -94,7 +94,7 @@ STUB_OUT="$TARGET/.agy-args"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" > "%s"\nexit 0\n' "$STUB_OUT" > "$STUBBIN/agy"
 chmod +x "$STUBBIN/agy"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
-    bash scripts/spawn-worker.sh agy docs/missions/20990101-fixture/GOAL.md --tier premium ) >/dev/null 2>&1 || true
+    bash scripts/spawn-worker.sh agy docs/missions/20990101-fixture/GOAL.md --tier premium --effort xhigh ) >/dev/null 2>&1 || true
 check "agy receives the real prompt as the value of -p" \
   sh -c "grep -q -- '-p Read ' '$STUB_OUT'"
 check "agy -p is not fed the permissions flag" \
@@ -111,11 +111,91 @@ CLAUDE_OUT="$TARGET/.claude-args"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" > "%s"\nexit 0\n' "$CLAUDE_OUT" > "$STUBBIN/claude"
 chmod +x "$STUBBIN/claude"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
-    bash scripts/spawn-worker.sh claude docs/missions/20990101-fixture/GOAL.md --tier premium ) >/dev/null 2>&1 || true
+    bash scripts/spawn-worker.sh claude docs/missions/20990101-fixture/GOAL.md --tier premium --effort xhigh ) >/dev/null 2>&1 || true
 check "claude receives the prompt immediately after -p" \
   sh -c "grep -q -- '-p Read ' '$CLAUDE_OUT'"
 check "claude prompt is not placed after --allowedTools" \
   sh -c "! grep -qE -- '--allowedTools [^ ]+ Read ' '$CLAUDE_OUT'"
+
+# ---- codex prompt/argument and stdin regressions ----
+# Keep this stub's stdin read: codex waits for additional input unless its stdin is
+# explicitly closed by spawn-worker.sh. The argument file is one line per argv entry so
+# the exact flag/value boundaries and final prompt position are asserted, not just $*.
+echo "== codex prompt, effort, and stdin"
+CODEX_OUT="$TARGET/.codex-args"
+CODEX_EOF_MARK="$TARGET/.codex-eof"
+CODEX_STUB_PID="$TARGET/.codex-stub-pid"
+printf '#!/usr/bin/env bash\nset -euo pipefail\nprintf "%%s\\n" "$$" > "%s"\nwhile IFS= read -r _codex_stdin_line; do :; done\ntouch "%s"\nprintf "%%s\\n" "$(basename "$0")" "$@" > "%s"\nexit 0\n' "$CODEX_STUB_PID" "$CODEX_EOF_MARK" "$CODEX_OUT" > "$STUBBIN/codex"
+chmod +x "$STUBBIN/codex"
+CODEX_MODEL="codex-test-model"
+CODEX_PROMPT="Read docs/missions/20990101-fixture/GOAL.md and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder. "
+CODEX_EXPECTED="$TARGET/.codex-expected"
+printf '%s\n' codex exec -C "$TARGET" -s workspace-write -m "$CODEX_MODEL" \
+  '-c' 'model_reasoning_effort="medium"' "$CODEX_PROMPT" > "$CODEX_EXPECTED"
+( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
+    bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/GOAL.md \
+      --tier economy --model "$CODEX_MODEL" ) >/dev/null 2>&1 || true
+check "codex receives the exact invocation with medium default" \
+  cmp -s "$CODEX_EXPECTED" "$CODEX_OUT"
+
+CODEX_EXPECTED_XHIGH="$TARGET/.codex-expected-xhigh"
+printf '%s\n' codex exec -C "$TARGET" -s workspace-write -m "$CODEX_MODEL" \
+  '-c' 'model_reasoning_effort="xhigh"' "$CODEX_PROMPT" > "$CODEX_EXPECTED_XHIGH"
+( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
+    bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/GOAL.md \
+      --tier economy --model "$CODEX_MODEL" --effort xhigh ) >/dev/null 2>&1 || true
+check "codex receives --effort xhigh" \
+  cmp -s "$CODEX_EXPECTED_XHIGH" "$CODEX_OUT"
+
+# Hold the wrapper's stdin open through a FIFO. The fixed codex branch redirects the
+# CLI's stdin to /dev/null and exits; the broken branch leaves the EOF-reading stub blocked.
+CODEX_FIFO="$TARGET/.codex-stdin"
+rm -f "$CODEX_EOF_MARK" "$CODEX_STUB_PID"
+mkfifo "$CODEX_FIFO"
+exec 9<>"$CODEX_FIFO"
+set +e
+( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
+    bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/GOAL.md \
+      --tier economy --model "$CODEX_MODEL" ) <"$CODEX_FIFO" >/dev/null 2>&1 &
+CODEX_PID=$!
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  [ -f "$CODEX_EOF_MARK" ] && break
+  sleep 0.1
+done
+if [ -f "$CODEX_EOF_MARK" ]; then
+  wait "$CODEX_PID"
+  CODEX_STDIN_EOF=$?
+else
+  CODEX_STUB_PID_VALUE=""
+  if [ -f "$CODEX_STUB_PID" ]; then
+    CODEX_STUB_PID_VALUE="$(<"$CODEX_STUB_PID")"
+  fi
+  [ -n "$CODEX_STUB_PID_VALUE" ] && kill "$CODEX_STUB_PID_VALUE" 2>/dev/null || true
+  kill "$CODEX_PID" 2>/dev/null || true
+  exec 9>&-
+  wait "$CODEX_PID" 2>/dev/null || true
+  CODEX_STDIN_EOF=1
+fi
+set -e
+exec 9>&-
+rm -f "$CODEX_FIFO" "$CODEX_STUB_PID"
+check "codex stdin is closed so EOF-reading stub returns" test "$CODEX_STDIN_EOF" -eq 0
+
+# ---- agent prompt/argument regression ----
+# Agent's -p is boolean. Assert the full invocation and final prompt, including every
+# value-taking option, so a simplified smoke test cannot pass a swallowed prompt.
+echo "== agent prompt and argument order"
+AGENT_OUT="$TARGET/.agent-args"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$(basename "$0")" "$@" > "%s"\nexit 0\n' "$AGENT_OUT" > "$STUBBIN/agent"
+chmod +x "$STUBBIN/agent"
+AGENT_MODEL="agent-test-model"
+AGENT_EXPECTED="$TARGET/.agent-expected"
+printf '%s\n' agent -p --force --trust --workspace "$TARGET" --model "$AGENT_MODEL" "$CODEX_PROMPT" > "$AGENT_EXPECTED"
+( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
+    bash scripts/spawn-worker.sh agent docs/missions/20990101-fixture/GOAL.md \
+      --tier economy --model "$AGENT_MODEL" --effort xhigh ) >/dev/null 2>&1 || true
+check "agent receives the exact invocation with intact final prompt" \
+  cmp -s "$AGENT_EXPECTED" "$AGENT_OUT"
 
 # ---- legacy parent-symlink must be migrated safely ----
 echo "== sync-skills parent-symlink migration"

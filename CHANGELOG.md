@@ -1,5 +1,24 @@
 # Changelog — agent-harness kit
 
+## 2.2.6 (2026-08-05)
+
+- **Fix: the `codex` lane hung forever.** `codex exec` blocks reading stdin unless stdin is
+  closed; `spawn-worker.sh` never closed it, so every codex dispatch stalled on
+  "Reading additional input from stdin...". Now redirects `< /dev/null`.
+  **Third of four lanes found broken** — and a different failure mode from `agy` (2.2.3)
+  and `claude` (2.2.5), which were flags eating the positional prompt. An argument-shape
+  stub would not have caught this one.
+- **`--effort <value>`** passthrough for codex (`-c model_reasoning_effort="<value>"`);
+  omitting it keeps the previous `medium` default. Ignored for other lanes.
+- **codex and agent lanes now stub-tested**, comparing the full argv against an expected
+  file (`cmp`), so flag/value boundaries and final prompt position are asserted exactly —
+  not a simplified invocation.
+- **stdin regression test** holds the wrapper's stdin open via a FIFO and asserts the stub
+  reaches EOF, with a bounded failure path so a regression fails in seconds instead of
+  hanging.
+- Releaser note: bump `README.md`'s `version:` line with the CHANGELOG — CI compares them.
+
+
 ## 2.2.5 (2026-08-05)
 
 - **Fix: the `claude` worker lane never worked either.** `--allowedTools` is **variadic** —
