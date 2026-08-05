@@ -1,5 +1,23 @@
 # Changelog — agent-harness kit
 
+## 2.2.5 (2026-08-05)
+
+- **Fix: the `claude` worker lane never worked either.** `--allowedTools` is **variadic** —
+  it keeps consuming following arguments as tool names — so `spawn-worker.sh`'s
+  `claude -p --model M --allowedTools "Read,Write,Edit,Bash" "$PROMPT"` fed the prompt to
+  `--allowedTools` and claude exited with *"Input must be provided either through stdin or
+  as a prompt argument when using --print"*. The prompt now comes **before** the flags.
+- **Same failure family as the `agy` fix in 2.2.3** — a flag eating the positional prompt.
+  Two of the four worker lanes shipped broken this way. A CLI smoke test that omits the
+  real flags will not catch it: `claude -p --model sonnet "..."` succeeds, and only fails
+  once `--allowedTools` is in the line. **Smoke-test the exact invocation the harness uses,
+  not a simplified one.**
+- Regression tests: a stub `claude` on `PATH` asserts the prompt follows `-p` directly and
+  is never positioned after `--allowedTools`.
+- `codex` and `agent` lanes unchanged. `codex`'s `-c` takes exactly one value and `agent`'s
+  `-p` is a boolean, so neither shows this shape — but neither is covered by a stub test
+  yet, and that gap is worth closing next.
+
 ## 2.2.4 (2026-08-04)
 
 - **`"bootstrap"` authoring guidance.** 2.2.2 made `verify-mission.sh` require an explicit

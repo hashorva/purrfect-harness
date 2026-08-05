@@ -238,15 +238,18 @@ case "$WORKER" in
   claude)
     need claude
     set +e
+    # --allowedTools is VARIADIC: it keeps consuming following arguments as tool
+    # names, so a prompt placed after it is swallowed and claude exits with
+    # "Input must be provided either through stdin or as a prompt argument".
+    # The prompt must come BEFORE the flags. Same failure family as the agy
+    # lane fixed in 2.2.3 — a flag eating the positional prompt.
     if [ "$WORKSPACE" = "$ROOT" ]; then
-      claude -p --model "$MODEL" \
-        --allowedTools "Read,Write,Edit,Bash" \
-        "$PROMPT" >>"$LOG" 2>&1
+      claude -p "$PROMPT" --model "$MODEL" \
+        --allowedTools "Read,Write,Edit,Bash" >>"$LOG" 2>&1
       EC=$?
     else
-      ( cd "$WORKSPACE" && claude -p --model "$MODEL" \
-        --allowedTools "Read,Write,Edit,Bash" \
-        "$PROMPT" ) >>"$LOG" 2>&1
+      ( cd "$WORKSPACE" && claude -p "$PROMPT" --model "$MODEL" \
+        --allowedTools "Read,Write,Edit,Bash" ) >>"$LOG" 2>&1
       EC=$?
     fi
     set -e
