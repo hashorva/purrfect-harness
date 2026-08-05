@@ -91,6 +91,7 @@ check "spawn-worker --repo rejects missing path" sh -c "cd '$TARGET' && bash scr
 echo "== agy prompt-flag order"
 STUBBIN="$TARGET/.stubbin"; mkdir -p "$STUBBIN"
 STUB_OUT="$TARGET/.agy-args"
+# shellcheck disable=SC2016  # printf template: $ must stay literal
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" > "%s"\nexit 0\n' "$STUB_OUT" > "$STUBBIN/agy"
 chmod +x "$STUBBIN/agy"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
@@ -108,6 +109,7 @@ check "agy gets a print-timeout longer than the 5m default" \
 # either through stdin or as a prompt argument". The prompt must precede the flags.
 echo "== claude prompt position"
 CLAUDE_OUT="$TARGET/.claude-args"
+# shellcheck disable=SC2016  # printf template: $ must stay literal
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" > "%s"\nexit 0\n' "$CLAUDE_OUT" > "$STUBBIN/claude"
 chmod +x "$STUBBIN/claude"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
@@ -125,6 +127,7 @@ echo "== codex prompt, effort, and stdin"
 CODEX_OUT="$TARGET/.codex-args"
 CODEX_EOF_MARK="$TARGET/.codex-eof"
 CODEX_STUB_PID="$TARGET/.codex-stub-pid"
+# shellcheck disable=SC2016  # printf template: $ must stay literal
 printf '#!/usr/bin/env bash\nset -euo pipefail\nprintf "%%s\\n" "$$" > "%s"\nwhile IFS= read -r _codex_stdin_line; do :; done\ntouch "%s"\nprintf "%%s\\n" "$(basename "$0")" "$@" > "%s"\nexit 0\n' "$CODEX_STUB_PID" "$CODEX_EOF_MARK" "$CODEX_OUT" > "$STUBBIN/codex"
 chmod +x "$STUBBIN/codex"
 CODEX_MODEL="codex-test-model"
@@ -170,7 +173,7 @@ else
   if [ -f "$CODEX_STUB_PID" ]; then
     CODEX_STUB_PID_VALUE="$(<"$CODEX_STUB_PID")"
   fi
-  [ -n "$CODEX_STUB_PID_VALUE" ] && kill "$CODEX_STUB_PID_VALUE" 2>/dev/null || true
+  if [ -n "$CODEX_STUB_PID_VALUE" ]; then kill "$CODEX_STUB_PID_VALUE" 2>/dev/null || true; fi
   kill "$CODEX_PID" 2>/dev/null || true
   exec 9>&-
   wait "$CODEX_PID" 2>/dev/null || true
@@ -186,6 +189,7 @@ check "codex stdin is closed so EOF-reading stub returns" test "$CODEX_STDIN_EOF
 # value-taking option, so a simplified smoke test cannot pass a swallowed prompt.
 echo "== agent prompt and argument order"
 AGENT_OUT="$TARGET/.agent-args"
+# shellcheck disable=SC2016  # printf template: $ must stay literal
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$(basename "$0")" "$@" > "%s"\nexit 0\n' "$AGENT_OUT" > "$STUBBIN/agent"
 chmod +x "$STUBBIN/agent"
 AGENT_MODEL="agent-test-model"
