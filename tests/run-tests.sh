@@ -102,6 +102,21 @@ check "agy -p is not fed the permissions flag" \
 check "agy gets a print-timeout longer than the 5m default" \
   sh -c "grep -q -- '--print-timeout' '$STUB_OUT'"
 
+# ---- claude prompt-position regression (2.2.5) ----
+# claude's --allowedTools is VARIADIC: it keeps consuming following args as tool names,
+# so a prompt placed after it is swallowed and claude exits with "Input must be provided
+# either through stdin or as a prompt argument". The prompt must precede the flags.
+echo "== claude prompt position"
+CLAUDE_OUT="$TARGET/.claude-args"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" > "%s"\nexit 0\n' "$CLAUDE_OUT" > "$STUBBIN/claude"
+chmod +x "$STUBBIN/claude"
+( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
+    bash scripts/spawn-worker.sh claude docs/missions/20990101-fixture/GOAL.md --tier premium ) >/dev/null 2>&1 || true
+check "claude receives the prompt immediately after -p" \
+  sh -c "grep -q -- '-p Read ' '$CLAUDE_OUT'"
+check "claude prompt is not placed after --allowedTools" \
+  sh -c "! grep -qE -- '--allowedTools [^ ]+ Read ' '$CLAUDE_OUT'"
+
 # ---- legacy parent-symlink must be migrated safely ----
 echo "== sync-skills parent-symlink migration"
 git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "harness install"
