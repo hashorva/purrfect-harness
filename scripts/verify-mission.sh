@@ -108,6 +108,24 @@ if require_workers or need_worker:
             f"({[f.get('id') for f in need_worker]}). Run spawn-worker.sh."
         )
     # Per-feature: if feature id set on receipt, enforce match; else any worker ok for now
+    def check_workspace_changed(fid, p, d):
+        # False-green guard: exit=0 is not proof of work. dispatch-worker/SKILL.md's
+        # false-green checklist made this explicit after two silent no-op
+        # "successes" (agy flag-parsing bug; a mocked stub reporting green with
+        # no edits) reached this point undetected. `workspace_changed` is written
+        # by spawn-worker.sh from actual git state around the CLI invocation.
+        changed = d.get("workspace_changed")
+        if changed is False:
+            fail.append(
+                f"feature {fid}: receipt {p.name} has exit=0 but workspace_changed=false "
+                f"(0 commits, 0 dirty files) — this looks like a false green, not a PASS. "
+                f"Read {d.get('log')} before trusting it."
+            )
+            return False
+        if changed is None:
+            print(f"WARN {fid}: receipt {p.name} predates workspace_changed tracking — verify the diff by hand")
+        return True
+
     for f in need_worker:
         fid = f.get("id")
         matched = [
@@ -117,10 +135,14 @@ if require_workers or need_worker:
         # Prefer explicit feature match
         explicit = [(p, d) for p, d in ok_workers if d.get("feature") == fid]
         if explicit:
-            print(f"OK worker for {fid}: {explicit[-1][0].name} cli={explicit[-1][1].get('cli')}")
+            p, d = explicit[-1]
+            if check_workspace_changed(fid, p, d):
+                print(f"OK worker for {fid}: {p.name} cli={d.get('cli')}")
         elif ok_workers:
             # soft: warn if no explicit feature tag
-            print(f"WARN {fid}: no receipt with feature={fid}; accepting any worker receipt (tag --feature next time)")
+            p, d = ok_workers[-1]
+            if check_workspace_changed(fid, p, d):
+                print(f"WARN {fid}: no receipt with feature={fid}; accepting any worker receipt (tag --feature next time)")
         else:
             fail.append(f"feature {fid} passes:true but no worker receipt with exit=0")
 

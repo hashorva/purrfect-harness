@@ -1,5 +1,27 @@
 # Changelog — agent-harness kit
 
+## 2.2.9 (2026-08-05)
+
+- **Mechanized false-green detection for `dispatch-worker`.** `exit=0` from
+  `spawn-worker.sh` has already produced two silent no-op "successes" in a
+  consuming repo (agy's Go-style flag parser swallowing the prompt into `-p`'s
+  value; a mocked test suite reporting green twice with no edits — both
+  `catalog-truth` F004/F009). `verify-mission.sh` only checked receipt
+  `exit==0` + feature-tag match, never whether anything actually changed.
+  - `spawn-worker.sh` now captures the workspace's git `HEAD` before/after
+    every CLI invocation, computes commits made + dirty files, and logs an
+    inline `WARNING` on `exit=0`-but-unchanged.
+  - `write-receipt.sh` accepts `--commits-made`/`--dirty-after` and derives
+    `workspace_changed` (`true`/`false`/`null`) onto worker receipts.
+  - `verify-mission.sh` hard-fails any `passes: true` feature whose matched
+    worker receipt has `workspace_changed: false`. Receipts predating this
+    field (`null`) WARN instead of failing — no retroactive breakage for
+    existing `.tasks/receipts/`.
+  - `dispatch-worker/SKILL.md`'s false-green checklist now documents this as
+    an enforced gate, not a manual reminder.
+  - Brain receipts are untouched — `mission-init`/`gate0`/`review` don't all
+    produce a diff (`review` must not), so the check is worker-only.
+
 ## 2.2.8 (2026-08-05)
 
 - **README/CHANGELOG version match enforced in `tests/run-tests.sh`.** Same extraction

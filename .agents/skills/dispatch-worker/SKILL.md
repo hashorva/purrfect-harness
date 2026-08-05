@@ -99,6 +99,36 @@ Judge by exit code, `tail -20` of `.tasks/logs/T-XXX.log`, `git status`,
   reassign; if Grok infra-fails on agent premium, retry `--tier economy`
   (Composer) or next CLI.
 
+### False-green checklist — `exit=0` is not proof of work
+
+Two silent false-greens have already reached this point undetected: agy's
+Go-style flag parser once swallowed the prompt into `-p`'s value and exited 0
+having only answered a question about the flag (`catalog-truth` F004); a
+mocked test suite reported green twice without touching the target file
+(`catalog-truth` F009).
+
+`scripts/spawn-worker.sh` now captures git state around every CLI invocation
+and `scripts/write-receipt.sh` records it on the receipt as `commits_made` /
+`dirty_after` / `workspace_changed`. `scripts/verify-mission.sh` hard-fails any
+`passes: true` feature whose matched receipt has `exit=0` but
+`workspace_changed: false` — that mechanical check is not optional and you
+cannot bypass it by re-running `verify-mission.sh`. Receipts written before
+this existed have `workspace_changed: null` and only WARN; treat a WARN as "go
+verify the diff by hand," not as a pass.
+
+Before trusting ANY receipt as a PASS, in addition to `verify-mission.sh` green:
+
+- [ ] `git diff --stat` (worker's workspace) shows changes in the task's
+      allow-listed files, not just wherever `workspace_changed` says nonzero
+- [ ] `tail -40` of `.tasks/logs/…` shows the CLI actually reading the task and
+      producing tool calls/edits — not prose *about* a flag, a refusal, or a
+      question back to the user
+- [ ] The receipt's `feature` field matches the feature being flipped (see
+      "Never" below — a missing tag is not silently acceptable)
+- [ ] If `workspace_changed` is `false` and the task expected code changes,
+      that is an INFRASTRUCTURE or CAPABILITY fail per Step 3 above — rewrite
+      or reassign, never re-flip `passes: true` on the same receipt
+
 ## Human gates
 
 Set `awaiting-gate` → ask for GATE n verdict → PROGRESS Human entry → `done` or

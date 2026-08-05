@@ -198,6 +198,12 @@ PROMPT="Read ${PROMPT_TASK} and complete it exactly. Follow AGENTS.md and the sk
   echo "----"
 } | tee "$LOG"
 
+# False-green evidence: capture workspace git state before the CLI runs so we
+# can prove afterward whether anything actually changed. exit=0 alone has
+# already produced silent no-op "successes" (agy flag-parsing bug, a mocked
+# stub reporting green with no edits) — see dispatch-worker/SKILL.md.
+GIT_BEFORE="$(git -C "$WORKSPACE" rev-parse HEAD 2>/dev/null || echo '')"
+
 case "$WORKER" in
   codex)
     need codex
@@ -269,11 +275,24 @@ esac
 echo "----" | tee -a "$LOG"
 echo "exit=$EC" | tee -a "$LOG"
 
+# False-green evidence, part 2: did the workspace actually change?
+GIT_AFTER="$(git -C "$WORKSPACE" rev-parse HEAD 2>/dev/null || echo '')"
+COMMITS_MADE=0
+if [ -n "$GIT_BEFORE" ] && [ -n "$GIT_AFTER" ] && [ "$GIT_BEFORE" != "$GIT_AFTER" ]; then
+  COMMITS_MADE="$(git -C "$WORKSPACE" rev-list --count "$GIT_BEFORE..$GIT_AFTER" 2>/dev/null || echo 0)"
+fi
+DIRTY_AFTER="$(git -C "$WORKSPACE" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+[ -n "$DIRTY_AFTER" ] || DIRTY_AFTER=0
+if [ "$EC" -eq 0 ] && [ "$COMMITS_MADE" -eq 0 ] && [ "$DIRTY_AFTER" -eq 0 ]; then
+  echo "WARNING: exit=0 but workspace unchanged (0 commits, 0 dirty files) — likely a false green, do not trust this as a PASS without reading the log" | tee -a "$LOG"
+fi
+
 ARGV_JSON="$(python3 -c "import json; print(json.dumps(['$WORKER','--tier','$TIER','--model','$MODEL']))")"
 REC_ARGS=(
   --role worker --cli "$WORKER" --model "$MODEL" --mission "$MISSION"
   --action "task-${BASE}" --exit "$EC" --log "$LOG_REL" --task "$TASK_REL"
   --tier "$TIER" --argv "$ARGV_JSON" --repo "$WORKSPACE"
+  --commits-made "$COMMITS_MADE" --dirty-after "$DIRTY_AFTER"
 )
 if [ -n "$FEATURE" ]; then
   REC_ARGS+=(--feature "$FEATURE")
