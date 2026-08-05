@@ -1,5 +1,15 @@
 # Changelog — agent-harness kit
 
+## 2.2.7 (2026-08-05)
+
+- **Fix: the v2.2.6 codex stdin redirect was never applied.** The changelog and the
+  stdin regression test both assumed `codex exec … < /dev/null`, but
+  `scripts/spawn-worker.sh`'s codex arm still inherited stdin. CI failed on
+  `codex stdin is closed so EOF-reading stub returns` (~1s bounded kill) while a
+  simplified local run often passed because the test process's stdin was already
+  closed. The redirect is now on the real invocation. Do **not** "fix" this by
+  only widening the test wait window — that masks a missing redirect.
+
 ## 2.2.6 (2026-08-05)
 
 - **Fix: the `codex` lane hung forever.** `codex exec` blocks reading stdin unless stdin is

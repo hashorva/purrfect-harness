@@ -202,9 +202,13 @@ case "$WORKER" in
   codex)
     need codex
     set +e
+    # codex exec reads stdin for "additional input" until EOF. Leave it inherited
+    # and a dispatch hangs forever when the caller keeps stdin open (pipes, FIFOs,
+    # orchestrator wrappers). Always close it. The run-tests.sh stdin regression
+    # holds a FIFO open on purpose — without this redirect that check fails.
     codex exec -C "$WORKSPACE" -s workspace-write -m "$MODEL" \
       -c "model_reasoning_effort=\"$EFFORT\"" \
-      "$PROMPT" >>"$LOG" 2>&1
+      "$PROMPT" >>"$LOG" 2>&1 < /dev/null
     EC=$?
     set -e
     ;;
