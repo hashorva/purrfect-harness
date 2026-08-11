@@ -1,6 +1,14 @@
 ---
 spec: AGENTS.md v1.1 (aligned to FinDuck skeleton, Jul 2026)
-tools: {{Claude Code (backend/execution), Antigravity (frontend), Codex (execution), Cursor (parallel implementation)}}
+tools:
+  {
+    {
+      Claude Code (backend/execution),
+      Antigravity (frontend),
+      Codex (execution),
+      Cursor (parallel implementation),
+    },
+  }
 ---
 
 # {{PROJECT_NAME}} — Agent Instructions
@@ -26,14 +34,14 @@ Part of purrfect.build studio (4 products sharing infrastructure). Live at: {{do
 
 ## Package manager — {{npm only}}
 
-| Task | Command |
-| --- | --- |
-| Install | {{npm install}} |
-| Dev server | {{npm run dev}} |
-| Production build | {{npm run build}} |
+| Task             | Command               |
+| ---------------- | --------------------- |
+| Install          | {{npm install}}       |
+| Dev server       | {{npm run dev}}       |
+| Production build | {{npm run build}}     |
 | TypeScript check | {{npm run typecheck}} |
-| Tests | {{npm test}} |
-| Lint | {{npm run lint}} |
+| Tests            | {{npm test}}          |
+| Lint             | {{npm run lint}}      |
 
 ## Security invariants — never violate
 

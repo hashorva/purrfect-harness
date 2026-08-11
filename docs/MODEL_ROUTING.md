@@ -1,7 +1,7 @@
 ---
 title: Moved
 ---
-
+<!-- markdownlint-disable MD025 -->
 # Moved
 
 Model routing lives at [`docs/missions/MODEL_ROUTING.md`](missions/MODEL_ROUTING.md).

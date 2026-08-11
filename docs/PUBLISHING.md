@@ -3,6 +3,8 @@ title: Publishing & Releasing on GitHub
 updated: 2026-07-19
 ---
 
+<!-- markdownlint-disable MD025 -->
+
 # Publishing the harness (first time) and releasing (every version)
 
 Prereqs: `gh` installed and authenticated (`gh auth status`), macOS.
@@ -74,7 +76,7 @@ Settings → Branches → Add rule → `main` → require status checks → lint
 
 - Release workflow fails "Tag != CHANGELOG": you tagged before updating
   CHANGELOG.md. Fix CHANGELOG, `git tag -d vX.Y.Z`, `git push origin
-  :refs/tags/vX.Y.Z`, re-tag.
+:refs/tags/vX.Y.Z`, re-tag.
 - CI fails on shellcheck after editing a script: read the SC code it prints;
   they are almost always real bugs (unquoted vars, word-splitting).
 - `gh repo create` says name exists: you are in case 3b — add the remote.

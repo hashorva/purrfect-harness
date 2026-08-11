@@ -3,6 +3,8 @@ title: Orchestration Protocol
 version: 2.2.0
 ---
 
+<!-- markdownlint-disable MD025 -->
+
 # Orchestration Protocol — Orchestrator + Cheap Workers
 
 One orchestrator plans, decomposes, dispatches, and reviews — **Opus by
@@ -42,13 +44,13 @@ Cursor chat without spawns is a failed dispatch — PROGRESS prose is not proof.
 
 ## Roles & dispatch table
 
-| Agent | Role | Send it |
-|---|---|---|
-| **Orchestrator / brain** (Opus default; Fable or Sol only when human names them — see MODEL_ROUTING.md) | Weigh intake plan → features.json, WORKER_TASK files, review diffs, arbitrate, update AGENTS.md when decisions change | The GOAL, review requests, "what next" |
-| **Cursor Agent** (`agent`) | Multi-file work: **Grok** = premium, **Composer** = economy (Grok falls back to Composer) | WORKER_TASK files; small safe tasks → Composer |
-| **Codex** (`codex`) | Inventory seats: Sol = brain when named; Terra ≈ premium; Luna ≈ economy | Tight allow-lists / verifiable tasks |
-| **Antigravity** (`agy`) | **UI lane** (shadcn/Luma/appearance) + opt-in workers; Flash economy / Pro premium | UI WORKER_TASKs; or when human says use agy |
-| **Claude** (`claude -p`) | Haiku economy / Sonnet premium workers (not the default chair) | Tight allow-list tasks |
+| Agent                                                                                                                                                   | Role                                                                                                                  | Send it                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| **Orchestrator / brain** (Opus default; Fable or Sol only when human names them or when it starts from a chat with Sol or Fable — see MODEL_ROUTING.md) | Weigh intake plan → features.json, WORKER_TASK files, review diffs, arbitrate, update AGENTS.md when decisions change | The GOAL, review requests, "what next"         |
+| **Cursor Agent** (`agent`)                                                                                                                              | Multi-file work: **Grok** = premium, **Composer** = economy (Grok falls back to Composer)                             | WORKER_TASK files; small safe tasks → Composer |
+| **Codex** (`codex`)                                                                                                                                     | Inventory seats: Sol = brain when named; Terra ≈ premium; Luna ≈ economy                                              | Tight allow-lists / verifiable tasks           |
+| **Antigravity** (`agy`)                                                                                                                                 | **UI lane** (shadcn/Luma/appearance) + opt-in workers; Flash economy / Pro premium                                    | UI WORKER_TASKs; or when human says use agy    |
+| **Claude** (`claude -p`)                                                                                                                                | Haiku economy / Sonnet premium workers (not the default chair)                                                        | Tight allow-list tasks                         |
 
 Rule of thumb: **judgment up, volume down.** Anything requiring a decision that isn't
 already written in AGENTS.md / a skill / the task file goes UP to the orchestrator, never
@@ -61,20 +63,20 @@ Missions live under `docs/missions/<YYYYMMDD-slug>/`. Root `GOAL.md` /
 
 `GOAL.md` frontmatter `status:`:
 
-| Status | Meaning |
-|---|---|
-| `draft` | Files written; GATE 0 not approved |
-| `approved` | Human approved feature list; no dispatch yet |
-| `in-progress` | Workers may run; active mission |
+| Status          | Meaning                                                                           |
+| --------------- | --------------------------------------------------------------------------------- |
+| `draft`         | Files written; GATE 0 not approved                                                |
+| `approved`      | Human approved feature list; no dispatch yet                                      |
+| `in-progress`   | Workers may run; active mission                                                   |
 | `awaiting-gate` | Implementation ready for a named human GATE; do not merge/deploy until registered |
-| `done` | Mission closed (keep folder; never delete from updater) |
+| `done`          | Mission closed (keep folder; never delete from updater)                           |
 
 Exactly one mission may be `in-progress` or `awaiting-gate` at a time. Discover
 with `bash scripts/active-mission.sh`.
 
 ## The loop
 
-```
+```text
 ┌─ 1. INITIALIZER (orchestrator, once per mission)
 │    - Create docs/missions/<date>-<slug>/ from templates (mission-init skill)
 │    - Verify local CLIs + run scripts/fleet-inventory.sh (ALWAYS show map at GATE 0)
@@ -116,7 +118,6 @@ Before presenting a gate for approval (and before `status: done`):
 bash scripts/verify-mission.sh   # must exit 0 — receipts required
 ```
 
-
 When the human approves or rejects a gate (staging sign-off, merge permission,
 deploy), the orchestrator MUST:
 
@@ -126,10 +127,13 @@ deploy), the orchestrator MUST:
 
 ```markdown
 ## {{DATE}} — Human — GATE {{n}}
+
 - **Verdict:** approved | rejected
 - **Notes:** {{what they said / checked}}
 - **Next:** {{status: done | in-progress | blocked}}
 ```
+
+<!-- markdownlint-disable MD029 -->
 
 3. Update `GOAL.md` `status:` accordingly (`done` when the mission's last gate
    passes; otherwise back to `in-progress`).

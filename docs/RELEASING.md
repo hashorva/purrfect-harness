@@ -2,9 +2,12 @@
 title: Releasing purrfect-harness
 ---
 
+<!-- markdownlint-disable MD025 -->
+
 # Releasing (tag-driven)
 
 Versioning is SemVer, interpreted for a harness:
+
 - **MAJOR** (2.0.0): ownership/manifest changes — consuming repos need manual
   work beyond running the updater (e.g. a file changed owner, AGENTS.md skeleton
   restructured)
@@ -42,6 +45,7 @@ done
 ```
 
 ## Rules
+
 - Never move or delete a pushed tag — tags are promises.
 - Never propagate from an untagged state — repos receive only blessed versions.
 - `update-harness.sh` writes `.harness-version` in each repo; `git diff vA vB`

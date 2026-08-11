@@ -1,7 +1,7 @@
 ---
 title: Moved
 ---
-
+<!-- markdownlint-disable MD025 -->
 # Moved
 
 Orchestration protocol lives at [`docs/missions/ORCHESTRATION.md`](missions/ORCHESTRATION.md).
