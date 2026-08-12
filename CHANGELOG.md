@@ -1,5 +1,36 @@
 # Changelog — agent-harness kit
 
+## 2.3.0 (2026-08-12)
+
+- **New skill: `guard-verification`.** Graduated from three shipped instances of the same failure —
+  a correct guard with a green test suite that never runs where it matters, or that nothing can
+  violate. FinDuck's `20260810-glossary-content-model` produced two: a publication flag wired into
+  four places but never into the corpus validator (the only caller passing it was a unit test, and
+  flipping the flag published documents the guard existed to block), and a `<main>` extraction
+  falling back to `''` so the link gate passed having examined nothing. Mission 1A produced the
+  third — a correct language switcher the public navbar never rendered. The skill is the procedure:
+  find the non-test callers, name the entry point, **break the guard and watch the real path fail**,
+  interrogate every fallback, construct the weakest satisfying value, and assert against the mount
+  point rather than the validator.
+- **`dispatch-worker`: the codex sandbox limits are now one table, checked before routing.** Three
+  limits, each learned by a failed dispatch: cannot bind a TCP port, cannot read the macOS keychain
+  (so `supabase db push` fails while `migration list` succeeds), and — new from F017 — **cannot
+  reach the npm registry**, so any task that adds a dependency must go to `agent`. All three are
+  reachable from the orchestrator's own shell, so testing them locally proves nothing about the
+  worker.
+- **`shadcn-luma`: current preset code, the missing `--pointer` flag, and the CSS-import trap.** The
+  preset had sat unverified at `b2D0wqNxT` for months despite the skill's own instruction to check
+  it every run; it is now `b83suB2Xac` with a dated status table and the create URL. `--pointer` is
+  a real flag (`enable pointer cursor for buttons`) and pointer-on-buttons is studio convention —
+  omitting it silently yields the default cursor, which reads as "not quite our UI" without ever
+  looking broken. Also documents that `--preset` affects `init`/`apply` only (`add` reads
+  `components.json`), so a rotated code cannot explain drift in installed components; and that
+  `@import 'shadcn/tailwind.css'` in global CSS makes `shadcn` a **runtime** dependency — in FinDuck
+  that shipped `express`, `msw` and the MCP SDK into production and hoisted a CommonJS `cookie@0.7.2`
+  that broke Astro prerendering outright. **Grep CSS as well as JS before calling a package
+  CLI-only.**
+- Documentation formatting and structure pass across the kit.
+
 ## 2.2.9 (2026-08-05)
 
 - **Mechanized false-green detection for `dispatch-worker`.** `exit=0` from

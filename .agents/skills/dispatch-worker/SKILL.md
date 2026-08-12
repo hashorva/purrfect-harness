@@ -80,6 +80,28 @@ Delegate small safe work to Composer (economy) — do not burn Grok on boilerpla
 Home-fleet reminder: Cursor intake → default Grok/Composer; Codex chair → default
 Terra/Luna; neither excludes agy when UI (or explicit) says so.
 
+### 🔴 Codex sandbox limits — check BEFORE routing to `codex`
+
+`codex exec -s workspace-write` denies every write outside the workspace. That part is fixable with
+`--add-dir` (repeatable; `.git` is a default) — e.g. `~/.supabase`,
+`~/Library/Preferences/.wrangler`.
+
+**These three are NOT fixable. Reassign the task instead — each cost a failed dispatch to learn:**
+
+| Limit | Symptom | Route to |
+| --- | --- | --- |
+| Cannot **bind a TCP port** | no dev server, no Playwright, no `vitest-pool-workers` (it starts `workerd`) | any task needing a running server → `agent` |
+| Cannot **read the macOS keychain** | `supabase db push` fails *"Access token not provided"* while `migration list` succeeds — the lane looks authenticated right up to the step that matters | any Supabase **write**/management API → `agent` |
+| Cannot **reach the npm registry** | `registry.npmjs.org` → `ENOTFOUND`; the package is not cached | any task that **adds a dependency** → `agent` |
+
+The registry and keychain are reachable *outside* the sandbox, so a passing check in the
+orchestrator chat proves nothing about the worker. **Ask what the task needs, not whether it works
+for you.**
+
+⚠️ Codex is still the right seat for tight, verifiable, offline work — build output inspection,
+schema-file authoring, deterministic transforms. Verify against **emitted files** and `vitest`,
+and say so in the task body so the worker does not stall reaching for a server.
+
 ## Step 2 — Spawn (blocking; log never to context)
 
 ```bash
