@@ -128,23 +128,41 @@ if require_workers or need_worker:
 
     for f in need_worker:
         fid = f.get("id")
-        matched = [
-            (p, d) for p, d in ok_workers
-            if d.get("feature") in (fid, None, "")
-        ]
-        # Prefer explicit feature match
+        # Prefer an explicit, successful match for THIS feature.
         explicit = [(p, d) for p, d in ok_workers if d.get("feature") == fid]
+        # A receipt tagged for this feature that did NOT exit 0 is evidence of a
+        # failed or killed run — not evidence that no run happened. Surfacing it
+        # beats silently falling through to some other feature's receipt.
+        # (Real case: a hung CLI was SIGTERM'd, its receipt landed with exit=143,
+        # and the old `elif ok_workers` branch accepted an UNRELATED exit-0
+        # receipt and printed VERIFY OK for a feature backed by nothing.)
+        failed_for_feature = [
+            (p, d) for p, d in workers
+            if d.get("feature") == fid and int(d.get("exit", 1)) != 0
+        ]
+        # Only genuinely UNTAGGED receipts may satisfy the soft path. A receipt
+        # tagged for a DIFFERENT feature must never count for this one.
+        untagged = [(p, d) for p, d in ok_workers if d.get("feature") in (None, "")]
         if explicit:
             p, d = explicit[-1]
             if check_workspace_changed(fid, p, d):
                 print(f"OK worker for {fid}: {p.name} cli={d.get('cli')}")
-        elif ok_workers:
-            # soft: warn if no explicit feature tag
-            p, d = ok_workers[-1]
+        elif failed_for_feature:
+            p, d = failed_for_feature[-1]
+            fail.append(
+                f"feature {fid} passes:true but its receipt {p.name} exited "
+                f"{d.get('exit')} (not 0). A killed or failed run is not proof of work — "
+                f"re-dispatch it, or revert passes to false."
+            )
+        elif untagged:
+            p, d = untagged[-1]
             if check_workspace_changed(fid, p, d):
-                print(f"WARN {fid}: no receipt with feature={fid}; accepting any worker receipt (tag --feature next time)")
+                print(f"WARN {fid}: accepting an UNTAGGED worker receipt {p.name} (legacy — tag --feature next time)")
         else:
-            fail.append(f"feature {fid} passes:true but no worker receipt with exit=0")
+            fail.append(
+                f"feature {fid} passes:true but no worker receipt with feature={fid} and exit=0 "
+                f"(receipts for other features do not count)"
+            )
 
 # PROGRESS honesty: if it claims Claude/Cursor CLI without receipts, warn (non-fatal if receipts exist)
 prog = mission / "PROGRESS.md"

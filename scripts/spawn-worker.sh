@@ -204,6 +204,40 @@ PROMPT="Read ${PROMPT_TASK} and complete it exactly. Follow AGENTS.md and the sk
 # stub reporting green with no edits) — see dispatch-worker/SKILL.md.
 GIT_BEFORE="$(git -C "$WORKSPACE" rev-parse HEAD 2>/dev/null || echo '')"
 
+# --- portable watchdog -------------------------------------------------------
+# macOS ships neither `timeout` nor `gtimeout`, so bound the run ourselves.
+# A worker CLI that finishes its work and then never exits is indistinguishable
+# from one still working, because the receipt is written only AFTER the process
+# ends: a real dispatch (cursor `agent`) sat at 0.0% CPU for 79 minutes after it
+# had already committed, while the mission looked "still running" and no receipt
+# existed at all. Bound every lane; `agy` additionally self-limits via
+# --print-timeout. Set SPAWN_WORKER_TIMEOUT_SECS=0 to disable.
+SPAWN_WORKER_TIMEOUT_SECS="${SPAWN_WORKER_TIMEOUT_SECS:-2400}"   # 40 min
+TIMEOUT_EXIT=124                                                  # GNU timeout convention
+
+# Usage: <cmd> & watchdog_wait $!   → returns the child's exit code, or 124 on timeout.
+watchdog_wait() {
+  local pid="$1" waited=0
+  if [ "$SPAWN_WORKER_TIMEOUT_SECS" -le 0 ]; then
+    wait "$pid"
+    return $?
+  fi
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$waited" -ge "$SPAWN_WORKER_TIMEOUT_SECS" ]; then
+      echo "spawn-worker: TIMEOUT after ${SPAWN_WORKER_TIMEOUT_SECS}s — terminating pid $pid." | tee -a "$LOG"
+      echo "spawn-worker: the CLI may have completed its work before hanging — inspect git log/status in $WORKSPACE before re-dispatching." | tee -a "$LOG"
+      kill -TERM "$pid" 2>/dev/null || true
+      sleep 5
+      if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; fi
+      wait "$pid" 2>/dev/null || true
+      return "$TIMEOUT_EXIT"
+    fi
+    sleep 5
+    waited=$((waited + 5))
+  done
+  wait "$pid"
+}
+
 case "$WORKER" in
   codex)
     need codex
@@ -214,7 +248,8 @@ case "$WORKER" in
     # holds a FIFO open on purpose — without this redirect that check fails.
     codex exec -C "$WORKSPACE" -s workspace-write -m "$MODEL" \
       -c "model_reasoning_effort=\"$EFFORT\"" \
-      "$PROMPT" >>"$LOG" 2>&1 < /dev/null
+      "$PROMPT" >>"$LOG" 2>&1 < /dev/null &
+    watchdog_wait $!
     EC=$?
     set -e
     ;;
@@ -222,7 +257,8 @@ case "$WORKER" in
     need agent
     set +e
     # Cursor Agent CLI: -p print; --force auto-approves; --trust workspace.
-    agent -p --force --trust --workspace "$WORKSPACE" --model "$MODEL" "$PROMPT" >>"$LOG" 2>&1
+    agent -p --force --trust --workspace "$WORKSPACE" --model "$MODEL" "$PROMPT" >>"$LOG" 2>&1 &
+    watchdog_wait $!
     EC=$?
     set -e
     ;;
@@ -239,10 +275,12 @@ case "$WORKER" in
     AGY_ARGS=(--dangerously-skip-permissions --print-timeout 30m)
     [ -n "$MODEL" ] && AGY_ARGS+=(--model "$MODEL")
     if [ "$WORKSPACE" = "$ROOT" ]; then
-      agy "${AGY_ARGS[@]}" -p "$PROMPT" >>"$LOG" 2>&1
+      agy "${AGY_ARGS[@]}" -p "$PROMPT" >>"$LOG" 2>&1 &
+      watchdog_wait $!
       EC=$?
     else
-      ( cd "$WORKSPACE" && agy "${AGY_ARGS[@]}" -p "$PROMPT" ) >>"$LOG" 2>&1
+      ( cd "$WORKSPACE" && agy "${AGY_ARGS[@]}" -p "$PROMPT" ) >>"$LOG" 2>&1 &
+      watchdog_wait $!
       EC=$?
     fi
     set -e
@@ -257,11 +295,13 @@ case "$WORKER" in
     # lane fixed in 2.2.3 — a flag eating the positional prompt.
     if [ "$WORKSPACE" = "$ROOT" ]; then
       claude -p "$PROMPT" --model "$MODEL" \
-        --allowedTools "Read,Write,Edit,Bash" >>"$LOG" 2>&1
+        --allowedTools "Read,Write,Edit,Bash" >>"$LOG" 2>&1 &
+      watchdog_wait $!
       EC=$?
     else
       ( cd "$WORKSPACE" && claude -p "$PROMPT" --model "$MODEL" \
-        --allowedTools "Read,Write,Edit,Bash" ) >>"$LOG" 2>&1
+        --allowedTools "Read,Write,Edit,Bash" ) >>"$LOG" 2>&1 &
+      watchdog_wait $!
       EC=$?
     fi
     set -e

@@ -1,5 +1,36 @@
 # Changelog — agent-harness kit
 
+## 2.3.1 (2026-08-13)
+
+- **`verify-mission.sh`: a feature's own receipt is now required — no more borrowing someone
+  else's.** The per-feature loop had a soft path that, finding no receipt tagged for a feature,
+  accepted **any** worker receipt with `exit=0` and printed a WARN. FinDuck's
+  `20260813-public-surface-perf` hit the consequence live: a hung `agent` CLI was SIGTERM'd, its
+  receipt landed with `exit=143`, and because that receipt was filtered out of the exit-0 set the
+  loop silently accepted an *unrelated* feature's receipt and reported `VERIFY OK` for a feature
+  backed by nothing. Three changes: a receipt tagged for this feature that did **not** exit 0 now
+  FAILS with its exit code named (a killed run is evidence of failure, not of absence); only
+  genuinely **untagged** legacy receipts may satisfy the soft path, never one tagged for a
+  *different* feature; and the miss case fails with "receipts for other features do not count".
+  Also deletes a dead `matched` binding.
+  ⚠️ **This is retroactively strict, and it immediately found three real hollow greens** in closed
+  FinDuck missions — every one a feature no worker was ever going to run, left at `bootstrap: false`
+  or with the field missing: `20260810-glossary-content-model` F010 (*"verified on
+  staging.finduck.app, not locally"* — the very instance `dispatch-worker`'s rule 5 is written
+  about), `20260804-path-a-prod` F004 (orchestrator-authored docs), and
+  `20260727-cross-category-compare` F009 (human GATE checklist). Per the existing rule, these are
+  **flagged, not retro-edited** — `bootstrap` must be right at authoring.
+- **`spawn-worker.sh`: every lane is now bounded by a portable watchdog.** A worker CLI that
+  finishes its work and then never exits is indistinguishable from one still running, because the
+  receipt is written only *after* the process ends — a real cursor `agent` dispatch sat at 0.0 % CPU
+  for **79 minutes** after it had already committed, while the mission showed no receipt at all and
+  looked "still working". macOS ships neither `timeout` nor `gtimeout`, so `watchdog_wait` polls the
+  child and, on expiry, sends TERM, then KILL after a 5 s grace, and returns **124** (GNU `timeout`
+  convention). Applied to all six invocation sites (codex, agent, agy ×2, claude ×2). Default
+  **2400 s**; override with `SPAWN_WORKER_TIMEOUT_SECS`, or `0` to disable.
+  **The two fixes compose:** a hang now yields `exit=124`, which the stricter `verify-mission`
+  reports as a hard failure instead of a hollow green.
+
 ## 2.3.0 (2026-08-12)
 
 - **New skill: `guard-verification`.** Graduated from three shipped instances of the same failure —
