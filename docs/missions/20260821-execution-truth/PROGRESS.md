@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-21 — Human override — T-006-R1 APPROVED
+
+- **Verdict:** Approved one mechanical recovery attempt beyond T-006's exhausted cap.
+- **Scope:** Close unknown `last_good` provider keys, restore numeric/effort/non-fast model ordering, and make provider effort/speed plus source/health relationships exact and consistent in Python and both fleet schemas. Replace ordinary-suite source rewriting with stable mounted negatives; the orchestrator must still perform both real guard mutations independently.
+- **Boundary:** Preserve the reviewed frozen publication and exact provider policy. Do not wire dispatch, create the mission `fleet.json`, edit feature state, or begin F003. F002 remains false pending T-007 and F005 acceptance.
+- **Fleet:** One attempt on approved Codex premium `gpt-5.6-terra`, effort `medium`, speed `unknown`.
+
 ## 2026-08-21 — GPT-5.6 Sol/high — T-006 attempt 2 review — FAIL / STOP
 
 - **Verdict:** T-006 exhausted both attempts and remains unaccepted. F002 stays false; no `fleet.json`, launcher wiring, F003 work, or final T-006 commit is authorized under the task's stop rule.
