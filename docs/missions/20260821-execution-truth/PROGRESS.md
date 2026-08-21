@@ -4,6 +4,12 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-21 — Human override — T-002 attempt 3 APPROVED
+
+- **Verdict:** Approved one final attempt beyond the original two-attempt cap, limited to correcting the dirty-tagged-update fixture identified by independent Sol review.
+- **Scope:** No production changes and no broader test work. The worker may deliberately dirty the isolated tagged source immediately before the real updater negative, assert no target branch/status/version mutation, restore the source if needed, and run both complete lifecycle suites plus ShellCheck/JSON/diff checks.
+- **Acceptance boundary:** F006 remains false and T-003 remains dormant until this bounded attempt passes independent guard review. The stopped attempt-2 candidate is preserved as unaccepted checkpoint `5610733`.
+
 ## 2026-08-21 — GPT-5.6 Sol/high — T-002 attempt 2 review — FAIL / STOP
 
 - **Verdict:** T-002 exhausted both attempts and remains unaccepted. T-003 was not dispatched and F006 remains false.
