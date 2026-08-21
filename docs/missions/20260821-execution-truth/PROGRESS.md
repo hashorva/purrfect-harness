@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-21 — Human override — T-004 attempt 3 APPROVED
+
+- **Verdict:** Approved one final recovery attempt beyond the original cap, limited to the uppercase-UUID and leading-space path schema counterexamples, bytecode-free mounted tests, and clean full-suite evidence.
+- **Scope:** Preserve the reviewed atomic publish, hash-bound launch, closed stdin, capability policy, provider mappings, and manifest ownership unchanged. No wrapper, receipt, feature-state, release, or Phase 2 work is authorized.
+- **Clean baseline:** Unaccepted attempt 2 is preserved as checkpoint `3b39823`; generated `scripts/__pycache__/` was removed before binding this recovery. Terra must start clean, produce both full-suite final banners, and prove an isolated committed candidate checkout remains clean after its suite.
+- **Acceptance boundary:** F001 remains false and T-005 remains dormant until independent guard review and the required T-004 commit.
+
 ## 2026-08-21 — GPT-5.6 Sol/high — T-004 attempt 2 review — FAIL / STOP
 
 - **Verified good:** Same-directory staged hard-link publication prevents partial final spec bytes; exact caller-held SHA-256 is required before provider resolution; provider stdin is closed; canonical tampering and capability failures leave sentinels untouched; exact argv contracts and focused tests pass.
