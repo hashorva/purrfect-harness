@@ -4,6 +4,20 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-21 — GPT-5.6 Sol/high — T-002 attempt 3 review — PASS
+
+- **Verdict:** The human-authorized fixture-only correction closes T-002. The diff is limited to `tests/run-tests.sh` plus append-only progress; no production file or feature state changed in attempt 3.
+- **Negative guard proof:** Removed only the line that dirties the isolated tagged source and ran the real full suite. It exited 1 exactly at `dirty tagged update source is rejected by real updater`; the following development update also demonstrated why inherited state cannot substitute for the explicit fixture. Restored the line before acceptance.
+- **Independent positive proof:** The restored full suite reached `ALL TESTS PASSED` from the current checkout and from a separately initialized otherwise-identical checkout carrying annotated `v2.3.1`. ShellCheck, repository JSON validation, and `git diff --check` also passed.
+- **Receipt:** `.tasks/receipts/worker-task-T-002-20260821T174332Z.json` records Codex premium `gpt-5.6-terra`, feature F006, exit 0, and a changed workspace. T-003 may now start; F006 remains false until both subtasks pass.
+
+## 2026-08-21 — Codex — T-002 attempt 3 dirty-update fixture correction
+
+- **Did:** Immediately before the real `scripts/update-harness.sh TARGET` dirty-tagged-source negative, the isolated annotated release fixture now deliberately dirties its `README.md`. The regression snapshots the target branch, Git status, and `.harness-version`, requires the updater to reject, proves all three target values are unchanged, and restores the release fixture before later checks.
+- **Guard proof:** The deliberately violating source reached the real updater entry point and was rejected; removing that rejection would make the real-entry assertion fail. The fixture restoration is explicit, so subsequent update coverage does not inherit dirty state.
+- **Verified:** `shellcheck scripts/*.sh tests/*.sh`, repository JSON validation, and `git diff --check` pass. `bash tests/run-tests.sh` exits 0 from both the current checkout and an otherwise identical isolated checkout with annotated `v2.3.1`; each completed the full lifecycle suite successfully.
+- **Scope:** No production files or `features.json` changed. The only code change is the human-authorized dirty-tagged-update fixture correction in `tests/run-tests.sh`.
+
 ## 2026-08-21 — Human override — T-002 attempt 3 APPROVED
 
 - **Verdict:** Approved one final attempt beyond the original two-attempt cap, limited to correcting the dirty-tagged-update fixture identified by independent Sol review.

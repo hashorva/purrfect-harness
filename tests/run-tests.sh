@@ -349,7 +349,12 @@ check "second install refused" sh -c "! bash scripts/install-harness.sh '$TARGET
 echo "== update-harness.sh"
 echo "keep-me" > "$TARGET/docs/missions/20990101-fixture/KEEP.md"
 git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "fixture mission marker"
-check "dirty tagged update source is rejected by real updater" sh -c "cd '$RELEASE_FIXTURE' && ! bash scripts/update-harness.sh '$TARGET'"
+DIRTY_UPDATE_BRANCH="$(git -C "$TARGET" branch --show-current)"
+DIRTY_UPDATE_STATUS="$(git -C "$TARGET" status --porcelain)"
+DIRTY_UPDATE_VERSION="$(<"$TARGET/.harness-version")"
+printf '%s\n' 'deliberately dirty tagged update source' >> "$RELEASE_FIXTURE/README.md"
+check "dirty tagged update source is rejected by real updater" sh -c "cd '$RELEASE_FIXTURE' && ! bash scripts/update-harness.sh '$TARGET' && test \"\$(git -C '$TARGET' branch --show-current)\" = '$DIRTY_UPDATE_BRANCH' && test \"\$(git -C '$TARGET' status --porcelain)\" = '$DIRTY_UPDATE_STATUS' && test \"\$(< '$TARGET/.harness-version')\" = '$DIRTY_UPDATE_VERSION'"
+git -C "$RELEASE_FIXTURE" checkout -q -- README.md
 bash scripts/update-harness.sh --dev "$TARGET"
 check "update stayed on version branch" sh -c "git -C '$TARGET' branch --show-current | grep -q 'chore/harness-'"
 check "kit skill still present after update" test -f "$TARGET/.agents/skills/mission-init/SKILL.md"
