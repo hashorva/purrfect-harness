@@ -151,6 +151,7 @@ rm -f "$RELEASE_FIXTURE/docs/templates/selected.template"
 
 TARGET="$(mktemp -d)"
 trap 'rm -rf "$TARGET" "$RELEASE_FIXTURE"' EXIT
+TARGET_CANONICAL="$(cd "$TARGET" && pwd -P)"
 
 # ---- fixture: a target repo with one pre-existing conflicting file ----
 git -C "$TARGET" init -q
@@ -258,8 +259,8 @@ STUB_OUT="$TARGET/.agy-args"
 # shellcheck disable=SC2016  # printf template: $ must stay literal
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" > "%s"\nexit 0\n' "$STUB_OUT" > "$STUBBIN/agy"
 chmod +x "$STUBBIN/agy"
-( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
-    bash scripts/spawn-worker.sh agy docs/missions/20990101-fixture/GOAL.md --tier premium --effort xhigh --feature F001 ) >/dev/null 2>&1 || true
+( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
+    bash scripts/spawn-worker.sh agy docs/missions/20990101-fixture/GOAL.md --tier premium --effort high --feature F001 ) >/dev/null 2>&1 || true
 check "agy receives the real prompt as the value of -p" \
   sh -c "grep -q -- '-p Read ' '$STUB_OUT'"
 check "agy -p is not fed the permissions flag" \
@@ -276,7 +277,7 @@ CLAUDE_OUT="$TARGET/.claude-args"
 # shellcheck disable=SC2016  # printf template: $ must stay literal
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" > "%s"\nexit 0\n' "$CLAUDE_OUT" > "$STUBBIN/claude"
 chmod +x "$STUBBIN/claude"
-( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
+( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh claude docs/missions/20990101-fixture/GOAL.md --tier premium --effort xhigh --feature F001 ) >/dev/null 2>&1 || true
 check "claude receives the prompt immediately after -p" \
   sh -c "grep -q -- '-p Read ' '$CLAUDE_OUT'"
@@ -297,18 +298,18 @@ chmod +x "$STUBBIN/codex"
 CODEX_MODEL="codex-test-model"
 CODEX_PROMPT="Read docs/missions/20990101-fixture/GOAL.md and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder."
 CODEX_EXPECTED="$TARGET/.codex-expected"
-printf '%s\n' codex exec -C "$TARGET" -s workspace-write -m "$CODEX_MODEL" \
+printf '%s\n' codex exec -C "$TARGET_CANONICAL" -s workspace-write -m "$CODEX_MODEL" \
   '-c' 'model_reasoning_effort="medium"' "$CODEX_PROMPT" > "$CODEX_EXPECTED"
-( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
+( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/GOAL.md \
       --tier economy --model "$CODEX_MODEL" --feature F001 ) >/dev/null 2>&1 || true
 check "codex receives the exact invocation with medium default" \
   cmp -s "$CODEX_EXPECTED" "$CODEX_OUT"
 
 CODEX_EXPECTED_XHIGH="$TARGET/.codex-expected-xhigh"
-printf '%s\n' codex exec -C "$TARGET" -s workspace-write -m "$CODEX_MODEL" \
+printf '%s\n' codex exec -C "$TARGET_CANONICAL" -s workspace-write -m "$CODEX_MODEL" \
   '-c' 'model_reasoning_effort="xhigh"' "$CODEX_PROMPT" > "$CODEX_EXPECTED_XHIGH"
-( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
+( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/GOAL.md \
       --tier economy --model "$CODEX_MODEL" --effort xhigh --feature F001 ) >/dev/null 2>&1 || true
 check "codex receives --effort xhigh" \
@@ -321,7 +322,7 @@ rm -f "$CODEX_EOF_MARK" "$CODEX_STUB_PID"
 mkfifo "$CODEX_FIFO"
 exec 9<>"$CODEX_FIFO"
 set +e
-( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
+( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/GOAL.md \
       --tier economy --model "$CODEX_MODEL" --feature F001 ) <"$CODEX_FIFO" >/dev/null 2>&1 &
 CODEX_PID=$!
@@ -358,7 +359,7 @@ printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$(basename "$0")" "$@" > "%s"\nexi
 chmod +x "$STUBBIN/agent"
 AGENT_MODEL="agent-test-model"
 AGENT_EXPECTED="$TARGET/.agent-expected"
-printf '%s\n' agent -p --force --trust --workspace "$TARGET" --model "${AGENT_MODEL}[effort=xhigh,fast=false]" "$CODEX_PROMPT" > "$AGENT_EXPECTED"
+printf '%s\n' agent -p --force --trust --workspace "$TARGET_CANONICAL" --model "${AGENT_MODEL}[effort=xhigh,fast=false]" "$CODEX_PROMPT" > "$AGENT_EXPECTED"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
     bash scripts/spawn-worker.sh agent docs/missions/20990101-fixture/GOAL.md \
       --tier economy --model "$AGENT_MODEL" --effort xhigh --feature F001 ) >/dev/null 2>&1 || true

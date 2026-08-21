@@ -39,7 +39,7 @@ done
 case "$ATTEMPT" in *[!0-9]*|'') echo "ERROR: --attempt must be positive" >&2; exit 2 ;; esac
 [ "$ATTEMPT" -gt 0 ] || { echo "ERROR: --attempt must be positive" >&2; exit 2; }
 
-ROOT="$(pwd)"
+ROOT="$(pwd -P)"
 if [ -d "$MISSION_IN" ]; then
   MISSION="$MISSION_IN"
 elif [ -d "docs/missions/$MISSION_IN" ]; then

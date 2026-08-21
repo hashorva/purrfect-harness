@@ -4,6 +4,20 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-21 — GPT-5.6 Sol/high — T-005 attempt 2 review — PASS
+
+- **Execution truth:** Receipt `.tasks/receipts/worker-task-T-005-20260821T201051Z.json` links run `cfded8ae-1c8d-4695-bb99-3ce9263a003c` to the exact immutable spec bytes (`952bccc0f5087f35a31cfb855fd573e69e916b51e4e270fe9008b8b7282585c9`), attempt 2, F001, T-005, Codex premium `gpt-5.6-terra`, and literal unknown observations; the independent hash and read-only-mode checks agree.
+- **Independent verification:** The mounted focused suite passes all four providers through both real roles, explicit Sol/high brain selection, and the complete spec/receipt negative matrix. The repository suite reaches `ALL TESTS PASSED`; ShellCheck, tracked JSON parsing, diff, and no-bytecode checks pass.
+- **Non-vacuity:** Replacing the worker adapter process with a successful background no-op made the mounted exact-contract entry fail on missing provider evidence; exact restoration returned it green. Separately bypassing the receipt exact-byte hash comparison made the mounted hash-mismatch negative fail; exact restoration returned the full focused suite green.
+- **Acceptance:** The T-005 implementation layer passes review, but F001 remains `passes: false`. Per mission policy, F005 must issue fresh authorized verification evidence before the orchestrator may accept it.
+
+## 2026-08-21 — Codex — T-005 attempt 2 recovery
+
+- **Fixed:** The real installed-wrapper failures shared one cause: wrappers used logical `pwd`/task paths while `ExecutionSpec` requires the canonical Git root. Both wrappers now use physical paths, and worker task canonicalization preserves the relative prompt/workspace contract. The stale installed agy fixture now requests its supported `high` effort.
+- **Coverage:** Mounted real-wrapper tests now assert exact argv and empty overrides for all four providers in both roles, Sol/high Codex brain selection, Claude prompt order, spec-before-sentinel, UUID/hash/identity/unknown observation linkage, invalid effort/speed, malformed/tampered/duplicate specs, every receipt trio/identity/path/hash/noncanonical mismatch, and fresh amendment UUIDs.
+- **Guard proof:** With the worker adapter call temporarily bypassed, `bash tests/run-tests.sh` failed at `immutable spec integration through real wrappers` (and provider sentinels remained absent); restored exactly. Separately bypassing the receipt SHA-256 comparison made the same mounted check fail; restored exactly.
+- **Verified:** `shellcheck scripts/*.sh tests/*.sh`, repository JSON validation, `git diff --check`, and `bash tests/run-tests.sh` pass through `ALL TESTS PASSED`; `scripts/__pycache__/` is absent. F001 remains false and `features.json` was not edited.
+
 ## 2026-08-21 — GPT-5.6 Sol/high — T-005 attempt 1 review — FAIL
 
 - **Receipt:** `.tasks/receipts/worker-task-T-005-20260821T195520Z.json` records the bounded premium Codex run and seven changed paths, but it is a legacy bootstrap receipt and is not acceptance evidence.

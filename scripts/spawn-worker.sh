@@ -78,9 +78,9 @@ case "$WORKER" in codex|claude|agent|agy) ;; *) usage ;; esac
 case "$ATTEMPT" in *[!0-9]*|'') echo "ERROR: --attempt must be positive" >&2; exit 2 ;; esac
 [ "$ATTEMPT" -gt 0 ] || { echo "ERROR: --attempt must be positive" >&2; exit 2; }
 
-ROOT="$(pwd)"
+ROOT="$(pwd -P)"
 [ -f "$TASK" ] || { echo "ERROR: task file not found: $TASK" >&2; exit 1; }
-TASK_ABS="$(cd "$(dirname "$TASK")" && pwd)/$(basename "$TASK")"
+TASK_ABS="$(cd "$(dirname "$TASK")" && pwd -P)/$(basename "$TASK")"
 TASK_REL="${TASK_ABS#"$ROOT"/}"
 BASE="$(basename "$TASK" .md)"
 
