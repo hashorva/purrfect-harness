@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-21 — GPT-5.6 Sol/high — T-006 fleet-policy frontier
+
+- **Audit:** Current inventory overwrites `.tasks/fleet-inventory.json` on every probe, substitutes unlabelled family guesses, and has no schema version or per-provider last-good/failure separation. Worker dispatch still regenerates/reads that mutable file and accepts per-run model overrides.
+- **Task boundary:** T-006 builds the shared inventory/freeze/resolve policy, exact schemas, manifest propagation, and mounted negative proofs. It must not edit either spawn wrapper; T-007 will wire the reviewed resolver because the F001 self-edit exception was explicitly narrow and is no longer active.
+- **Frozen semantics:** Mission `fleet.json` is approved, canonical, exact-inventory-hash-bound, read-only, and no-clobber. Failed later probes may degrade machine state but cannot mutate or rebind the mission snapshot.
+- **Fleet/acceptance:** T-006 uses the approved Codex premium `gpt-5.6-terra` seat at medium effort. F002 remains false until dispatch itself consumes only the frozen snapshot and F005 later creates fresh verification evidence.
+
 ## 2026-08-21 — GPT-5.6 Sol/high — T-005 attempt 2 review — PASS
 
 - **Execution truth:** Receipt `.tasks/receipts/worker-task-T-005-20260821T201051Z.json` links run `cfded8ae-1c8d-4695-bb99-3ce9263a003c` to the exact immutable spec bytes (`952bccc0f5087f35a31cfb855fd573e69e916b51e4e270fe9008b8b7282585c9`), attempt 2, F001, T-005, Codex premium `gpt-5.6-terra`, and literal unknown observations; the independent hash and read-only-mode checks agree.
