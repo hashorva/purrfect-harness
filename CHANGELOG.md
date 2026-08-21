@@ -2,6 +2,17 @@
 
 ## 2.3.1 (2026-08-13)
 
+- **Distribution truth (development baseline; not yet released):** `2.3.1` remains
+  an untagged development build after published annotated `v2.3.0`. A
+  schema-versioned `harness-manifest.json` now owns every distributable skill,
+  payload, update path, discovery target, and consumer AGENTS skeleton. The shared
+  validator is mounted by release CI, install, update, and sync; ordinary
+  propagation requires an exact clean annotated tag while `--dev` is the explicit
+  local smoke escape. Install/update reject unsafe manifest ownership and invalid
+  installed versions; sync preserves foreign discovery skills; the harness root
+  AGENTS is repository-specific and the complete consumer skeleton is at
+  `docs/templates/AGENTS.md.template`.
+
 - **`verify-mission.sh`: a feature's own receipt is now required — no more borrowing someone
   else's.** The per-feature loop had a soft path that, finding no receipt tagged for a feature,
   accepted **any** worker receipt with `exit=0` and printed a WARN. FinDuck's

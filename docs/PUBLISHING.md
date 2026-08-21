@@ -39,8 +39,9 @@ gh run watch
 
 ```bash
 # 0. CHANGELOG.md, README frontmatter, and harness-manifest.json must name the
-#    same version. `bash scripts/install-harness.sh --validate-release` also
-#    requires that annotated tag to point at HEAD (use --dev only for local smoke).
+#    same version. The release workflow runs the shared validator, which also
+#    requires that annotated tag to point at HEAD and a clean source tree (use
+#    --dev only for local smoke before tagging).
 # 1. Annotated tag, prefixed with v
 git tag -a v1.11.0 -m "v1.11.0 — model routing, dual-brand orchestrator, CI/CD"
 git push origin main --follow-tags

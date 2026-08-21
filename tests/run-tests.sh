@@ -43,25 +43,34 @@ m = json.load(open(sys.argv[1]))
 actual = sorted(p.name for p in pathlib.Path('.agents/skills').iterdir() if p.is_dir())
 assert m['ownership']['canonical_skills'] == actual
 PY"
+RELEASE_FIXTURE="$(mktemp -d)"
+trap 'rm -rf "$RELEASE_FIXTURE"' EXIT
+cp -R "$HARNESS/." "$RELEASE_FIXTURE"
+rm -rf "$RELEASE_FIXTURE/.git"
+git -C "$RELEASE_FIXTURE" init -q
+git -C "$RELEASE_FIXTURE" config user.email ci@test && git -C "$RELEASE_FIXTURE" config user.name CI
+git -C "$RELEASE_FIXTURE" add -A && git -C "$RELEASE_FIXTURE" commit -qm fixture
+git -C "$RELEASE_FIXTURE" tag -a v2.3.1 -m fixture
 check "manifest omission of guard-verification fails release entry point" sh -c "
-  backup=\$(mktemp)
-  cp harness-manifest.json \"\$backup\"
-  python3 -c \"import json; p='harness-manifest.json'; d=json.load(open(p)); d['ownership']['canonical_skills'].remove('guard-verification'); open(p, 'w').write(json.dumps(d))\"
-  if bash scripts/install-harness.sh --dev --validate-release >/dev/null 2>&1; then result=1; else result=0; fi
-  mv \"\$backup\" harness-manifest.json
-  exit \"\$result\"
+  python3 -c \"import json; p='$RELEASE_FIXTURE/harness-manifest.json'; d=json.load(open(p)); d['ownership']['canonical_skills'].remove('guard-verification'); open(p, 'w').write(json.dumps(d))\"
+  cd '$RELEASE_FIXTURE' && ! bash scripts/install-harness.sh --dev --validate-release
 "
+git -C "$RELEASE_FIXTURE" checkout -q -- harness-manifest.json
+check "tagged annotated release source validates" sh -c "cd '$RELEASE_FIXTURE' && bash scripts/install-harness.sh --validate-release"
+echo dirty >> "$RELEASE_FIXTURE/README.md"
+check "dirty tagged install source is rejected" sh -c "cd '$RELEASE_FIXTURE' && ! bash scripts/install-harness.sh --validate-release"
 check "default release validation rejects untagged source" sh -c "! bash scripts/install-harness.sh --validate-release"
 check "explicit development release validation succeeds" bash scripts/install-harness.sh --dev --validate-release
 
 TARGET="$(mktemp -d)"
-trap 'rm -rf "$TARGET"' EXIT
+trap 'rm -rf "$TARGET" "$RELEASE_FIXTURE"' EXIT
 
 # ---- fixture: a target repo with one pre-existing conflicting file ----
 git -C "$TARGET" init -q
 git -C "$TARGET" config user.email ci@test && git -C "$TARGET" config user.name CI
 echo "# my project readme" > "$TARGET/README.md"
 echo "my own claude notes" > "$TARGET/CLAUDE.md"   # will conflict with kit CLAUDE.md
+echo "project-owned agent rules" > "$TARGET/AGENTS.md"
 echo "project-owned consumer skeleton" > "$TARGET/AGENTS.md.template"
 git -C "$TARGET" add -A && git -C "$TARGET" commit -qm baseline
 
@@ -72,7 +81,7 @@ bash scripts/install-harness.sh --dev "$TARGET"
 
 VERSION="$(grep -m1 '^## ' CHANGELOG.md | sed 's/## //;s/ .*//' )"
 check "records .harness-version = $VERSION" grep -qx "$VERSION" "$TARGET/.harness-version"
-check "AGENTS.md installed (was absent)"     test -f "$TARGET/AGENTS.md"
+check "project AGENTS.md untouched"          grep -qx "project-owned agent rules" "$TARGET/AGENTS.md"
 check "project AGENTS.md.template untouched" grep -qx "project-owned consumer skeleton" "$TARGET/AGENTS.md.template"
 check "conflict -> CLAUDE.md.harness-new"    test -f "$TARGET/CLAUDE.md.harness-new"
 check "existing CLAUDE.md untouched"         grep -q "my own claude notes" "$TARGET/CLAUDE.md"
@@ -259,6 +268,15 @@ echo "keep" > "$TARGET/.claude/skills/foreign-project-skill/README.md"
 ( cd "$TARGET" && bash scripts/sync-skills.sh )
 check "foreign discovery skill survives sync" test -f "$TARGET/.claude/skills/foreign-project-skill/README.md"
 
+mkdir -p "$TARGET/.agents/skills/foreign-canonical-skill"
+echo keep > "$TARGET/.agents/skills/foreign-canonical-skill/SKILL.md"
+( cd "$TARGET" && bash scripts/sync-skills.sh )
+check "foreign canonical skill survives consumer sync" test -f "$TARGET/.agents/skills/foreign-canonical-skill/SKILL.md"
+
+python3 -c "import json; p='$TARGET/harness-manifest.json'; d=json.load(open(p)); d['ownership']['discovery_targets']=['../escape']; open(p, 'w').write(json.dumps(d))"
+check "path-traversing discovery ownership rejects sync" sh -c "cd '$TARGET' && ! bash scripts/sync-skills.sh"
+git -C "$TARGET" checkout -q -- harness-manifest.json
+
 # ---- re-install must refuse ----
 check "second install refused" sh -c "! bash scripts/install-harness.sh '$TARGET'"
 
@@ -279,6 +297,8 @@ git -C "$UNMANAGED" config user.email ci@test && git -C "$UNMANAGED" config user
 echo unmanaged > "$UNMANAGED/README.md"
 git -C "$UNMANAGED" add -A && git -C "$UNMANAGED" commit -qm baseline
 check "update refuses unmanaged target" sh -c "! bash scripts/update-harness.sh --dev '$UNMANAGED'"
+printf ' \n' > "$UNMANAGED/.harness-version"
+check "update rejects whitespace .harness-version" sh -c "! bash scripts/update-harness.sh --dev '$UNMANAGED'"
 rm -rf "$UNMANAGED"
 
 # ---- dirty-tree refusals ----

@@ -64,7 +64,7 @@ If content is in the wrong layer, move it — a fat AGENTS.md is context rot by 
    `.agents/skills/`. The format is the agentskills.io standard originally from Anthropic,
    now supported by Claude Code, Codex, Cursor, Gemini CLI and ~40 other tools. Write once,
    every worker reads it. `scripts/sync-skills.sh` symlinks the canonical folder into each
-   tool's discovery path.
+  tool's discovery path as an individual symlink.
 2. **Progressive disclosure.** Only skill name + description load at startup (~50 tokens
    each). The body loads when triggered. Detail goes in `references/`. This is the anti-
    context-rot mechanism: knowledge on disk, not in the window.
@@ -99,7 +99,7 @@ flowchart TD
   I --> P2["Layer 2 knowledge<br/>docs/missions/ (protocol + templates)"]
   I --> P3["Enforcement<br/>.claude/ settings + rules + agents"]
   I --> P4["Layer 1 rules<br/>AGENTS.md with placeholders + thin CLAUDE.md / GEMINI.md"]
-  P1 --> SYM["symlinks<br/>.claude/.cursor/.gemini skills point to .agents/skills"]
+  P1 --> SYM["per-skill symlinks<br/>inside discovery directories"]
   P4 --> YOU["YOU: fill AGENTS.md placeholders,<br/>delete unused skills, adapt settings.json"]
   SYM --> V["verify checklist"]
   YOU --> V
@@ -221,7 +221,7 @@ flowchart TB
   subgraph L4["Layer 4 — dormant LOOP: docs/missions/"]
     TPL["ORCHESTRATION · MODEL_ROUTING · templates/<br/>+ YYYYMMDD-slug/ instances"]
   end
-  subgraph ENF[".claude/ — enforcement (Claude Code only)"]
+  subgraph ENF[".claude/ — advisory permissions (Claude Code only)"]
     SET["settings.json<br/>allow / deny"]
     RUL["rules/<br/>path-gated pointers"]
     REV["agents/code-reviewer<br/>read-only"]
@@ -237,7 +237,7 @@ flowchart TB
   PS -. "project specifics live in" .-> KD
   MI -- "copies, never freestyles" --> TPL
   RUL -- "auto-load when paths match,<br/>then point to" --> PS
-  SET -- "mechanically blocks<br/>destructive Bash" --> CC
+  SET -- "requests tool restrictions<br/>(client enforcement varies)" --> CC
 ```
 
 ### Mission lifecycle — what triggers what
@@ -282,8 +282,8 @@ The portable layers above are GUIDANCE — any model can ignore prose. For the
 orchestrator (Claude Code) the kit adds an ENFORCED layer, which Cursor/Codex/
 Gemini do not read (their safety remains the AGENTS.md prose + task deny-lists):
 
-- `.claude/settings.json` — permissions: destructive commands (`rm -rf`,
-  `db reset`, force-push) are denied mechanically; routine verification commands
+- `.claude/settings.json` — requested permissions: destructive commands (`rm -rf`,
+  `db reset`, force-push) are denied where the Claude client honors them; routine verification commands
   (typecheck, tests, git read-ops, migration dry-run) are pre-allowed so sessions
   don't stall on prompts. Credential files are deny-listed from reads.
   Extend per project; add hooks (e.g. PostToolUse formatters) as needed.

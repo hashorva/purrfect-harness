@@ -13,33 +13,23 @@ set -euo pipefail
 
 ROOT="$(pwd)"
 CANON="$ROOT/.agents/skills"
-MANIFEST="$ROOT/harness-manifest.json"
 
 if [ ! -d "$CANON" ]; then
   echo "ERROR: $CANON not found. Run from the repo root." >&2
   exit 1
 fi
 
-[ -f "$MANIFEST" ] || { echo "ERROR: $MANIFEST not found. Run from a harness-managed repo root." >&2; exit 1; }
-manifest_values() {
-python3 - "$MANIFEST" "$CANON" "$1" <<'PY'
-import json, pathlib, sys
-try:
-    manifest = json.load(open(sys.argv[1]))
-    declared = manifest["ownership"]["canonical_skills"]
-    actual = sorted(p.name for p in pathlib.Path(sys.argv[2]).iterdir() if p.is_dir())
-    if declared != actual:
-        raise ValueError("canonical_skills must exactly list every .agents/skills directory")
-    print(*manifest["ownership"][sys.argv[3]], sep="\n")
-except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
-    print(f"ERROR: invalid harness manifest: {exc}", file=sys.stderr)
-    raise SystemExit(1)
-PY
-}
+[ -f "$ROOT/harness-manifest.json" ] || { echo "ERROR: $ROOT/harness-manifest.json not found. Run from a harness-managed repo root." >&2; exit 1; }
+[ -f "$ROOT/scripts/harness-manifest.py" ] || { echo "ERROR: shared manifest validator missing." >&2; exit 1; }
+manifest_values() { python3 "$ROOT/scripts/harness-manifest.py" --root "$ROOT" --consumer get "$1"; }
 
 # Resolve CANON to a real path for comparison (macOS lacks readlink -f; use pwd -P)
 CANON_REAL="$(cd "$CANON" && pwd -P)"
 
+DISCOVERY_OUTPUT="$(manifest_values discovery_targets)"
+SKILLS_OUTPUT="$(manifest_values canonical_skills)"
+[ -n "$DISCOVERY_OUTPUT" ] || { echo "ERROR: manifest discovery target query is empty." >&2; exit 1; }
+[ -n "$SKILLS_OUTPUT" ] || { echo "ERROR: manifest canonical skill query is empty." >&2; exit 1; }
 while IFS= read -r target; do
   dest_dir="$ROOT/$target"
   mkdir -p "$ROOT/$(dirname "$target")"
@@ -67,13 +57,13 @@ while IFS= read -r target; do
     # From .claude/skills/foo → ../../.agents/skills/foo (same for .cursor/.gemini/.codex)
     rel_target="../../.agents/skills/$name"
     ln -s "$rel_target" "$dest"
-  done < <(manifest_values canonical_skills)
+  done <<< "$SKILLS_OUTPUT"
 
   # Entries outside the manifest are owned by the consuming project/tool.
   # Never prune or replace them during harness discovery sync.
 
   echo "synced -> $target"
-done < <(manifest_values discovery_targets)
+done <<< "$DISCOVERY_OUTPUT"
 
 echo "Done. Canonical: .agents/skills/  (edit skills ONLY there)"
 echo "Tip: add .claude/skills .cursor/skills .gemini/skills .codex/skills to .gitignore"

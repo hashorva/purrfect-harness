@@ -33,6 +33,7 @@
       "docs/templates/README.md",
       ".claude/settings.json",
       "scripts/sync-skills.sh",
+      "scripts/harness-manifest.py",
       "scripts/active-mission.sh",
       "scripts/spawn-worker.sh",
       "scripts/fleet-inventory.sh",
@@ -54,14 +55,15 @@
       ".claude/rules",
       ".claude/agents",
       "scripts/sync-skills.sh",
+      "scripts/harness-manifest.py",
       "scripts/update-harness.sh",
       "scripts/active-mission.sh",
       "scripts/spawn-worker.sh",
       "scripts/fleet-inventory.sh",
       "scripts/spawn-brain.sh",
       "scripts/verify-mission.sh",
-      "scripts/write-receipt.sh"
-      ,"harness-manifest.json"
+      "scripts/write-receipt.sh",
+      "harness-manifest.json"
     ],
     "consumer_agents_template": "docs/templates/AGENTS.md.template"
   }

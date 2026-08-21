@@ -22,49 +22,11 @@ fi
 TARGET="${1:-}"
 
 manifest() {
-  python3 - "$HARNESS" "$DEV_MODE" "${1:-validate}" <<'PY'
-import json, pathlib, subprocess, sys
-root = pathlib.Path(sys.argv[1])
-dev = sys.argv[2] == "1"
-action = sys.argv[3]
-manifest_path = root / "harness-manifest.json"
-try:
-    m = json.loads(manifest_path.read_text())
-    assert m["schema_version"] == 1
-    ownership, release = m["ownership"], m["release"]
-    declared = ownership["canonical_skills"]
-    actual = sorted(p.name for p in (root / ".agents/skills").iterdir() if p.is_dir())
-    if declared != actual:
-        raise ValueError("canonical_skills must exactly list every .agents/skills directory")
-    readme_version = next(line.split(":", 1)[1].strip() for line in (root / "README.md").read_text().splitlines() if line.startswith("version:"))
-    changelog_version = next(line[3:].split()[0] for line in (root / "CHANGELOG.md").read_text().splitlines() if line.startswith("## "))
-    if {readme_version, changelog_version, release["version"]} != {release["version"]}:
-        raise ValueError("README, CHANGELOG, and manifest release versions disagree")
-    for path in ownership["install_payload_paths"] + ownership["update_paths"] + [ownership["consumer_agents_template"]]:
-        if not (root / path).exists():
-            raise ValueError(f"manifest-owned path is missing: {path}")
-except (OSError, KeyError, ValueError, AssertionError, StopIteration, json.JSONDecodeError) as exc:
-    print(f"ERROR: invalid harness manifest: {exc}", file=sys.stderr)
-    raise SystemExit(1)
-if action == "validate":
-    if not dev:
-        tags = subprocess.check_output(["git", "-C", str(root), "tag", "--points-at", "HEAD"], text=True).split()
-        if release["required_tag"] not in tags:
-            print(f"ERROR: {release['required_tag']} must point at HEAD; use --dev/--allow-untagged only for explicit development work.", file=sys.stderr)
-            raise SystemExit(1)
-        if subprocess.check_output(["git", "-C", str(root), "cat-file", "-t", f"refs/tags/{release['required_tag']}"], text=True).strip() != "tag":
-            print(f"ERROR: {release['required_tag']} must be an annotated tag.", file=sys.stderr)
-            raise SystemExit(1)
-    print(release["version"])
-elif action == "install-payload":
-    for skill in ownership["canonical_skills"]:
-        for p in sorted((root / ".agents/skills" / skill).rglob("*")):
-            if p.is_file(): print(p.relative_to(root))
-    for item in ownership["install_payload_roots"]:
-        for p in sorted((root / item).rglob("*")):
-            if p.is_file(): print(p.relative_to(root))
-    print(*ownership["install_payload_paths"], sep="\n")
-PY
+  local command="$1"
+  shift
+  local args=(--root "$HARNESS")
+  [ "$DEV_MODE" -eq 1 ] || args+=(--require-release)
+  python3 "$HARNESS/scripts/harness-manifest.py" "${args[@]}" "$command" "$@"
 }
 
 [ -f "$HARNESS/CHANGELOG.md" ] || { echo "Run from the purrfect-harness repo root."; exit 1; }
@@ -99,9 +61,9 @@ copy_one() {
 }
 
 # ---- kit payload (README/CHANGELOG/RELEASING stay in the harness repo only) ----
-PAYLOAD="$(manifest install-payload)"
-
-for f in $PAYLOAD; do copy_one "$f"; done
+PAYLOAD_OUTPUT="$(manifest install-payload)"
+[ -n "$PAYLOAD_OUTPUT" ] || { echo "ERROR: manifest install payload is empty." >&2; exit 1; }
+while IFS= read -r f; do copy_one "$f"; done <<< "$PAYLOAD_OUTPUT"
 
 # ---- AGENTS.md is special: never installed as-is over an existing one ----
 if [ -e "$TARGET/AGENTS.md" ]; then

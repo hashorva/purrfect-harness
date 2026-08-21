@@ -4,6 +4,34 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-21 — Human re-scope — APPROVED
+
+- **Verdict:** Approved decomposing the failed T-001/F006 scope and continuing without changing the seven Phase 1 features or expanding into Phase 2.
+- **Fleet:** Refreshed inventory is unchanged for the approved seats: brain `gpt-5.6-sol` / high; T-002 and T-003 use Codex premium `gpt-5.6-terra`. Agent/agy live model probes remain degraded and are not used for these tasks.
+- **Sequence:** T-002 closes executable release/install/update/sync truth and all real-entry negative regressions. After independent review and commit, T-003 closes root/consumer instruction and documentation truth. F006 remains false until both pass.
+- **Checkpoint rule:** The uncommitted second T-001 candidate may now be committed only as an explicitly unaccepted review checkpoint to give T-002 a clean attributable baseline; it is not completion evidence.
+
+## 2026-08-21 — GPT-5.6 Sol/high — F006 final-review addendum
+
+- **Additional P0 reproduction:** First-time install may copy a conflicting project-owned `scripts/harness-manifest.py` to `.harness-new` and then execute the consumer's original Python through the newly installed `sync-skills.sh`. Install must never execute a conflicting consumer-owned validator; it must use the already validated source tool against target data or fail before writes.
+- **Disposition:** This reinforces the existing FAIL / STOP verdict. No feature acceptance or commit is authorized.
+
+## 2026-08-21 — GPT-5.6 Sol/high — T-001 / F006 final review — FAIL / STOP
+
+- **Verdict:** The second and final task attempt did not satisfy its amended exit criteria. F006 remains `passes: false`; no candidate commit or acceptance mutation was made.
+- **Independent green evidence:** ShellCheck, all repository JSON parsing, and `bash tests/run-tests.sh` pass on the current untagged checkout.
+- **Negative reproductions still failing:** The full suite exits 1 after an annotated `v2.3.1` is placed on the candidate commit (`default release validation rejects untagged source` and `default install rejects untagged source` fail); a different release-trigger tag on the same commit passes the shared validator; `.harness-version` containing `banana` is accepted and overwritten by the real updater; changing manifest `consumer_agents_template` is ignored by the real installer, which still copies a hard-coded path.
+- **Additional unmet binding scope:** The real root `AGENTS.md` still lacks the required verification/receipt/orchestrator-acceptance rules, README still calls the Claude layer `ENFORCED`, and `docs/missions/ORCHESTRATION.md` still claims a mechanically enforced Claude-only implementation.
+- **Stop condition:** T-001's two-attempt limit is exhausted. The uncommitted second-attempt tree is preserved for inspection; it must not be committed or used as evidence of completion without a human-approved rewritten/decomposed task.
+
+## 2026-08-21 — Codex — T-001 / F006 second attempt
+
+- **Did:** Replaced divergent inline manifest parsers with `scripts/harness-manifest.py`, mounted it in release CI, install, update, and sync, and made release propagation require an exact clean annotated tag. Restored the complete consumer AGENTS skeleton at `docs/templates/AGENTS.md.template`; the harness root AGENTS remains repository-specific.
+- **Verified:** `shellcheck scripts/*.sh tests/*.sh`, JSON validation, and `bash tests/run-tests.sh` pass. The suite uses an isolated tagged fixture and real entry points for canonical-skill omission, dirty tagged source, untagged default refusal, explicit dev success, AGENTS/template preservation, foreign discovery and canonical skills, traversal-safe sync refusal, unmanaged updates, and whitespace `.harness-version` refusal.
+- **Guard proof:** Removed `guard-verification` from the isolated fixture manifest and observed `bash scripts/install-harness.sh --dev --validate-release` fail through the release entry point; restored the fixture before its tagged-release validation.
+- **Release semantics:** Published annotated `v2.3.0` remains the latest actual release. `2.3.1` is documented as an untagged development baseline; the release gate, not this worker, decides whether to tag it.
+- **Commit blocker:** The required `git commit -m 'fix: establish harness distribution truth (T-001)'` could not create `.git/index.lock` (`Operation not permitted`): this worker's sandbox exposes repository metadata read-only. No tag or remote changes were made; commit the listed allow-listed changes from a writable Git environment.
+
 ## 2026-08-21 — GPT-5.6 Sol/high — T-001 / F006 review — FAIL
 
 - **Verdict:** F006 remains `passes: false`; the green suite did not prove release or ownership truth.

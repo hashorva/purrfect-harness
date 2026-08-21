@@ -16,31 +16,16 @@ fi
 TARGET="${1:-}"
 
 manifest() {
-  python3 - "$HARNESS" "$DEV_MODE" "${1:-validate}" <<'PY'
-import json, pathlib, subprocess, sys
-root = pathlib.Path(sys.argv[1]); dev = sys.argv[2] == "1"; action = sys.argv[3]
-try:
-    m = json.loads((root / "harness-manifest.json").read_text())
-    assert m["schema_version"] == 1
-    o, r = m["ownership"], m["release"]
-    actual = sorted(p.name for p in (root / ".agents/skills").iterdir() if p.is_dir())
-    if o["canonical_skills"] != actual: raise ValueError("canonical_skills must exactly list every .agents/skills directory")
-    rv = next(x.split(":", 1)[1].strip() for x in (root / "README.md").read_text().splitlines() if x.startswith("version:"))
-    cv = next(x[3:].split()[0] for x in (root / "CHANGELOG.md").read_text().splitlines() if x.startswith("## "))
-    if {rv, cv, r["version"]} != {r["version"]}: raise ValueError("README, CHANGELOG, and manifest release versions disagree")
-except (OSError, KeyError, ValueError, AssertionError, StopIteration, json.JSONDecodeError) as exc:
-    print(f"ERROR: invalid harness manifest: {exc}", file=sys.stderr); raise SystemExit(1)
-if action == "validate":
-    if not dev:
-        tags = subprocess.check_output(["git", "-C", str(root), "tag", "--points-at", "HEAD"], text=True).split()
-        if r["required_tag"] not in tags:
-            print(f"ERROR: {r['required_tag']} must point at HEAD; use --dev/--allow-untagged only for explicit development work.", file=sys.stderr); raise SystemExit(1)
-        if subprocess.check_output(["git", "-C", str(root), "cat-file", "-t", f"refs/tags/{r['required_tag']}"], text=True).strip() != "tag":
-            print(f"ERROR: {r['required_tag']} must be an annotated tag.", file=sys.stderr); raise SystemExit(1)
-    print(r["version"])
-elif action == "skills": print(*o["canonical_skills"], sep="\n")
-elif action == "paths": print(*o["update_paths"], sep="\n")
-PY
+  local command="$1" field="${2:-}"
+  local args=(--root "$HARNESS")
+  [ "$DEV_MODE" -eq 1 ] || args+=(--require-release)
+  if [ "$command" = "skills" ]; then
+    python3 "$HARNESS/scripts/harness-manifest.py" "${args[@]}" get canonical_skills
+  elif [ "$command" = "paths" ]; then
+    python3 "$HARNESS/scripts/harness-manifest.py" "${args[@]}" get update_paths
+  else
+    python3 "$HARNESS/scripts/harness-manifest.py" "${args[@]}" validate "$field"
+  fi
 }
 
 [ -f "$HARNESS/CHANGELOG.md" ] || { echo "Run from the purrfect-harness repo root."; exit 1; }
@@ -55,6 +40,7 @@ if [ -n "$(git -C "$TARGET" status --porcelain)" ]; then
 fi
 
 OLD_VERSION="$(cat "$TARGET/.harness-version")"
+[ -n "$OLD_VERSION" ] && [ "$OLD_VERSION" = "$(printf '%s' "$OLD_VERSION" | tr -d '[:space:]')" ] || { echo "ERROR: $TARGET has an invalid .harness-version; reinstall or repair it explicitly."; exit 1; }
 echo "Updating $TARGET : harness $OLD_VERSION -> $VERSION"
 
 BRANCH="chore/harness-$VERSION"
@@ -62,15 +48,19 @@ git -C "$TARGET" checkout -b "$BRANCH" 2>/dev/null || git -C "$TARGET" checkout 
 
 # ---- copy kit-owned skills (other skill folders in target are untouched) ----
 mkdir -p "$TARGET/.agents/skills"
+MANIFEST_SKILLS_OUTPUT="$(manifest skills)"
+[ -n "$MANIFEST_SKILLS_OUTPUT" ] || { echo "ERROR: manifest canonical skills query is empty." >&2; exit 1; }
 while IFS= read -r s; do
   if [ -d "$HARNESS/.agents/skills/$s" ]; then
     rm -rf "$TARGET/.agents/skills/$s"
     cp -R "$HARNESS/.agents/skills/$s" "$TARGET/.agents/skills/$s"
     echo "  updated skill: $s"
   fi
-done < <(manifest skills)
+done <<< "$MANIFEST_SKILLS_OUTPUT"
 
 # ---- copy other kit-owned paths ----
+MANIFEST_PATHS_OUTPUT="$(manifest paths)"
+[ -n "$MANIFEST_PATHS_OUTPUT" ] || { echo "ERROR: manifest update paths query is empty." >&2; exit 1; }
 while IFS= read -r p; do
   if [ -e "$HARNESS/$p" ]; then
     mkdir -p "$TARGET/$(dirname "$p")"
@@ -78,7 +68,7 @@ while IFS= read -r p; do
     cp -R "$HARNESS/$p" "$TARGET/$p"
     echo "  updated: $p"
   fi
-done < <(manifest paths)
+done <<< "$MANIFEST_PATHS_OUTPUT"
 
 # ---- settings.json: merged file, never overwrite ----
 if [ -f "$HARNESS/.claude/settings.json" ]; then
