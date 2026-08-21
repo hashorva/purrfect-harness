@@ -73,6 +73,9 @@ echo "== documentation truth"
 check "documentation matches instruction and ownership truth" check_documentation_truth "$HARNESS"
 check "documentation guard rejects an enforced-permissions claim" documentation_truth_negative "$HARNESS"
 
+echo "== immutable execution spec and provider adapter"
+check "ExecutionSpec and provider adapter contracts" python3 tests/test-execution-spec.py
+
 # F006 regressions must use the public propagation/release entry points. Tagged
 # and untagged source state is always isolated so this suite is independent of
 # the checkout from which it was invoked.
@@ -205,6 +208,9 @@ check "template rules explain bootstrap"      sh -c "python3 -c \"import json,sy
 check "mission-init skill documents bootstrap" sh -c "grep -q '\"bootstrap\": true' '$TARGET/.agents/skills/mission-init/SKILL.md'"
 check "stub ORCHESTRATION at old path"       test -f "$TARGET/docs/ORCHESTRATION.md"
 check "spawn-worker.sh installed +x"         test -x "$TARGET/scripts/spawn-worker.sh"
+check "execution spec tool installed"        test -f "$TARGET/scripts/execution_spec.py"
+check "provider adapter installed"           test -f "$TARGET/scripts/execute_provider.py"
+check "execution spec schema installed"      test -f "$TARGET/schemas/execution-spec.schema.json"
 check "active-mission.sh installed +x"       test -x "$TARGET/scripts/active-mission.sh"
 check "fleet-inventory.sh installed +x"      test -x "$TARGET/scripts/fleet-inventory.sh"
 check ".claude/skills is a real directory"   sh -c "[ ! -L '$TARGET/.claude/skills' ] && [ -d '$TARGET/.claude/skills' ]"
@@ -398,6 +404,8 @@ git -C "$RELEASE_FIXTURE" checkout -q -- README.md
 bash scripts/update-harness.sh --dev "$TARGET"
 check "update stayed on version branch" sh -c "git -C '$TARGET' branch --show-current | grep -q 'chore/harness-'"
 check "kit skill still present after update" test -f "$TARGET/.agents/skills/mission-init/SKILL.md"
+check "provider adapter remains after update" test -f "$TARGET/scripts/execute_provider.py"
+check "execution spec schema remains after update" test -f "$TARGET/schemas/execution-spec.schema.json"
 check "MODEL_ROUTING under docs/missions" test -f "$TARGET/docs/missions/MODEL_ROUTING.md"
 check "instance mission folder preserved" test -f "$TARGET/docs/missions/20990101-fixture/KEEP.md"
 check "instance GOAL preserved" test -f "$TARGET/docs/missions/20990101-fixture/GOAL.md"

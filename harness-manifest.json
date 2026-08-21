@@ -32,12 +32,15 @@
       ".claude/settings.json",
       "scripts/sync-skills.sh",
       "scripts/harness-manifest.py",
+      "scripts/execution_spec.py",
+      "scripts/execute_provider.py",
       "scripts/active-mission.sh",
       "scripts/spawn-worker.sh",
       "scripts/fleet-inventory.sh",
       "scripts/spawn-brain.sh",
       "scripts/verify-mission.sh",
       "scripts/write-receipt.sh",
+      "schemas/execution-spec.schema.json",
       "harness-manifest.json",
       "CLAUDE.md",
       "GEMINI.md"
@@ -54,6 +57,8 @@
       ".claude/agents",
       "scripts/sync-skills.sh",
       "scripts/harness-manifest.py",
+      "scripts/execution_spec.py",
+      "scripts/execute_provider.py",
       "scripts/update-harness.sh",
       "scripts/active-mission.sh",
       "scripts/spawn-worker.sh",
@@ -61,6 +66,7 @@
       "scripts/spawn-brain.sh",
       "scripts/verify-mission.sh",
       "scripts/write-receipt.sh",
+      "schemas/execution-spec.schema.json",
       "harness-manifest.json"
     ],
     "consumer_agents_template": "docs/templates/AGENTS.md.template"

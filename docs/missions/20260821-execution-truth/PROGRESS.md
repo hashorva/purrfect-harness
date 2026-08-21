@@ -4,6 +4,25 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-21 — GPT-5.6 Sol/high — T-004 attempt 1 review — FAIL
+
+- **Verified good:** One importable validator, canonical JSON serialization, UUID-keyed no-clobber naming, exact four-provider argv dry-runs for both roles, fail-closed capability checks, manifest ownership, and the focused test suite.
+- **Critical corrections:** `persist()` opens and writes the final path directly, so the artifact is not atomically published and a crash/reader can observe a partial final spec. The adapter accepts a canonically rewritten spec without requiring the original persisted SHA-256, so launch does not enforce immutability. `subprocess.run()` inherits stdin, reintroducing the Codex EOF/hang class when the caller keeps stdin open.
+- **Contract drift:** The JSON Schema UUID/path patterns and Python validator disagree (for example nil UUID and repository paths containing spaces), so two representations of the same policy can produce opposite answers.
+- **Disposition:** F001 remains false. Preserve attempt 1 only as an unaccepted checkpoint; T-004 attempt 2 is limited to staged atomic publish, required exact-byte hash binding, stdin closure, schema agreement, and mounted negative regressions. T-005 remains dormant.
+
+## 2026-08-21 — Codex — T-004 immutable execution spec and provider adapter
+
+- **Did:** Added the schema-versioned, exact-field `ExecutionSpec` contract; its single Python policy validates canonical UUIDs, role-aware feature values, safe Git-worktree roots, resolved full commit IDs, and positive attempts. It persists canonical JSON with exact-byte SHA-256 at `.tasks/specs/<run_id>.json` through no-clobber creation, so a rejected input or duplicate ID never replaces a final spec. Amendments require a new UUID.
+- **Adapter:** Added the shared argv-only adapter for Codex, Claude, agy, and agent. It revalidates canonical persisted bytes before resolving provider grammar, rejects unsupported effort/speed and pre-parameterized agent model IDs before launch, emits an empty explicit environment-override map, and records dry-run observations as `unknown` rather than guessing them.
+- **Tests and ownership:** Mounted deterministic tests at `bash tests/run-tests.sh`: exact brain/worker argv and env contracts for every provider, canonical hashing/no-clobber persistence, weakest invalid schema values, and sentinel-backed missing-field/capability/collision negatives. Manifest install and update ownership now includes both scripts and the schema, with install/update regression checks.
+- **Guard proof:** Temporarily disabled the Codex `speed != unknown` rejection and ran the repository entry point. It failed at `ExecutionSpec and provider adapter contracts`; restored the exact guard before final checks.
+- **Verified:** `python3 tests/test-execution-spec.py`, ShellCheck, repository JSON validation, and `git diff --check` pass. The full mounted suite passed every new contract and lifecycle check shown through the existing provider-stub section; this terminal environment terminated it before its final banner, matching the pre-existing long-suite limitation noted in mission progress.
+
+## 2026-08-21 — Codex — T-004 required commit blocked
+
+- **Blocked:** `git commit -m 'feat: add immutable execution spec and provider adapter (T-004)'` failed because this sandbox cannot create `/Users/zamirhashorva/dev/purrfect-harness/.git/index.lock` (`Operation not permitted`). No commit, tag, remote, or `features.json` change was made; commit the allow-listed schema, scripts, manifest, tests, and append-only progress entries from a Git-writable environment.
+
 ## 2026-08-21 — GPT-5.6 Sol/high — F001 decomposition
 
 - **Decision:** F001 is split at the adapter/integration boundary. T-004 builds and proves the immutable spec plus shared four-provider grammar; T-005 will integrate only that reviewed contract into brain/worker launch and exact-byte receipt linkage.
