@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # spawn-worker.sh — run a WORKER_TASK via a real local CLI agent (Mac Mini / studio).
 # Usage (from the consuming repo root):
-#   bash scripts/spawn-worker.sh <codex|agent|agy|claude> <path-to-task.md> \
-#        [--tier economy|premium] [--model <id>] [--effort <value>] [--feature F00X] [--repo <path>] \
+#   bash scripts/spawn-worker.sh [<codex|agent|agy|claude>] <path-to-task.md> \
+#        [--provider NAME] [--tier economy|premium] [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N] [--feature F00X] [--repo PATH] \
 #        [extra prompt...]
 #
 # Model resolution order:
@@ -33,32 +33,50 @@ fi
 set -euo pipefail
 
 usage() {
-  echo "Usage: spawn-worker.sh <codex|agent|agy|claude> <task.md> [--tier economy|premium] [--model <id>] [--effort <value>] [--feature ID] [--repo <path>]" >&2
+  echo "Usage: spawn-worker.sh [provider] <task.md> --provider NAME [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N]" >&2
   exit 2
 }
 
-[ $# -ge 2 ] || usage
-WORKER="$1"
-TASK="$2"
-shift 2
+[ $# -ge 1 ] || usage
+WORKER=""
+if [[ "$1" == codex || "$1" == agent || "$1" == agy || "$1" == claude ]]; then
+  WORKER="$1"
+  shift
+fi
+[ $# -ge 1 ] || usage
+TASK="$1"
+shift
 
 TIER=""
 MODEL_OVERRIDE=""
 EFFORT="medium"
+SPEED=""
+ATTEMPT="1"
 FEATURE=""
 REPO_IN=""
 EXTRA_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
+    --provider) PROVIDER_FLAG="${2:?}"; shift 2 ;;
     --tier) TIER="${2:?}"; shift 2 ;;
     --model) MODEL_OVERRIDE="${2:?}"; shift 2 ;;
     --effort) EFFORT="${2:?}"; shift 2 ;;
+    --speed) SPEED="${2:?}"; shift 2 ;;
+    --attempt) ATTEMPT="${2:?}"; shift 2 ;;
     --feature) FEATURE="${2:?}"; shift 2 ;;
     --repo) REPO_IN="${2:?}"; shift 2 ;;
     *) EXTRA_ARGS+=("$1"); shift ;;
   esac
 done
 EXTRA="${EXTRA_ARGS[*]:-}"
+[ -n "${PROVIDER_FLAG:-}" ] && {
+  [ -z "$WORKER" ] || [ "$WORKER" = "$PROVIDER_FLAG" ] || { echo "ERROR: positional provider and --provider disagree" >&2; exit 2; }
+  WORKER="$PROVIDER_FLAG"
+}
+[ -n "$WORKER" ] || usage
+case "$WORKER" in codex|claude|agent|agy) ;; *) usage ;; esac
+case "$ATTEMPT" in *[!0-9]*|'') echo "ERROR: --attempt must be positive" >&2; exit 2 ;; esac
+[ "$ATTEMPT" -gt 0 ] || { echo "ERROR: --attempt must be positive" >&2; exit 2; }
 
 ROOT="$(pwd)"
 [ -f "$TASK" ] || { echo "ERROR: task file not found: $TASK" >&2; exit 1; }
@@ -96,13 +114,6 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 LOG_REL=".tasks/logs/${BASE}-${STAMP}.log"
 LOG="$ROOT/$LOG_REL"
 INV="$ROOT/.tasks/fleet-inventory.json"
-
-need() {
-  command -v "$1" >/dev/null 2>&1 || {
-    echo "ERROR: CLI '$1' not on PATH. Install/login on this machine before dispatch." >&2
-    exit 127
-  }
-}
 
 # Default tier when omitted: premium for agent (Grok-first), economy for others
 if [ -z "$TIER" ]; then
@@ -183,6 +194,7 @@ PY
 
 MODEL="$(resolve_model "$WORKER" "$TIER" "$MODEL_OVERRIDE")"
 [ -n "$MODEL" ] || { echo "ERROR: could not resolve model for $WORKER/$TIER" >&2; exit 1; }
+[ -n "$SPEED" ] || { [ "$WORKER" = agent ] && SPEED="standard" || SPEED="unknown"; }
 
 # Cross-repo workers cannot resolve TASK_REL against their workspace — use absolute path.
 if [ "$WORKSPACE" = "$ROOT" ]; then
@@ -190,10 +202,16 @@ if [ "$WORKSPACE" = "$ROOT" ]; then
 else
   PROMPT_TASK="$TASK_ABS"
 fi
-PROMPT="Read ${PROMPT_TASK} and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder. ${EXTRA}"
+PROMPT="Read ${PROMPT_TASK} and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder."
+[ -z "$EXTRA" ] || PROMPT+=" $EXTRA"
+
+SPEC_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execution_spec.py" construct --role worker --mission "$MISSION" --feature "$FEATURE" --work-unit "$BASE" --attempt "$ATTEMPT" --provider "$WORKER" --model "$MODEL" --effort "$EFFORT" --speed "$SPEED" --repo "$WORKSPACE" --prompt "$PROMPT")" || exit $?
+RUN_ID="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["run_id"])' <<<"$SPEC_JSON")"
+SPEC_PATH="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["path"])' <<<"$SPEC_JSON")"
+SPEC_SHA256="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["sha256"])' <<<"$SPEC_JSON")"
 
 {
-  echo "spawn-worker: worker=$WORKER tier=$TIER model=$MODEL task=$TASK_REL feature=${FEATURE:-} mission=$MISSION log=$LOG_REL repo=$WORKSPACE"
+  echo "spawn-worker: worker=$WORKER tier=$TIER model=$MODEL task=$TASK_REL feature=${FEATURE:-} mission=$MISSION run_id=$RUN_ID log=$LOG_REL repo=$WORKSPACE"
   echo "prompt: $PROMPT"
   echo "----"
 } | tee "$LOG"
@@ -238,79 +256,12 @@ watchdog_wait() {
   wait "$pid"
 }
 
-case "$WORKER" in
-  codex)
-    need codex
-    set +e
-    # codex exec reads stdin for "additional input" until EOF. Leave it inherited
-    # and a dispatch hangs forever when the caller keeps stdin open (pipes, FIFOs,
-    # orchestrator wrappers). Always close it. The run-tests.sh stdin regression
-    # holds a FIFO open on purpose — without this redirect that check fails.
-    codex exec -C "$WORKSPACE" -s workspace-write -m "$MODEL" \
-      -c "model_reasoning_effort=\"$EFFORT\"" \
-      "$PROMPT" >>"$LOG" 2>&1 < /dev/null &
-    watchdog_wait $!
-    EC=$?
-    set -e
-    ;;
-  agent)
-    need agent
-    set +e
-    # Cursor Agent CLI: -p print; --force auto-approves; --trust workspace.
-    agent -p --force --trust --workspace "$WORKSPACE" --model "$MODEL" "$PROMPT" >>"$LOG" 2>&1 &
-    watchdog_wait $!
-    EC=$?
-    set -e
-    ;;
-  agy)
-    need agy
-    set +e
-    # Antigravity CLI uses a Go flag parser: -p / --print / --prompt TAKES THE PROMPT
-    # AS ITS VALUE. The old order
-    #     agy -p --dangerously-skip-permissions --model M "$PROMPT"
-    # therefore set print="--dangerously-skip-permissions" and DROPPED the real
-    # prompt: agy answered a question about the flag, exited 0, and the wrapper
-    # reported success having done no work. -p MUST come last, with the prompt as
-    # its value. --print-timeout defaults to 5m, too short for multi-file UI tasks.
-    AGY_ARGS=(--dangerously-skip-permissions --print-timeout 30m)
-    [ -n "$MODEL" ] && AGY_ARGS+=(--model "$MODEL")
-    if [ "$WORKSPACE" = "$ROOT" ]; then
-      agy "${AGY_ARGS[@]}" -p "$PROMPT" >>"$LOG" 2>&1 &
-      watchdog_wait $!
-      EC=$?
-    else
-      ( cd "$WORKSPACE" && agy "${AGY_ARGS[@]}" -p "$PROMPT" ) >>"$LOG" 2>&1 &
-      watchdog_wait $!
-      EC=$?
-    fi
-    set -e
-    ;;
-  claude)
-    need claude
-    set +e
-    # --allowedTools is VARIADIC: it keeps consuming following arguments as tool
-    # names, so a prompt placed after it is swallowed and claude exits with
-    # "Input must be provided either through stdin or as a prompt argument".
-    # The prompt must come BEFORE the flags. Same failure family as the agy
-    # lane fixed in 2.2.3 — a flag eating the positional prompt.
-    if [ "$WORKSPACE" = "$ROOT" ]; then
-      claude -p "$PROMPT" --model "$MODEL" \
-        --allowedTools "Read,Write,Edit,Bash" >>"$LOG" 2>&1 &
-      watchdog_wait $!
-      EC=$?
-    else
-      ( cd "$WORKSPACE" && claude -p "$PROMPT" --model "$MODEL" \
-        --allowedTools "Read,Write,Edit,Bash" ) >>"$LOG" 2>&1 &
-      watchdog_wait $!
-      EC=$?
-    fi
-    set -e
-    ;;
-  *)
-    echo "ERROR: unknown worker '$WORKER' (codex|agent|agy|claude)" >&2
-    exit 2
-    ;;
-esac
+# Provider grammar and process launch are owned solely by the shared adapter.
+set +e
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execute_provider.py" --spec "$SPEC_PATH" --sha256 "$SPEC_SHA256" >>"$LOG" 2>&1 < /dev/null &
+watchdog_wait $!
+EC=$?
+set -e
 
 echo "----" | tee -a "$LOG"
 echo "exit=$EC" | tee -a "$LOG"
@@ -327,12 +278,13 @@ if [ "$EC" -eq 0 ] && [ "$COMMITS_MADE" -eq 0 ] && [ "$DIRTY_AFTER" -eq 0 ]; the
   echo "WARNING: exit=0 but workspace unchanged (0 commits, 0 dirty files) — likely a false green, do not trust this as a PASS without reading the log" | tee -a "$LOG"
 fi
 
-ARGV_JSON="$(python3 -c "import json; print(json.dumps(['$WORKER','--tier','$TIER','--model','$MODEL']))")"
+ARGV_JSON="$(python3 -c "import json; print(json.dumps(['$WORKER','--model','$MODEL','--effort','$EFFORT','--speed','$SPEED']))")"
 REC_ARGS=(
   --role worker --cli "$WORKER" --model "$MODEL" --mission "$MISSION"
-  --action "task-${BASE}" --exit "$EC" --log "$LOG_REL" --task "$TASK_REL"
+  --action "task-${BASE}" --work-unit "$BASE" --exit "$EC" --log "$LOG_REL" --task "$TASK_REL"
   --tier "$TIER" --argv "$ARGV_JSON" --repo "$WORKSPACE"
   --commits-made "$COMMITS_MADE" --dirty-after "$DIRTY_AFTER"
+  --run-id "$RUN_ID" --spec "$SPEC_PATH" --spec-sha256 "$SPEC_SHA256"
 )
 if [ -n "$FEATURE" ]; then
   REC_ARGS+=(--feature "$FEATURE")

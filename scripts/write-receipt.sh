@@ -15,6 +15,7 @@ set -euo pipefail
 ROLE=""; CLI=""; MODEL=""; MISSION=""; ACTION=""; EXIT_CODE=""; LOG=""
 TASK=""; FEATURE=""; TIER=""; ARGV="[]"; REPO=""
 COMMITS_MADE=""; DIRTY_AFTER=""
+WORK_UNIT=""; RUN_ID=""; SPEC=""; SPEC_SHA256=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -32,12 +33,32 @@ while [ $# -gt 0 ]; do
     --repo) REPO="${2:?}"; shift 2 ;;
     --commits-made) COMMITS_MADE="${2:?}"; shift 2 ;;
     --dirty-after) DIRTY_AFTER="${2:?}"; shift 2 ;;
+    --work-unit) WORK_UNIT="${2:?}"; shift 2 ;;
+    --run-id) RUN_ID="${2:?}"; shift 2 ;;
+    --spec) SPEC="${2:?}"; shift 2 ;;
+    --spec-sha256) SPEC_SHA256="${2:?}"; shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 
 : "${ROLE:?}"; : "${CLI:?}"; : "${MODEL:?}"; : "${MISSION:?}"
 : "${ACTION:?}"; : "${EXIT_CODE:?}"; : "${LOG:?}"
+
+LINK_COUNT=0
+[ -n "$RUN_ID" ] && LINK_COUNT=$((LINK_COUNT + 1))
+[ -n "$SPEC" ] && LINK_COUNT=$((LINK_COUNT + 1))
+[ -n "$SPEC_SHA256" ] && LINK_COUNT=$((LINK_COUNT + 1))
+if [ "$LINK_COUNT" -ne 0 ] && [ "$LINK_COUNT" -ne 3 ]; then
+  echo "ERROR: --run-id, --spec, and --spec-sha256 must be supplied together" >&2
+  exit 2
+fi
+LINK_JSON=""
+if [ "$LINK_COUNT" -eq 3 ]; then
+  : "${WORK_UNIT:?--work-unit is required with execution spec linkage}"
+  LINK_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$PWD/scripts/execution_spec.py" receipt-link \
+    --run-id "$RUN_ID" --spec "$SPEC" --spec-sha256 "$SPEC_SHA256" --role "$ROLE" \
+    --mission "$MISSION" --work-unit "$WORK_UNIT" --provider "$CLI" --model "$MODEL")" || exit $?
+fi
 
 ROOT="$(pwd)"
 REC_DIR="$ROOT/.tasks/receipts"
@@ -52,6 +73,7 @@ export RECEIPT_LOG="$LOG" RECEIPT_TASK="$TASK" RECEIPT_FEATURE="$FEATURE"
 export RECEIPT_TIER="$TIER" RECEIPT_ARGV="$ARGV" RECEIPT_TS="$TS"
 export RECEIPT_REPO="$REPO"
 export RECEIPT_COMMITS_MADE="$COMMITS_MADE" RECEIPT_DIRTY_AFTER="$DIRTY_AFTER"
+export RECEIPT_LINK_JSON="$LINK_JSON"
 
 python3 - <<'PY'
 import json, os
@@ -96,6 +118,17 @@ doc = {
     "dirty_after": dirty_after,
     "workspace_changed": workspace_changed,
 }
+link_json = os.environ.get("RECEIPT_LINK_JSON")
+if link_json:
+    link = json.loads(link_json)
+    doc.update({
+        "run_id": link["run_id"],
+        "execution_spec_path": link["execution_spec_path"],
+        "execution_spec_sha256": link["execution_spec_sha256"],
+        "requested_configuration": link["requested"],
+        "resolved_configuration": link["resolved"],
+        "observed_configuration": link["observed"],
+    })
 out = Path(os.environ["RECEIPT_OUT"])
 out.write_text(json.dumps(doc, indent=2) + "\n")
 slug = os.environ["RECEIPT_MISSION"].rstrip("/").split("/")[-1]

@@ -4,6 +4,20 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-21 — GPT-5.6 Sol/high — T-005 attempt 1 review — FAIL
+
+- **Receipt:** `.tasks/receipts/worker-task-T-005-20260821T195520Z.json` records the bounded premium Codex run and seven changed paths, but it is a legacy bootstrap receipt and is not acceptance evidence.
+- **Failure:** `bash tests/run-tests.sh` ended at `TESTS FAILED`. Every installed-harness provider regression failed: agy prompt/timeout, Claude prompt position, both Codex argv cases plus closed stdin, and agent argv.
+- **Coverage gap:** The new focused test asserted neither exact argv/environment nor the Sol brain selection, and omitted the required malformed/tampered spec, duplicate-ID, receipt mismatch/noncanonical, and separate adapter/receipt-guard bypass negatives. The worker progress claim is therefore incomplete rather than acceptance evidence.
+- **Disposition:** F001 remains false. Preserve attempt 1 as a WIP checkpoint and use the task's second/final attempt only to close these concrete failures and the original exit criteria; do not start F002.
+
+## 2026-08-21 — Codex — T-005 immutable execution integration
+
+- **Did:** Bound both real wrappers to one persisted UUID-keyed ExecutionSpec and the shared provider adapter; brain preserves a labeled legacy waiver only. Receipts now validate all-or-none run/spec/hash linkage against exact canonical bytes and record requested, adapter-resolved, and literally unknown observed configuration.
+- **Tests:** Added mounted real-wrapper stubs for all four providers in both roles, proving a spec exists before invocation and that receipt identity/hash linkage is retained. Unsupported Codex speed rejects before the provider sentinel.
+- **Guard proof:** Temporarily bypassed the Codex speed rejection in `execute_provider.py`; the mounted `tests/test-execution-integration.py` entry failed because the sentinel was invoked. Restored the exact guard before final validation.
+- **Acceptance:** F001 remains false; no feature state was edited.
+
 ## 2026-08-21 — GPT-5.6 Sol/high — T-005 integration frontier
 
 - **Dependency:** T-004 is independently verified and committed at `4129df0`; its immutable spec, adapter mappings, atomic publish, hash-bound launch, stdin, schema, and clean-suite contracts are the fixed integration substrate.

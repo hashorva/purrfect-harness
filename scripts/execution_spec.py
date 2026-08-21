@@ -11,6 +11,7 @@ import sys
 import tempfile
 import uuid
 
+
 FIELDS = frozenset(("schema_version", "run_id", "mission", "work_unit", "role", "feature",
                     "provider", "model", "effort", "speed", "repo", "base_commit",
                     "attempt", "prompt"))
@@ -163,6 +164,62 @@ def load_persisted(path):
     return validated, data
 
 
+def construct(*, role, mission, feature, work_unit, attempt, provider, model, effort, speed, repo, prompt):
+    """Build and persist a fresh execution authorization from resolved launch inputs."""
+    try:
+        base_commit = subprocess.check_output(
+            ["git", "-C", repo, "rev-parse", "HEAD"], text=True
+        ).strip().lower()
+    except subprocess.CalledProcessError as exc:
+        raise SpecError("cannot resolve current Git commit") from exc
+    spec = {
+        "schema_version": 1,
+        "run_id": str(uuid.uuid4()),
+        "mission": mission,
+        "work_unit": work_unit,
+        "role": role,
+        "feature": feature,
+        "provider": provider,
+        "model": model,
+        "effort": effort,
+        "speed": speed,
+        "repo": repo,
+        "base_commit": base_commit,
+        "attempt": attempt,
+        "prompt": prompt,
+    }
+    path, digest = persist(spec)
+    return spec, path, digest
+
+
+def receipt_link(*, run_id, path, digest, role, mission, work_unit, provider, model):
+    """Fail closed unless receipt identity is backed by the exact persisted bytes."""
+    if not re.fullmatch(r"[0-9a-f]{64}", digest or ""):
+        raise SpecError("spec_sha256 must be a lowercase SHA-256 digest")
+    spec, raw = load_persisted(path)
+    if spec_sha256(raw) != digest:
+        raise SpecError("execution spec SHA-256 does not match exact persisted bytes")
+    required = {
+        "run_id": run_id, "role": role, "mission": mission,
+        "work_unit": work_unit, "provider": provider, "model": model,
+    }
+    for key, expected in required.items():
+        if spec[key] != expected:
+            raise SpecError(f"receipt {key} does not match execution spec")
+    # Import only after byte/identity validation. This makes the receipt's resolved
+    # configuration use exactly the same provider policy as the launch adapter.
+    from execute_provider import provider_contract
+    argv, env_overrides = provider_contract(spec)
+    return {
+        "run_id": spec["run_id"],
+        "execution_spec_path": str(Path(path)),
+        "execution_spec_sha256": digest,
+        "requested": {key: spec[key] for key in ("provider", "model", "effort", "speed")},
+        "resolved": {"argv": argv, "env_overrides": env_overrides},
+        "observed": {"model": "unknown", "effort": "unknown", "speed": "unknown"},
+    }
+
+
 def _read_input(path):
     try:
         return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -176,16 +233,39 @@ def main():
     for name in ("validate", "persist"):
         command = sub.add_parser(name)
         command.add_argument("--input", required=True, help="JSON authorization input")
+    construct_parser = sub.add_parser("construct")
+    for name in ("role", "mission", "work-unit", "attempt", "provider", "model", "effort", "speed", "repo", "prompt"):
+        construct_parser.add_argument(f"--{name}", required=True)
+    construct_parser.add_argument("--feature")
+    link_parser = sub.add_parser("receipt-link")
+    for name in ("run-id", "spec", "spec-sha256", "role", "mission", "work-unit", "provider", "model"):
+        link_parser.add_argument(f"--{name}", required=True)
     args = parser.parse_args()
     try:
-        spec = _read_input(args.input)
-        if args.command == "validate":
-            validated = validate(spec)
-            data = canonical_bytes(validated)
-            print(json.dumps({"sha256": spec_sha256(data), "spec": validated}, sort_keys=True, separators=(",", ":")))
+        if args.command == "construct":
+            spec, path, digest = construct(
+                role=args.role, mission=args.mission, feature=args.feature,
+                work_unit=args.work_unit, attempt=int(args.attempt), provider=args.provider,
+                model=args.model, effort=args.effort, speed=args.speed, repo=args.repo,
+                prompt=args.prompt,
+            )
+            print(json.dumps({"run_id": spec["run_id"], "path": str(path), "sha256": digest},
+                             sort_keys=True, separators=(",", ":")))
+        elif args.command == "receipt-link":
+            print(json.dumps(receipt_link(
+                run_id=args.run_id, path=args.spec, digest=args.spec_sha256,
+                role=args.role, mission=args.mission, work_unit=args.work_unit,
+                provider=args.provider, model=args.model,
+            ), sort_keys=True, separators=(",", ":")))
         else:
-            path, digest = persist(spec)
-            print(json.dumps({"path": str(path), "sha256": digest}, sort_keys=True, separators=(",", ":")))
+            spec = _read_input(args.input)
+            if args.command == "validate":
+                validated = validate(spec)
+                data = canonical_bytes(validated)
+                print(json.dumps({"sha256": spec_sha256(data), "spec": validated}, sort_keys=True, separators=(",", ":")))
+            else:
+                path, digest = persist(spec)
+                print(json.dumps({"path": str(path), "sha256": digest}, sort_keys=True, separators=(",", ":")))
     except SpecError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
