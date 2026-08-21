@@ -12,6 +12,17 @@
 set -euo pipefail
 
 ROOT="$(pwd)"
+SOURCE_ROOT=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --root) ROOT="$2"; shift 2 ;;
+    --source-root) SOURCE_ROOT="$2"; shift 2 ;;
+    *) echo "Usage: sync-skills.sh [--root TARGET_ROOT] [--source-root HARNESS_ROOT]" >&2; exit 1 ;;
+  esac
+done
+ROOT="$(cd "$ROOT" && pwd -P)"
+[ -n "$SOURCE_ROOT" ] || SOURCE_ROOT="$ROOT"
+SOURCE_ROOT="$(cd "$SOURCE_ROOT" && pwd -P)"
 CANON="$ROOT/.agents/skills"
 
 if [ ! -d "$CANON" ]; then
@@ -19,9 +30,15 @@ if [ ! -d "$CANON" ]; then
   exit 1
 fi
 
-[ -f "$ROOT/harness-manifest.json" ] || { echo "ERROR: $ROOT/harness-manifest.json not found. Run from a harness-managed repo root." >&2; exit 1; }
-[ -f "$ROOT/scripts/harness-manifest.py" ] || { echo "ERROR: shared manifest validator missing." >&2; exit 1; }
-manifest_values() { python3 "$ROOT/scripts/harness-manifest.py" --root "$ROOT" --consumer get "$1"; }
+[ -f "$SOURCE_ROOT/harness-manifest.json" ] || { echo "ERROR: $SOURCE_ROOT/harness-manifest.json not found." >&2; exit 1; }
+[ -f "$SOURCE_ROOT/scripts/harness-manifest.py" ] || { echo "ERROR: shared manifest validator missing." >&2; exit 1; }
+manifest_values() {
+  if [ "$SOURCE_ROOT" = "$ROOT" ]; then
+    python3 "$SOURCE_ROOT/scripts/harness-manifest.py" --root "$SOURCE_ROOT" --consumer get "$1"
+  else
+    python3 "$SOURCE_ROOT/scripts/harness-manifest.py" --root "$SOURCE_ROOT" get "$1"
+  fi
+}
 
 # Resolve CANON to a real path for comparison (macOS lacks readlink -f; use pwd -P)
 CANON_REAL="$(cd "$CANON" && pwd -P)"
@@ -30,6 +47,9 @@ DISCOVERY_OUTPUT="$(manifest_values discovery_targets)"
 SKILLS_OUTPUT="$(manifest_values canonical_skills)"
 [ -n "$DISCOVERY_OUTPUT" ] || { echo "ERROR: manifest discovery target query is empty." >&2; exit 1; }
 [ -n "$SKILLS_OUTPUT" ] || { echo "ERROR: manifest canonical skill query is empty." >&2; exit 1; }
+while IFS= read -r required_skill; do
+  [ -d "$CANON/$required_skill" ] || { echo "ERROR: target canonical skill missing: $required_skill" >&2; exit 1; }
+done <<< "$SKILLS_OUTPUT"
 while IFS= read -r target; do
   dest_dir="$ROOT/$target"
   mkdir -p "$ROOT/$(dirname "$target")"

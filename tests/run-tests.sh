@@ -57,10 +57,37 @@ check "manifest omission of guard-verification fails release entry point" sh -c 
 "
 git -C "$RELEASE_FIXTURE" checkout -q -- harness-manifest.json
 check "tagged annotated release source validates" sh -c "cd '$RELEASE_FIXTURE' && bash scripts/install-harness.sh --validate-release"
+check "wrong release trigger tag fails at shared release entry point" sh -c "cd '$RELEASE_FIXTURE' && ! python3 scripts/harness-manifest.py --root . --require-release --trigger-tag v9.9.9 validate"
+git -C "$RELEASE_FIXTURE" tag -a v9.9.9 -m wrong-trigger
+check "second tag at HEAD does not authorize wrong release trigger" sh -c "cd '$RELEASE_FIXTURE' && ! python3 scripts/harness-manifest.py --root . --require-release --trigger-tag v9.9.9 validate"
+git -C "$RELEASE_FIXTURE" tag -d v9.9.9 >/dev/null
+python3 -c "import json; p='$RELEASE_FIXTURE/harness-manifest.json'; d=json.load(open(p)); d['release']['version']='banana'; d['release']['required_tag']='vbanana'; open(p, 'w').write(json.dumps(d))"
+check "non-SemVer source version fails real install validation" sh -c "cd '$RELEASE_FIXTURE' && ! bash scripts/install-harness.sh --dev --validate-release"
+git -C "$RELEASE_FIXTURE" checkout -q -- harness-manifest.json
+python3 -c "import json; p='$RELEASE_FIXTURE/harness-manifest.json'; d=json.load(open(p)); d['ownership']['canonical_skills']=[]; open(p, 'w').write(json.dumps(d))"
+check "empty ownership array fails real install validation" sh -c "cd '$RELEASE_FIXTURE' && ! bash scripts/install-harness.sh --dev --validate-release"
+git -C "$RELEASE_FIXTURE" checkout -q -- harness-manifest.json
+python3 -c "import json; p='$RELEASE_FIXTURE/harness-manifest.json'; d=json.load(open(p)); d['ownership']['install_payload_paths'][0]='../escape'; open(p, 'w').write(json.dumps(d))"
+check "traversing ownership path fails real install validation" sh -c "cd '$RELEASE_FIXTURE' && ! bash scripts/install-harness.sh --dev --validate-release"
+git -C "$RELEASE_FIXTURE" checkout -q -- harness-manifest.json
 echo dirty >> "$RELEASE_FIXTURE/README.md"
 check "dirty tagged install source is rejected" sh -c "cd '$RELEASE_FIXTURE' && ! bash scripts/install-harness.sh --validate-release"
 check "default release validation rejects untagged source" sh -c "! bash scripts/install-harness.sh --validate-release"
 check "explicit development release validation succeeds" bash scripts/install-harness.sh --dev --validate-release
+
+TEMPLATE_TARGET="$(mktemp -d)"
+git -C "$TEMPLATE_TARGET" init -q
+git -C "$TEMPLATE_TARGET" config user.email ci@test && git -C "$TEMPLATE_TARGET" config user.name CI
+echo consumer > "$TEMPLATE_TARGET/README.md"
+git -C "$TEMPLATE_TARGET" add -A && git -C "$TEMPLATE_TARGET" commit -qm baseline
+mkdir -p "$RELEASE_FIXTURE/docs/templates"
+printf '%s\n' 'manifest-selected consumer template' > "$RELEASE_FIXTURE/docs/templates/selected.template"
+python3 -c "import json; p='$RELEASE_FIXTURE/harness-manifest.json'; d=json.load(open(p)); d['ownership']['consumer_agents_template']='docs/templates/selected.template'; open(p, 'w').write(json.dumps(d))"
+( cd "$RELEASE_FIXTURE" && bash scripts/install-harness.sh --dev "$TEMPLATE_TARGET" ) >/dev/null
+check "installer uses manifest-selected consumer template" grep -qx "manifest-selected consumer template" "$TEMPLATE_TARGET/AGENTS.md"
+rm -rf "$TEMPLATE_TARGET"
+git -C "$RELEASE_FIXTURE" checkout -q -- harness-manifest.json
+rm -f "$RELEASE_FIXTURE/docs/templates/selected.template"
 
 TARGET="$(mktemp -d)"
 trap 'rm -rf "$TARGET" "$RELEASE_FIXTURE"' EXIT
@@ -73,6 +100,18 @@ echo "my own claude notes" > "$TARGET/CLAUDE.md"   # will conflict with kit CLAU
 echo "project-owned agent rules" > "$TARGET/AGENTS.md"
 echo "project-owned consumer skeleton" > "$TARGET/AGENTS.md.template"
 git -C "$TARGET" add -A && git -C "$TARGET" commit -qm baseline
+
+COLLISION_TARGET="$(mktemp -d)"
+git -C "$COLLISION_TARGET" init -q
+git -C "$COLLISION_TARGET" config user.email ci@test && git -C "$COLLISION_TARGET" config user.name CI
+mkdir -p "$COLLISION_TARGET/scripts"
+printf '%s\n' '#!/usr/bin/env bash' 'touch .consumer-sync-executed' > "$COLLISION_TARGET/scripts/sync-skills.sh"
+printf '%s\n' 'consumer validator' > "$COLLISION_TARGET/scripts/harness-manifest.py"
+printf '%s\n' '{"consumer":"manifest"}' > "$COLLISION_TARGET/harness-manifest.json"
+echo consumer > "$COLLISION_TARGET/README.md"
+git -C "$COLLISION_TARGET" add -A && git -C "$COLLISION_TARGET" commit -qm baseline
+check "install rejects conflicting consumer controls before writes or execution" sh -c "! bash scripts/install-harness.sh --dev '$COLLISION_TARGET' && ! test -e '$COLLISION_TARGET/.consumer-sync-executed' && test -z \"\$(git -C '$COLLISION_TARGET' status --porcelain)\""
+rm -rf "$COLLISION_TARGET"
 
 # ---- install ----
 echo "== install-harness.sh"
@@ -284,12 +323,17 @@ check "second install refused" sh -c "! bash scripts/install-harness.sh '$TARGET
 echo "== update-harness.sh"
 echo "keep-me" > "$TARGET/docs/missions/20990101-fixture/KEEP.md"
 git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "fixture mission marker"
+check "dirty tagged update source is rejected by real updater" sh -c "cd '$RELEASE_FIXTURE' && ! bash scripts/update-harness.sh '$TARGET'"
 bash scripts/update-harness.sh --dev "$TARGET"
 check "update stayed on version branch" sh -c "git -C '$TARGET' branch --show-current | grep -q 'chore/harness-'"
 check "kit skill still present after update" test -f "$TARGET/.agents/skills/mission-init/SKILL.md"
 check "MODEL_ROUTING under docs/missions" test -f "$TARGET/docs/missions/MODEL_ROUTING.md"
 check "instance mission folder preserved" test -f "$TARGET/docs/missions/20990101-fixture/KEEP.md"
 check "instance GOAL preserved" test -f "$TARGET/docs/missions/20990101-fixture/GOAL.md"
+git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "updated fixture"
+printf '%s\n' banana > "$TARGET/.harness-version"
+git -C "$TARGET" add .harness-version && git -C "$TARGET" commit -qm "invalid installed version"
+check "update rejects banana installed version" sh -c "! bash scripts/update-harness.sh --dev '$TARGET'"
 
 UNMANAGED="$(mktemp -d)"
 git -C "$UNMANAGED" init -q

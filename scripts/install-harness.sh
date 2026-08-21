@@ -41,6 +41,9 @@ fi
 [ -d "$TARGET/.git" ] || { echo "ERROR: $TARGET is not a git repo. git init + baseline commit first."; exit 1; }
 [ -z "$(git -C "$TARGET" status --porcelain)" ] || { echo "ERROR: target tree not clean."; exit 1; }
 [ -f "$TARGET/.harness-version" ] && { echo "ERROR: harness already installed ($(cat "$TARGET/.harness-version")). Use update-harness.sh."; exit 1; }
+for critical in harness-manifest.json scripts/harness-manifest.py scripts/sync-skills.sh; do
+  [ ! -e "$TARGET/$critical" ] || { echo "ERROR: consumer-owned $critical conflicts with a required harness control file; refusing before writes."; exit 1; }
+done
 
 git -C "$TARGET" checkout -b "chore/harness-install" 2>/dev/null || git -C "$TARGET" checkout "chore/harness-install"
 
@@ -66,21 +69,23 @@ PAYLOAD_OUTPUT="$(manifest install-payload)"
 while IFS= read -r f; do copy_one "$f"; done <<< "$PAYLOAD_OUTPUT"
 
 # ---- AGENTS.md is special: never installed as-is over an existing one ----
+AGENTS_TEMPLATE="$(manifest get consumer_agents_template)"
+[ -n "$AGENTS_TEMPLATE" ] || { echo "ERROR: manifest consumer_agents_template query is empty." >&2; exit 1; }
 if [ -e "$TARGET/AGENTS.md" ]; then
   if [ ! -e "$TARGET/AGENTS.md.template" ]; then
-    cp "$HARNESS/docs/templates/AGENTS.md.template" "$TARGET/AGENTS.md.template"
+    cp "$HARNESS/$AGENTS_TEMPLATE" "$TARGET/AGENTS.md.template"
     echo "  NOTE     : existing AGENTS.md kept. Consumer skeleton -> AGENTS.md.template"
   else
     echo "  NOTE     : existing AGENTS.md and AGENTS.md.template kept (project-owned)."
   fi
 else
-  cp "$HARNESS/docs/templates/AGENTS.md.template" "$TARGET/AGENTS.md"; INSTALLED=$((INSTALLED+1))
+  cp "$HARNESS/$AGENTS_TEMPLATE" "$TARGET/AGENTS.md"; INSTALLED=$((INSTALLED+1))
   echo "  installed: AGENTS.md (fill consumer placeholders before committing)"
 fi
 
 # ---- skill discovery paths: real dirs of per-skill symlinks (never parent symlink) ----
 # Parent symlink (.claude/skills -> ../.agents/skills) + naive sync used to corrupt CANON.
-( cd "$TARGET" && bash "$HARNESS/scripts/sync-skills.sh" )
+bash "$HARNESS/scripts/sync-skills.sh" --root "$TARGET" --source-root "$HARNESS"
 echo "  symlinks : per-skill links under .claude/.cursor/.gemini/.codex skills/"
 
 echo "$VERSION" > "$TARGET/.harness-version"

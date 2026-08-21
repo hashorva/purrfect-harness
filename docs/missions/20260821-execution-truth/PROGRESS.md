@@ -4,6 +4,23 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-21 — GPT-5.6 Sol/high — T-002 attempt 1 review — FAIL
+
+- **Verified good:** Exact workflow-trigger binding, shared validator usage, SemVer checks, manifest-selected template, normal critical-control collision rejection, dirty tagged update, foreign canonical sync, and the current untagged full suite.
+- **Remaining reproductions:** A dangling `harness-manifest.json` symlink bypasses `-e` checks and lets install write outside the target; the full suite fails in a legitimate tagged checkout on two real-checkout untagged assertions; dirty tagged install is exercised only through `--validate-release`, not the real installer with a target.
+- **Disposition:** F006 remains false and T-003 stays dormant. T-002 attempt 2 is limited to these three corrections.
+
+## 2026-08-21 — Codex — T-002 commit blocker
+
+- **Blocked:** The required `git commit -m 'fix: close executable distribution truth (T-002)'` failed because this worker cannot create `.git/index.lock` (`Operation not permitted`). Repository metadata is read-only in this sandbox. No commit, tag, remote, or feature-state change was made; commit the listed allow-listed changes from a Git-writable environment.
+
+## 2026-08-21 — Codex — T-002 / F006 executable distribution truth
+
+- **Did:** Centralized SemVer/version validation and scalar manifest queries in `harness-manifest.py`; removed decorative release state; wired the release workflow to require the exact `GITHUB_REF_NAME`; made install/update invoke the validated source sync tool against target data; rejected consumer-owned critical control collisions before install writes; and made the installer consume `consumer_agents_template` from the manifest.
+- **Regression evidence:** Real entry points now reject a wrong trigger even when a second annotated tag points at HEAD, non-SemVer source version, empty ownership array, traversal, dirty tagged install/update sources, conflicting consumer manifest/validator/sync controls (without writes or execution), and installed version `banana`. Sync permits foreign canonical skills but requires every source-owned canonical skill before loops.
+- **Guard proof:** In the isolated annotated fixture, removed `guard-verification` from `canonical_skills` and observed `bash scripts/install-harness.sh --dev --validate-release` fail; restored the fixture before subsequent tagged checks. The release-trigger and source-sync guards are covered by their real release/install/update entry points.
+- **Verified:** `shellcheck scripts/*.sh tests/*.sh`, JSON validation, and `git diff --check` pass. `bash tests/run-tests.sh` reached and passed all new distribution checks, but this worker terminal truncates/kills the long pre-existing suite around the later provider-stub regressions before its final banner; no task failure was reported before truncation.
+
 ## 2026-08-21 — Human re-scope — APPROVED
 
 - **Verdict:** Approved decomposing the failed T-001/F006 scope and continuing without changing the seven Phase 1 features or expanding into Phase 2.

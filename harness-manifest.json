@@ -2,9 +2,7 @@
   "schema_version": 1,
   "release": {
     "version": "2.3.1",
-    "required_tag": "v2.3.1",
-    "state": "development",
-    "semantics": "2.3.1 is the next patch release after the currently published v2.3.0 tag. It is not distributable by default until v2.3.1 points at this commit; --dev/--allow-untagged is the explicit local smoke escape."
+    "required_tag": "v2.3.1"
   },
   "ownership": {
     "canonical_skills": [

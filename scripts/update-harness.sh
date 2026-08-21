@@ -40,7 +40,7 @@ if [ -n "$(git -C "$TARGET" status --porcelain)" ]; then
 fi
 
 OLD_VERSION="$(cat "$TARGET/.harness-version")"
-[ -n "$OLD_VERSION" ] && [ "$OLD_VERSION" = "$(printf '%s' "$OLD_VERSION" | tr -d '[:space:]')" ] || { echo "ERROR: $TARGET has an invalid .harness-version; reinstall or repair it explicitly."; exit 1; }
+python3 "$HARNESS/scripts/harness-manifest.py" --root "$HARNESS" validate-version "$OLD_VERSION" >/dev/null || { echo "ERROR: $TARGET has an invalid .harness-version; reinstall or repair it explicitly."; exit 1; }
 echo "Updating $TARGET : harness $OLD_VERSION -> $VERSION"
 
 BRANCH="chore/harness-$VERSION"
@@ -94,7 +94,7 @@ chmod +x "$TARGET/scripts/verify-mission.sh" "$TARGET/scripts/write-receipt.sh" 
 chmod +x "$TARGET/scripts/sync-skills.sh" "$TARGET/scripts/update-harness.sh" 2>/dev/null || true
 
 # Refresh discovery symlinks safely (handles legacy parent-symlink layout)
-( cd "$TARGET" && bash scripts/sync-skills.sh )
+bash "$HARNESS/scripts/sync-skills.sh" --root "$TARGET" --source-root "$HARNESS"
 
 echo ""
 echo "Done. NOT auto-committed. Next steps in $TARGET:"

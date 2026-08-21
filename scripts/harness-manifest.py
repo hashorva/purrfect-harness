@@ -10,6 +10,9 @@ import json
 import pathlib
 import subprocess
 import sys
+import re
+
+SEMVER = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$")
 
 
 def fail(message):
@@ -60,8 +63,8 @@ def read_manifest(root, consumer):
         fail("release and ownership must be objects")
     version = release.get("version")
     tag = release.get("required_tag")
-    if not isinstance(version, str) or not version or version.strip() != version:
-        fail("release.version must be a non-empty trimmed value")
+    if not isinstance(version, str) or not SEMVER.fullmatch(version):
+        fail("release.version must be a SemVer version")
     if tag != f"v{version}":
         fail("release.required_tag must equal v<release.version>")
     skills = names(ownership.get("canonical_skills"), "ownership.canonical_skills")
@@ -91,13 +94,15 @@ def read_manifest(root, consumer):
     return manifest
 
 
-def released(root, tag):
+def released(root, tag, trigger_tag):
     try:
         tags = subprocess.check_output(["git", "-C", str(root), "tag", "--points-at", "HEAD"], text=True).split()
         tag_type = subprocess.check_output(["git", "-C", str(root), "cat-file", "-t", f"refs/tags/{tag}"], text=True).strip()
         dirty = subprocess.check_output(["git", "-C", str(root), "status", "--porcelain"], text=True)
     except subprocess.CalledProcessError as exc:
         fail(f"could not inspect release state: {exc}")
+    if trigger_tag is not None and trigger_tag != tag:
+        fail(f"release trigger {trigger_tag!r} must exactly equal manifest tag {tag!r}")
     if tag not in tags:
         fail(f"{tag} must point at HEAD; use --dev/--allow-untagged only for explicit development work")
     if tag_type != "tag":
@@ -111,7 +116,8 @@ def main():
     parser.add_argument("--root", default=".")
     parser.add_argument("--consumer", action="store_true")
     parser.add_argument("--require-release", action="store_true")
-    parser.add_argument("command", choices=["validate", "get", "install-payload"])
+    parser.add_argument("--trigger-tag")
+    parser.add_argument("command", choices=["validate", "validate-version", "get", "install-payload"])
     parser.add_argument("field", nargs="?")
     args = parser.parse_args()
     root = pathlib.Path(args.root).resolve()
@@ -120,14 +126,21 @@ def main():
         if args.require_release:
             if args.consumer:
                 fail("release validation is only valid for a harness source")
-            released(root, manifest["release"]["required_tag"])
+            released(root, manifest["release"]["required_tag"], args.trigger_tag)
         if args.command == "validate":
             print(manifest["release"]["version"])
+        elif args.command == "validate-version":
+            if not isinstance(args.field, str) or not SEMVER.fullmatch(args.field):
+                fail("version must be SemVer")
+            print(args.field)
         elif args.command == "get":
             value = manifest["ownership"].get(args.field)
-            if not isinstance(value, list):
-                fail(f"ownership.{args.field} is not a queryable array")
-            print(*value, sep="\n")
+            if isinstance(value, list):
+                print(*value, sep="\n")
+            elif isinstance(value, str):
+                print(value)
+            else:
+                fail(f"ownership.{args.field} is not queryable")
         else:
             for skill in manifest["ownership"]["canonical_skills"]:
                 for item in sorted((root / ".agents/skills" / skill).rglob("*")):
