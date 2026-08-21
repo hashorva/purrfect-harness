@@ -80,6 +80,14 @@ Verified local CLIs:
 Initial worker proposal: T-001 / F006 → Codex premium (`gpt-5.6-terra`), because
 the repository test baseline must be restored before execution-core changes begin.
 
+Human-approved F006 recovery sequence after T-001 exhausted its review attempts:
+
+1. T-002 / F006 → Codex premium (`gpt-5.6-terra`): executable manifest, release,
+   install, update, sync, and lifecycle-independent negative-test truth.
+2. T-003 / F006 → Codex premium (`gpt-5.6-terra`): repository instructions,
+   consumer template, and documentation truth. T-003 dispatches only after T-002
+   is reviewed and committed; F006 is accepted only after both tasks verify.
+
 F001 has the explicit Human Gate 0 exception to the current dispatch-worker skill's
 "never self-edit spawn-worker.sh through spawn-worker.sh" rule. The exception is narrow:
 the existing wrapper must re-exec from a validated snapshot, and the F001 review must
