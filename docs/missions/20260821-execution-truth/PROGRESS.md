@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-21 — GPT-5.6 Sol/high — T-005 integration frontier
+
+- **Dependency:** T-004 is independently verified and committed at `4129df0`; its immutable spec, adapter mappings, atomic publish, hash-bound launch, stdin, schema, and clean-suite contracts are the fixed integration substrate.
+- **Task boundary:** T-005 may integrate both real spawn wrappers and receipt linkage only. Dispatch state, frozen fleet, workspace policy/lock, expanded receipt outcomes/delta, and strict VerificationRecord acceptance remain F002–F005.
+- **Fleet:** T-005 is bound to approved Codex premium `gpt-5.6-terra`. The Gate-0 self-edit exception applies only because `spawn-worker.sh` re-executes from its validated snapshot.
+- **Acceptance:** F001 remains false after T-005 implementation; the mission's stronger acceptance rule waits for F005 and fresh authorized verification evidence.
+
 ## 2026-08-21 — GPT-5.6 Sol/high — T-004 attempt 3 review — PASS
 
 - **Verdict:** The human-authorized recovery closes T-004. The final diff is limited to lowercase UUID agreement, leading-space canonical repo-path agreement, bytecode-free focused testing, the mounted no-cache assertion, and append-only progress; reviewed adapter/persistence behavior is unchanged.
