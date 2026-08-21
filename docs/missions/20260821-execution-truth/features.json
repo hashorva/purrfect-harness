@@ -1,0 +1,116 @@
+{
+  "mission": "20260821-execution-truth",
+  "rules": "Workers must not edit this file. Only the orchestrator may set passes from false to true after a matching successful VerificationRecord exists, and must also record accepted_run_id, accepted_verification_sha256, accepted_at, and accepted_by. Editing or removing approved descriptions/steps is a failed task. Keep bootstrap on every feature; all Phase 1 features require real worker/process evidence and are bootstrap:false.",
+  "features": [
+    {
+      "id": "F001",
+      "category": "execution-core",
+      "priority": 2,
+      "bootstrap": false,
+      "description": "Every brain and worker run uses one shared provider execution path and a schema-versioned, UUID-keyed ExecutionSpec that is validated, atomically persisted before launch, immutable thereafter, and hashed by exact file bytes.",
+      "steps": [
+        "Exact argv/env contract tests cover brain and worker paths for claude, codex, agent, and agy; the real brain prompt-swallow reproduction fails before the fix and passes after it",
+        "Removing a required spec field and invoking the real spawn entry point fails before the provider sentinel runs",
+        "A persisted run_id cannot be overwritten; amendments require a new run_id and receipt spec hashes use the exact persisted bytes",
+        "Unsupported requested effort or speed fails before launch, while unobservable provider values are recorded as unknown rather than guessed",
+        "No provider path uses eval, and full deterministic tests plus ShellCheck pass"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F002",
+      "category": "fleet-truth",
+      "priority": 3,
+      "bootstrap": false,
+      "description": "Gate 0 produces a schema-versioned mission-owned frozen fleet snapshot; dispatch consumes only that snapshot, and failed live probes preserve last-good per-provider inventory while recording degraded/unknown state explicitly.",
+      "steps": [
+        "A failed provider probe cannot replace its last-good binding and records the failure separately",
+        "Guessed fallback bindings are marked degraded/unknown and cannot masquerade as healthy observed models",
+        "Missing or unapproved mission fleet state rejects worker dispatch before provider launch",
+        "A live inventory change after Gate 0 cannot silently rebind an active mission",
+        "Full deterministic tests plus ShellCheck pass"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F003",
+      "category": "dispatch-gate",
+      "priority": 4,
+      "bootstrap": false,
+      "description": "Role-aware dispatch fails closed before process launch unless mission status, Gate 0, task location, feature/work-unit identity, frozen binding, provider capability, clean workspace, and exclusive workspace lock all satisfy the execution policy; cross-repository worker execution is rejected in Phase 1.",
+      "steps": [
+        "Negative entry-point fixtures reject draft/unapproved/awaiting-gate/done workers, outside-mission tasks, identity mismatch, dirty workspaces, concurrent writers, unsupported capabilities, and external --repo targets",
+        "Every rejection proves the provider sentinel was never invoked",
+        "brain/mission-init and brain/gate0 remain allowed in draft; worker/implement requires in-progress plus approved fleet; brain/review allows in-progress or awaiting-gate",
+        "The workspace lock is held through receipt creation and released on every terminal outcome",
+        "Full deterministic tests plus ShellCheck pass"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F004",
+      "category": "execution-evidence",
+      "priority": 5,
+      "bootstrap": false,
+      "description": "Each launched run produces a UUID-keyed terminal ExecutionReceipt linked to its immutable spec and capturing exact Git-visible before/after state, commits, changed paths, in-workspace scope result, timestamps, safe invocation evidence, and process outcome.",
+      "steps": [
+        "No-op execution cannot inherit pre-existing dirty state or report workspace_changed:true",
+        "Changed paths outside the spec write scope fail verification; the guarantee is explicitly limited to Git-visible changes in the declared workspace",
+        "Same-second runs cannot collide and workspace_changed:null is invalid for new worker implementation runs",
+        "completed, failed, timed_out, interrupted, and launch_failed outcomes write terminal receipts; timeout/interruption terminates and reaps the provider process tree",
+        "Wrong spec hash, missing log, or malformed receipt fails through the real verification entry point",
+        "Full deterministic tests plus ShellCheck pass"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F005",
+      "category": "verification-acceptance",
+      "priority": 6,
+      "bootstrap": false,
+      "description": "Verification targets one run_id and writes a separate VerificationRecord linked to exact spec and receipt bytes; only the orchestrator may then accept that verified run by updating feature state with accepted_run_id and the verification hash.",
+      "steps": [
+        "The flow is dispatch → receipt → verify --run-id → VerificationRecord → orchestrator feature acceptance; passes:true is never the verifier's starting point",
+        "Untagged, wrong-mission, wrong-work-unit, wrong-attempt/run, unrelated-success, null-evidence, and --require-workers loophole fixtures all fail",
+        "Verification records contain no orchestrator acceptance fields and a passing verification does not automatically mutate features.json",
+        "Acceptance without a matching passing verification, or with a wrong verification hash, fails",
+        "Worker attempts to edit features.json fail scope verification; accepted features record accepted_run_id, accepted_verification_sha256, accepted_at, and accepted_by",
+        "Full deterministic tests plus ShellCheck pass"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F006",
+      "category": "distribution-truth",
+      "priority": 1,
+      "bootstrap": false,
+      "description": "One canonical harness ownership manifest drives release validation, install, update, and skill discovery; default propagation requires consistent version/release truth, managed targets, and ownership-safe writes, while an explicit development mode supports the untagged Phase 1 smoke.",
+      "steps": [
+        "Restore the current README 2.3.0 versus CHANGELOG 2.3.1 baseline mismatch, then keep README, CHANGELOG, manifest, and chosen release/tag policy mechanically consistent",
+        "Determine release numbering from actual release semantics/downstream usage rather than automatically assuming a major version solely because cross-repo execution is disabled",
+        "Default untagged propagation fails; explicit --dev or --allow-untagged is required for development installation",
+        "Updater refuses a missing .harness-version and manifest completeness catches omission of guard-verification or any canonical skill",
+        "Foreign discovery entries and conflicting project-owned AGENTS.md.template survive sync/install unchanged",
+        "The harness has a real repository-specific AGENTS.md, the consumer skeleton moves to a template, completion/symlink docs are consistent, and Claude enforcement claims are accurate",
+        "All reproduced distribution regressions, full deterministic tests, JSON validation, and ShellCheck pass"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F007",
+      "category": "end-to-end-proof",
+      "priority": 7,
+      "bootstrap": false,
+      "description": "A separate disposable consuming repository completes a real authenticated economy-provider smoke mission and archives enough immutable evidence for a fresh process to reconstruct authorization, execution, verification, and acceptance without chat history.",
+      "steps": [
+        "Install the candidate harness only through explicit development mode, commit a clean baseline, create a tiny approved mission, and freeze one healthy real economy binding (prefer Codex/Luna when healthy)",
+        "The real worker changes and commits exactly one nonce-bearing file within a one-file write scope, then the hardened verifier checks the same run_id",
+        "The orchestrator separately accepts the passing VerificationRecord and records its run_id/hash in feature state",
+        "Archive the fleet, immutable spec, receipt, VerificationRecord, feature acceptance, commit evidence, and sanitized log into this mission's evidence folder",
+        "From a fresh shell/process, reconstruct what was authorized, what ran, what changed, what passed, and what was accepted using only archived repository evidence",
+        "No waiver substitutes for a real provider; unavailable authentication leaves the mission awaiting Gate 2"
+      ],
+      "passes": false
+    }
+  ]
+}
