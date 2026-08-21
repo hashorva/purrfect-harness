@@ -23,5 +23,14 @@ safe install/update tooling for other repositories. It is not a consuming produc
 ## Mission rules
 
 When a mission is active, read its task, `PROGRESS.md`, and `features.json` before
-editing. A worker task's allow-list is binding; never edit `features.json` as a
-worker. Append the required mission progress record after completing the task.
+editing; also inspect `git log --oneline -10` and establish a green baseline.
+Complete one assigned `passes: false` feature per worker session. A worker task's
+allow-list and iteration policy are binding; never edit `features.json` as a worker.
+End cleanly: run the task's checks, commit the scoped change, and append the required
+mission progress record.
+
+Local CLI brain and worker runs must leave their receipt under `.tasks/receipts/`.
+Before a feature is accepted or a mission gate/status is advanced, run
+`bash scripts/verify-mission.sh` for the mission. Only the orchestrator may accept a
+feature after that current verification; workers report evidence but have no
+feature-acceptance authority.

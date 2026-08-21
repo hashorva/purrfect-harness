@@ -15,6 +15,42 @@ check() { # check <description> <command...>
   else echo "  FAIL : $desc"; FAIL=1; fi
 }
 
+# Documentation is a public entry point for the harness protocol. Keep these checks
+# deliberately narrow: each catches a previously reproduced false operational claim.
+check_documentation_truth() { # check_documentation_truth <repository-root>
+  local root="$1"
+
+  grep -Fq 'orchestrator may accept a' "$root/AGENTS.md" &&
+    grep -Fq 'bash scripts/verify-mission.sh' "$root/AGENTS.md" &&
+    grep -Fq 'Workers never edit it. Only the orchestrator' "$root/docs/templates/AGENTS.md.template" &&
+    grep -Fq 'current verification evidence' "$root/docs/missions/ORCHESTRATION.md" &&
+    grep -Fq 'client permission configuration' "$root/README.md" &&
+    grep -Eq 'client permission[[:space:]]+configuration' "$root/docs/missions/ORCHESTRATION.md" &&
+    ! grep -Fqi 'ENFORCED layer' "$root/README.md" "$root/docs/missions/ORCHESTRATION.md" &&
+    grep -Fq 'legacy parent link such as' "$root/README.md" &&
+    ! grep -Fq 'existing symlinks are left alone' "$root/README.md" &&
+    grep -Fq 'untagged development baseline' "$root/CHANGELOG.md" "$root/docs/PUBLISHING.md" "$root/docs/RELEASING.md"
+}
+
+documentation_truth_negative() { # documentation_truth_negative <repository-root>
+  local root="$1" fixture
+  fixture="$(mktemp -d)"
+  mkdir -p "$fixture/docs/missions" "$fixture/docs/templates"
+  cp "$root/AGENTS.md" "$fixture/AGENTS.md"
+  cp "$root/README.md" "$fixture/README.md"
+  cp "$root/CHANGELOG.md" "$fixture/CHANGELOG.md"
+  cp "$root/docs/PUBLISHING.md" "$fixture/docs/PUBLISHING.md"
+  cp "$root/docs/RELEASING.md" "$fixture/docs/RELEASING.md"
+  cp "$root/docs/missions/ORCHESTRATION.md" "$fixture/docs/missions/ORCHESTRATION.md"
+  cp "$root/docs/templates/AGENTS.md.template" "$fixture/docs/templates/AGENTS.md.template"
+  perl -0pi -e 's/client permission configuration/ENFORCED layer/' "$fixture/README.md"
+  if check_documentation_truth "$fixture"; then
+    rm -rf "$fixture"
+    return 1
+  fi
+  rm -rf "$fixture"
+}
+
 # ---- kit version consistency (same extraction as .github/workflows/ci.yml) ----
 # Catch README/CHANGELOG drift before push. CI remains the backstop; this fails in
 # seconds locally. Forgotten twice at v2.2.4 and v2.2.5 — that is the bar.
@@ -32,6 +68,10 @@ check "version mismatch fails the same extraction CI uses" sh -c "
   ! [ \"\$RV\" = \"\$CV\" ]
 "
 rm -rf "$VERSION_MISMATCH"
+
+echo "== documentation truth"
+check "documentation matches instruction and ownership truth" check_documentation_truth "$HARNESS"
+check "documentation guard rejects an enforced-permissions claim" documentation_truth_negative "$HARNESS"
 
 # F006 regressions must use the public propagation/release entry points. Tagged
 # and untagged source state is always isolated so this suite is independent of

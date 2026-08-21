@@ -26,14 +26,14 @@ chair if it meets all five requirements:
 1. Reads and follows `.agents/skills/` (mission-init, dispatch-worker, skillify)
 2. Can run shell commands and BLOCK on child processes (worker spawns)
 3. Respects GATE 0 — never dispatches before human approval of features.json
-4. Never edits features.json descriptions/steps (flip `passes` only, on evidence)
+4. Never edits features.json descriptions/steps; only the orchestrator accepts a
+   feature by flipping `passes` after current verification evidence
 5. Writes its actions to the shared artifacts (PROGRESS.md, git) — not private memory
 
-The blessed implementation is Claude Code (it additionally carries the enforced
-layer: .claude/settings.json permissions, path rules, the code-reviewer
-subagent). Other CLIs meet the contract in guidance-only mode; port enforcement
-configs per-tool only when there is a forcing event (quota lockout, model
-superiority) — not speculatively.
+Claude Code may use the bundled client permission configuration in
+`.claude/settings.json`, plus path rules and the code-reviewer subagent. Those client settings are
+not an absolute security boundary or privileged Claude-only enforcement; every
+orchestrator remains accountable to the same repository rules and verification.
 
 **Local CLI rule:** when the loop runs on a Mac with studio CLIs installed, the
 orchestrator MUST spawn the **brain** via `scripts/spawn-brain.sh` and workers via
@@ -93,13 +93,14 @@ with `bash scripts/active-mission.sh`.
 │    - Bearings: pwd → mission PROGRESS.md → features.json → git log
 │    - Baseline check: typecheck + dev server + smoke test
 │    - Read the skills the task file names
-│    - Implement ONLY the task. Test end-to-end. Flip passes:true.
+│    - Implement ONLY the task. Test end-to-end; report evidence to the orchestrator.
 │    - Commit. Append PROGRESS.md entry.
 │
 ├─ 4. REVIEW (orchestrator)
 │    - Read the diff (git diff or PR), PROGRESS.md entry, and verify claims
 │    - Check against AGENTS.md hard rules and the task's deny-list
-│    - PASS → next dispatch. FAIL → write a correction task (do NOT let the same
+│    - PASS → run current verification, then the orchestrator alone may accept the
+│      feature in features.json. FAIL → write a correction task (do NOT let the same
 │      worker "keep trying" without a rewritten task — that's how context rots)
 │    - Recurring failure class? → add a line to AGENTS.md or a skill  ← the flywheel
 │

@@ -13,6 +13,14 @@
   AGENTS is repository-specific and the complete consumer skeleton is at
   `docs/templates/AGENTS.md.template`.
 
+- **Instruction and documentation truth:** root `AGENTS.md` now names mission
+  bearings, one-feature scope, clean completion, local CLI receipts, current
+  verification, and orchestrator-only feature acceptance. The consumer template
+  keeps the complete skeleton while reserving feature acceptance to the
+  orchestrator. Current docs describe per-skill discovery links (including legacy
+  parent-link replacement) and `.claude/settings.json` as client permission
+  configuration, not an absolute security boundary.
+
 - **`verify-mission.sh`: a feature's own receipt is now required — no more borrowing someone
   else's.** The per-feature loop had a soft path that, finding no receipt tagged for a feature,
   accepted **any** worker receipt with `exit=0` and printed a WARN. FinDuck's

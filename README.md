@@ -38,7 +38,7 @@ flowchart TD
   Review -->|fail| Rewrite["rewrite task max 2"]
   Rewrite --> Dispatch
 
-  Review -->|pass| Flip["flip passes:true in features.json"]
+  Review -->|pass| Flip["orchestrator accepts verified feature"]
 
   %% Invisible layout constraint:
   %% keeps Flip below Rewrite without drawing a visible connection
@@ -176,8 +176,9 @@ What to check before merging — the ritual, in order:
    project-customized skill is *older* than the kit's v2 — take the kit's, then
    move any project-specific line it contained into `docs/` where it belongs.
    Delete the `.harness-new` when done; none may survive the merge.
-3. **`ls -la .claude/skills`** — confirm symlinks resolve (existing symlinks are
-   left alone; a macOS Finder alias would have been skipped, replace it by hand).
+3. **`ls -la .claude/skills`** — confirm the per-skill links resolve. Sync replaces
+   a legacy parent link such as `.claude/skills -> ../.agents/skills` with a real
+   discovery directory, then preserves foreign entries inside that directory.
 4. **Build + tests green** — the install must be inert for the running app; if a
    markdown-only change broke the build, something is deeply wrong: revert.
 5. Merge to `dev` first if the repo has one; `main` only after a normal review.
@@ -253,7 +254,7 @@ flowchart TD
   W -->|"edits, commits"| REPO[("git repo")]
   REPO --> REV["code-reviewer subagent<br/>diff vs hard rules + deny-list"]
   REV -- FAIL --> RW["rewrite task (max 2)<br/>or reassign / escalate tier"] --> DW
-  REV -- PASS --> FLIP["flip passes:true<br/>append PROGRESS.md"]
+  REV -- PASS --> FLIP["verify, then orchestrator<br/>accepts feature"]
   FLIP --> MORE{"features left?"}
   MORE -- yes --> DW
   MORE -- no --> SKF["skillify skill<br/>evidence ≥2 → draft SKILL.md → you approve"]
@@ -276,11 +277,13 @@ flowchart TD
 | `scripts/active-mission.sh` | Resolve the single active mission folder |
 | `scripts/spawn-worker.sh` | Spawn local CLI workers with economy pins + logs |
 
-## Claude Code enforcement layer (.claude/)
+## Claude Code client permission configuration (`.claude/`)
 
-The portable layers above are GUIDANCE — any model can ignore prose. For the
-orchestrator (Claude Code) the kit adds an ENFORCED layer, which Cursor/Codex/
-Gemini do not read (their safety remains the AGENTS.md prose + task deny-lists):
+The portable layers above are shared guidance and process. `.claude/settings.json`
+is a Claude Code client permission configuration; it can request allow/deny behavior
+from that client, but is not an absolute security boundary or a privileged,
+Claude-only enforcement mechanism. The repository rules, task allow-lists, review,
+and verification apply to every client.
 
 - `.claude/settings.json` — requested permissions: destructive commands (`rm -rf`,
   `db reset`, force-push) are denied where the Claude client honors them; routine verification commands
@@ -324,8 +327,8 @@ commit decision to you.
   writes worker tasks, spawns local CLIs via spawn-worker.sh, reviews diffs, updates
   AGENTS.md when decisions change. Never absorbs fleet work into one chat when CLIs exist.
 - **Workers (agent / Codex / agy / Claude Haiku):** implement exactly one task file at a
-  time via their CLI, follow skills, commit, append to mission PROGRESS.md. Never edit
-  features.json descriptions — only flip `passes` after verification.
+  time via their CLI, follow skills, commit, and append to mission PROGRESS.md. Never
+  edit `features.json`; report verification evidence for the orchestrator to accept.
 - **You (human):** approve the feature list, review at gates, merge. Every correction
   you make in code review is a missing line in AGENTS.md or a skill — add it there,
   not just in the diff.

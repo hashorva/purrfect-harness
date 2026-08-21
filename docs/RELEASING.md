@@ -28,8 +28,9 @@ cd ~/dev/purrfect-harness   # or wherever the kit lives
 #    and bash tests/run-tests.sh. The manifest validates README/CHANGELOG/version
 #    consistency and every canonical skill. After step 6, rerun validation without
 #    --dev to prove the annotated tag is on HEAD. This repository currently treats
-#    2.3.1 as an untagged development build after published v2.3.0; use --dev only
-#    for local smoke work, never for a normal consumer propagation.
+#    2.3.1 as the current untagged development baseline after published v2.3.0;
+#    this does not decide the final Phase 1 release number. Use --dev only for
+#    local smoke work, never for a normal consumer propagation.
 # 5. Commit the release prep
 git add -A && git commit -m "release: vX.Y.Z"
 # 6. ANNOTATED tag (not lightweight — carries author/date/message)

@@ -97,9 +97,11 @@ When active, these rules apply on top of everything above:
   Verify baseline before implementing; if the repo is broken, fix/report that first.
 - **One feature per session.** Pick the assigned (or highest-priority) `passes: false`
   feature. Never start a second one in the same session.
-- **`features.json` is append-only truth.** Agents may only flip `"passes": false → true`
-  after verifying every step end-to-end. Editing or removing descriptions/steps is a failed task.
-  `GOAL.md` is narrative; if they disagree, `features.json` wins.
+- **`features.json` is append-only truth.** Workers never edit it. Only the orchestrator
+  may accept a feature by changing `"passes": false → true`, after the current
+  `bash scripts/verify-mission.sh` verification succeeds. Editing or removing
+  descriptions/steps is a failed task. `GOAL.md` is narrative; if they disagree,
+  `features.json` wins.
 - **Session end (clean state):** checks green, committed with a descriptive message, one
   entry appended to mission `PROGRESS.md`. A human gate requires a recorded Human GATE
   verdict and status update; chat approval alone is not the record.
@@ -107,9 +109,9 @@ When active, these rules apply on top of everything above:
   file allow/deny lists override any broader interpretation of the goal. Respect its
   iteration policy, then STOP and report.
 - **Local CLI workers + receipts.** Brain via `scripts/spawn-brain.sh`; workers via
-  `scripts/spawn-worker.sh --tier … --feature F00X`. Both write receipts. Before a gate
-  greenlight or flipping `passes`/`status: done`, `bash scripts/verify-mission.sh` must
-  exit 0. PROGRESS prose is not proof.
+  `scripts/spawn-worker.sh --tier … --feature F00X`. Both write receipts. Before the
+  orchestrator accepts a feature or greenlights a gate/`status: done`,
+  `bash scripts/verify-mission.sh` must exit 0. PROGRESS prose is not proof.
 
 ## Repo structure (key paths)
 

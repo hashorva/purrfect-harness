@@ -4,6 +4,42 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-21 — GPT-5.6 Sol/high — T-003 review — PASS
+
+- **Verdict:** T-003 satisfies the instruction/template/documentation half of F006 within its allow-list. Root instructions are repository-specific; the complete consumer skeleton remains templated; workers have no feature-acceptance authority; and current docs distinguish client permissions from verification and orchestrator acceptance.
+- **Negative guard proof:** Replaced the corrected README wording with the reproduced `ENFORCED layer` claim and ran `bash tests/run-tests.sh`. The real repository entry point exited 1 at `documentation matches instruction and ownership truth`. Restored the corrected source before acceptance.
+- **Independent positive proof:** The restored complete suite reached `ALL TESTS PASSED`; ShellCheck, repository JSON validation, and `git diff --check` passed. Repository-wide searches found no remaining current claim that workers accept features, that discovery preserves the legacy parent symlink, or that Claude permission settings are an absolute security boundary.
+- **Receipt:** `.tasks/receipts/worker-task-T-003-20260821T175334Z.json` records Codex premium `gpt-5.6-terra`, feature F006, exit 0, and a changed workspace. T-002 is committed and T-003 is reviewed for its required commit; feature-state acceptance remains subject to the mission's stronger VerificationRecord rule.
+
+## 2026-08-21 — Codex — T-003 required commit blocked
+
+- **Blocked:** `git commit -m 'docs: establish harness instruction truth (T-003)'`
+  failed because this sandbox cannot create
+  `/Users/zamirhashorva/dev/purrfect-harness/.git/index.lock` (`Operation not
+  permitted`). Repository metadata is read-only here. No commit, tag, remote, or
+  `features.json` change was made; commit the allow-listed documentation, test, and
+  append-only progress changes from a Git-writable environment.
+
+## 2026-08-21 — Codex — T-003 instruction and documentation truth
+
+- **Did:** Made the harness root `AGENTS.md` operational for active missions: bearings,
+  one-feature worker scope, binding allow-lists, clean end state, local CLI receipts,
+  `verify-mission.sh`, and orchestrator-only feature acceptance. Preserved the full
+  consumer skeleton while reserving `features.json` acceptance to the orchestrator.
+- **Documentation truth:** Replaced absolute Claude enforcement wording with client
+  permission-configuration language; corrected the legacy discovery description to
+  state that sync replaces a parent link with a real per-skill discovery directory;
+  aligned README, orchestration, publishing, releasing, and the `2.3.1` CHANGELOG
+  development-baseline semantics.
+- **Guard proof:** Added a focused documentation-truth check at the existing
+  `bash tests/run-tests.sh` entry point. Its copied-doc fixture changed “client
+  permission configuration” to “ENFORCED layer”; the check failed as observed, then
+  passed after the fixture was discarded and the corrected source documentation was
+  checked.
+- **Verified:** `shellcheck scripts/*.sh tests/*.sh`, repository JSON validation,
+  `git diff --check`, and `bash tests/run-tests.sh` all pass (`ALL TESTS PASSED`).
+- **Commit status:** pending required commit `docs: establish harness instruction truth (T-003)`.
+
 ## 2026-08-21 — GPT-5.6 Sol/high — T-002 attempt 3 review — PASS
 
 - **Verdict:** The human-authorized fixture-only correction closes T-002. The diff is limited to `tests/run-tests.sh` plus append-only progress; no production file or feature state changed in attempt 3.

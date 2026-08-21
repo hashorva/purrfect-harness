@@ -38,7 +38,9 @@ gh run watch
 ## B. Release a version (every time — matches docs/RELEASING.md)
 
 ```bash
-# 0. CHANGELOG.md, README frontmatter, and harness-manifest.json must name the
+# 0. `2.3.1` is the current untagged development baseline after published v2.3.0;
+#    it is not a release decision. CHANGELOG.md, README frontmatter, and
+#    harness-manifest.json must name the
 #    same version. The release workflow runs the shared validator, which also
 #    requires that annotated tag to point at HEAD and a clean source tree (use
 #    --dev only for local smoke before tagging).
