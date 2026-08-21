@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-21 — GPT-5.6 Sol/high — F001 decomposition
+
+- **Decision:** F001 is split at the adapter/integration boundary. T-004 builds and proves the immutable spec plus shared four-provider grammar; T-005 will integrate only that reviewed contract into brain/worker launch and exact-byte receipt linkage.
+- **Reason:** Provider capability policy, atomic persistence, exact argv tests, two spawn wrappers, and receipt migration are too much for one coherent worker attempt. The split adds no architecture and keeps one source of provider policy.
+- **Acceptance sequencing:** F006 implementation is committed but remains false under the mission's stronger VerificationRecord rule. F001–F005 may be implemented and reviewed while false; after F005, fresh authorized verification runs can produce the required acceptance evidence for F001–F006. F007 remains the mandatory same-run workspace-change smoke proof.
+- **Dispatch:** T-004 is bound to the approved Codex premium `gpt-5.6-terra` seat. T-005 is dormant until independent T-004 review and commit.
+
 ## 2026-08-21 — GPT-5.6 Sol/high — T-003 review — PASS
 
 - **Verdict:** T-003 satisfies the instruction/template/documentation half of F006 within its allow-list. Root instructions are repository-specific; the complete consumer skeleton remains templated; workers have no feature-acceptance authority; and current docs distinguish client permissions from verification and orchestrator acceptance.
