@@ -75,6 +75,7 @@ check "documentation guard rejects an enforced-permissions claim" documentation_
 
 echo "== immutable execution spec and provider adapter"
 check "ExecutionSpec and provider adapter contracts" python3 tests/test-execution-spec.py
+check "ExecutionSpec focused test leaves no scripts bytecode" test ! -e "$HARNESS/scripts/__pycache__"
 
 # F006 regressions must use the public propagation/release entry points. Tagged
 # and untagged source state is always isolated so this suite is independent of

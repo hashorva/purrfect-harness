@@ -15,7 +15,7 @@
     "model": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$" },
     "effort": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$" },
     "speed": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$" },
-    "repo": { "type": "string", "pattern": "^/(?![\\s\\S]*[\\r\\n])\\S(?:[\\s\\S]*\\S)?$" },
+    "repo": { "type": "string", "pattern": "^/(?![\\s\\S]*[\\r\\n])(?:[\\s\\S]*\\S)?$" },
     "base_commit": { "type": "string", "pattern": "^[0-9a-fA-F]{40,64}$" },
     "attempt": { "type": "integer", "minimum": 1 },
     "prompt": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$" }

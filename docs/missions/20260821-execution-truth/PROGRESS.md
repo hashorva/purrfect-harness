@@ -4,6 +4,20 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-21 — GPT-5.6 Sol/high — T-004 attempt 3 review — PASS
+
+- **Verdict:** The human-authorized recovery closes T-004. The final diff is limited to lowercase UUID agreement, leading-space canonical repo-path agreement, bytecode-free focused testing, the mounted no-cache assertion, and append-only progress; reviewed adapter/persistence behavior is unchanged.
+- **Negative guard proof:** Removed only child-process `PYTHONDONTWRITEBYTECODE` propagation and ran `bash tests/run-tests.sh`. The repository entry point exited 1 at `ExecutionSpec focused test leaves no scripts bytecode`; restored the safeguard and removed the generated cache before positive verification.
+- **Independent positive proof:** The current checkout reached `ALL TESTS PASSED`; ShellCheck, repository JSON validation, and `git diff --check` passed; no `scripts/__pycache__/` or unexpected path appeared. A fresh otherwise-identical committed candidate checkout also reached `ALL TESTS PASSED` and ended with empty `git status --porcelain` (`ISOLATED CANDIDATE CLEAN`).
+- **Receipt handling:** `.tasks/receipts/worker-task-T-004-20260821T194046Z.json` proves the pinned Terra process ran and changed the expected workspace, but the worker correctly stopped without claiming its missing banners. The independent review supplies those missing checks; T-005 may now be authored after the required T-004 commit. F001 remains false.
+
+## 2026-08-21 — Codex — T-004 attempt 3 recovery — STOP: missing full-suite final banner
+
+- **Scoped changes:** Python and JSON Schema now share lowercase canonical RFC UUID policy; schema permits a canonical absolute Git-root path containing a space-leading component while retaining CR/LF and whole-value trailing-whitespace rejection; focused tests add both agreement cases. The focused test and its child Python tools now disable bytecode writes, and `tests/run-tests.sh` asserts immediately afterward that `scripts/__pycache__/` is absent.
+- **Guard proof:** Temporarily removed the child-process `PYTHONDONTWRITEBYTECODE` setting and ran the mounted `bash tests/run-tests.sh` entry point. It reported `FAIL : ExecutionSpec focused test leaves no scripts bytecode`; the setting was restored exactly, then the focused suite passed with no cache.
+- **Checks:** ShellCheck, repository JSON validation, `git diff --check`, and `python3 tests/test-execution-spec.py` pass. The restored full-suite run reaches the focused cache check as `ok`, but this terminal ends it at the existing provider-stub boundary after `== agent prompt and argument order` / the preceding Codex checks, without `ALL TESTS PASSED`.
+- **Hard stop:** Attempt 3 requires two exact full-suite final banners and an isolated committed-candidate clean post-state. Neither can be truthfully recorded without the first final banner, so no isolated-candidate claim, feature-state change, or T-004 completion commit was made.
+
 ## 2026-08-21 — Human override — T-004 attempt 3 APPROVED
 
 - **Verdict:** Approved one final recovery attempt beyond the original cap, limited to the uppercase-UUID and leading-space path schema counterexamples, bytecode-free mounted tests, and clean full-suite evidence.

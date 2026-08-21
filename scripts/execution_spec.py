@@ -71,7 +71,7 @@ def validate(spec):
         raise SpecError("run_id must be a UUID") from exc
     if (parsed_uuid.int == 0 or parsed_uuid.variant != uuid.RFC_4122 or
             parsed_uuid.version not in range(1, 9) or
-            str(parsed_uuid) != spec["run_id"].lower()):
+            str(parsed_uuid) != spec["run_id"]):
         raise SpecError("run_id must be a canonical UUID")
     for name in ("mission", "work_unit", "role", "provider", "model", "effort", "speed", "base_commit", "prompt"):
         _nonempty(spec, name)

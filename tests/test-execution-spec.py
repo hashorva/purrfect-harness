@@ -2,6 +2,7 @@
 """Deterministic contract tests for immutable ExecutionSpec and provider adapter."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -10,6 +11,8 @@ import tempfile
 import unittest
 import uuid
 
+sys.dont_write_bytecode = True
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import execution_spec  # noqa: E402
 
@@ -225,11 +228,12 @@ class ExecutionSpecContract(unittest.TestCase):
         cases = [
             ("run_id", "00000000-0000-0000-0000-000000000000", False),
             ("run_id", "12345678-1234-9234-8234-123456789abc", False),
-            ("repo", str(self.repo.parent / "repo with spaces"), True),
+            ("run_id", "12345678-1234-4234-8234-123456789ABC", False),
+            ("repo", str(self.repo.parent / " repo"), True),
             ("repo", str(self.repo) + "\nunsafe", False),
             ("prompt", "first line\nsecond line", True),
         ]
-        spaced_repo = self.repo.parent / "repo with spaces"
+        spaced_repo = self.repo.parent / " repo"
         spaced_repo.mkdir()
         self.command(["git", "init", "-q"], cwd=spaced_repo)
         self.command(["git", "config", "user.email", "test@example.invalid"], cwd=spaced_repo)
