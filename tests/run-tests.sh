@@ -33,9 +33,9 @@ check "version mismatch fails the same extraction CI uses" sh -c "
 "
 rm -rf "$VERSION_MISMATCH"
 
-# F006 regressions must use the public propagation/release entry points. This
-# development release is deliberately untagged, so default propagation must
-# reject it while an explicit development invocation may proceed.
+# F006 regressions must use the public propagation/release entry points. Tagged
+# and untagged source state is always isolated so this suite is independent of
+# the checkout from which it was invoked.
 echo "== manifest and release truth"
 check "manifest declares every canonical skill" sh -c "python3 - '$HARNESS/harness-manifest.json' <<'PY'
 import json, pathlib, sys
@@ -44,13 +44,19 @@ actual = sorted(p.name for p in pathlib.Path('.agents/skills').iterdir() if p.is
 assert m['ownership']['canonical_skills'] == actual
 PY"
 RELEASE_FIXTURE="$(mktemp -d)"
-trap 'rm -rf "$RELEASE_FIXTURE"' EXIT
+UNTAGGED_FIXTURE="$(mktemp -d)"
+trap 'rm -rf "$RELEASE_FIXTURE" "$UNTAGGED_FIXTURE"' EXIT
 cp -R "$HARNESS/." "$RELEASE_FIXTURE"
 rm -rf "$RELEASE_FIXTURE/.git"
 git -C "$RELEASE_FIXTURE" init -q
 git -C "$RELEASE_FIXTURE" config user.email ci@test && git -C "$RELEASE_FIXTURE" config user.name CI
 git -C "$RELEASE_FIXTURE" add -A && git -C "$RELEASE_FIXTURE" commit -qm fixture
 git -C "$RELEASE_FIXTURE" tag -a v2.3.1 -m fixture
+cp -R "$RELEASE_FIXTURE/." "$UNTAGGED_FIXTURE"
+rm -rf "$UNTAGGED_FIXTURE/.git"
+git -C "$UNTAGGED_FIXTURE" init -q
+git -C "$UNTAGGED_FIXTURE" config user.email ci@test && git -C "$UNTAGGED_FIXTURE" config user.name CI
+git -C "$UNTAGGED_FIXTURE" add -A && git -C "$UNTAGGED_FIXTURE" commit -qm fixture
 check "manifest omission of guard-verification fails release entry point" sh -c "
   python3 -c \"import json; p='$RELEASE_FIXTURE/harness-manifest.json'; d=json.load(open(p)); d['ownership']['canonical_skills'].remove('guard-verification'); open(p, 'w').write(json.dumps(d))\"
   cd '$RELEASE_FIXTURE' && ! bash scripts/install-harness.sh --dev --validate-release
@@ -71,9 +77,18 @@ python3 -c "import json; p='$RELEASE_FIXTURE/harness-manifest.json'; d=json.load
 check "traversing ownership path fails real install validation" sh -c "cd '$RELEASE_FIXTURE' && ! bash scripts/install-harness.sh --dev --validate-release"
 git -C "$RELEASE_FIXTURE" checkout -q -- harness-manifest.json
 echo dirty >> "$RELEASE_FIXTURE/README.md"
-check "dirty tagged install source is rejected" sh -c "cd '$RELEASE_FIXTURE' && ! bash scripts/install-harness.sh --validate-release"
-check "default release validation rejects untagged source" sh -c "! bash scripts/install-harness.sh --validate-release"
-check "explicit development release validation succeeds" bash scripts/install-harness.sh --dev --validate-release
+DIRTY_INSTALL_TARGET="$(mktemp -d)"
+git -C "$DIRTY_INSTALL_TARGET" init -q
+git -C "$DIRTY_INSTALL_TARGET" config user.email ci@test && git -C "$DIRTY_INSTALL_TARGET" config user.name CI
+echo consumer > "$DIRTY_INSTALL_TARGET/README.md"
+git -C "$DIRTY_INSTALL_TARGET" add -A && git -C "$DIRTY_INSTALL_TARGET" commit -qm baseline
+DIRTY_INSTALL_BRANCH="$(git -C "$DIRTY_INSTALL_TARGET" branch --show-current)"
+check "dirty tagged install source rejects before target mutation" sh -c "cd '$RELEASE_FIXTURE' && ! bash scripts/install-harness.sh '$DIRTY_INSTALL_TARGET' && test \"\$(git -C '$DIRTY_INSTALL_TARGET' branch --show-current)\" = '$DIRTY_INSTALL_BRANCH' && test -z \"\$(git -C '$DIRTY_INSTALL_TARGET' status --porcelain)\" && ! test -e '$DIRTY_INSTALL_TARGET/.harness-version'"
+rm -rf "$DIRTY_INSTALL_TARGET"
+git -C "$RELEASE_FIXTURE" checkout -q -- README.md
+check "default release validation rejects isolated untagged source" sh -c "cd '$UNTAGGED_FIXTURE' && ! bash scripts/install-harness.sh --validate-release"
+check "default install rejects isolated untagged source" sh -c "cd '$UNTAGGED_FIXTURE' && ! bash scripts/install-harness.sh '$UNTAGGED_FIXTURE'"
+check "explicit development release validation succeeds" sh -c "cd '$UNTAGGED_FIXTURE' && bash scripts/install-harness.sh --dev --validate-release"
 
 TEMPLATE_TARGET="$(mktemp -d)"
 git -C "$TEMPLATE_TARGET" init -q
@@ -113,9 +128,20 @@ git -C "$COLLISION_TARGET" add -A && git -C "$COLLISION_TARGET" commit -qm basel
 check "install rejects conflicting consumer controls before writes or execution" sh -c "! bash scripts/install-harness.sh --dev '$COLLISION_TARGET' && ! test -e '$COLLISION_TARGET/.consumer-sync-executed' && test -z \"\$(git -C '$COLLISION_TARGET' status --porcelain)\""
 rm -rf "$COLLISION_TARGET"
 
+DANGLING_TARGET="$(mktemp -d)"
+DANGLING_EXTERNAL="$DANGLING_TARGET.harness-manifest-outside"
+git -C "$DANGLING_TARGET" init -q
+git -C "$DANGLING_TARGET" config user.email ci@test && git -C "$DANGLING_TARGET" config user.name CI
+echo consumer > "$DANGLING_TARGET/README.md"
+ln -s "$DANGLING_EXTERNAL" "$DANGLING_TARGET/harness-manifest.json"
+git -C "$DANGLING_TARGET" add -A && git -C "$DANGLING_TARGET" commit -qm baseline
+DANGLING_BRANCH="$(git -C "$DANGLING_TARGET" branch --show-current)"
+check "install rejects dangling consumer manifest symlink before writes" sh -c "! bash scripts/install-harness.sh --dev '$DANGLING_TARGET' && test \"\$(git -C '$DANGLING_TARGET' branch --show-current)\" = '$DANGLING_BRANCH' && test -z \"\$(git -C '$DANGLING_TARGET' status --porcelain)\" && test -L '$DANGLING_TARGET/harness-manifest.json' && ! test -e '$DANGLING_EXTERNAL'"
+rm -rf "$DANGLING_TARGET" "$DANGLING_EXTERNAL"
+
 # ---- install ----
 echo "== install-harness.sh"
-check "default install rejects untagged source" sh -c "! bash scripts/install-harness.sh '$TARGET'"
+check "default install rejects isolated untagged source" sh -c "cd '$UNTAGGED_FIXTURE' && ! bash scripts/install-harness.sh '$TARGET'"
 bash scripts/install-harness.sh --dev "$TARGET"
 
 VERSION="$(grep -m1 '^## ' CHANGELOG.md | sed 's/## //;s/ .*//' )"

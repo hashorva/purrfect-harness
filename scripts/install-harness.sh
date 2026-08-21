@@ -42,7 +42,7 @@ fi
 [ -z "$(git -C "$TARGET" status --porcelain)" ] || { echo "ERROR: target tree not clean."; exit 1; }
 [ -f "$TARGET/.harness-version" ] && { echo "ERROR: harness already installed ($(cat "$TARGET/.harness-version")). Use update-harness.sh."; exit 1; }
 for critical in harness-manifest.json scripts/harness-manifest.py scripts/sync-skills.sh; do
-  [ ! -e "$TARGET/$critical" ] || { echo "ERROR: consumer-owned $critical conflicts with a required harness control file; refusing before writes."; exit 1; }
+  [ ! -e "$TARGET/$critical" ] && [ ! -L "$TARGET/$critical" ] || { echo "ERROR: consumer-owned $critical conflicts with a required harness control file; refusing before writes."; exit 1; }
 done
 
 git -C "$TARGET" checkout -b "chore/harness-install" 2>/dev/null || git -C "$TARGET" checkout "chore/harness-install"
@@ -53,7 +53,7 @@ INSTALLED=0; SKIPPED=0; CONFLICTS=0
 copy_one() {
   local rel="$1" src="$HARNESS/$1" dst="$TARGET/$1"
   mkdir -p "$(dirname "$dst")"
-  if [ ! -e "$dst" ]; then
+  if [ ! -e "$dst" ] && [ ! -L "$dst" ]; then
     cp "$src" "$dst"; INSTALLED=$((INSTALLED+1)); echo "  installed: $rel"
   elif diff -q "$src" "$dst" >/dev/null 2>&1; then
     SKIPPED=$((SKIPPED+1))
