@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "release": {
+    "version": "2.3.1",
+    "required_tag": "v2.3.1",
+    "state": "development",
+    "semantics": "2.3.1 is the next patch release after the currently published v2.3.0 tag. It is not distributable by default until v2.3.1 points at this commit; --dev/--allow-untagged is the explicit local smoke escape."
+  },
+  "ownership": {
+    "canonical_skills": [
+      "cloudflare-deploy",
+      "dispatch-worker",
+      "guard-verification",
+      "mcp-hygiene",
+      "mission-init",
+      "react-conventions",
+      "shadcn-luma",
+      "skillify",
+      "supabase-migration"
+    ],
+    "discovery_targets": [".claude/skills", ".cursor/skills", ".gemini/skills", ".codex/skills"],
+    "install_payload_roots": [
+      "docs/missions/templates",
+      ".claude/rules",
+      ".claude/agents"
+    ],
+    "install_payload_paths": [
+      "docs/missions/ORCHESTRATION.md",
+      "docs/missions/MODEL_ROUTING.md",
+      "docs/missions/README.md",
+      "docs/ORCHESTRATION.md",
+      "docs/MODEL_ROUTING.md",
+      "docs/templates/README.md",
+      ".claude/settings.json",
+      "scripts/sync-skills.sh",
+      "scripts/active-mission.sh",
+      "scripts/spawn-worker.sh",
+      "scripts/fleet-inventory.sh",
+      "scripts/spawn-brain.sh",
+      "scripts/verify-mission.sh",
+      "scripts/write-receipt.sh",
+      "harness-manifest.json",
+      "CLAUDE.md",
+      "GEMINI.md"
+    ],
+    "update_paths": [
+      "docs/missions/ORCHESTRATION.md",
+      "docs/missions/MODEL_ROUTING.md",
+      "docs/missions/README.md",
+      "docs/missions/templates",
+      "docs/ORCHESTRATION.md",
+      "docs/MODEL_ROUTING.md",
+      "docs/templates",
+      ".claude/rules",
+      ".claude/agents",
+      "scripts/sync-skills.sh",
+      "scripts/update-harness.sh",
+      "scripts/active-mission.sh",
+      "scripts/spawn-worker.sh",
+      "scripts/fleet-inventory.sh",
+      "scripts/spawn-brain.sh",
+      "scripts/verify-mission.sh",
+      "scripts/write-receipt.sh"
+      ,"harness-manifest.json"
+    ],
+    "consumer_agents_template": "docs/templates/AGENTS.md.template"
+  }
+}

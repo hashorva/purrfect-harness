@@ -33,6 +33,27 @@ check "version mismatch fails the same extraction CI uses" sh -c "
 "
 rm -rf "$VERSION_MISMATCH"
 
+# F006 regressions must use the public propagation/release entry points. This
+# development release is deliberately untagged, so default propagation must
+# reject it while an explicit development invocation may proceed.
+echo "== manifest and release truth"
+check "manifest declares every canonical skill" sh -c "python3 - '$HARNESS/harness-manifest.json' <<'PY'
+import json, pathlib, sys
+m = json.load(open(sys.argv[1]))
+actual = sorted(p.name for p in pathlib.Path('.agents/skills').iterdir() if p.is_dir())
+assert m['ownership']['canonical_skills'] == actual
+PY"
+check "manifest omission of guard-verification fails release entry point" sh -c "
+  backup=\$(mktemp)
+  cp harness-manifest.json \"\$backup\"
+  python3 -c \"import json; p='harness-manifest.json'; d=json.load(open(p)); d['ownership']['canonical_skills'].remove('guard-verification'); open(p, 'w').write(json.dumps(d))\"
+  if bash scripts/install-harness.sh --dev --validate-release >/dev/null 2>&1; then result=1; else result=0; fi
+  mv \"\$backup\" harness-manifest.json
+  exit \"\$result\"
+"
+check "default release validation rejects untagged source" sh -c "! bash scripts/install-harness.sh --validate-release"
+check "explicit development release validation succeeds" bash scripts/install-harness.sh --dev --validate-release
+
 TARGET="$(mktemp -d)"
 trap 'rm -rf "$TARGET"' EXIT
 
@@ -41,15 +62,18 @@ git -C "$TARGET" init -q
 git -C "$TARGET" config user.email ci@test && git -C "$TARGET" config user.name CI
 echo "# my project readme" > "$TARGET/README.md"
 echo "my own claude notes" > "$TARGET/CLAUDE.md"   # will conflict with kit CLAUDE.md
+echo "project-owned consumer skeleton" > "$TARGET/AGENTS.md.template"
 git -C "$TARGET" add -A && git -C "$TARGET" commit -qm baseline
 
 # ---- install ----
 echo "== install-harness.sh"
-bash scripts/install-harness.sh "$TARGET"
+check "default install rejects untagged source" sh -c "! bash scripts/install-harness.sh '$TARGET'"
+bash scripts/install-harness.sh --dev "$TARGET"
 
 VERSION="$(grep -m1 '^## ' CHANGELOG.md | sed 's/## //;s/ .*//' )"
 check "records .harness-version = $VERSION" grep -qx "$VERSION" "$TARGET/.harness-version"
 check "AGENTS.md installed (was absent)"     test -f "$TARGET/AGENTS.md"
+check "project AGENTS.md.template untouched" grep -qx "project-owned consumer skeleton" "$TARGET/AGENTS.md.template"
 check "conflict -> CLAUDE.md.harness-new"    test -f "$TARGET/CLAUDE.md.harness-new"
 check "existing CLAUDE.md untouched"         grep -q "my own claude notes" "$TARGET/CLAUDE.md"
 check "skills copied"                        test -f "$TARGET/.agents/skills/dispatch-worker/SKILL.md"
@@ -229,6 +253,12 @@ check "parent symlink replaced" sh -c "[ ! -L '$TARGET/.claude/skills' ]"
 check "canonical intact after sync" test -f "$TARGET/.agents/skills/dispatch-worker/SKILL.md"
 check "canonical not a symlink" sh -c "[ ! -L '$TARGET/.agents/skills/dispatch-worker' ]"
 
+# A discovery entry not owned by the manifest must survive a real sync.
+mkdir -p "$TARGET/.claude/skills/foreign-project-skill"
+echo "keep" > "$TARGET/.claude/skills/foreign-project-skill/README.md"
+( cd "$TARGET" && bash scripts/sync-skills.sh )
+check "foreign discovery skill survives sync" test -f "$TARGET/.claude/skills/foreign-project-skill/README.md"
+
 # ---- re-install must refuse ----
 check "second install refused" sh -c "! bash scripts/install-harness.sh '$TARGET'"
 
@@ -236,12 +266,20 @@ check "second install refused" sh -c "! bash scripts/install-harness.sh '$TARGET
 echo "== update-harness.sh"
 echo "keep-me" > "$TARGET/docs/missions/20990101-fixture/KEEP.md"
 git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "fixture mission marker"
-bash scripts/update-harness.sh "$TARGET"
+bash scripts/update-harness.sh --dev "$TARGET"
 check "update stayed on version branch" sh -c "git -C '$TARGET' branch --show-current | grep -q 'chore/harness-'"
 check "kit skill still present after update" test -f "$TARGET/.agents/skills/mission-init/SKILL.md"
 check "MODEL_ROUTING under docs/missions" test -f "$TARGET/docs/missions/MODEL_ROUTING.md"
 check "instance mission folder preserved" test -f "$TARGET/docs/missions/20990101-fixture/KEEP.md"
 check "instance GOAL preserved" test -f "$TARGET/docs/missions/20990101-fixture/GOAL.md"
+
+UNMANAGED="$(mktemp -d)"
+git -C "$UNMANAGED" init -q
+git -C "$UNMANAGED" config user.email ci@test && git -C "$UNMANAGED" config user.name CI
+echo unmanaged > "$UNMANAGED/README.md"
+git -C "$UNMANAGED" add -A && git -C "$UNMANAGED" commit -qm baseline
+check "update refuses unmanaged target" sh -c "! bash scripts/update-harness.sh --dev '$UNMANAGED'"
+rm -rf "$UNMANAGED"
 
 # ---- dirty-tree refusals ----
 echo dirty > "$TARGET/dirty.txt"

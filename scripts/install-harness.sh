@@ -7,11 +7,75 @@
 
 set -euo pipefail
 
-TARGET="${1:?Usage: install-harness.sh /path/to/target-repo}"
 HARNESS="$(pwd)"
-VERSION="$(grep -m1 '^## ' CHANGELOG.md | sed 's/## //;s/ .*//')"
+DEV_MODE=0
+if [ "${1:-}" = "--dev" ] || [ "${1:-}" = "--allow-untagged" ]; then
+  DEV_MODE=1
+  shift
+fi
+if [ "${1:-}" = "--validate-release" ]; then
+  VALIDATE_ONLY=1
+  shift
+else
+  VALIDATE_ONLY=0
+fi
+TARGET="${1:-}"
+
+manifest() {
+  python3 - "$HARNESS" "$DEV_MODE" "${1:-validate}" <<'PY'
+import json, pathlib, subprocess, sys
+root = pathlib.Path(sys.argv[1])
+dev = sys.argv[2] == "1"
+action = sys.argv[3]
+manifest_path = root / "harness-manifest.json"
+try:
+    m = json.loads(manifest_path.read_text())
+    assert m["schema_version"] == 1
+    ownership, release = m["ownership"], m["release"]
+    declared = ownership["canonical_skills"]
+    actual = sorted(p.name for p in (root / ".agents/skills").iterdir() if p.is_dir())
+    if declared != actual:
+        raise ValueError("canonical_skills must exactly list every .agents/skills directory")
+    readme_version = next(line.split(":", 1)[1].strip() for line in (root / "README.md").read_text().splitlines() if line.startswith("version:"))
+    changelog_version = next(line[3:].split()[0] for line in (root / "CHANGELOG.md").read_text().splitlines() if line.startswith("## "))
+    if {readme_version, changelog_version, release["version"]} != {release["version"]}:
+        raise ValueError("README, CHANGELOG, and manifest release versions disagree")
+    for path in ownership["install_payload_paths"] + ownership["update_paths"] + [ownership["consumer_agents_template"]]:
+        if not (root / path).exists():
+            raise ValueError(f"manifest-owned path is missing: {path}")
+except (OSError, KeyError, ValueError, AssertionError, StopIteration, json.JSONDecodeError) as exc:
+    print(f"ERROR: invalid harness manifest: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+if action == "validate":
+    if not dev:
+        tags = subprocess.check_output(["git", "-C", str(root), "tag", "--points-at", "HEAD"], text=True).split()
+        if release["required_tag"] not in tags:
+            print(f"ERROR: {release['required_tag']} must point at HEAD; use --dev/--allow-untagged only for explicit development work.", file=sys.stderr)
+            raise SystemExit(1)
+        if subprocess.check_output(["git", "-C", str(root), "cat-file", "-t", f"refs/tags/{release['required_tag']}"], text=True).strip() != "tag":
+            print(f"ERROR: {release['required_tag']} must be an annotated tag.", file=sys.stderr)
+            raise SystemExit(1)
+    print(release["version"])
+elif action == "install-payload":
+    for skill in ownership["canonical_skills"]:
+        for p in sorted((root / ".agents/skills" / skill).rglob("*")):
+            if p.is_file(): print(p.relative_to(root))
+    for item in ownership["install_payload_roots"]:
+        for p in sorted((root / item).rglob("*")):
+            if p.is_file(): print(p.relative_to(root))
+    print(*ownership["install_payload_paths"], sep="\n")
+PY
+}
 
 [ -f "$HARNESS/CHANGELOG.md" ] || { echo "Run from the purrfect-harness repo root."; exit 1; }
+VERSION="$(manifest validate)"
+if [ "$VALIDATE_ONLY" -eq 1 ]; then
+  [ "$#" -eq 0 ] || { echo "Usage: install-harness.sh [--dev|--allow-untagged] --validate-release"; exit 1; }
+  echo "Release validation passed for $VERSION."
+  exit 0
+fi
+[ -n "$TARGET" ] || { echo "Usage: install-harness.sh [--dev|--allow-untagged] /path/to/target-repo"; exit 1; }
+
 [ -d "$TARGET/.git" ] || { echo "ERROR: $TARGET is not a git repo. git init + baseline commit first."; exit 1; }
 [ -z "$(git -C "$TARGET" status --porcelain)" ] || { echo "ERROR: target tree not clean."; exit 1; }
 [ -f "$TARGET/.harness-version" ] && { echo "ERROR: harness already installed ($(cat "$TARGET/.harness-version")). Use update-harness.sh."; exit 1; }
@@ -35,26 +99,21 @@ copy_one() {
 }
 
 # ---- kit payload (README/CHANGELOG/RELEASING stay in the harness repo only) ----
-PAYLOAD=$(cd "$HARNESS" && find .agents/skills docs/missions/templates .claude/rules .claude/agents -type f; \
-          echo "docs/missions/ORCHESTRATION.md"; echo "docs/missions/MODEL_ROUTING.md"; \
-          echo "docs/missions/README.md"; \
-          echo "docs/ORCHESTRATION.md"; echo "docs/MODEL_ROUTING.md"; echo "docs/templates/README.md"; \
-          echo ".claude/settings.json"; \
-          echo "scripts/sync-skills.sh"; echo "scripts/active-mission.sh"; echo "scripts/spawn-worker.sh"; \
-          echo "scripts/fleet-inventory.sh"; echo "scripts/spawn-brain.sh"; \
-          echo "scripts/verify-mission.sh"; echo "scripts/write-receipt.sh"; \
-          echo "CLAUDE.md"; echo "GEMINI.md")
+PAYLOAD="$(manifest install-payload)"
 
 for f in $PAYLOAD; do copy_one "$f"; done
 
 # ---- AGENTS.md is special: never installed as-is over an existing one ----
 if [ -e "$TARGET/AGENTS.md" ]; then
-  cp "$HARNESS/AGENTS.md" "$TARGET/AGENTS.md.template"
-  echo "  NOTE     : existing AGENTS.md kept. Kit skeleton -> AGENTS.md.template"
-  echo "             Re-shape your content into the skeleton, then delete the template."
+  if [ ! -e "$TARGET/AGENTS.md.template" ]; then
+    cp "$HARNESS/docs/templates/AGENTS.md.template" "$TARGET/AGENTS.md.template"
+    echo "  NOTE     : existing AGENTS.md kept. Consumer skeleton -> AGENTS.md.template"
+  else
+    echo "  NOTE     : existing AGENTS.md and AGENTS.md.template kept (project-owned)."
+  fi
 else
-  cp "$HARNESS/AGENTS.md" "$TARGET/AGENTS.md"; INSTALLED=$((INSTALLED+1))
-  echo "  installed: AGENTS.md (FILL every {{placeholder}} before committing)"
+  cp "$HARNESS/docs/templates/AGENTS.md.template" "$TARGET/AGENTS.md"; INSTALLED=$((INSTALLED+1))
+  echo "  installed: AGENTS.md (fill consumer placeholders before committing)"
 fi
 
 # ---- skill discovery paths: real dirs of per-skill symlinks (never parent symlink) ----

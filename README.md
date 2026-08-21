@@ -1,6 +1,6 @@
 ---
 title: Agent Harness Kit
-version: 2.3.0
+version: 2.3.1
 updated: 2026-08-5
 ---
 
@@ -68,9 +68,10 @@ If content is in the wrong layer, move it — a fat AGENTS.md is context rot by 
 2. **Progressive disclosure.** Only skill name + description load at startup (~50 tokens
    each). The body loads when triggered. Detail goes in `references/`. This is the anti-
    context-rot mechanism: knowledge on disk, not in the window.
-3. **One universal root.** `AGENTS.md` is the master context file. `CLAUDE.md` and
-   `GEMINI.md` are thin wrappers importing it. Only the `PROJECT` block of `AGENTS.md`
-   changes per repo — everything else is agnostic.
+3. **One universal root.** Each consuming repository has an `AGENTS.md` master
+   context file; `CLAUDE.md` and `GEMINI.md` are thin wrappers importing it. The
+   distributable consumer skeleton is `docs/templates/AGENTS.md.template`; this
+   harness's own `AGENTS.md` describes the harness, not a consuming project.
 4. **Goal file = JSON feature list, not prose.** Per Anthropic's long-running-agent
    research: agents one-shot and declare victory early when goals are prose. A
    `features.json` with `passes: false` items, edited only by flipping `passes`, fixes
@@ -114,8 +115,8 @@ cleanly because nothing collides. What the script does by default:
 PAYLOAD=$(find .agents/skills docs/templates .claude/rules .claude/agents -type f; \
           echo "docs/ORCHESTRATION.md"; echo ".claude/settings.json"; ...)
 for f in $PAYLOAD; do copy_one "$f"; done
-# and discovery symlinks, skipping any that exist:
-[ -e "$TARGET/$tool/skills" ] || ln -s ../.agents/skills "$TARGET/$tool/skills"
+# then `sync-skills.sh` creates per-skill links inside real discovery directories.
+# It preserves discovery entries not owned by harness-manifest.json.
 ```
 
 What remains manual, always — the script cannot know your project:
@@ -163,9 +164,9 @@ else cp "$src" "$dst.harness-new"; fi                          # different -> pr
 ```
 
 `AGENTS.md` gets stricter treatment: if one exists it is never even proposed
-against — the kit skeleton arrives as `AGENTS.md.template`, and re-shaping your
-content into it is deliberate human work (your content is the truth, the
-template is only the structure).
+against. The installer copies the consumer skeleton from
+`docs/templates/AGENTS.md.template` only when `AGENTS.md.template` is absent;
+an existing project-owned template remains untouched.
 
 What to check before merging — the ritual, in order:
 1. **`git diff --stat`** — every path should be a harness path or a `.harness-new`.

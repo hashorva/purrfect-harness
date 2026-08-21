@@ -1,0 +1,34 @@
+---
+spec: AGENTS.md v1.1
+---
+
+# {{PROJECT_NAME}} — Agent Instructions
+
+## Product
+
+{{Describe the product, its users, and its AI component.}}
+
+## Stack
+
+- Frontend: {{stack}}
+- Backend: {{stack}}
+- Database/Auth: {{stack}}
+- Deploy: {{stack}}
+- Local toolchain: {{commands and package manager}}
+
+## Security invariants
+
+- Never commit secrets. `.env*` stays untracked.
+- {{project-specific auth/data rules}}
+
+## Workflow
+
+- Inspect before editing and keep diffs small.
+- Run the relevant checks after changes.
+- Do not guess on schema, security, or architecture; request direction when blocked.
+
+## Harness conventions
+
+- Reusable procedures live in `.agents/skills/`; read the matching `SKILL.md` before improvising.
+- `docs/missions/` is active only while a mission is in progress or awaiting a gate.
+- `features.json` is append-only truth; workers never edit it.

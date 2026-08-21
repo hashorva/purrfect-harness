@@ -24,7 +24,12 @@ cd ~/dev/purrfect-harness   # or wherever the kit lives
 # 3. Bump version: in README.md frontmatter — REQUIRED. CI and
 #    tests/run-tests.sh both compare README 'version:' to the top CHANGELOG
 #    heading with the same extraction. Skipping this failed v2.2.4 and v2.2.5.
-# 4. Run bash tests/run-tests.sh (catches the version mismatch locally)
+# 4. Before tagging, run bash scripts/install-harness.sh --dev --validate-release
+#    and bash tests/run-tests.sh. The manifest validates README/CHANGELOG/version
+#    consistency and every canonical skill. After step 6, rerun validation without
+#    --dev to prove the annotated tag is on HEAD. This repository currently treats
+#    2.3.1 as an untagged development build after published v2.3.0; use --dev only
+#    for local smoke work, never for a normal consumer propagation.
 # 5. Commit the release prep
 git add -A && git commit -m "release: vX.Y.Z"
 # 6. ANNOTATED tag (not lightweight — carries author/date/message)
@@ -48,5 +53,6 @@ done
 
 - Never move or delete a pushed tag — tags are promises.
 - Never propagate from an untagged state — repos receive only blessed versions.
+  `--dev`/`--allow-untagged` is the deliberately noisy local smoke exception.
 - `update-harness.sh` writes `.harness-version` in each repo; `git diff vA vB`
   in the harness answers "what will this repo receive".

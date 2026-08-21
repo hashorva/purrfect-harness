@@ -7,32 +7,54 @@
 
 set -euo pipefail
 
-TARGET="${1:?Usage: update-harness.sh /path/to/target-repo}"
 HARNESS="$(pwd)"
-VERSION="$(grep -m1 '^## ' CHANGELOG.md | sed 's/## //;s/ .*//')"
+DEV_MODE=0
+if [ "${1:-}" = "--dev" ] || [ "${1:-}" = "--allow-untagged" ]; then
+  DEV_MODE=1
+  shift
+fi
+TARGET="${1:-}"
 
-# ---- kit-owned manifest (the ONLY paths this script may overwrite) ----
-KIT_SKILLS="supabase-migration shadcn-luma react-conventions mcp-hygiene \
-cloudflare-deploy dispatch-worker mission-init skillify"
-# Kit-owned mission *protocol* paths only. Never list docs/missions as a whole —
-# instance folders (YYYYMMDD-*) are project-owned and must survive updates.
-KIT_PATHS="docs/missions/ORCHESTRATION.md docs/missions/MODEL_ROUTING.md \
-docs/missions/README.md docs/missions/templates \
-docs/ORCHESTRATION.md docs/MODEL_ROUTING.md docs/templates \
-.claude/rules .claude/agents \
-scripts/sync-skills.sh scripts/update-harness.sh \
-scripts/active-mission.sh scripts/spawn-worker.sh scripts/fleet-inventory.sh \
-scripts/spawn-brain.sh scripts/verify-mission.sh scripts/write-receipt.sh"
+manifest() {
+  python3 - "$HARNESS" "$DEV_MODE" "${1:-validate}" <<'PY'
+import json, pathlib, subprocess, sys
+root = pathlib.Path(sys.argv[1]); dev = sys.argv[2] == "1"; action = sys.argv[3]
+try:
+    m = json.loads((root / "harness-manifest.json").read_text())
+    assert m["schema_version"] == 1
+    o, r = m["ownership"], m["release"]
+    actual = sorted(p.name for p in (root / ".agents/skills").iterdir() if p.is_dir())
+    if o["canonical_skills"] != actual: raise ValueError("canonical_skills must exactly list every .agents/skills directory")
+    rv = next(x.split(":", 1)[1].strip() for x in (root / "README.md").read_text().splitlines() if x.startswith("version:"))
+    cv = next(x[3:].split()[0] for x in (root / "CHANGELOG.md").read_text().splitlines() if x.startswith("## "))
+    if {rv, cv, r["version"]} != {r["version"]}: raise ValueError("README, CHANGELOG, and manifest release versions disagree")
+except (OSError, KeyError, ValueError, AssertionError, StopIteration, json.JSONDecodeError) as exc:
+    print(f"ERROR: invalid harness manifest: {exc}", file=sys.stderr); raise SystemExit(1)
+if action == "validate":
+    if not dev:
+        tags = subprocess.check_output(["git", "-C", str(root), "tag", "--points-at", "HEAD"], text=True).split()
+        if r["required_tag"] not in tags:
+            print(f"ERROR: {r['required_tag']} must point at HEAD; use --dev/--allow-untagged only for explicit development work.", file=sys.stderr); raise SystemExit(1)
+        if subprocess.check_output(["git", "-C", str(root), "cat-file", "-t", f"refs/tags/{r['required_tag']}"], text=True).strip() != "tag":
+            print(f"ERROR: {r['required_tag']} must be an annotated tag.", file=sys.stderr); raise SystemExit(1)
+    print(r["version"])
+elif action == "skills": print(*o["canonical_skills"], sep="\n")
+elif action == "paths": print(*o["update_paths"], sep="\n")
+PY
+}
+
+[ -f "$HARNESS/CHANGELOG.md" ] || { echo "Run from the purrfect-harness repo root."; exit 1; }
+VERSION="$(manifest validate)"
+[ -n "$TARGET" ] || { echo "Usage: update-harness.sh [--dev|--allow-untagged] /path/to/target-repo"; exit 1; }
 
 # ---- preflight ----
-[ -f "$HARNESS/CHANGELOG.md" ] || { echo "Run from the purrfect-harness repo root."; exit 1; }
 [ -d "$TARGET/.git" ] || { echo "ERROR: $TARGET is not a git repo."; exit 1; }
+[ -f "$TARGET/.harness-version" ] || { echo "ERROR: $TARGET is not harness-managed (.harness-version missing). Use install-harness.sh first."; exit 1; }
 if [ -n "$(git -C "$TARGET" status --porcelain)" ]; then
   echo "ERROR: target has uncommitted changes. Commit or stash first."; exit 1
 fi
 
-OLD_VERSION="none"
-[ -f "$TARGET/.harness-version" ] && OLD_VERSION="$(cat "$TARGET/.harness-version")"
+OLD_VERSION="$(cat "$TARGET/.harness-version")"
 echo "Updating $TARGET : harness $OLD_VERSION -> $VERSION"
 
 BRANCH="chore/harness-$VERSION"
@@ -40,23 +62,23 @@ git -C "$TARGET" checkout -b "$BRANCH" 2>/dev/null || git -C "$TARGET" checkout 
 
 # ---- copy kit-owned skills (other skill folders in target are untouched) ----
 mkdir -p "$TARGET/.agents/skills"
-for s in $KIT_SKILLS; do
+while IFS= read -r s; do
   if [ -d "$HARNESS/.agents/skills/$s" ]; then
     rm -rf "$TARGET/.agents/skills/$s"
     cp -R "$HARNESS/.agents/skills/$s" "$TARGET/.agents/skills/$s"
     echo "  updated skill: $s"
   fi
-done
+done < <(manifest skills)
 
 # ---- copy other kit-owned paths ----
-for p in $KIT_PATHS; do
+while IFS= read -r p; do
   if [ -e "$HARNESS/$p" ]; then
     mkdir -p "$TARGET/$(dirname "$p")"
     rm -rf "${TARGET:?}/$p"
     cp -R "$HARNESS/$p" "$TARGET/$p"
     echo "  updated: $p"
   fi
-done
+done < <(manifest paths)
 
 # ---- settings.json: merged file, never overwrite ----
 if [ -f "$HARNESS/.claude/settings.json" ]; then
