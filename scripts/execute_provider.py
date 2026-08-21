@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Translate one persisted ExecutionSpec into a provider argv and launch it safely."""
 import argparse
+import hashlib
 import json
+import re
 import subprocess
 import sys
 
@@ -47,10 +49,15 @@ def provider_contract(spec):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--spec", required=True, help="persisted .tasks/specs/<run_id>.json")
+    parser.add_argument("--sha256", required=True, help="exact SHA-256 returned by execution_spec persist")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     try:
-        spec, _ = load_persisted(args.spec)
+        if not re.fullmatch(r"[0-9a-f]{64}", args.sha256):
+            raise SpecError("sha256 must be a lowercase SHA-256 digest")
+        spec, raw_bytes = load_persisted(args.spec)
+        if hashlib.sha256(raw_bytes).hexdigest() != args.sha256:
+            raise SpecError("persisted spec SHA-256 does not match authorization")
         argv, env_overrides = provider_contract(spec)
     except SpecError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -61,7 +68,7 @@ def main():
                          sort_keys=True, separators=(",", ":")))
         return 0
     try:
-        return subprocess.run(argv, check=False).returncode
+        return subprocess.run(argv, check=False, stdin=subprocess.DEVNULL).returncode
     except OSError as exc:
         print(f"ERROR: provider launch failed: {exc}", file=sys.stderr)
         return 127

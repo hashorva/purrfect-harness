@@ -7,21 +7,21 @@
   "properties": {
     "schema_version": { "const": 1 },
     "run_id": { "type": "string", "format": "uuid", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
-    "mission": { "type": "string", "pattern": "^\\S(?:.*\\S)?$" },
-    "work_unit": { "type": "string", "pattern": "^\\S(?:.*\\S)?$" },
+    "mission": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$" },
+    "work_unit": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$" },
     "role": { "enum": ["brain", "worker"] },
     "feature": { "type": ["string", "null"] },
     "provider": { "enum": ["codex", "claude", "agent", "agy"] },
-    "model": { "type": "string", "pattern": "^\\S(?:.*\\S)?$" },
-    "effort": { "type": "string", "pattern": "^\\S(?:.*\\S)?$" },
-    "speed": { "type": "string", "pattern": "^\\S(?:.*\\S)?$" },
-    "repo": { "type": "string", "pattern": "^/\\S+$" },
+    "model": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$" },
+    "effort": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$" },
+    "speed": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$" },
+    "repo": { "type": "string", "pattern": "^/(?![\\s\\S]*[\\r\\n])\\S(?:[\\s\\S]*\\S)?$" },
     "base_commit": { "type": "string", "pattern": "^[0-9a-fA-F]{40,64}$" },
     "attempt": { "type": "integer", "minimum": 1 },
-    "prompt": { "type": "string", "pattern": "^\\S(?:.*\\S)?$" }
+    "prompt": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$" }
   },
   "allOf": [
-    { "if": { "properties": { "role": { "const": "worker" } }, "required": ["role"] }, "then": { "properties": { "feature": { "type": "string", "pattern": "^\\S(?:.*\\S)?$" } } } },
+    { "if": { "properties": { "role": { "const": "worker" } }, "required": ["role"] }, "then": { "properties": { "feature": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$" } } } },
     { "if": { "properties": { "role": { "const": "brain" } } }, "then": { "properties": { "feature": { "type": "null" } } } }
   ]
 }

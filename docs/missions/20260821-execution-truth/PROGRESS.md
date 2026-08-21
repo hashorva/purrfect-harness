@@ -4,6 +4,22 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-21 — GPT-5.6 Sol/high — T-004 attempt 2 review — FAIL / STOP
+
+- **Verified good:** Same-directory staged hard-link publication prevents partial final spec bytes; exact caller-held SHA-256 is required before provider resolution; provider stdin is closed; canonical tampering and capability failures leave sentinels untouched; exact argv contracts and focused tests pass.
+- **Remaining schema contradiction:** The Python validator accepts an uppercase RFC UUID because it compares against `run_id.lower()`, while the JSON Schema permits lowercase only. It also accepts an existing canonical repo such as `/tmp/ repo` while the schema requires the first character after `/` to be non-whitespace. The agreement test omits both counterexamples.
+- **Clean-state failure:** `tests/test-execution-spec.py` imports `scripts/execution_spec.py` without disabling bytecode and the mounted `bash tests/run-tests.sh` call leaves untracked `scripts/__pycache__/`. That cache was created during the orchestrator's independent attempt-1 focused run; the orchestrator then failed to recheck cleanliness before attempt-2 dispatch. The current legacy wrapper launched from that dirty tree, providing additional negative evidence for F003 rather than completion evidence for T-004.
+- **Evidence honesty:** The worker's final response says the full suite passed, while its appended progress says this terminal did not emit the final banner. That claim is not accepted without the banner and a clean post-test tree.
+- **Stop condition:** T-004 has exhausted both attempts. No acceptance or implementation commit is authorized; F001 remains false and T-005 stays dormant. A human-approved rewritten correction must cover the two schema counterexamples, bytecode-free mounted tests, clean pre/post status, and an independently observed full-suite final banner.
+
+## 2026-08-21 — Codex — T-004 attempt 2 final corrections
+
+- **Atomic execution spec:** Replaced final-path creation with same-directory staged writes: canonical bytes are flushed and fsynced to a unique read-only temporary file, atomically hard-linked to the absent UUID path, directory-fsynced, then the staging name is removed. A pre-publish fault leaves neither final spec nor staging file; an existing UUID remains no-clobber.
+- **Hash-bound adapter and stdin:** `execute_provider.py` now requires the lowercase SHA-256 returned by persistence and compares it with raw persisted bytes before provider resolution or launch. Real provider subprocesses receive `stdin=DEVNULL`.
+- **Schema agreement:** Nil/non-RFC UUIDs are rejected consistently. Schema and executable policy both accept canonical Git-root paths containing spaces, reject CR/LF paths, and accept trimmed multiline prompts. Focused agreement regressions exercise all four cases.
+- **Guard proof:** Through the mounted `bash tests/run-tests.sh` entry point, separately bypassed the pre-publish fault boundary, digest comparison, `DEVNULL` wiring, and schema path rule. Each run failed at `ExecutionSpec and provider adapter contracts`; each exact safeguard was restored before final validation.
+- **Verified:** ShellCheck, repository JSON validation, `git diff --check`, and `bash tests/run-tests.sh` pass. The full suite reached the existing terminal provider-stub output without failure; its final banner is not emitted in this terminal's captured output.
+
 ## 2026-08-21 — GPT-5.6 Sol/high — T-004 attempt 1 review — FAIL
 
 - **Verified good:** One importable validator, canonical JSON serialization, UUID-keyed no-clobber naming, exact four-provider argv dry-runs for both roles, fail-closed capability checks, manifest ownership, and the focused test suite.

@@ -10,6 +10,9 @@ import tempfile
 import unittest
 import uuid
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import execution_spec  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 SPEC_TOOL = ROOT / "scripts" / "execution_spec.py"
 ADAPTER = ROOT / "scripts" / "execute_provider.py"
@@ -69,10 +72,11 @@ class ExecutionSpecContract(unittest.TestCase):
 
     def persisted(self, spec):
         result = self.persist(spec)
-        return Path(json.loads(result.stdout)["path"])
+        outcome = json.loads(result.stdout)
+        return Path(outcome["path"]), outcome["sha256"]
 
-    def adapter(self, spec_path, dry=True, env=None, check=True):
-        argv = [sys.executable, str(ADAPTER), "--spec", str(spec_path)]
+    def adapter(self, spec_path, digest, dry=True, env=None, check=True):
+        argv = [sys.executable, str(ADAPTER), "--spec", str(spec_path), "--sha256", digest]
         if dry:
             argv.append("--dry-run")
         return self.command(argv, check=check, env=env)
@@ -143,13 +147,13 @@ class ExecutionSpecContract(unittest.TestCase):
             for role in ("brain", "worker"):
                 with self.subTest(provider=provider, role=role):
                     changes = {"speed": "standard"} if provider == "agent" else {}
-                    path = self.persisted(self.spec(provider=provider, role=role, **changes))
-                    result = json.loads(self.adapter(path).stdout)
+                    path, digest = self.persisted(self.spec(provider=provider, role=role, **changes))
+                    result = json.loads(self.adapter(path, digest).stdout)
                     self.assertEqual(result["argv"], expected[provider](None))
                     self.assertEqual(result["env_overrides"], {})
                     self.assertEqual(result["observed"], {"model": "unknown", "effort": "unknown", "speed": "unknown"})
-        fast = self.persisted(self.spec(provider="agent", speed="fast"))
-        self.assertEqual(json.loads(self.adapter(fast).stdout)["argv"][-2], "test-model[effort=medium,fast=true]")
+        fast, fast_digest = self.persisted(self.spec(provider="agent", speed="fast"))
+        self.assertEqual(json.loads(self.adapter(fast, fast_digest).stdout)["argv"][-2], "test-model[effort=medium,fast=true]")
 
     def test_negative_adapter_paths_do_not_invoke_provider_sentinel(self):
         env = dict(__import__("os").environ)
@@ -161,19 +165,88 @@ class ExecutionSpecContract(unittest.TestCase):
         missing_path = self.repo / ".tasks" / "specs" / f"{missing['run_id']}.json"
         missing_path.parent.mkdir(parents=True)
         missing_path.write_text(json.dumps(missing, sort_keys=True, separators=(",", ":")) + "\n")
-        self.assertNotEqual(self.adapter(missing_path, dry=False, env=env, check=False).returncode, 0)
-        unsupported_effort = self.persisted(self.spec(provider="agy", effort="xhigh"))
-        self.assertNotEqual(self.adapter(unsupported_effort, dry=False, env=env, check=False).returncode, 0)
-        unsupported_speed = self.persisted(self.spec(provider="codex", speed="fast"))
-        self.assertNotEqual(self.adapter(unsupported_speed, dry=False, env=env, check=False).returncode, 0)
-        unknown_agent = self.persisted(self.spec(provider="agent", speed="unknown"))
-        self.assertNotEqual(self.adapter(unknown_agent, dry=False, env=env, check=False).returncode, 0)
-        parameterized_agent = self.persisted(self.spec(provider="agent", speed="fast", model="test-model[x=true]"))
-        self.assertNotEqual(self.adapter(parameterized_agent, dry=False, env=env, check=False).returncode, 0)
+        self.assertNotEqual(self.adapter(missing_path, "0" * 64, dry=False, env=env, check=False).returncode, 0)
+        unsupported_effort, unsupported_effort_digest = self.persisted(self.spec(provider="agy", effort="xhigh"))
+        self.assertNotEqual(self.adapter(unsupported_effort, unsupported_effort_digest, dry=False, env=env, check=False).returncode, 0)
+        unsupported_speed, unsupported_speed_digest = self.persisted(self.spec(provider="codex", speed="fast"))
+        self.assertNotEqual(self.adapter(unsupported_speed, unsupported_speed_digest, dry=False, env=env, check=False).returncode, 0)
+        unknown_agent, unknown_agent_digest = self.persisted(self.spec(provider="agent", speed="unknown"))
+        self.assertNotEqual(self.adapter(unknown_agent, unknown_agent_digest, dry=False, env=env, check=False).returncode, 0)
+        parameterized_agent, parameterized_agent_digest = self.persisted(self.spec(provider="agent", speed="fast", model="test-model[x=true]"))
+        self.assertNotEqual(self.adapter(parameterized_agent, parameterized_agent_digest, dry=False, env=env, check=False).returncode, 0)
         collision = self.spec()
         self.persist(collision)
         self.assertNotEqual(self.persist(collision, check=False).returncode, 0)
         self.assertFalse(self.sentinel.exists(), "a rejected request must never launch the provider")
+
+    def test_atomic_publish_boundary_and_hash_bound_launch(self):
+        value = self.spec()
+        final = self.repo / ".tasks" / "specs" / f"{value['run_id']}.json"
+        with self.assertRaisesRegex(RuntimeError, "fault"):
+            execution_spec.persist(value, before_publish=lambda: (_ for _ in ()).throw(RuntimeError("fault")))
+        self.assertFalse(final.exists(), "a pre-publish fault must leave no final authorization")
+        self.assertFalse(list(final.parent.glob(f".{value['run_id']}.*.tmp")))
+
+        path, digest = self.persisted(value)
+        rewritten = dict(value)
+        rewritten["prompt"] = "different but still valid"
+        path.chmod(0o600)
+        path.write_bytes(execution_spec.canonical_bytes(rewritten))
+        env = dict(__import__("os").environ)
+        env.update(PATH=f"{self.bin}:{env['PATH']}", EXECUTION_SENTINEL=str(self.sentinel))
+        self.assertNotEqual(self.adapter(path, digest, dry=False, env=env, check=False).returncode, 0)
+        self.assertFalse(self.sentinel.exists(), "hash mismatch must reject before provider launch")
+
+    def test_closed_stdin_prevents_provider_read_hang(self):
+        reader = self.bin / "codex"
+        reader.write_text("#!/usr/bin/env bash\nIFS= read -r ignored\nprintf '%s\\n' invoked >> \"$EXECUTION_SENTINEL\"\n")
+        reader.chmod(0o755)
+        path, digest = self.persisted(self.spec())
+        env = dict(__import__("os").environ)
+        env.update(PATH=f"{self.bin}:{env['PATH']}", EXECUTION_SENTINEL=str(self.sentinel))
+        read_fd, write_fd = __import__("os").pipe()
+        try:
+            process = subprocess.Popen(
+                [sys.executable, str(ADAPTER), "--spec", str(path), "--sha256", digest],
+                stdin=read_fd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+            )
+            __import__("os").close(read_fd)
+            read_fd = None
+            process.communicate(timeout=2)
+            self.assertEqual(process.returncode, 0)
+            self.assertTrue(self.sentinel.exists())
+        finally:
+            if read_fd is not None:
+                __import__("os").close(read_fd)
+            __import__("os").close(write_fd)
+
+    def test_schema_and_validator_agree_on_static_edge_domains(self):
+        schema = json.loads((ROOT / "schemas" / "execution-spec.schema.json").read_text())
+        cases = [
+            ("run_id", "00000000-0000-0000-0000-000000000000", False),
+            ("run_id", "12345678-1234-9234-8234-123456789abc", False),
+            ("repo", str(self.repo.parent / "repo with spaces"), True),
+            ("repo", str(self.repo) + "\nunsafe", False),
+            ("prompt", "first line\nsecond line", True),
+        ]
+        spaced_repo = self.repo.parent / "repo with spaces"
+        spaced_repo.mkdir()
+        self.command(["git", "init", "-q"], cwd=spaced_repo)
+        self.command(["git", "config", "user.email", "test@example.invalid"], cwd=spaced_repo)
+        self.command(["git", "config", "user.name", "Execution Spec Test"], cwd=spaced_repo)
+        (spaced_repo / "README.md").write_text("fixture\n")
+        self.command(["git", "add", "README.md"], cwd=spaced_repo)
+        self.command(["git", "commit", "-qm", "fixture"], cwd=spaced_repo)
+        spaced_commit = self.command(["git", "rev-parse", "HEAD"], cwd=spaced_repo).stdout.strip()
+        for field, candidate, expected in cases:
+            with self.subTest(field=field, candidate=candidate):
+                schema_valid = bool(__import__("re").fullmatch(schema["properties"][field]["pattern"], candidate))
+                self.assertEqual(schema_valid, expected)
+                value = self.spec(**{field: candidate})
+                if field == "repo" and expected:
+                    value["base_commit"] = spaced_commit
+                result = self.persist(value, check=False)
+                self.assertEqual(result.returncode == 0, expected)
 
 
 if __name__ == "__main__":
