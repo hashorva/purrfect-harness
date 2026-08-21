@@ -56,19 +56,22 @@ def read_json(path, name, require_canonical=False):
     except (OSError, json.JSONDecodeError) as exc: fail(f"invalid {name}: {exc}")
     if require_canonical and raw != canonical(value).encode(): fail(f"{name} is not canonical JSON")
     return value, raw
-def atomic_write_new(path, raw, no_clobber=False):
+def atomic_write_new(path, raw, no_clobber=False, read_only=False):
     path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
     if no_clobber and path.exists(): fail(f"refusing to overwrite existing {path}")
     fd, tmp = tempfile.mkstemp(prefix=".fleet-", dir=path.parent)
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(raw); handle.flush(); os.fsync(handle.fileno())
+        if read_only: os.chmod(tmp, 0o444)
         if no_clobber:
             try: os.link(tmp, path)
             except FileExistsError: fail(f"refusing to overwrite existing {path}")
             os.unlink(tmp)
         else: os.replace(tmp, path)
-        os.chmod(path, 0o444)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try: os.fsync(directory)
+        finally: os.close(directory)
     finally:
         if os.path.exists(tmp): os.unlink(tmp)
 
@@ -101,21 +104,50 @@ def probe(provider):
     if code == 0 and vals: return {**base,"status":"success","path":path,"observed_models":vals,"aliases":[]}
     return {**base,"status":"failure","path":path,"error":output[:200] or "empty model list"}
 def validate_provider(value, name):
-    obj(value,name); allowed={"probed_at","capabilities","status","path","aliases","observed_models","error"}
-    if set(value)-allowed: fail(f"{name} has extra fields")
+    provider=name.split(".")[-1]
+    obj(value,name)
     timestamp(value.get("probed_at"),name+".probed_at"); status=value.get("status")
     if status not in {"success","failure","unavailable"}: fail(f"{name}.status invalid")
     caps=value.get("capabilities"); exact_keys(caps,{"efforts","speeds"},name+".capabilities")
-    if caps != CAPABILITIES.get(name.split(".")[-1],caps) and not all(isinstance(x,str) and x for x in caps["efforts"]+caps["speeds"]): fail(f"{name}.capabilities invalid")
+    if caps != CAPABILITIES[provider]: fail(f"{name}.capabilities must equal canonical provider matrix")
     if status=="success":
+        exact_keys(value,{"probed_at","capabilities","status","path","aliases","observed_models"},name)
+        text(value["path"],name+".path")
+        if not all(isinstance(x,str) and x.strip() for x in value["aliases"]+value["observed_models"]): fail(f"{name} models must be non-empty text")
         vals=value.get("observed_models",[])+value.get("aliases",[])
         if not vals or not all(isinstance(x,str) and x for x in vals): fail(f"{name} success requires a non-empty model list")
-    elif not isinstance(value.get("error"),str) or not value["error"]: fail(f"{name} failure requires error")
+    elif status=="failure":
+        exact_keys(value,{"probed_at","capabilities","status","path","error"},name)
+        text(value["path"],name+".path"); text(value["error"],name+".error")
+    else:
+        exact_keys(value,{"probed_at","capabilities","status","error"},name)
+        text(value["error"],name+".error")
+
+def provider_models(record, provider):
+    return record["aliases"] if provider == "claude" else record["observed_models"]
+
+def seat_source_is_truthful(value, current, retained, seat, name):
+    provider, family = SEAT_SPECS[seat]
+    if value["provider"] != provider or value["family"] != family:
+        fail(f"{name} has an invalid canonical provider/family relationship")
+    if value["capabilities"] != CAPABILITIES[provider]: fail(f"{name} capabilities must equal canonical provider matrix")
+    model, health, source = value["model"], value["health"], value["source"]
+    if source == "observed":
+        if provider == "claude" or current["status"] != "success" or model not in current["observed_models"] or health != "healthy": fail(f"{name} forged healthy observed source")
+    elif source == "alias":
+        if provider != "claude" or current["status"] != "success" or model not in current["aliases"] or health != "healthy": fail(f"{name} forged healthy alias source")
+    elif source == "last_good":
+        if current["status"] == "success" or retained is None or model not in provider_models(retained,provider) or health != "degraded": fail(f"{name} invalid retained source")
+    elif source == "fallback":
+        if current["status"] == "unavailable" or retained is not None or FALLBACKS.get(family) != model or health != "degraded": fail(f"{name} invalid fallback source")
+    elif source == "unavailable":
+        if model != "unavailable" or health != "unknown": fail(f"{name} invalid unavailable source")
+    else: fail(f"{name} source invalid")
 def validate_inventory(doc):
     exact_keys(doc,{"schema_version","probed_at","providers","last_good","seats"},"inventory")
     if doc["schema_version"] != 1: fail("inventory schema_version must be 1")
     timestamp(doc["probed_at"],"inventory.probed_at"); exact_keys(doc["providers"],PROVIDERS,"inventory.providers")
-    obj(doc["last_good"],"inventory.last_good"); obj(doc["seats"],"inventory.seats")
+    obj(doc["last_good"],"inventory.last_good"); exact_keys(doc["seats"],SEAT_SPECS,"inventory.seats")
     for provider in PROVIDERS:
         validate_provider(doc["providers"][provider],"inventory.providers."+provider)
         if provider in doc["last_good"]:
@@ -123,10 +155,9 @@ def validate_inventory(doc):
             if doc["last_good"][provider]["status"] != "success": fail("last_good must be successful")
     for seat, value in doc["seats"].items():
         exact_keys(value,{"provider","model","family","health","source","capabilities"},"inventory.seats."+seat)
-        if value["provider"] not in PROVIDERS or value["health"] not in {"healthy","degraded","unknown"} or value["source"] not in {"observed","alias","last_good","fallback","unavailable"}: fail("invalid inventory seat")
-        if value["health"]=="healthy" and value["source"] not in {"observed","alias"}: fail("healthy seat requires observed or alias source")
-        if value["source"] in {"last_good","fallback","unavailable"} and value["health"]=="healthy": fail("untrusted source cannot be healthy")
-        if not isinstance(value["model"],str) or not value["model"]: fail("empty model cannot form a seat")
+        if value["health"] not in {"healthy","degraded","unknown"} or value["source"] not in {"observed","alias","last_good","fallback","unavailable"}: fail("invalid inventory seat")
+        text(value["model"],"inventory.seats."+seat+".model")
+        seat_source_is_truthful(value, doc["providers"][SEAT_SPECS[seat][0]], doc["last_good"].get(SEAT_SPECS[seat][0]), seat, "inventory.seats."+seat)
     return doc
 def choose(values, family):
     choices=[x for x in values if family in x.lower()]
@@ -177,12 +208,14 @@ def validate_fleet(doc):
     obj(doc["seats"],"fleet.seats")
     if not doc["seats"]: fail("fleet requires seats")
     for name,v in doc["seats"].items():
-        exact_keys(v,{"provider","model","effort","speed","health","source","capabilities"},"fleet.seats."+name)
-        if v["provider"] not in PROVIDERS or not isinstance(v["model"],str) or not v["model"] or v["model"]=="unavailable": fail("fleet seat invalid")
+        exact_keys(v,{"provider","model","family","effort","speed","health","source","capabilities"},"fleet.seats."+name)
+        if v["provider"] not in PROVIDERS or not isinstance(v["model"],str) or not v["model"].strip() or v["model"]=="unavailable": fail("fleet seat invalid")
         if v["health"] not in {"healthy","degraded","unknown"} or v["source"] not in {"observed","alias","last_good","fallback"}: fail("fleet seat health/source invalid")
         if v["source"] in {"last_good","fallback"} and v["health"]=="healthy": fail("guessed or retained fleet seat cannot be healthy")
         caps=v["capabilities"]
-        if not isinstance(caps,dict) or v["effort"] not in caps.get("efforts",[]) or v["speed"] not in caps.get("speeds",[]): fail("fleet seat unsupported capability")
+        if caps != CAPABILITIES[v["provider"]]: fail("fleet seat capabilities must equal canonical provider matrix")
+        if v["family"] not in {family for p,family in SEAT_SPECS.values() if p == v["provider"]}: fail("fleet seat provider/family mismatch")
+        if v["effort"] not in caps["efforts"] or v["speed"] not in caps["speeds"]: fail("fleet seat unsupported capability")
     return doc
 def freeze(args):
     inv,raw=read_json(args.inventory,"inventory",require_canonical=True); validate_inventory(inv)
@@ -195,10 +228,10 @@ def freeze(args):
         if source is None: fail(f"binding {name} references missing inventory seat")
         if source["model"]=="unavailable": fail(f"binding {name} has unavailable model")
         if b["effort"] not in source["capabilities"]["efforts"] or b["speed"] not in source["capabilities"]["speeds"]: fail(f"binding {name} requests unsupported capability")
-        seats[name]={k:source[k] for k in ("provider","model","health","source","capabilities")}; seats[name].update(effort=b["effort"],speed=b["speed"])
+        seats[name]={k:source[k] for k in ("provider","model","family","health","source","capabilities")}; seats[name].update(effort=b["effort"],speed=b["speed"])
     mission=Path(args.mission_dir); fleet=mission/"fleet.json"
     doc={"schema_version":1,"mission":{"path":str(mission)},"inventory":{"sha256":sha(raw),"probed_at":inv["probed_at"]},"approval":{"status":"approved","approved_by":args.approved_by,"approved_at":args.approved_at},"seats":seats}
-    validate_fleet(doc); atomic_write_new(fleet,canonical(doc).encode(),no_clobber=True); print(canonical(doc),end="")
+    validate_fleet(doc); atomic_write_new(fleet,canonical(doc).encode(),no_clobber=True,read_only=True); print(canonical(doc),end="")
 def resolve(args):
     doc,_=read_json(args.fleet,"fleet",require_canonical=True); validate_fleet(doc); seat=doc["seats"].get(args.seat)
     if seat is None: fail("fleet seat not found")

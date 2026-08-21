@@ -9,6 +9,7 @@ def run(*args, env=None, ok=True):
     if ok != (p.returncode == 0): raise AssertionError(f"{args}: {p.returncode}: {p.stderr}")
     return p
 def write(p, value): p.write_text(json.dumps(value,sort_keys=True,separators=(',',':'))+'\n')
+def reject(command, path, value): write(path,value); run(*command,str(path),ok=False)
 def stub(path,name,body):
     p=path/name; p.write_text('#!/usr/bin/env bash\n'+body+'\n'); p.chmod(0o755)
 def main():
@@ -26,7 +27,21 @@ def main():
     assert second['seats']['codex.premium']['source']=='last_good' and second['seats']['codex.premium']['health']=='degraded'
     # First-run failure only permits degraded fallback; no empty model can validate.
     fresh=d/'fresh.json'; run('/bin/bash',str(public),'--json','--out',str(fresh),env=env); f=json.loads(fresh.read_text()); assert f['seats']['codex.premium']['source']=='fallback'
-    bad=json.loads(fresh.read_text()); bad['seats']['codex.premium']['model']=''; write(d/'bad.json',bad); run('python3',str(ROOT/'scripts/fleet_state.py'),'validate-inventory',str(d/'bad.json'),ok=False)
+    bad=json.loads(fresh.read_text()); bad['seats']['codex.premium']['model']=''; reject(('python3',str(ROOT/'scripts/fleet_state.py'),'validate-inventory'),d/'bad.json',bad)
+    # Exact nested inventory shape and provenance: this reproduces the formerly accepted forgery.
+    for label, mutate in (
+      ('partial-provider',lambda x:x['providers'].pop('codex')),
+      ('partial-last-good',lambda x:x['last_good']['codex'].pop('path')),
+      ('invalid-timestamp',lambda x:x.__setitem__('probed_at','never')),
+      ('provider-extra',lambda x:x['providers']['codex'].__setitem__('junk',True)),
+      ('seat-extra',lambda x:x['seats']['codex.premium'].__setitem__('junk',True)),
+      ('seat-family',lambda x:x['seats']['codex.premium'].__setitem__('family','luna')),
+      ('seat-provider',lambda x:x['seats']['codex.premium'].__setitem__('provider','agent')),
+      ('seat-capabilities',lambda x:x['seats']['codex.premium'].__setitem__('capabilities',{'efforts':['bogus'],'speeds':['wild']})),
+      ('forged-healthy-source',lambda x:(x['seats']['codex.premium'].__setitem__('health','healthy'),x['seats']['codex.premium'].__setitem__('source','observed'))),
+    ):
+      candidate=json.loads(json.dumps(second if label == 'partial-last-good' else json.loads(fresh.read_text())))
+      mutate(candidate); reject(('python3',str(ROOT/'scripts/fleet_state.py'),'validate-inventory'),d/(label+'.json'),candidate)
     corrupt=b'{not json'; inv.chmod(0o644); inv.write_bytes(corrupt); run('/bin/bash',str(public),'--out',str(inv),env=env,ok=False); assert inv.read_bytes()==corrupt
     # Restore trusted inventory and freeze exact bytes into a canonical no-clobber snapshot.
     write(inv,second); bindings=d/'bindings.json'; write(bindings,{'worker':{'inventory_seat':'codex.premium','effort':'medium','speed':'unknown'}})
@@ -38,17 +53,36 @@ def main():
     inv.unlink(); good=run('python3',str(ROOT/'scripts/fleet_state.py'),'resolve','--fleet',str(fleet),'--seat','worker'); assert json.loads(good.stdout)['model']=='gpt-5.6-terra'
     for flag,value in (('--provider','agent'),('--model','wrong'),('--effort','high'),('--speed','fast')): run('python3',str(ROOT/'scripts/fleet_state.py'),'resolve','--fleet',str(fleet),'--seat','worker',flag,value,ok=False)
     run('python3',str(ROOT/'scripts/fleet_state.py'),'resolve','--fleet',str(fleet),'--seat','missing',ok=False)
+    run('python3',str(ROOT/'scripts/fleet_state.py'),'resolve','--fleet',str(d/'missing-fleet.json'),'--seat','worker',ok=False)
     fleet.chmod(0o644); fleet.write_bytes(frozen+b' '); run('python3',str(ROOT/'scripts/fleet_state.py'),'validate-fleet',str(fleet),ok=False); fleet.write_bytes(frozen); fleet.chmod(0o444)
     unapproved=json.loads(frozen); unapproved['approval']['status']='draft'; write(d/'unapproved.json',unapproved); run('python3',str(ROOT/'scripts/fleet_state.py'),'validate-fleet',str(d/'unapproved.json'),ok=False)
     unsupported=json.loads(frozen); unsupported['seats']['worker']['effort']='bogus'; write(d/'unsupported.json',unsupported); run('python3',str(ROOT/'scripts/fleet_state.py'),'validate-fleet',str(d/'unsupported.json'),ok=False)
-    # Guard proof 1: bypass retention in an isolated mounted public entry, which must fail this proof.
-    copy=d/'copy'; (copy/'scripts').mkdir(parents=True); shutil.copy2(ROOT/'scripts/fleet_state.py',copy/'scripts/fleet_state.py'); shutil.copy2(ROOT/'scripts/fleet-inventory.sh',copy/'scripts/fleet-inventory.sh')
-    altered=(copy/'scripts/fleet_state.py'); altered.write_text(altered.read_text().replace('retained=dict(previous)','retained={}'))
-    guard=d/'guard.json'; (home/'.codex/models_cache.json').write_text(json.dumps({'models':['gpt-5.6-terra']})); run('/bin/bash',str(copy/'scripts/fleet-inventory.sh'),'--out',str(guard),env=env); (home/'.codex/models_cache.json').write_text('{bad'); run('/bin/bash',str(copy/'scripts/fleet-inventory.sh'),'--out',str(guard),env=env)
-    assert json.loads(guard.read_text())['seats']['codex.premium']['source']!='last_good'
-    # Guard proof 2: an isolated resolver changed to read mutable inventory fails
-    # despite a valid frozen fleet, proving the mounted resolution test is non-vacuous.
-    altered.write_text(altered.read_text().replace('doc,_=read_json(args.fleet,"fleet",require_canonical=True); validate_fleet(doc); seat=', 'doc,_=read_json(args.fleet,"fleet",require_canonical=True); read_json("/definitely/missing/inventory.json","inventory"); validate_fleet(doc); seat='))
-    run('python3',str(altered),'resolve','--fleet',str(fleet),'--seat','worker',ok=False)
+    for label, mutate in (
+      ('invalid-hash',lambda x:x['inventory'].__setitem__('sha256','bad')),
+      ('fleet-extra',lambda x:x.__setitem__('junk',True)),
+      ('approval-extra',lambda x:x['approval'].__setitem__('junk',True)),
+      ('empty-approval',lambda x:x['approval'].__setitem__('approved_by','')),
+      ('invalid-approval-time',lambda x:x['approval'].__setitem__('approved_at','bad')),
+      ('empty-seats',lambda x:x.__setitem__('seats',{})),
+      ('empty-model',lambda x:x['seats']['worker'].__setitem__('model','')),
+      ('forged-fleet-caps',lambda x:x['seats']['worker'].__setitem__('capabilities',{'efforts':['bogus'],'speeds':['wild']})),
+      ('fleet-provider-family',lambda x:x['seats']['worker'].__setitem__('family','grok')),
+    ):
+      candidate=json.loads(frozen); mutate(candidate); reject(('python3',str(ROOT/'scripts/fleet_state.py'),'validate-fleet'),d/(label+'.json'),candidate)
+    # The next two proofs mutate the real retained-state and frozen-only resolve mounts.
+    # Their child invocation is the mounted suite itself and must exit nonzero; exact bytes return.
+    if not os.environ.get('FLEET_GUARD_CHILD'):
+      real=ROOT/'scripts/fleet_state.py'; original=real.read_bytes()
+      try:
+        real.write_bytes(original.replace(b'retained=dict(previous)',b'retained={}'))
+        proof=subprocess.run(('python3',str(ROOT/'tests/test-fleet-state.py')),env={**os.environ,'FLEET_GUARD_CHILD':'1','PYTHONDONTWRITEBYTECODE':'1'},capture_output=True,text=True)
+        assert proof.returncode != 0, proof.stderr
+      finally: real.write_bytes(original)
+      try:
+        real.write_bytes(original.replace(b'doc,_=read_json(args.fleet,"fleet",require_canonical=True); validate_fleet(doc); seat=',b'doc,_=read_json(args.fleet,"fleet",require_canonical=True); read_json("/definitely/missing/inventory.json","inventory"); validate_fleet(doc); seat='))
+        proof=subprocess.run(('python3',str(ROOT/'tests/test-fleet-state.py')),env={**os.environ,'FLEET_GUARD_CHILD':'1','PYTHONDONTWRITEBYTECODE':'1'},capture_output=True,text=True)
+        assert proof.returncode != 0, proof.stderr
+      finally: real.write_bytes(original)
+      assert real.read_bytes()==original
   print('fleet policy tests passed')
 if __name__=='__main__': main()
