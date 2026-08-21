@@ -37,10 +37,13 @@
       "scripts/active-mission.sh",
       "scripts/spawn-worker.sh",
       "scripts/fleet-inventory.sh",
+      "scripts/fleet_state.py",
       "scripts/spawn-brain.sh",
       "scripts/verify-mission.sh",
       "scripts/write-receipt.sh",
       "schemas/execution-spec.schema.json",
+      "schemas/fleet-inventory.schema.json",
+      "schemas/mission-fleet.schema.json",
       "harness-manifest.json",
       "CLAUDE.md",
       "GEMINI.md"
@@ -63,10 +66,13 @@
       "scripts/active-mission.sh",
       "scripts/spawn-worker.sh",
       "scripts/fleet-inventory.sh",
+      "scripts/fleet_state.py",
       "scripts/spawn-brain.sh",
       "scripts/verify-mission.sh",
       "scripts/write-receipt.sh",
       "schemas/execution-spec.schema.json",
+      "schemas/fleet-inventory.schema.json",
+      "schemas/mission-fleet.schema.json",
       "harness-manifest.json"
     ],
     "consumer_agents_template": "docs/templates/AGENTS.md.template"

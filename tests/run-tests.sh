@@ -78,6 +78,9 @@ check "ExecutionSpec and provider adapter contracts" python3 tests/test-executio
 check "immutable spec integration through real wrappers" python3 tests/test-execution-integration.py
 check "ExecutionSpec focused test leaves no scripts bytecode" test ! -e "$HARNESS/scripts/__pycache__"
 
+echo "== frozen fleet policy"
+check "fleet inventory retention and frozen resolution" python3 tests/test-fleet-state.py
+
 # F006 regressions must use the public propagation/release entry points. Tagged
 # and untagged source state is always isolated so this suite is independent of
 # the checkout from which it was invoked.
@@ -216,6 +219,9 @@ check "provider adapter installed"           test -f "$TARGET/scripts/execute_pr
 check "execution spec schema installed"      test -f "$TARGET/schemas/execution-spec.schema.json"
 check "active-mission.sh installed +x"       test -x "$TARGET/scripts/active-mission.sh"
 check "fleet-inventory.sh installed +x"      test -x "$TARGET/scripts/fleet-inventory.sh"
+check "fleet policy module installed"        test -f "$TARGET/scripts/fleet_state.py"
+check "fleet inventory schema installed"     test -f "$TARGET/schemas/fleet-inventory.schema.json"
+check "mission fleet schema installed"       test -f "$TARGET/schemas/mission-fleet.schema.json"
 check ".claude/skills is a real directory"   sh -c "[ ! -L '$TARGET/.claude/skills' ] && [ -d '$TARGET/.claude/skills' ]"
 check "per-skill link under .claude/skills"  test -L "$TARGET/.claude/skills/dispatch-worker"
 check "per-skill link under .cursor/skills"  test -L "$TARGET/.cursor/skills/dispatch-worker"
@@ -408,6 +414,8 @@ bash scripts/update-harness.sh --dev "$TARGET"
 check "update stayed on version branch" sh -c "git -C '$TARGET' branch --show-current | grep -q 'chore/harness-'"
 check "kit skill still present after update" test -f "$TARGET/.agents/skills/mission-init/SKILL.md"
 check "provider adapter remains after update" test -f "$TARGET/scripts/execute_provider.py"
+check "fleet policy remains after update"    test -f "$TARGET/scripts/fleet_state.py"
+check "fleet schemas remain after update"    sh -c "test -f '$TARGET/schemas/fleet-inventory.schema.json' && test -f '$TARGET/schemas/mission-fleet.schema.json'"
 check "execution spec schema remains after update" test -f "$TARGET/schemas/execution-spec.schema.json"
 check "MODEL_ROUTING under docs/missions" test -f "$TARGET/docs/missions/MODEL_ROUTING.md"
 check "instance mission folder preserved" test -f "$TARGET/docs/missions/20990101-fixture/KEEP.md"

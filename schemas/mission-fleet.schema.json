@@ -1,0 +1,7 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties":false,
+  "required":["schema_version","mission","inventory","approval","seats"],
+  "properties":{"schema_version":{"const":1},"mission":{"type":"object"},"inventory":{"type":"object"},"approval":{"type":"object"},"seats":{"type":"object"}},
+  "type":"object"
+}

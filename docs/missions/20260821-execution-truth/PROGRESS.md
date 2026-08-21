@@ -4,6 +4,20 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-21 — GPT-5.6 Sol/high — T-006 attempt 1 review — FAIL
+
+- **Receipt:** `.tasks/receipts/worker-task-T-006-20260821T205918Z.json` is correctly linked to immutable run `4e8ed86a-3f31-48a6-8adb-fa048ba883a4`, T-006/F002, and the approved Terra configuration, but implementation evidence is not acceptance evidence.
+- **Fail-open reproduction:** `validate_provider` accepted Codex capabilities `efforts:["bogus"], speeds:["wild"]`; `validate_fleet` then accepted a healthy observed invented model using those capabilities. The mounted focused suite still passed, proving the negative matrix is incomplete.
+- **Schema/coverage failure:** The inventory JSON Schema omits required `last_good` and defines `providers`/`seats` only as generic objects; the mission schema likewise leaves nested identity, approval, inventory, seat, capability, and provenance shapes unconstrained. Missing fleet, partial provider, invalid timestamp/hash/extra fields, and forged healthy provenance are not all exercised.
+- **Disposition:** F002 remains false. Preserve attempt 1 as an unaccepted WIP checkpoint; attempt 2 is limited to exact capability/provenance/schema validation, the missing named negatives, pre-publication read-only atomic freeze, and true mounted guard mutation failures. Do not wire dispatch or start F003.
+
+## 2026-08-21 — Codex — T-006 frozen fleet policy core
+
+- **Implemented:** Added the dependency-free `fleet_state.py` policy module behind the public inventory entry point. Machine inventory is schema-versioned, canonical, atomic, validates fail-closed, keeps distinct current provider outcomes and per-provider successful last-good records, and labels retained/fallback/unavailable bindings truthfully.
+- **Frozen fleet:** Added canonical, exact-inventory-byte-hash-bound, approved, read-only, no-clobber mission snapshots plus frozen-only equality-assertion resolution and capability validation. The manifest now owns the policy module and both exact fleet schemas for install/update propagation.
+- **Mounted guard proof:** The focused public-entry suite observes a successful Codex probe followed by a corrupt cache as degraded `last_good`; an isolated retention bypass changes that mounted outcome. Separately, an isolated resolver mutated to consult a missing mutable inventory fails against the same valid frozen fleet. Both isolated mutations are discarded; the real paths pass.
+- **Verified:** `shellcheck scripts/*.sh tests/*.sh`, repository JSON parsing, `git diff --check`, and `PYTHONDONTWRITEBYTECODE=1 bash tests/run-tests.sh` pass through `ALL TESTS PASSED`. F001/F002 remain false and `features.json` is untouched; T-007 alone wires dispatch.
+
 ## 2026-08-21 — GPT-5.6 Sol/high — T-006 fleet-policy frontier
 
 - **Audit:** Current inventory overwrites `.tasks/fleet-inventory.json` on every probe, substitutes unlabelled family guesses, and has no schema version or per-provider last-good/failure separation. Worker dispatch still regenerates/reads that mutable file and accepts per-run model overrides.
