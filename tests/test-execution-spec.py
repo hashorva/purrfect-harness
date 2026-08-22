@@ -68,6 +68,13 @@ class ExecutionSpecContract(unittest.TestCase):
         value.update(changes)
         return value
 
+    def spec_v2(self, provider="codex", role="brain", **changes):
+        value = self.spec(provider=provider, role=role)
+        value["schema_version"] = 2
+        value["write_scope"] = ["docs/missions/fixture/**"] if role == "brain" else ["allowed.txt"]
+        value.update(changes)
+        return value
+
     def persist(self, spec, check=True):
         source = self.tmp / f"input-{uuid.uuid4()}.json"
         source.write_text(json.dumps(spec))
@@ -86,10 +93,13 @@ class ExecutionSpecContract(unittest.TestCase):
 
     def test_schema_and_validator_reject_weakest_invalid_values(self):
         schema = json.loads((ROOT / "schemas" / "execution-spec.schema.json").read_text())
-        self.assertFalse(schema["additionalProperties"])
-        self.assertEqual(set(schema["required"]), set(self.spec()))
+        self.assertEqual(len(schema["oneOf"]), 2)
+        self.assertFalse(schema["oneOf"][0]["additionalProperties"])
+        self.assertEqual(set(schema["oneOf"][0]["required"]), set(self.spec()))
+        self.assertFalse(schema["oneOf"][1]["additionalProperties"])
+        self.assertEqual(set(schema["oneOf"][1]["required"]), set(self.spec_v2()))
         cases = [
-            ({"schema_version": 2}, "schema_version"),
+            ({"schema_version": 3}, "schema_version"),
             ({"run_id": "not-a-uuid"}, "run_id"),
             ({"mission": ""}, "mission"),
             ({"work_unit": " "}, "work_unit"),
@@ -123,6 +133,12 @@ class ExecutionSpecContract(unittest.TestCase):
         alias.symlink_to(self.repo, target_is_directory=True)
         unsafe = self.spec(repo=str(alias))
         self.assertNotEqual(self.persist(unsafe, check=False).returncode, 0)
+
+        for candidate in ([], [""], ["/absolute"], ["../escape"], ["a/../b"],
+                          [".git/config"], [".tasks/**"], ["a\\b"], ["same", "same"]):
+            with self.subTest(write_scope=candidate):
+                self.assertNotEqual(self.persist(self.spec_v2(write_scope=candidate), check=False).returncode, 0)
+        self.assertEqual(self.persist(self.spec_v2()).returncode, 0)
 
     def test_persistence_is_canonical_hashed_and_no_clobber(self):
         value = self.spec()
@@ -225,6 +241,7 @@ class ExecutionSpecContract(unittest.TestCase):
 
     def test_schema_and_validator_agree_on_static_edge_domains(self):
         schema = json.loads((ROOT / "schemas" / "execution-spec.schema.json").read_text())
+        properties = schema["oneOf"][0]["properties"]
         cases = [
             ("run_id", "00000000-0000-0000-0000-000000000000", False),
             ("run_id", "12345678-1234-9234-8234-123456789abc", False),
@@ -244,7 +261,8 @@ class ExecutionSpecContract(unittest.TestCase):
         spaced_commit = self.command(["git", "rev-parse", "HEAD"], cwd=spaced_repo).stdout.strip()
         for field, candidate, expected in cases:
             with self.subTest(field=field, candidate=candidate):
-                schema_valid = bool(__import__("re").fullmatch(schema["properties"][field]["pattern"], candidate))
+                definition = schema["$defs"]["commonProperties"][field]
+                schema_valid = bool(__import__("re").fullmatch(definition["pattern"], candidate))
                 self.assertEqual(schema_valid, expected)
                 value = self.spec(**{field: candidate})
                 if field == "repo" and expected:

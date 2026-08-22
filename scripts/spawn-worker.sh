@@ -12,7 +12,7 @@
 # Cursor: premium=Grok (fallback Composer), economy=Composer.
 # Phase 1 permits only this repository as the worker workspace; external --repo
 # targets fail before authorization persistence or provider launch.
-# Logs to .tasks/logs/<task-basename>-<utc>.log and receipts to .tasks/receipts/.
+# Logs to .tasks/logs/<run-id>.log and receipts to .tasks/receipts/<run-id>.json.
 # Orchestrators read exit + tail + receipt — never the full transcript.
 #
 # Self-edit safety: re-exec from a temp snapshot on first entry so a worker that
@@ -35,22 +35,23 @@ if [ "$0" = "$SPAWN_WORKER_SNAPSHOT" ]; then
 fi
 LOCK_PATH=""
 LOCK_TOKEN=""
-PROVIDER_PID=""
+RUNNER_PID=""
 
+# shellcheck disable=SC2329  # invoked indirectly by the EXIT trap
 cleanup() {
   local exit_code=$? cleanup_failed=0
   trap - EXIT
   set +e
-  if [ -n "$PROVIDER_PID" ] && kill -0 "$PROVIDER_PID" 2>/dev/null; then
-    kill -TERM "-$PROVIDER_PID" 2>/dev/null || kill -TERM "$PROVIDER_PID" 2>/dev/null || true
-    for _cleanup_wait in 1 2 3 4 5 6 7 8 9 10; do
-      kill -0 "-$PROVIDER_PID" 2>/dev/null || break
+  if [ -n "$RUNNER_PID" ] && kill -0 "$RUNNER_PID" 2>/dev/null; then
+    kill -TERM "$RUNNER_PID" 2>/dev/null || true
+    for _cleanup_wait in {1..50}; do
+      kill -0 "$RUNNER_PID" 2>/dev/null || break
       sleep 0.1
     done
-    if kill -0 "-$PROVIDER_PID" 2>/dev/null; then
-      kill -KILL "-$PROVIDER_PID" 2>/dev/null || kill -KILL "$PROVIDER_PID" 2>/dev/null || true
+    if kill -0 "$RUNNER_PID" 2>/dev/null; then
+      kill -KILL "$RUNNER_PID" 2>/dev/null || true
     fi
-    wait "$PROVIDER_PID" 2>/dev/null || true
+    wait "$RUNNER_PID" 2>/dev/null || true
   fi
   if [ -n "$LOCK_PATH" ] && [ -n "$LOCK_TOKEN" ]; then
     PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" release-lock \
@@ -175,9 +176,10 @@ fi
 
 # This is the mounted authorization gate. It runs before the lock, log/spec
 # persistence, and provider adapter so every rejection is mechanically pre-launch.
-PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-worker \
+POLICY_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-worker \
   --root "$ROOT" --workspace "$WORKSPACE" --mission "$MISSION" --fleet "$FLEET" \
-  --task "$TASK_ABS" --feature "$FEATURE" --work-unit "$BASE"
+  --task "$TASK_ABS" --feature "$FEATURE" --work-unit "$BASE")" || exit $?
+WRITE_SCOPE_JSON="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["write_scope"],separators=(",",":")))' <<<"$POLICY_JSON")"
 
 RESOLVE_ARGS=(python3 "$ROOT/scripts/fleet_state.py" resolve
   --fleet "$FLEET" --seat "$FLEET_SEAT" --mission-path "$MISSION"
@@ -196,17 +198,15 @@ LOCK_TOKEN="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])'
 export PURRFECT_DISPATCH_LOCK_PATH="$LOCK_PATH"
 
 mkdir -p "$ROOT/.tasks/logs" "$ROOT/.tasks/receipts"
-# Timestamped logs: nested/stub runs of the same task basename must not clobber
-# the real dispatch transcript (that happened on T-001 / F007).
-STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-LOG_REL=".tasks/logs/${BASE}-${STAMP}.log"
-LOG="$ROOT/$LOG_REL"
 
 PROMPT_TASK="$TASK_REL"
 PROMPT="Read ${PROMPT_TASK} and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder."
 [ -z "$EXTRA" ] || PROMPT+=" $EXTRA"
 
-SPEC_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execution_spec.py" construct --role worker --mission "$MISSION" --feature "$FEATURE" --work-unit "$BASE" --attempt "$ATTEMPT" --provider "$WORKER" --model "$MODEL" --effort "$EFFORT" --speed "$SPEED" --repo "$WORKSPACE" --prompt "$PROMPT")" || exit $?
+RUN_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+LOG_REL=".tasks/logs/${RUN_ID}.log"
+LOG="$ROOT/$LOG_REL"
+SPEC_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execution_spec.py" construct --run-id "$RUN_ID" --write-scope-json "$WRITE_SCOPE_JSON" --role worker --mission "$MISSION" --feature "$FEATURE" --work-unit "$BASE" --attempt "$ATTEMPT" --provider "$WORKER" --model "$MODEL" --effort "$EFFORT" --speed "$SPEED" --repo "$WORKSPACE" --prompt "$PROMPT")" || exit $?
 RUN_ID="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["run_id"])' <<<"$SPEC_JSON")"
 SPEC_PATH="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["path"])' <<<"$SPEC_JSON")"
 SPEC_SHA256="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["sha256"])' <<<"$SPEC_JSON")"
@@ -217,84 +217,25 @@ SPEC_SHA256="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["sha256"]
   echo "----"
 } | tee "$LOG"
 
-# False-green evidence: capture workspace git state before the CLI runs so we
-# can prove afterward whether anything actually changed. exit=0 alone has
-# already produced silent no-op "successes" (agy flag-parsing bug, a mocked
-# stub reporting green with no edits) — see dispatch-worker/SKILL.md.
-GIT_BEFORE="$(git -C "$WORKSPACE" rev-parse HEAD 2>/dev/null || echo '')"
-
-# --- portable watchdog -------------------------------------------------------
-# macOS ships neither `timeout` nor `gtimeout`, so bound the run ourselves.
-# A worker CLI that finishes its work and then never exits is indistinguishable
-# from one still working, because the receipt is written only AFTER the process
-# ends: a real dispatch (cursor `agent`) sat at 0.0% CPU for 79 minutes after it
-# had already committed, while the mission looked "still running" and no receipt
-# existed at all. Bound every lane; `agy` additionally self-limits via
-# --print-timeout. Set SPAWN_WORKER_TIMEOUT_SECS=0 to disable.
-SPAWN_WORKER_TIMEOUT_SECS="${SPAWN_WORKER_TIMEOUT_SECS:-2400}"   # 40 min
-TIMEOUT_EXIT=124                                                  # GNU timeout convention
-
-# Usage: <cmd> & watchdog_wait $!   → returns the child's exit code, or 124 on timeout.
-watchdog_wait() {
-  local pid="$1" waited=0
-  if [ "$SPAWN_WORKER_TIMEOUT_SECS" -le 0 ]; then
-    wait "$pid"
-    return $?
-  fi
-  while kill -0 "$pid" 2>/dev/null; do
-    if [ "$waited" -ge "$SPAWN_WORKER_TIMEOUT_SECS" ]; then
-      echo "spawn-worker: TIMEOUT after ${SPAWN_WORKER_TIMEOUT_SECS}s — terminating pid $pid." | tee -a "$LOG"
-      echo "spawn-worker: the CLI may have completed its work before hanging — inspect git log/status in $WORKSPACE before re-dispatching." | tee -a "$LOG"
-      kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
-      sleep 5
-      if kill -0 "-$pid" 2>/dev/null; then kill -KILL "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true; fi
-      wait "$pid" 2>/dev/null || true
-      return "$TIMEOUT_EXIT"
-    fi
-    sleep 5
-    waited=$((waited + 5))
-  done
-  wait "$pid"
-}
-
-# Provider grammar and process launch are owned solely by the shared adapter.
+# Provider lifecycle, process-tree control, Git evidence, and the one terminal
+# receipt are owned by the shared runner for every CLI.
+SPAWN_WORKER_TIMEOUT_SECS="${SPAWN_WORKER_TIMEOUT_SECS:-2400}"
 set +e
-set -m
-PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execute_provider.py" --spec "$SPEC_PATH" --sha256 "$SPEC_SHA256" >>"$LOG" 2>&1 < /dev/null &
-PROVIDER_PID=$!
-set +m
-watchdog_wait "$PROVIDER_PID"
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execution_runner.py" \
+  --spec "$SPEC_PATH" --spec-sha256 "$SPEC_SHA256" --log "$LOG" \
+  --timeout "$SPAWN_WORKER_TIMEOUT_SECS" --task "$TASK_REL" --tier "$TIER" &
+RUNNER_PID=$!
+wait "$RUNNER_PID"
 EC=$?
-PROVIDER_PID=""
+RUNNER_PID=""
 set -e
+RECEIPT_PATH="$ROOT/.tasks/receipts/${RUN_ID}.json"
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execution_receipt.py" validate --receipt "$RECEIPT_PATH" >/dev/null; then
+  echo "ERROR: run did not produce a valid terminal ExecutionReceipt" >&2
+  EC=125
+fi
 
 echo "----" | tee -a "$LOG"
 echo "exit=$EC" | tee -a "$LOG"
-
-# False-green evidence, part 2: did the workspace actually change?
-GIT_AFTER="$(git -C "$WORKSPACE" rev-parse HEAD 2>/dev/null || echo '')"
-COMMITS_MADE=0
-if [ -n "$GIT_BEFORE" ] && [ -n "$GIT_AFTER" ] && [ "$GIT_BEFORE" != "$GIT_AFTER" ]; then
-  COMMITS_MADE="$(git -C "$WORKSPACE" rev-list --count "$GIT_BEFORE..$GIT_AFTER" 2>/dev/null || echo 0)"
-fi
-DIRTY_AFTER="$(git -C "$WORKSPACE" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
-[ -n "$DIRTY_AFTER" ] || DIRTY_AFTER=0
-if [ "$EC" -eq 0 ] && [ "$COMMITS_MADE" -eq 0 ] && [ "$DIRTY_AFTER" -eq 0 ]; then
-  echo "WARNING: exit=0 but workspace unchanged (0 commits, 0 dirty files) — likely a false green, do not trust this as a PASS without reading the log" | tee -a "$LOG"
-fi
-
-ARGV_JSON="$(python3 -c "import json; print(json.dumps(['$WORKER','--model','$MODEL','--effort','$EFFORT','--speed','$SPEED']))")"
-REC_ARGS=(
-  --role worker --cli "$WORKER" --model "$MODEL" --mission "$MISSION"
-  --action "task-${BASE}" --work-unit "$BASE" --exit "$EC" --log "$LOG_REL" --task "$TASK_REL"
-  --tier "$TIER" --argv "$ARGV_JSON" --repo "$WORKSPACE"
-  --commits-made "$COMMITS_MADE" --dirty-after "$DIRTY_AFTER"
-  --run-id "$RUN_ID" --spec "$SPEC_PATH" --spec-sha256 "$SPEC_SHA256"
-)
-if [ -n "$FEATURE" ]; then
-  REC_ARGS+=(--feature "$FEATURE")
-fi
-REC="$(bash "$ROOT/scripts/write-receipt.sh" "${REC_ARGS[@]}")"
-echo "receipt=$REC"
 echo "tail:"; tail -20 "$LOG"
 exit "$EC"

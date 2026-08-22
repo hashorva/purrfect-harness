@@ -12,12 +12,14 @@ import tempfile
 import uuid
 
 
-FIELDS = frozenset(("schema_version", "run_id", "mission", "work_unit", "role", "feature",
-                    "provider", "model", "effort", "speed", "repo", "base_commit",
-                    "attempt", "prompt"))
+FIELDS_V1 = frozenset(("schema_version", "run_id", "mission", "work_unit", "role", "feature",
+                       "provider", "model", "effort", "speed", "repo", "base_commit",
+                       "attempt", "prompt"))
+FIELDS_V2 = FIELDS_V1 | {"write_scope"}
 ROLES = frozenset(("brain", "worker"))
 PROVIDERS = frozenset(("codex", "claude", "agent", "agy"))
 COMMIT = re.compile(r"^[0-9a-fA-F]{40,64}$")
+SCOPE_GLOB = re.compile(r"^[^\x00\r\n]+$")
 
 
 class SpecError(ValueError):
@@ -56,16 +58,40 @@ def _repo(value):
     return path
 
 
+def validate_write_scope(value):
+    """Validate a small repo-relative glob language used for Git-visible scope."""
+    if not isinstance(value, list) or not value:
+        raise SpecError("write_scope must be a non-empty array")
+    normalized = []
+    for pattern in value:
+        if (not isinstance(pattern, str) or not pattern or pattern.strip() != pattern or
+                not SCOPE_GLOB.fullmatch(pattern) or pattern.startswith("/") or "\\" in pattern):
+            raise SpecError("write_scope entries must be trimmed repo-relative POSIX globs")
+        parts = pattern.split("/")
+        if any(part in {"", ".", ".."} for part in parts):
+            raise SpecError("write_scope entries must not contain empty, dot, or parent segments")
+        if parts[0] in {".git", ".tasks"}:
+            raise SpecError("write_scope cannot authorize .git or .tasks")
+        if pattern in normalized:
+            raise SpecError("write_scope entries must be unique")
+        normalized.append(pattern)
+    return normalized
+
+
 def validate(spec):
     """Validate exactly the Phase 1 schema and return a normalized copy."""
-    if not isinstance(spec, dict) or set(spec) != FIELDS:
-        missing = sorted(FIELDS - set(spec)) if isinstance(spec, dict) else sorted(FIELDS)
-        extra = sorted(set(spec) - FIELDS) if isinstance(spec, dict) else []
+    if not isinstance(spec, dict):
+        raise SpecError("spec must be an object")
+    version = spec.get("schema_version")
+    fields = FIELDS_V1 if version == 1 else FIELDS_V2 if version == 2 else None
+    if fields is None:
+        raise SpecError("schema_version must equal 1 or 2")
+    if set(spec) != fields:
+        missing = sorted(fields - set(spec))
+        extra = sorted(set(spec) - fields)
         raise SpecError("spec fields must exactly match schema" +
                         (f"; missing={','.join(missing)}" if missing else "") +
                         (f"; extra={','.join(extra)}" if extra else ""))
-    if spec["schema_version"] != 1:
-        raise SpecError("schema_version must equal 1")
     try:
         parsed_uuid = uuid.UUID(spec["run_id"])
     except (ValueError, AttributeError, TypeError) as exc:
@@ -88,6 +114,8 @@ def validate(spec):
         raise SpecError("brain feature must be JSON null")
     if isinstance(spec["attempt"], bool) or not isinstance(spec["attempt"], int) or spec["attempt"] < 1:
         raise SpecError("attempt must be a positive integer")
+    if version == 2:
+        validate_write_scope(spec["write_scope"])
     repo = _repo(spec["repo"])
     if not COMMIT.fullmatch(spec["base_commit"]):
         raise SpecError("base_commit must be a full Git object ID")
@@ -111,12 +139,31 @@ def _fsync_directory(directory):
         os.close(directory_fd)
 
 
+def artifact_directory(repo, *children, create=True):
+    """Return a real, in-repository .tasks directory without following symlinks."""
+    root = Path(repo).resolve()
+    current = root
+    for component in (".tasks", *children):
+        current = current / component
+        if create:
+            try:
+                current.mkdir(exist_ok=True)
+            except OSError as exc:
+                raise SpecError(f"cannot create execution artifact directory {current}") from exc
+        if current.is_symlink() or not current.is_dir():
+            raise SpecError(f"execution artifact directory must be a real directory: {current}")
+        try:
+            current.resolve().relative_to(root)
+        except ValueError as exc:
+            raise SpecError("execution artifact directory escapes the repository") from exc
+    return current
+
+
 def persist(spec, before_publish=None):
     """Atomically create the UUID-keyed spec file; never replace an existing ID."""
     validated = validate(spec)
     data = canonical_bytes(validated)
-    destination = Path(validated["repo"]) / ".tasks" / "specs" / f"{validated['run_id']}.json"
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination = artifact_directory(validated["repo"], "specs") / f"{validated['run_id']}.json"
     temp_path = None
     try:
         fd, temp_name = tempfile.mkstemp(prefix=f".{validated['run_id']}.", suffix=".tmp", dir=destination.parent)
@@ -156,7 +203,7 @@ def load_persisted(path):
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise SpecError(f"cannot read persisted spec: {exc}") from exc
     validated = validate(parsed)
-    expected = Path(validated["repo"]) / ".tasks" / "specs" / f"{validated['run_id']}.json"
+    expected = artifact_directory(validated["repo"], "specs", create=False) / f"{validated['run_id']}.json"
     if path.resolve() != expected:
         raise SpecError("persisted spec path does not match its repo and run_id")
     if data != canonical_bytes(validated):
@@ -164,7 +211,8 @@ def load_persisted(path):
     return validated, data
 
 
-def construct(*, role, mission, feature, work_unit, attempt, provider, model, effort, speed, repo, prompt):
+def construct(*, role, mission, feature, work_unit, attempt, provider, model, effort, speed,
+              repo, prompt, write_scope, run_id=None):
     """Build and persist a fresh execution authorization from resolved launch inputs."""
     try:
         base_commit = subprocess.check_output(
@@ -173,8 +221,8 @@ def construct(*, role, mission, feature, work_unit, attempt, provider, model, ef
     except subprocess.CalledProcessError as exc:
         raise SpecError("cannot resolve current Git commit") from exc
     spec = {
-        "schema_version": 1,
-        "run_id": str(uuid.uuid4()),
+        "schema_version": 2,
+        "run_id": run_id or str(uuid.uuid4()),
         "mission": mission,
         "work_unit": work_unit,
         "role": role,
@@ -187,6 +235,7 @@ def construct(*, role, mission, feature, work_unit, attempt, provider, model, ef
         "base_commit": base_commit,
         "attempt": attempt,
         "prompt": prompt,
+        "write_scope": write_scope,
     }
     path, digest = persist(spec)
     return spec, path, digest
@@ -210,12 +259,18 @@ def receipt_link(*, run_id, path, digest, role, mission, work_unit, provider, mo
     # configuration use exactly the same provider policy as the launch adapter.
     from execute_provider import provider_contract
     argv, env_overrides = provider_contract(spec)
+    argv_bytes = (json.dumps(argv, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
     return {
         "run_id": spec["run_id"],
         "execution_spec_path": str(Path(path)),
         "execution_spec_sha256": digest,
         "requested": {key: spec[key] for key in ("provider", "model", "effort", "speed")},
-        "resolved": {"argv": argv, "env_overrides": env_overrides},
+        "resolved": {
+            "provider": spec["provider"], "model": spec["model"],
+            "effort": spec["effort"], "speed": spec["speed"],
+            "executable": argv[0], "argv_sha256": hashlib.sha256(argv_bytes).hexdigest(),
+            "env_override_keys": sorted(env_overrides),
+        },
         "observed": {"model": "unknown", "effort": "unknown", "speed": "unknown"},
     }
 
@@ -237,17 +292,23 @@ def main():
     for name in ("role", "mission", "work-unit", "attempt", "provider", "model", "effort", "speed", "repo", "prompt"):
         construct_parser.add_argument(f"--{name}", required=True)
     construct_parser.add_argument("--feature")
+    construct_parser.add_argument("--run-id")
+    construct_parser.add_argument("--write-scope-json", required=True)
     link_parser = sub.add_parser("receipt-link")
     for name in ("run-id", "spec", "spec-sha256", "role", "mission", "work-unit", "provider", "model"):
         link_parser.add_argument(f"--{name}", required=True)
     args = parser.parse_args()
     try:
         if args.command == "construct":
+            try:
+                write_scope = json.loads(args.write_scope_json)
+            except json.JSONDecodeError as exc:
+                raise SpecError("write_scope_json must be valid JSON") from exc
             spec, path, digest = construct(
                 role=args.role, mission=args.mission, feature=args.feature,
                 work_unit=args.work_unit, attempt=int(args.attempt), provider=args.provider,
                 model=args.model, effort=args.effort, speed=args.speed, repo=args.repo,
-                prompt=args.prompt,
+                prompt=args.prompt, write_scope=write_scope, run_id=args.run_id,
             )
             print(json.dumps({"run_id": spec["run_id"], "path": str(path), "sha256": digest},
                              sort_keys=True, separators=(",", ":")))

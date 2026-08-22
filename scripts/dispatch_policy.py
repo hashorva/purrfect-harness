@@ -11,6 +11,7 @@ import sys
 import uuid
 
 from fleet_state import CAPABILITIES, read_json, validate_fleet
+from execution_spec import artifact_directory, SpecError, validate_write_scope
 
 
 class PolicyError(ValueError):
@@ -119,6 +120,30 @@ def feature_record(mission, feature):
     return matches[0]
 
 
+def worker_write_scope(task):
+    try:
+        lines = task.read_text().splitlines()
+    except (OSError, UnicodeError) as exc:
+        raise PolicyError("cannot read worker task write scope") from exc
+    headings = [index for index, line in enumerate(lines) if line == "## Files you MAY touch"]
+    if len(headings) != 1:
+        fail("worker task requires exactly one Files you MAY touch section")
+    start = headings[0] + 1
+    end = next((index for index in range(start, len(lines)) if lines[index].startswith("## ")), len(lines))
+    patterns = []
+    for line in lines[start:end]:
+        if not line.strip():
+            continue
+        match = re.fullmatch(r"- `([^`]+)`(?: \([^\r\n]*\))?", line)
+        if match is None:
+            fail("Files you MAY touch must contain only backtick-quoted path bullets")
+        patterns.append(match.group(1))
+    try:
+        return validate_write_scope(patterns)
+    except SpecError as exc:
+        raise PolicyError(str(exc)) from exc
+
+
 def clean_workspace(root):
     result = subprocess.run(
         ["git", "-C", str(root), "status", "--porcelain=v1", "--untracked-files=all"],
@@ -167,7 +192,9 @@ def validate_worker(args):
     if not args.feature or values.get("feature") != args.feature:
         fail("worker task feature must equal --feature")
     feature_record(mission, args.feature)
+    write_scope = worker_write_scope(task)
     clean_workspace(root)
+    return write_scope
 
 
 def validate_brain(args):
@@ -187,6 +214,9 @@ def validate_brain(args):
     else:
         fail("unknown brain dispatch action")
     clean_workspace(root)
+    if args.action == "review":
+        return [f"{mission_relative}/PROGRESS.md"]
+    return [f"{mission_relative}/**"]
 
 
 def lock_location(root, workspace):
@@ -199,8 +229,11 @@ def acquire_lock(args):
     workspace = git_root(args.workspace)
     if workspace != root:
         fail("cross-repository execution is disabled in Phase 1")
-    path = lock_location(root, workspace)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        lock_directory = artifact_directory(root, "locks")
+    except SpecError as exc:
+        raise PolicyError(str(exc)) from exc
+    path = lock_directory / lock_location(root, workspace).name
     try:
         path.mkdir()
     except FileExistsError as exc:
@@ -230,7 +263,11 @@ def acquire_lock(args):
 def release_lock(args):
     root = git_root(args.root)
     workspace = git_root(args.workspace)
-    expected = lock_location(root, workspace)
+    try:
+        lock_directory = artifact_directory(root, "locks", create=False)
+    except SpecError as exc:
+        raise PolicyError(str(exc)) from exc
+    expected = lock_directory / lock_location(root, workspace).name
     path = Path(args.lock)
     if not path.is_absolute() or path != expected or path.is_symlink() or not path.is_dir():
         fail("workspace lock path assertion failed")
@@ -275,9 +312,11 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "validate-worker":
-            validate_worker(args)
+            write_scope = validate_worker(args)
+            print(json.dumps({"write_scope": write_scope}, sort_keys=True, separators=(",", ":")))
         elif args.command == "validate-brain":
-            validate_brain(args)
+            write_scope = validate_brain(args)
+            print(json.dumps({"write_scope": write_scope}, sort_keys=True, separators=(",", ":")))
         elif args.command == "validate-capability":
             validate_capability(args.provider, args.effort, args.speed)
         elif args.command == "acquire-lock":

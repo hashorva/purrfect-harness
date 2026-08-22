@@ -1,0 +1,446 @@
+#!/usr/bin/env python3
+"""Strict UUID-keyed ExecutionReceipt construction and validation."""
+import argparse
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+
+from execution_spec import artifact_directory, SpecError, load_persisted, receipt_link, spec_sha256
+
+
+OUTCOMES = {"completed", "failed", "timed_out", "interrupted", "launch_failed"}
+COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
+RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$")
+FIELDS = {
+    "schema_version", "run_id", "mission", "feature", "work_unit", "attempt", "role",
+    "provider", "model", "repo", "task", "tier", "started_at", "finished_at",
+    "outcome", "exit_code", "log_path", "execution_spec_path", "execution_spec_sha256",
+    "requested_configuration", "resolved_configuration", "observed_configuration",
+    "git_before", "git_after", "commits", "changed_paths", "workspace_changed", "scope",
+}
+GIT_FIELDS = {"head", "status_porcelain_v1_z_sha256", "status_entry_count", "dirty_paths"}
+
+
+class ReceiptError(ValueError):
+    """Execution evidence is missing, contradictory, or unsafe to trust."""
+
+
+def fail(message):
+    raise ReceiptError(message)
+
+
+def now():
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+def canonical_bytes(value):
+    return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode("utf-8")
+
+
+def git_bytes(repo, *args, check=True):
+    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, check=False)
+    if check and result.returncode != 0:
+        fail(f"Git evidence command failed: {' '.join(args)}")
+    return result
+
+
+def nul_paths(raw, label):
+    try:
+        values = [item.decode("utf-8") for item in raw.split(b"\0") if item]
+    except UnicodeDecodeError as exc:
+        raise ReceiptError(f"{label} contains a non-UTF-8 path") from exc
+    for value in values:
+        if (not value or value.startswith("/") or
+                any(part in {"", ".", ".."} for part in value.split("/"))):
+            fail(f"{label} contains a path outside the workspace")
+    return values
+
+
+def dirty_paths(repo, reference="HEAD"):
+    tracked = git_bytes(repo, "diff", "--no-renames", "--name-only", "-z", reference, "--").stdout
+    untracked = git_bytes(repo, "ls-files", "--others", "--exclude-standard", "-z", "--").stdout
+    return sorted(set(nul_paths(tracked, "tracked Git delta") + nul_paths(untracked, "untracked Git delta")))
+
+
+def snapshot(repo):
+    repo = Path(repo)
+    head = git_bytes(repo, "rev-parse", "HEAD").stdout.decode().strip().lower()
+    status = git_bytes(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all").stdout
+    return {
+        "head": head,
+        "status_porcelain_v1_z_sha256": hashlib.sha256(status).hexdigest(),
+        "status_entry_count": len([item for item in status.split(b"\0") if item]),
+        "dirty_paths": dirty_paths(repo),
+    }
+
+
+def capture_before(spec_path, digest):
+    spec, raw = load_persisted(spec_path)
+    if spec_sha256(raw) != digest:
+        fail("execution spec SHA-256 does not match authorization")
+    if spec["schema_version"] != 2:
+        fail("new execution receipts require ExecutionSpec v2")
+    before = snapshot(spec["repo"])
+    if before["head"] != spec["base_commit"]:
+        fail("Git HEAD before launch does not match the authorized base commit")
+    if before["status_entry_count"] != 0 or before["dirty_paths"]:
+        fail("workspace must be clean at the attributable before snapshot")
+    return before
+
+
+def glob_regex(pattern):
+    output = ["^"]
+    index = 0
+    while index < len(pattern):
+        char = pattern[index]
+        if char == "*":
+            if index + 1 < len(pattern) and pattern[index + 1] == "*":
+                output.append(".*")
+                index += 2
+                continue
+            output.append("[^/]*")
+        elif char == "?":
+            output.append("[^/]")
+        else:
+            output.append(re.escape(char))
+        index += 1
+    output.append("$")
+    return re.compile("".join(output))
+
+
+def in_scope(path, allowed):
+    return any(glob_regex(pattern).fullmatch(path) for pattern in allowed)
+
+
+def git_delta(spec, before):
+    repo = Path(spec["repo"])
+    after = snapshot(repo)
+    base = before["head"]
+    after_head = after["head"]
+    ancestor = git_bytes(repo, "merge-base", "--is-ancestor", base, after_head, check=False).returncode == 0
+    commits_raw = git_bytes(repo, "rev-list", "--reverse", f"{base}..{after_head}").stdout
+    commits = [line for line in commits_raw.decode().splitlines() if line]
+    changed = dirty_paths(repo, base)
+    violations = [path for path in changed if not in_scope(path, spec["write_scope"])]
+    if not ancestor:
+        violations = sorted(set(violations + ["<history-diverged>"]))
+    return after, commits, changed, {
+        "result": "pass" if not violations else "fail",
+        "allowed": list(spec["write_scope"]),
+        "violations": violations,
+        "guarantee": "Git-visible changes in the declared workspace only",
+    }
+
+
+def _atomic_create(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = None
+    try:
+        fd, name = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
+        temp = Path(name)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+            os.fchmod(handle.fileno(), 0o400)
+        try:
+            os.link(temp, path)
+        except FileExistsError as exc:
+            raise ReceiptError(f"execution receipt already exists for run_id {path.stem}") from exc
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if temp is not None:
+            try:
+                temp.unlink()
+            except FileNotFoundError:
+                pass
+
+
+def _timestamp(value, name):
+    if not isinstance(value, str) or not RFC3339.fullmatch(value):
+        fail(f"{name} must be an RFC3339 UTC timestamp")
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ReceiptError(f"{name} must be an RFC3339 UTC timestamp") from exc
+
+
+def _log_path(spec, supplied):
+    repo = Path(spec["repo"])
+    path = Path(supplied)
+    absolute = path if path.is_absolute() else repo / path
+    expected = repo / ".tasks/logs" / f"{spec['run_id']}.log"
+    if absolute.resolve(strict=False) != expected.resolve(strict=False):
+        fail("log path must be UUID-keyed for the same run")
+    try:
+        artifact_directory(repo, "logs", create=False)
+    except SpecError as exc:
+        raise ReceiptError(str(exc)) from exc
+    if not absolute.is_file() or absolute.is_symlink():
+        fail("execution log is missing or not a regular file")
+    return expected.relative_to(repo).as_posix()
+
+
+def build_receipt(*, spec_path, digest, before, started_at, finished_at, outcome,
+                  exit_code, log_path, task=None, tier=None):
+    spec, raw = load_persisted(spec_path)
+    if spec_sha256(raw) != digest:
+        fail("execution spec SHA-256 does not match exact persisted bytes")
+    if spec["schema_version"] != 2:
+        fail("new execution receipts require ExecutionSpec v2")
+    linked = receipt_link(
+        run_id=spec["run_id"], path=spec_path, digest=digest, role=spec["role"],
+        mission=spec["mission"], work_unit=spec["work_unit"],
+        provider=spec["provider"], model=spec["model"],
+    )
+    if outcome not in OUTCOMES:
+        fail("terminal outcome is invalid")
+    if isinstance(exit_code, bool) or not isinstance(exit_code, int) or exit_code < 0 or exit_code > 255:
+        fail("exit_code must be an integer from 0 through 255")
+    if outcome == "completed" and exit_code != 0:
+        fail("completed outcome requires exit_code 0")
+    if outcome != "completed" and exit_code == 0:
+        fail("non-completed outcome requires a nonzero exit_code")
+    started = _timestamp(started_at, "started_at")
+    finished = _timestamp(finished_at, "finished_at")
+    if finished < started:
+        fail("finished_at cannot precede started_at")
+    if not isinstance(before, dict) or set(before) != GIT_FIELDS:
+        fail("git_before has invalid fields")
+    if before["head"] != spec["base_commit"] or before["status_entry_count"] != 0 or before["dirty_paths"]:
+        fail("git_before is not the clean authorized base state")
+    after, commits, changed, scope = git_delta(spec, before)
+    workspace_changed = before["head"] != after["head"] or bool(changed)
+    receipt = {
+        "schema_version": 1,
+        "run_id": spec["run_id"],
+        "mission": spec["mission"],
+        "feature": spec["feature"],
+        "work_unit": spec["work_unit"],
+        "attempt": spec["attempt"],
+        "role": spec["role"],
+        "provider": spec["provider"],
+        "model": spec["model"],
+        "repo": spec["repo"],
+        "task": task,
+        "tier": tier,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "outcome": outcome,
+        "exit_code": exit_code,
+        "log_path": _log_path(spec, log_path),
+        "execution_spec_path": str(Path(spec_path)),
+        "execution_spec_sha256": digest,
+        "requested_configuration": linked["requested"],
+        "resolved_configuration": linked["resolved"],
+        "observed_configuration": linked["observed"],
+        "git_before": before,
+        "git_after": after,
+        "commits": commits,
+        "changed_paths": changed,
+        "workspace_changed": workspace_changed,
+        "scope": scope,
+    }
+    validate_receipt(receipt, receipt_path=None)
+    return receipt
+
+
+def write_receipt(**kwargs):
+    receipt = build_receipt(**kwargs)
+    try:
+        destination = artifact_directory(receipt["repo"], "receipts") / f"{receipt['run_id']}.json"
+    except SpecError as exc:
+        raise ReceiptError(str(exc)) from exc
+    _atomic_create(destination, canonical_bytes(receipt))
+    return destination
+
+
+def validate_receipt(receipt, receipt_path):
+    if not isinstance(receipt, dict) or set(receipt) != FIELDS:
+        fail("receipt fields must exactly match ExecutionReceipt v1")
+    if receipt["schema_version"] != 1:
+        fail("receipt schema_version must equal 1")
+    spec_path = receipt.get("execution_spec_path")
+    digest = receipt.get("execution_spec_sha256")
+    try:
+        spec, raw = load_persisted(spec_path)
+    except SpecError as exc:
+        raise ReceiptError(str(exc)) from exc
+    if spec_sha256(raw) != digest:
+        fail("receipt execution_spec_sha256 does not match exact spec bytes")
+    for key in ("run_id", "mission", "feature", "work_unit", "attempt", "role", "provider", "model", "repo"):
+        if receipt[key] != spec[key]:
+            fail(f"receipt {key} does not match ExecutionSpec")
+    expected_spec_path = Path(spec["repo"]) / ".tasks/specs" / f"{spec['run_id']}.json"
+    if Path(spec_path).resolve() != expected_spec_path or receipt["execution_spec_path"] != str(expected_spec_path):
+        fail("receipt execution_spec_path does not identify the exact authorization")
+    if receipt["role"] == "worker":
+        task = receipt["task"]
+        if (not isinstance(task, str) or not task or task.strip() != task or
+                Path(task).is_absolute() or ".." in Path(task).parts):
+            fail("worker receipt requires a safe repository-relative task path")
+        if receipt["tier"] not in {"economy", "premium"}:
+            fail("worker receipt requires an economy or premium tier")
+    elif receipt["task"] is not None or receipt["tier"] is not None:
+        fail("brain receipt task and tier must be null")
+    if receipt_path is not None:
+        try:
+            expected = artifact_directory(spec["repo"], "receipts", create=False) / f"{spec['run_id']}.json"
+        except SpecError as exc:
+            raise ReceiptError(str(exc)) from exc
+        if Path(receipt_path).resolve() != expected:
+            fail("receipt filename/path does not match run_id")
+    _log_path(spec, receipt["log_path"])
+    started = _timestamp(receipt["started_at"], "started_at")
+    finished = _timestamp(receipt["finished_at"], "finished_at")
+    if finished < started:
+        fail("finished_at cannot precede started_at")
+    if receipt["outcome"] not in OUTCOMES:
+        fail("terminal outcome is invalid")
+    if (isinstance(receipt["exit_code"], bool) or not isinstance(receipt["exit_code"], int) or
+            receipt["exit_code"] < 0 or receipt["exit_code"] > 255):
+        fail("receipt exit_code is invalid")
+    if receipt["outcome"] == "completed" and receipt["exit_code"] != 0:
+        fail("completed outcome requires exit_code 0")
+    if receipt["outcome"] != "completed" and receipt["exit_code"] == 0:
+        fail("non-completed outcome requires nonzero exit_code")
+    for name in ("git_before", "git_after"):
+        value = receipt[name]
+        if not isinstance(value, dict) or set(value) != GIT_FIELDS:
+            fail(f"{name} has invalid fields")
+        if not COMMIT.fullmatch(value["head"]):
+            fail(f"{name}.head must be a full commit ID")
+        if not re.fullmatch(r"[0-9a-f]{64}", value["status_porcelain_v1_z_sha256"]):
+            fail(f"{name} status digest is invalid")
+        if isinstance(value["status_entry_count"], bool) or not isinstance(value["status_entry_count"], int) or value["status_entry_count"] < 0:
+            fail(f"{name} status count is invalid")
+        if not isinstance(value["dirty_paths"], list) or value["dirty_paths"] != sorted(set(value["dirty_paths"])):
+            fail(f"{name} dirty_paths must be sorted and unique")
+        if not all(isinstance(path, str) and path and not path.startswith("/") and
+                   not any(part in {"", ".", ".."} for part in path.split("/"))
+                   for path in value["dirty_paths"]):
+            fail(f"{name} dirty_paths contain an invalid path")
+        if (value["status_entry_count"] == 0) != (not value["dirty_paths"]):
+            fail(f"{name} status count contradicts dirty paths")
+    if receipt["git_before"]["head"] != spec["base_commit"] or receipt["git_before"]["status_entry_count"] != 0 or receipt["git_before"]["dirty_paths"]:
+        fail("receipt before state is not the clean authorized base")
+    if receipt["git_before"]["status_porcelain_v1_z_sha256"] != hashlib.sha256(b"").hexdigest():
+        fail("receipt before status digest is not the clean workspace digest")
+    if not isinstance(receipt["commits"], list):
+        fail("receipt commits has invalid shape")
+    if (not isinstance(receipt["changed_paths"], list) or
+            receipt["changed_paths"] != sorted(set(receipt["changed_paths"]))):
+        fail("receipt changed_paths must be sorted and unique")
+    if not all(isinstance(commit, str) and COMMIT.fullmatch(commit) for commit in receipt["commits"]):
+        fail("receipt commits contain an invalid object ID")
+    if not all(isinstance(path, str) and path and not path.startswith("/") and
+               not any(part in {"", ".", ".."} for part in path.split("/"))
+               for path in receipt["changed_paths"]):
+        fail("receipt changed_paths contain an invalid path")
+    repo = Path(spec["repo"])
+    base = receipt["git_before"]["head"]
+    after_head = receipt["git_after"]["head"]
+    recorded_commits = git_bytes(repo, "rev-list", "--reverse", f"{base}..{after_head}").stdout.decode().splitlines()
+    if receipt["commits"] != recorded_commits:
+        fail("receipt commits do not match the recorded Git range")
+    committed_paths = nul_paths(
+        git_bytes(repo, "diff", "--no-renames", "--name-only", "-z", base, after_head, "--").stdout,
+        "recorded committed Git delta",
+    )
+    recorded_changed = sorted(set(committed_paths + receipt["git_after"]["dirty_paths"]))
+    if receipt["changed_paths"] != recorded_changed:
+        fail("receipt changed_paths do not match commits plus the recorded dirty state")
+    expected_changed = base != after_head or bool(receipt["changed_paths"])
+    if not isinstance(receipt["workspace_changed"], bool) or receipt["workspace_changed"] != expected_changed:
+        fail("workspace_changed does not match the recorded Git delta")
+    scope = receipt["scope"]
+    if not isinstance(scope, dict) or set(scope) != {"result", "allowed", "violations", "guarantee"}:
+        fail("receipt scope has invalid fields")
+    if scope["allowed"] != spec["write_scope"] or scope["guarantee"] != "Git-visible changes in the declared workspace only":
+        fail("receipt scope does not match immutable authorization")
+    expected_violations = [path for path in receipt["changed_paths"] if not in_scope(path, spec["write_scope"])]
+    history_diverged = git_bytes(
+        repo, "merge-base", "--is-ancestor", receipt["git_before"]["head"], receipt["git_after"]["head"],
+        check=False,
+    ).returncode != 0
+    if history_diverged:
+        expected_violations = sorted(set(expected_violations + ["<history-diverged>"]))
+    if scope["violations"] != expected_violations or scope["result"] != ("pass" if not expected_violations else "fail"):
+        fail("receipt scope result contradicts changed paths")
+    linked = receipt_link(
+        run_id=spec["run_id"], path=spec_path, digest=digest, role=spec["role"],
+        mission=spec["mission"], work_unit=spec["work_unit"], provider=spec["provider"], model=spec["model"],
+    )
+    for field, expected in (("requested_configuration", linked["requested"]),
+                            ("resolved_configuration", linked["resolved"]),
+                            ("observed_configuration", linked["observed"])):
+        if receipt[field] != expected:
+            fail(f"receipt {field} does not match shared adapter evidence")
+    return receipt
+
+
+def load_receipt(path):
+    path = Path(path)
+    if not path.is_file() or path.is_symlink():
+        fail("execution receipt is missing or not a regular file")
+    try:
+        raw = path.read_bytes()
+        receipt = json.loads(raw)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ReceiptError(f"cannot read execution receipt: {exc}") from exc
+    if raw != canonical_bytes(receipt):
+        fail("execution receipt is not canonical JSON")
+    return validate_receipt(receipt, path)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    commands = parser.add_subparsers(dest="command", required=True)
+    validate = commands.add_parser("validate")
+    validate.add_argument("--receipt", required=True)
+    capture = commands.add_parser("capture-before")
+    capture.add_argument("--spec", required=True)
+    capture.add_argument("--spec-sha256", required=True)
+    write = commands.add_parser("write")
+    for name in ("spec", "spec-sha256", "before-json", "started-at", "finished-at", "outcome", "exit-code", "log-path"):
+        write.add_argument(f"--{name}", required=True)
+    write.add_argument("--task")
+    write.add_argument("--tier")
+    args = parser.parse_args()
+    try:
+        if args.command == "validate":
+            receipt = load_receipt(args.receipt)
+            print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
+        elif args.command == "capture-before":
+            print(json.dumps(capture_before(args.spec, args.spec_sha256), sort_keys=True, separators=(",", ":")))
+        else:
+            try:
+                before = json.loads(args.before_json)
+                exit_code = int(args.exit_code)
+            except (json.JSONDecodeError, ValueError) as exc:
+                raise ReceiptError("before-json or exit-code is malformed") from exc
+            path = write_receipt(
+                spec_path=args.spec, digest=args.spec_sha256, before=before,
+                started_at=args.started_at, finished_at=args.finished_at,
+                outcome=args.outcome, exit_code=exit_code, log_path=args.log_path,
+                task=args.task, tier=args.tier,
+            )
+            print(path.relative_to(Path.cwd()) if path.is_relative_to(Path.cwd()) else path)
+    except (ReceiptError, SpecError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,32 +1,32 @@
 #!/usr/bin/env bash
 # spawn-brain.sh — run the mission BRAIN via a real local CLI.
-# Produces .tasks/logs/brain-*.log + .tasks/receipts/brain-*.json.
+# Produces UUID-keyed logs + terminal ExecutionReceipts.
 # Without a brain receipt, verify-mission.sh will not greenlight the mission.
 #
 # Usage (from consuming repo root):
 #   bash scripts/spawn-brain.sh <mission-dir|slug> <mission-init|gate0|review>
 #       [--provider codex|claude|agent|agy] [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N]
-#   bash scripts/spawn-brain.sh <mission-dir|slug> waiver --reason "already on Opus in Cursor"
 set -euo pipefail
 
 LOCK_PATH=""
 LOCK_TOKEN=""
-PROVIDER_PID=""
+RUNNER_PID=""
 
+# shellcheck disable=SC2329  # invoked indirectly by the EXIT trap
 cleanup() {
   local exit_code=$? cleanup_failed=0
   trap - EXIT
   set +e
-  if [ -n "$PROVIDER_PID" ] && kill -0 "$PROVIDER_PID" 2>/dev/null; then
-    kill -TERM "-$PROVIDER_PID" 2>/dev/null || kill -TERM "$PROVIDER_PID" 2>/dev/null || true
-    for _cleanup_wait in 1 2 3 4 5 6 7 8 9 10; do
-      kill -0 "-$PROVIDER_PID" 2>/dev/null || break
+  if [ -n "$RUNNER_PID" ] && kill -0 "$RUNNER_PID" 2>/dev/null; then
+    kill -TERM "$RUNNER_PID" 2>/dev/null || true
+    for _cleanup_wait in {1..50}; do
+      kill -0 "$RUNNER_PID" 2>/dev/null || break
       sleep 0.1
     done
-    if kill -0 "-$PROVIDER_PID" 2>/dev/null; then
-      kill -KILL "-$PROVIDER_PID" 2>/dev/null || kill -KILL "$PROVIDER_PID" 2>/dev/null || true
+    if kill -0 "$RUNNER_PID" 2>/dev/null; then
+      kill -KILL "$RUNNER_PID" 2>/dev/null || true
     fi
-    wait "$PROVIDER_PID" 2>/dev/null || true
+    wait "$RUNNER_PID" 2>/dev/null || true
   fi
   if [ -n "$LOCK_PATH" ] && [ -n "$LOCK_TOKEN" ]; then
     PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" release-lock \
@@ -45,7 +45,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 usage() {
-  echo "Usage: spawn-brain.sh <mission> <mission-init|gate0|review|waiver> [--provider NAME] [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N] [--reason TEXT]" >&2
+  echo "Usage: spawn-brain.sh <mission> <mission-init|gate0|review> [--provider NAME] [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N]" >&2
   exit 2
 }
 
@@ -59,7 +59,6 @@ PROVIDER=""
 EFFORT=""
 SPEED=""
 ATTEMPT="1"
-REASON=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --provider) PROVIDER="${2:?}"; shift 2 ;;
@@ -67,7 +66,6 @@ while [ $# -gt 0 ]; do
     --effort) EFFORT="${2:?}"; shift 2 ;;
     --speed) SPEED="${2:?}"; shift 2 ;;
     --attempt) ATTEMPT="${2:?}"; shift 2 ;;
-    --reason) REASON="${2:?}"; shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -89,48 +87,16 @@ MISSION="${MISSION_ABS#"$ROOT"/}"
 WORKSPACE="$ROOT"
 FLEET="$MISSION_ABS/fleet.json"
 
-write_receipt() {
-  local cli="$1" exit_code="$2" argv_json="$3"
-  bash "$ROOT/scripts/write-receipt.sh" \
-    --role brain \
-    --cli "$cli" \
-    --model "$MODEL" \
-    --mission "$MISSION" \
-    --action "$ACTION" --work-unit "$ACTION" \
-    --exit "$exit_code" \
-    --log "$LOG_REL" \
-    --argv "$argv_json"
-}
-
 case "$ACTION" in
-  waiver)
-    [ -n "$MODEL" ] || MODEL="waiver"
-    [ -n "$REASON" ] || { echo "ERROR: waiver requires --reason '…'" >&2; exit 2; }
-    mkdir -p "$ROOT/.tasks/logs" "$ROOT/.tasks/receipts"
-    TS="$(date -u +%Y%m%dT%H%M%SZ)"
-    LOG_REL=".tasks/logs/brain-${ACTION}-${TS}.log"
-    LOG="$ROOT/$LOG_REL"
-    {
-      echo "spawn-brain: WAIVER mission=$MISSION model=$MODEL"
-      echo "reason: $REASON"
-      echo "This is NOT a Claude CLI run."
-      echo "----"
-      echo "exit=0"
-    } | tee "$LOG"
-    ARGV="$(python3 -c "import json,sys; print(json.dumps(['waiver','--reason',sys.argv[1]]))" "$REASON")"
-    REC="$(write_receipt waiver 0 "$ARGV")"
-    echo "receipt=$REC"
-    echo "WARNING: waiver recorded. Prefer: bash scripts/spawn-brain.sh $MISSION mission-init"
-    exit 0
-    ;;
   mission-init|gate0|review) ;;
   *) echo "ERROR: unknown action '$ACTION'" >&2; usage ;;
 esac
 
 # Lifecycle, Gate 0/fleet, repository, and cleanliness authorization must all
 # pass before a lock, log, ExecutionSpec, or provider process exists.
-PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-brain \
-  --root "$ROOT" --workspace "$WORKSPACE" --mission "$MISSION" --fleet "$FLEET" --action "$ACTION"
+POLICY_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-brain \
+  --root "$ROOT" --workspace "$WORKSPACE" --mission "$MISSION" --fleet "$FLEET" --action "$ACTION")" || exit $?
+WRITE_SCOPE_JSON="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["write_scope"],separators=(",",":")))' <<<"$POLICY_JSON")"
 
 if [ "$ACTION" = review ]; then
   RESOLVE_ARGS=(python3 "$ROOT/scripts/fleet_state.py" resolve
@@ -169,8 +135,8 @@ LOCK_TOKEN="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])'
 export PURRFECT_DISPATCH_LOCK_PATH="$LOCK_PATH"
 
 mkdir -p "$ROOT/.tasks/logs" "$ROOT/.tasks/receipts"
-TS="$(date -u +%Y%m%dT%H%M%SZ)"
-LOG_REL=".tasks/logs/brain-${ACTION}-${TS}.log"
+RUN_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+LOG_REL=".tasks/logs/${RUN_ID}.log"
 LOG="$ROOT/$LOG_REL"
 
 PROMPT="You are the mission BRAIN for ${MISSION}.
@@ -183,11 +149,10 @@ review: judge git diff by effects only; do not re-implement worker scope.
 Append PROGRESS.md pointing at brain log ${LOG_REL}.
 Never claim a worker CLI ran unless .tasks/receipts/ proves it."
 
-SPEC_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execution_spec.py" construct --role brain --mission "$MISSION" --work-unit "$ACTION" --attempt "$ATTEMPT" --provider "$PROVIDER" --model "$MODEL" --effort "$EFFORT" --speed "$SPEED" --repo "$ROOT" --prompt "$PROMPT")" || exit $?
+SPEC_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execution_spec.py" construct --run-id "$RUN_ID" --write-scope-json "$WRITE_SCOPE_JSON" --role brain --mission "$MISSION" --work-unit "$ACTION" --attempt "$ATTEMPT" --provider "$PROVIDER" --model "$MODEL" --effort "$EFFORT" --speed "$SPEED" --repo "$ROOT" --prompt "$PROMPT")" || exit $?
 RUN_ID="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["run_id"])' <<<"$SPEC_JSON")"
 SPEC_PATH="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["path"])' <<<"$SPEC_JSON")"
 SPEC_SHA256="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["sha256"])' <<<"$SPEC_JSON")"
-ARGV_JSON="$(python3 -c "import json; print(json.dumps(['$PROVIDER','--model','$MODEL','--effort','$EFFORT','--speed','$SPEED']))")"
 
 {
   echo "spawn-brain: action=$ACTION provider=$PROVIDER model=$MODEL mission=$MISSION run_id=$RUN_ID log=$LOG_REL"
@@ -195,19 +160,23 @@ ARGV_JSON="$(python3 -c "import json; print(json.dumps(['$PROVIDER','--model','$
   echo "----"
 } | tee "$LOG"
 
+SPAWN_BRAIN_TIMEOUT_SECS="${SPAWN_BRAIN_TIMEOUT_SECS:-2400}"
 set +e
-set -m
-PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execute_provider.py" --spec "$SPEC_PATH" --sha256 "$SPEC_SHA256" >>"$LOG" 2>&1 < /dev/null &
-PROVIDER_PID=$!
-set +m
-wait "$PROVIDER_PID"
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execution_runner.py" \
+  --spec "$SPEC_PATH" --spec-sha256 "$SPEC_SHA256" --log "$LOG" \
+  --timeout "$SPAWN_BRAIN_TIMEOUT_SECS" &
+RUNNER_PID=$!
+wait "$RUNNER_PID"
 EC=$?
-PROVIDER_PID=""
+RUNNER_PID=""
 set -e
+RECEIPT_PATH="$ROOT/.tasks/receipts/${RUN_ID}.json"
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execution_receipt.py" validate --receipt "$RECEIPT_PATH" >/dev/null; then
+  echo "ERROR: run did not produce a valid terminal ExecutionReceipt" >&2
+  EC=125
+fi
 
 echo "----" | tee -a "$LOG"
 echo "exit=$EC" | tee -a "$LOG"
-REC="$(bash "$ROOT/scripts/write-receipt.sh" --role brain --cli "$PROVIDER" --model "$MODEL" --mission "$MISSION" --action "$ACTION" --work-unit "$ACTION" --exit "$EC" --log "$LOG_REL" --argv "$ARGV_JSON" --run-id "$RUN_ID" --spec "$SPEC_PATH" --spec-sha256 "$SPEC_SHA256")"
-echo "receipt=$REC"
 echo "tail:"; tail -20 "$LOG"
 exit "$EC"

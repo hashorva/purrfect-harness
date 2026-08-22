@@ -215,9 +215,12 @@ check "mission-init skill documents bootstrap" sh -c "grep -q '\"bootstrap\": tr
 check "stub ORCHESTRATION at old path"       test -f "$TARGET/docs/ORCHESTRATION.md"
 check "spawn-worker.sh installed +x"         test -x "$TARGET/scripts/spawn-worker.sh"
 check "execution spec tool installed"        test -f "$TARGET/scripts/execution_spec.py"
+check "execution receipt tool installed"     test -f "$TARGET/scripts/execution_receipt.py"
+check "execution lifecycle runner installed" test -f "$TARGET/scripts/execution_runner.py"
 check "provider adapter installed"           test -f "$TARGET/scripts/execute_provider.py"
 check "dispatch policy installed"            test -f "$TARGET/scripts/dispatch_policy.py"
 check "execution spec schema installed"      test -f "$TARGET/schemas/execution-spec.schema.json"
+check "execution receipt schema installed"   test -f "$TARGET/schemas/execution-receipt.schema.json"
 check "active-mission.sh installed +x"       test -x "$TARGET/scripts/active-mission.sh"
 check "fleet-inventory.sh installed +x"      test -x "$TARGET/scripts/fleet-inventory.sh"
 check "fleet policy module installed"        test -f "$TARGET/scripts/fleet_state.py"
@@ -234,7 +237,10 @@ check "install did not commit"               sh -c "[ -n \"\$(git -C '$TARGET' s
 echo "== active-mission / spawn dry checks"
 mkdir -p "$TARGET/docs/missions/20990101-fixture/tasks"
 printf '%s\n' '---' 'status: in-progress' '---' '# Goal' > "$TARGET/docs/missions/20990101-fixture/GOAL.md"
-printf '%s\n' '---' 'task_id: T-001' 'feature: F001' '---' '# Task' > "$TARGET/docs/missions/20990101-fixture/tasks/T-001.md"
+# shellcheck disable=SC2016  # task fixture requires literal Markdown backticks
+printf '%s\n' '---' 'task_id: T-001' 'feature: F001' '---' '# Task' '' '## Files you MAY touch' '- `proof.txt`' > "$TARGET/docs/missions/20990101-fixture/tasks/T-001.md"
+# shellcheck disable=SC2016  # task fixture requires literal Markdown backticks
+printf '%s\n' '---' 'task_id: T-002' 'feature: F002' '---' '# Task' '' '## Files you MAY touch' '- `proof.txt`' > "$TARGET/docs/missions/20990101-fixture/tasks/T-002.md"
 echo '{}' > "$TARGET/docs/missions/20990101-fixture/features.json"
 check "active-mission finds fixture" sh -c "cd '$TARGET' && bash scripts/active-mission.sh | grep -q 20990101-fixture"
 check "spawn-worker rejects unknown worker" sh -c "cd '$TARGET' && ! bash scripts/spawn-worker.sh nope docs/missions/20990101-fixture/GOAL.md"
@@ -249,7 +255,7 @@ check "verify-mission.sh installed +x" test -x "$TARGET/scripts/verify-mission.s
 # receipt greenlight
 echo "== verify-mission receipts"
 FEAT="$TARGET/docs/missions/20990101-fixture"
-printf '%s\n' '{"goal":"t","features":[{"id":"F001","description":"Mission folder active","bootstrap":true,"steps":[],"passes":true,"priority":1},{"id":"F002","description":"Real work mentions mission files in prose only","steps":[],"passes":true,"priority":2}]}' > "$FEAT/features.json"
+printf '%s\n' '{"goal":"t","features":[{"id":"F001","description":"Mission folder active","bootstrap":true,"steps":[],"passes":true,"priority":1},{"id":"F002","description":"Real work mentions mission files in prose only","bootstrap":false,"steps":[],"passes":false,"priority":2}]}' > "$FEAT/features.json"
 python3 - "$FEAT/fleet.json" <<'PY'
 import json, sys
 caps = {
@@ -268,6 +274,7 @@ doc = {
     "inventory": {"sha256": "0" * 64, "probed_at": "2026-08-21T00:00:00Z"},
     "approval": {"status": "approved", "approved_by": "human", "approved_at": "2026-08-21T00:00:00Z"},
     "seats": {
+        "brain": seat("codex", "gpt-5.6-sol", "sol", "high", "unknown"),
         "agy.premium": seat("agy", "agy-test-model", "pro", "high", "unknown"),
         "claude.premium": seat("claude", "claude-test-model", "sonnet", "xhigh", "unknown"),
         "codex.economy": seat("codex", "codex-test-model", "luna", "medium", "unknown"),
@@ -279,8 +286,25 @@ open(sys.argv[1], "w").write(json.dumps(doc, sort_keys=True, separators=(",", ":
 PY
 chmod 444 "$FEAT/fleet.json"
 check "verify fails without receipts" sh -c "cd '$TARGET' && ! bash scripts/verify-mission.sh docs/missions/20990101-fixture"
-( cd "$TARGET" && bash scripts/write-receipt.sh --role brain --cli claude --model opus --mission docs/missions/20990101-fixture --action mission-init --exit 0 --log .tasks/logs/x.log --argv '["claude"]' >/dev/null )
-( cd "$TARGET" && bash scripts/write-receipt.sh --role worker --cli agent --model composer-2.5 --mission docs/missions/20990101-fixture --action task-T-001 --exit 0 --log .tasks/logs/y.log --feature F002 --tier economy --argv '["agent"]' >/dev/null )
+printf '%s\n' '.tasks/' '.verifybin/' > "$TARGET/.git/info/exclude"
+VERIFY_BIN="$TARGET/.verifybin"; mkdir -p "$VERIFY_BIN"
+# shellcheck disable=SC2016  # generated stub must expand VERIFY_WRITE at runtime
+printf '%s\n' '#!/usr/bin/env bash' '[ "${VERIFY_WRITE:-0}" != 1 ] || printf "%s\n" verified > proof.txt' 'exit 0' > "$VERIFY_BIN/codex"
+chmod +x "$VERIFY_BIN/codex"
+git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "strict receipt fixture"
+( cd "$TARGET" && PATH="$VERIFY_BIN:$PATH" SPAWN_BRAIN_TIMEOUT_SECS=0 \
+    bash scripts/spawn-brain.sh docs/missions/20990101-fixture review ) >/dev/null
+( cd "$TARGET" && PATH="$VERIFY_BIN:$PATH" VERIFY_WRITE=1 SPAWN_WORKER_TIMEOUT_SECS=0 \
+    bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/tasks/T-002.md \
+      --tier economy --model codex-test-model --feature F002 ) >/dev/null
+python3 - "$FEAT/features.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+doc = json.load(open(path))
+doc["features"][1]["passes"] = True
+open(path, "w").write(json.dumps(doc, separators=(",", ":")) + "\n")
+PY
+git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "accept strict receipt fixture"
 check "verify passes with brain+worker receipts" sh -c "cd '$TARGET' && bash scripts/verify-mission.sh docs/missions/20990101-fixture"
 check "spawn-worker --repo rejects missing path" sh -c "cd '$TARGET' && bash scripts/spawn-worker.sh agent docs/missions/20990101-fixture/GOAL.md --repo /nope/does/not/exist; test \$? -eq 1"
 
@@ -457,7 +481,8 @@ check "provider adapter remains after update" test -f "$TARGET/scripts/execute_p
 check "dispatch policy remains after update" test -f "$TARGET/scripts/dispatch_policy.py"
 check "fleet policy remains after update"    test -f "$TARGET/scripts/fleet_state.py"
 check "fleet schemas remain after update"    sh -c "test -f '$TARGET/schemas/fleet-inventory.schema.json' && test -f '$TARGET/schemas/mission-fleet.schema.json'"
-check "execution spec schema remains after update" test -f "$TARGET/schemas/execution-spec.schema.json"
+check "execution schemas remain after update" sh -c "test -f '$TARGET/schemas/execution-spec.schema.json' && test -f '$TARGET/schemas/execution-receipt.schema.json'"
+check "execution receipt lifecycle remains after update" sh -c "test -f '$TARGET/scripts/execution_receipt.py' && test -f '$TARGET/scripts/execution_runner.py'"
 check "MODEL_ROUTING under docs/missions" test -f "$TARGET/docs/missions/MODEL_ROUTING.md"
 check "instance mission folder preserved" test -f "$TARGET/docs/missions/20990101-fixture/KEEP.md"
 check "instance GOAL preserved" test -f "$TARGET/docs/missions/20990101-fixture/GOAL.md"

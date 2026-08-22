@@ -21,14 +21,15 @@ class WrapperIntegration(unittest.TestCase):
         self.root = self.parent / "repo"
         self.root.mkdir()
         (self.root / "scripts").mkdir()
-        for name in ("execution_spec.py", "execute_provider.py", "fleet_state.py", "dispatch_policy.py",
-                     "spawn-worker.sh", "spawn-brain.sh", "write-receipt.sh"):
+        for name in ("execution_spec.py", "execution_receipt.py", "execution_runner.py",
+                     "execute_provider.py", "fleet_state.py", "dispatch_policy.py",
+                     "spawn-worker.sh", "spawn-brain.sh", "verify-mission.sh", "write-receipt.sh"):
             shutil.copy2(ROOT / "scripts" / name, self.root / "scripts" / name)
         self.task = self.root / "docs/missions/fixture/tasks/T-001.md"
         self.task.parent.mkdir(parents=True)
         self.mission = self.task.parent.parent
-        self.task.write_text("---\ntask_id: T-001\nfeature: F001\n---\n# Task\n")
-        (self.task.parent / "T-002.md").write_text("---\ntask_id: T-002\nfeature: F002\n---\n# Task\n")
+        self.task.write_text("---\ntask_id: T-001\nfeature: F001\n---\n# Task\n\n## Files you MAY touch\n- `allowed.txt`\n- `docs/missions/fixture/PROGRESS.md`\n")
+        (self.task.parent / "T-002.md").write_text("---\ntask_id: T-002\nfeature: F002\n---\n# Task\n\n## Files you MAY touch\n- `allowed.txt`\n- `docs/missions/fixture/PROGRESS.md`\n")
         (self.mission / "GOAL.md").write_text("---\nstatus: in-progress\n---\n# Goal\n")
         (self.mission / "features.json").write_text(json.dumps({
             "goal": "fixture",
@@ -58,10 +59,26 @@ pathlib.Path('.tasks/invoked.json').write_text(json.dumps({
     'lock_existed': pathlib.Path(os.environ.get('PURRFECT_DISPATCH_LOCK_PATH', '')).is_dir(),
     'pid': os.getpid(),
 }))
+child_path = os.environ.get('PROVIDER_CHILD_PID_PATH')
+if child_path:
+    import subprocess
+    child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+    pathlib.Path(child_path).write_text(str(child.pid))
 wait_for = os.environ.get('PROVIDER_WAIT_FOR')
 if wait_for:
     while not pathlib.Path(wait_for).exists():
         time.sleep(0.02)
+action = os.environ.get('PROVIDER_ACTION', 'noop')
+if action in ('dirty', 'commit', 'mixed'):
+    pathlib.Path('allowed.txt').write_text(f'allowed change {time.time_ns()}\\n')
+if action == 'outside':
+    pathlib.Path('outside.txt').write_text('outside change\\n')
+if action in ('commit', 'mixed'):
+    import subprocess
+    subprocess.run(['git', 'add', 'allowed.txt'], check=True)
+    subprocess.run(['git', 'commit', '-qm', 'provider change'], check=True)
+if action == 'mixed':
+    pathlib.Path('allowed.txt').write_text(f'dirty after commit {time.time_ns()}\\n')
 raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
 '''
         for provider in PROVIDERS:
@@ -78,6 +95,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
     def invoke(self, args, *, env=None):
         launch_env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
                           PYTHONDONTWRITEBYTECODE="1", SPAWN_WORKER_TIMEOUT_SECS="0",
+                          SPAWN_BRAIN_TIMEOUT_SECS="0",
                           EMPTY_OVERRIDE_SENTINEL="retained")
         if env:
             launch_env.update(env)
@@ -95,7 +113,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         (self.mission / "GOAL.md").write_text(f"---\nstatus: {status}\n---\n# Goal\n")
         self.commit_fixture(f"status {status}")
 
-    def write_fleet(self, provider, model, effort, speed, *, tier=None, mission_path="docs/missions/fixture", approved=True, seat_name=None):
+    def write_fleet(self, provider, model, effort, speed, *, tier=None, mission_path="docs/missions/fixture", approved=True, seat_name=None, include_brain=False):
         tier = tier or ("premium" if provider == "agent" else "economy")
         seat_name = seat_name or ({"agent": "cursor"}.get(provider, provider) + f".{tier}")
         family = {
@@ -111,14 +129,18 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             "claude": {"efforts": ["low", "medium", "high", "xhigh", "max"], "speeds": ["unknown"]},
         }[provider]
         source = "alias" if provider == "claude" else "observed"
+        seat = {"provider": provider, "model": model, "family": family,
+                "effort": effort, "speed": speed, "health": "healthy",
+                "source": source, "capabilities": capabilities}
+        seats = {seat_name: seat}
+        if include_brain:
+            seats["brain"] = dict(seat)
         doc = {
             "schema_version": 1,
             "mission": {"path": mission_path},
             "inventory": {"sha256": "0" * 64, "probed_at": "2026-08-21T00:00:00Z"},
             "approval": {"status": "approved" if approved else "draft", "approved_by": "human", "approved_at": "2026-08-21T00:00:00Z"},
-            "seats": {seat_name: {"provider": provider, "model": model, "family": family,
-                                   "effort": effort, "speed": speed, "health": "healthy",
-                                   "source": source, "capabilities": capabilities}},
+            "seats": seats,
         }
         fleet = self.mission / "fleet.json"
         if fleet.exists():
@@ -153,18 +175,6 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         return ("Read docs/missions/fixture/tasks/T-001.md and complete it exactly. Follow AGENTS.md and the skills "
                 "the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder.")
 
-    def prompt_brain(self, action="review"):
-        return f'''You are the mission BRAIN for docs/missions/fixture.
-Action: {action}
-Follow docs/missions/ORCHESTRATION.md, docs/missions/MODEL_ROUTING.md, and the matching skill (mission-init or dispatch-worker review).
-Read AGENTS.md. Work in the mission folder (GOAL.md, features.json, PROGRESS.md, tasks/).
-mission-init: ensure GOAL/features/PROGRESS/tasks/T-001 exist from docs/missions/templates/; status stays draft until GATE 0.
-gate0: present feature list + fleet-inventory map; do not dispatch workers.
-review: judge git diff by effects only; do not re-implement worker scope.
-Append PROGRESS.md pointing at brain log .tasks/logs/brain-{action}-{{timestamp}}.log.
-Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
-            f".tasks/logs/brain-{action}-{{timestamp}}.log", "")
-
     def expected_argv(self, provider, model, effort, speed, prompt):
         repo = self.physical_root
         if provider == "codex":
@@ -182,6 +192,8 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
         self.assertEqual(len(receipts), 1)
         raw = specs[0].read_bytes()
         spec, receipt = json.loads(raw), json.loads(receipts[0].read_text())
+        self.assertEqual(specs[0].stat().st_mode & 0o777, 0o400)
+        self.assertEqual(receipts[0].stat().st_mode & 0o777, 0o400)
         self.assertRegex(spec["run_id"], r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
         self.assertEqual(receipt["run_id"], spec["run_id"])
         self.assertEqual(Path(receipt["execution_spec_path"]).resolve(), specs[0].resolve())
@@ -190,8 +202,16 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
                          {"role": role, "provider": provider, "model": model, "effort": effort, "speed": speed,
                           "work_unit": work_unit, "feature": feature})
         self.assertEqual(receipt["requested_configuration"], {k: spec[k] for k in ("provider", "model", "effort", "speed")})
-        self.assertEqual(receipt["resolved_configuration"]["env_overrides"], {})
+        self.assertEqual(receipt["resolved_configuration"]["env_override_keys"], [])
+        self.assertRegex(receipt["resolved_configuration"]["argv_sha256"], r"^[0-9a-f]{64}$")
         self.assertEqual(receipt["observed_configuration"], {"model": "unknown", "effort": "unknown", "speed": "unknown"})
+        self.assertEqual(receipt["outcome"], "completed")
+        self.assertEqual(receipt["exit_code"], 0)
+        self.assertFalse(receipt["workspace_changed"])
+        self.assertEqual(receipt["scope"]["result"], "pass")
+        self.assertEqual(spec["schema_version"], 2)
+        self.assertEqual(receipt["log_path"], f".tasks/logs/{spec['run_id']}.log")
+        self.assertNotIn(spec["prompt"], json.dumps(receipt))
         invoked = json.loads((self.root / ".tasks/invoked.json").read_text())
         self.assertTrue(invoked["spec_existed"])
         self.assertTrue(invoked["lock_existed"])
@@ -248,14 +268,14 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
         self.write_fleet("codex", "model", "medium", "unknown")
         result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--model", "model", "--feature", "F001"])
         self.assertEqual(result.returncode, 0, result.stderr)
-        spec, path, _, _ = self.linked(role="worker", provider="codex", model="model", effort="medium", speed="unknown", work_unit="T-001", feature="F001")
+        spec, path, receipt, _ = self.linked(role="worker", provider="codex", model="model", effort="medium", speed="unknown", work_unit="T-001", feature="F001")
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         original = path.read_bytes()
         # Duplicate IDs are no-clobber, while a fresh construct necessarily has a new UUID.
         source = self.root / "same.json"; source.write_bytes(original)
         duplicate = self.invoke([sys.executable, "scripts/execution_spec.py", "persist", "--input", str(source)])
         self.assertNotEqual(duplicate.returncode, 0); self.assertEqual(path.read_bytes(), original)
-        fresh = self.invoke([sys.executable, "scripts/execution_spec.py", "construct", "--role", "worker", "--mission", "docs/missions/fixture", "--feature", "F001", "--work-unit", "other", "--attempt", "1", "--provider", "codex", "--model", "model", "--effort", "medium", "--speed", "unknown", "--repo", self.physical_root, "--prompt", "fresh"])
+        fresh = self.invoke([sys.executable, "scripts/execution_spec.py", "construct", "--role", "worker", "--mission", "docs/missions/fixture", "--feature", "F001", "--work-unit", "other", "--attempt", "1", "--provider", "codex", "--model", "model", "--effort", "medium", "--speed", "unknown", "--repo", self.physical_root, "--prompt", "fresh", "--write-scope-json", '["allowed.txt"]'])
         self.assertEqual(fresh.returncode, 0, fresh.stderr); self.assertNotEqual(json.loads(fresh.stdout)["run_id"], spec["run_id"])
         (self.root / ".tasks/invoked.json").unlink()
         os.chmod(path, 0o600)
@@ -267,42 +287,207 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
         launch = self.invoke([sys.executable, "scripts/execute_provider.py", "--spec", str(path), "--sha256", digest])
         self.assertNotEqual(launch.returncode, 0); self.assertFalse((self.root / ".tasks/invoked.json").exists())
         path.write_bytes(original)
-        base = ["bash", "scripts/write-receipt.sh", "--role", "worker", "--cli", "codex", "--model", "model", "--mission", "docs/missions/fixture", "--action", "task-T-001", "--work-unit", "T-001", "--exit", "0", "--log", ".tasks/logs/x.log"]
-        trio = ["--run-id", spec["run_id"], "--spec", str(path), "--spec-sha256", digest]
-        for label, extra in {
-            "partial": ["--run-id", spec["run_id"]], "run_id": ["--run-id", "00000000-0000-4000-8000-000000000001", "--spec", str(path), "--spec-sha256", digest],
-            "path": ["--run-id", spec["run_id"], "--spec", str(path.parent / "wrong.json"), "--spec-sha256", digest],
-            "hash": ["--run-id", spec["run_id"], "--spec", str(path), "--spec-sha256", "0" * 64],
-            "role": ["--run-id", spec["run_id"], "--spec", str(path), "--spec-sha256", digest, "--role", "brain"],
-            "mission": ["--run-id", spec["run_id"], "--spec", str(path), "--spec-sha256", digest, "--mission", "wrong"],
-            "work": ["--run-id", spec["run_id"], "--spec", str(path), "--spec-sha256", digest, "--work-unit", "wrong"],
-            "provider": ["--run-id", spec["run_id"], "--spec", str(path), "--spec-sha256", digest, "--cli", "claude"],
-            "model": ["--run-id", spec["run_id"], "--spec", str(path), "--spec-sha256", digest, "--model", "wrong"],
-        }.items():
-            command = base + extra if label == "partial" else base + trio + extra
-            with self.subTest(receipt=label): self.assertNotEqual(self.invoke(command).returncode, 0)
-        path.write_text(json.dumps(spec, indent=2) + "\n")
-        self.assertNotEqual(self.invoke(base + trio).returncode, 0)
+        receipt_path = self.root / ".tasks/receipts" / f"{spec['run_id']}.json"
+        receipt_raw = receipt_path.read_bytes()
+        validate = [sys.executable, "scripts/execution_receipt.py", "validate", "--receipt", str(receipt_path)]
+        self.assertEqual(self.invoke(validate).returncode, 0)
+        log_path = self.root / receipt["log_path"]
+        log_raw = log_path.read_bytes()
+        log_path.unlink()
+        self.assertNotEqual(self.invoke(validate).returncode, 0)
+        log_path.write_bytes(log_raw)
+        receipt_path.chmod(0o600)
+        wrong_hash = dict(receipt); wrong_hash["execution_spec_sha256"] = "0" * 64
+        receipt_path.write_text(json.dumps(wrong_hash, sort_keys=True, separators=(",", ":")) + "\n")
+        self.assertNotEqual(self.invoke(validate).returncode, 0)
+        receipt_path.write_text("{malformed\n")
+        self.assertNotEqual(self.invoke(validate).returncode, 0)
+        receipt_path.write_bytes(receipt_raw)
+
+    def test_terminal_outcomes_uuid_identity_and_git_evidence(self):
+        self.write_fleet("codex", "model", "medium", "unknown")
+        base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                "--model", "model", "--feature", "F001"]
+
+        for _ in range(2):
+            result = self.invoke(base)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        result = self.invoke(base, env={"PROVIDER_EXIT": "7"})
+        self.assertEqual(result.returncode, 7, result.stderr + result.stdout)
+        result = self.invoke(base, env={"PROVIDER_WAIT_FOR": str(self.parent / "never"),
+                                        "SPAWN_WORKER_TIMEOUT_SECS": "0.15"})
+        self.assertEqual(result.returncode, 124, result.stderr + result.stdout)
+
+        codex = self.bin / "codex"
+        stub = codex.read_bytes()
+        codex.unlink()
+        result = self.invoke(base, env={"PATH": "/usr/bin:/bin"})
+        self.assertEqual(result.returncode, 127, result.stderr + result.stdout)
+        codex.write_bytes(stub); codex.chmod(0o755)
+
+        result = self.invoke(base, env={"PROVIDER_ACTION": "commit"})
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        result = self.invoke(base, env={"PROVIDER_ACTION": "dirty"})
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        head_value = self.git("show", "HEAD:allowed.txt").stdout
+        (self.root / "allowed.txt").write_text(head_value)
+        result = self.invoke(base, env={"PROVIDER_ACTION": "mixed"})
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
+        paths = sorted((self.root / ".tasks/receipts").glob("*.json"))
+        self.assertEqual(len(paths), 8)
+        self.assertEqual(len({path.stem for path in paths}), 8)
+        docs = [json.loads(path.read_text()) for path in paths]
+        outcomes = [doc["outcome"] for doc in docs]
+        self.assertEqual(outcomes.count("completed"), 5)
+        self.assertEqual(outcomes.count("failed"), 1)
+        self.assertEqual(outcomes.count("timed_out"), 1)
+        self.assertEqual(outcomes.count("launch_failed"), 1)
+        for path, doc in zip(paths, docs):
+            self.assertEqual(path.stem, doc["run_id"])
+            self.assertTrue((self.root / doc["log_path"]).is_file())
+            valid = self.invoke([sys.executable, "scripts/execution_receipt.py", "validate", "--receipt", str(path)])
+            self.assertEqual(valid.returncode, 0, valid.stderr)
+        noops = [doc for doc in docs if doc["outcome"] == "completed" and not doc["workspace_changed"]]
+        self.assertEqual(len(noops), 2)
+        committed = [doc for doc in docs if doc["commits"]]
+        dirty = [doc for doc in docs if doc["git_after"]["dirty_paths"]]
+        mixed = [doc for doc in docs if doc["commits"] and doc["git_after"]["dirty_paths"]]
+        self.assertEqual(len(committed), 2)
+        self.assertEqual(len(dirty), 2)
+        self.assertEqual(len(mixed), 1)
+        for doc in committed + dirty:
+            self.assertEqual(doc["changed_paths"], ["allowed.txt"])
+            self.assertTrue(doc["workspace_changed"])
+            self.assertEqual(doc["scope"]["result"], "pass")
+
+    def test_real_verifier_rejects_out_of_scope_noop_and_corrupt_evidence(self):
+        self.write_fleet("codex", "model", "medium", "unknown", include_brain=True)
+        legacy_dir = self.root / ".tasks/receipts"
+        legacy_dir.mkdir(parents=True)
+        (legacy_dir / "brain-waiver-20260822T000000Z.json").write_text(json.dumps({
+            "mission": "prefix/fixture", "role": "brain", "cli": "waiver", "exit": 0,
+        }) + "\n")
+        verify = ["bash", "scripts/verify-mission.sh", "docs/missions/fixture"]
+        legacy_only = self.invoke(verify)
+        self.assertNotEqual(legacy_only.returncode, 0)
+        self.assertIn("no completed", legacy_only.stdout + legacy_only.stderr)
+        brain = self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"])
+        self.assertEqual(brain.returncode, 0, brain.stderr + brain.stdout)
+        worker_args = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                       "--model", "model", "--feature", "F001"]
+
+        noop = self.invoke(worker_args)
+        self.assertEqual(noop.returncode, 0, noop.stderr + noop.stdout)
+        features = json.loads((self.mission / "features.json").read_text())
+        features["features"][0]["passes"] = True
+        (self.mission / "features.json").write_text(json.dumps(features, indent=2) + "\n")
+        self.git("add", "docs/missions/fixture/features.json")
+        self.git("commit", "-qm", "accept fixture feature")
+        result = self.invoke(verify)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no-op", result.stdout + result.stderr)
+
+        # Re-open the feature, dispatch an in-scope change, then accept it.
+        features["features"][0]["passes"] = False
+        (self.mission / "features.json").write_text(json.dumps(features, indent=2) + "\n")
+        self.git("add", "docs/missions/fixture/features.json")
+        self.git("commit", "-qm", "reopen fixture feature")
+        changed = self.invoke(worker_args, env={"PROVIDER_ACTION": "dirty"})
+        self.assertEqual(changed.returncode, 0, changed.stderr + changed.stdout)
+        features["features"][0]["passes"] = True
+        (self.mission / "features.json").write_text(json.dumps(features, indent=2) + "\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "accept changed fixture feature")
+        result = self.invoke(verify)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
+        worker_receipts = []
+        for path in (self.root / ".tasks/receipts").glob("*.json"):
+            doc = json.loads(path.read_text())
+            if doc["role"] == "worker" and doc["workspace_changed"]:
+                worker_receipts.append((path, doc))
+        self.assertEqual(len(worker_receipts), 1)
+        receipt_path, receipt = worker_receipts[0]
+        receipt_raw = receipt_path.read_bytes()
+        log_path = self.root / receipt["log_path"]
+        log_raw = log_path.read_bytes()
+
+        for label, mutate, restore in (
+            ("wrong hash", lambda: self._rewrite_receipt(receipt_path, receipt, execution_spec_sha256="0" * 64),
+             lambda: receipt_path.write_bytes(receipt_raw)),
+            ("missing log", lambda: log_path.unlink(), lambda: log_path.write_bytes(log_raw)),
+            ("malformed", lambda: receipt_path.write_text("{bad\n"), lambda: receipt_path.write_bytes(receipt_raw)),
+            ("null changed", lambda: self._rewrite_receipt(receipt_path, receipt, workspace_changed=None),
+             lambda: receipt_path.write_bytes(receipt_raw)),
+        ):
+            with self.subTest(evidence=label):
+                receipt_path.chmod(0o600)
+                mutate()
+                result = self.invoke(verify)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                restore()
+
+    @staticmethod
+    def _rewrite_receipt(path, receipt, **changes):
+        changed = dict(receipt)
+        changed.update(changes)
+        path.write_text(json.dumps(changed, sort_keys=True, separators=(",", ":")) + "\n")
+
+    def test_out_of_scope_write_is_terminal_evidence_but_fails_real_verification(self):
+        self.write_fleet("codex", "model", "medium", "unknown", include_brain=True)
+        brain = self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"])
+        self.assertEqual(brain.returncode, 0, brain.stderr + brain.stdout)
+        worker = self.invoke(
+            ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+             "--model", "model", "--feature", "F001"],
+            env={"PROVIDER_ACTION": "outside"},
+        )
+        self.assertEqual(worker.returncode, 0, worker.stderr + worker.stdout)
+        worker_receipt = [
+            json.loads(path.read_text()) for path in (self.root / ".tasks/receipts").glob("*.json")
+            if json.loads(path.read_text())["role"] == "worker"
+        ][0]
+        self.assertEqual(worker_receipt["scope"]["result"], "fail")
+        self.assertEqual(worker_receipt["scope"]["violations"], ["outside.txt"])
+        (self.root / "outside.txt").unlink()
+        features = json.loads((self.mission / "features.json").read_text())
+        features["features"][0]["passes"] = True
+        (self.mission / "features.json").write_text(json.dumps(features, indent=2) + "\n")
+        self.git("add", "docs/missions/fixture/features.json")
+        self.git("commit", "-qm", "accept out-of-scope fixture")
+        result = self.invoke(["bash", "scripts/verify-mission.sh", "docs/missions/fixture"])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("scope=fail", result.stdout + result.stderr)
 
     def test_mounted_bypass_proofs(self):
-        """The test's real wrapper mount detects either integration guard being removed."""
+        """Real wrapper mounts expose adapter and terminal-receipt bypass mutations."""
         self.write_fleet("codex", "test", "medium", "unknown")
-        worker = self.root / "scripts/spawn-worker.sh"
-        original_worker = worker.read_text()
-        worker.write_text(original_worker.replace('python3 "$ROOT/scripts/execute_provider.py"', 'true # adapter bypass', 1))
+        runner = self.root / "scripts/execution_runner.py"
+        original_runner = runner.read_text()
+        runner.write_text(original_runner.replace(
+            "argv, env_overrides = provider_contract(spec)",
+            "argv, env_overrides = ['true'], {}  # mounted adapter bypass",
+            1,
+        ))
         self.commit_fixture("adapter bypass mutation")
         result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--model", "test", "--feature", "F001"])
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertFalse((self.root / ".tasks/invoked.json").exists(), result.stderr + result.stdout)
-        worker.write_text(original_worker)
+        runner.write_text(original_runner)
         self.commit_fixture("restore provider adapter")
         self.clean_runs()
+
+        runner.write_text(original_runner.replace(
+            "    receipt = write_receipt(\n",
+            "    return exit_code  # mounted receipt-finalization bypass\n    receipt = write_receipt(\n",
+            1,
+        ))
+        self.commit_fixture("receipt bypass mutation")
         result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--model", "test", "--feature", "F001"])
-        self.assertEqual(result.returncode, 0); _, path, _, _ = self.linked(role="worker", provider="codex", model="test", effort="medium", speed="unknown", work_unit="T-001", feature="F001")
-        policy = self.root / "scripts/execution_spec.py"; original_policy = policy.read_text()
-        policy.write_text(original_policy.replace('if spec_sha256(raw) != digest:', 'if False:', 1))
-        bad = self.invoke(["bash", "scripts/write-receipt.sh", "--role", "worker", "--cli", "codex", "--model", "test", "--mission", "docs/missions/fixture", "--action", "task-T-001", "--work-unit", "T-001", "--exit", "0", "--log", ".tasks/logs/x.log", "--run-id", json.loads(path.read_text())["run_id"], "--spec", str(path), "--spec-sha256", "0" * 64])
-        self.assertEqual(bad.returncode, 0, bad.stderr)
-        policy.write_text(original_policy)
+        self.assertEqual(result.returncode, 125, result.stderr + result.stdout)
+        self.assertFalse(list((self.root / ".tasks/receipts").glob("*.json")))
+        runner.write_text(original_runner)
 
     def test_worker_dispatch_gate_rejects_lifecycle_location_identity_dirty_and_cross_repo(self):
         base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
@@ -330,6 +515,15 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
         self.task.write_text(original_task)
         self.commit_fixture("restore task identity")
 
+        self.task.write_text(original_task.split("\n## Files you MAY touch", 1)[0] + "\n")
+        self.commit_fixture("missing task scope")
+        self.assert_worker_rejected(base)
+        self.task.write_text(original_task.replace("- `allowed.txt`", "- allowed.txt"))
+        self.commit_fixture("malformed task scope")
+        self.assert_worker_rejected(base)
+        self.task.write_text(original_task)
+        self.commit_fixture("restore task scope")
+
         features = self.mission / "features.json"
         original_features = features.read_text()
         changed = json.loads(original_features)
@@ -349,6 +543,22 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
         external.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=external, check=True)
         self.assert_worker_rejected(base + ["--repo", str(external)])
+
+    def test_execution_artifact_directories_cannot_escape_through_symlinks(self):
+        self.write_fleet("codex", "test", "medium", "unknown")
+        escaped = self.parent / "escaped-artifacts"
+        escaped.mkdir()
+        (self.root / ".tasks").symlink_to(escaped, target_is_directory=True)
+        result = self.invoke([
+            "bash", "scripts/spawn-worker.sh", "codex",
+            "docs/missions/fixture/tasks/T-001.md", "--model", "test", "--feature", "F001",
+        ])
+        self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertFalse((escaped / "specs").exists())
+        self.assertFalse((escaped / "logs").exists())
+        self.assertFalse((escaped / "receipts").exists())
+        self.assertFalse((self.root / ".tasks/invoked.json").exists())
+        (self.root / ".tasks").unlink()
 
     def test_brain_role_policy_allows_only_draft_intake_and_frozen_review(self):
         self.set_status("draft")
@@ -386,14 +596,15 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
         self.write_fleet("codex", "test", "medium", "unknown")
         base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
                 "--model", "test", "--feature", "F001"]
-        receipt_script = self.root / "scripts/write-receipt.sh"
+        receipt_script = self.root / "scripts/execution_receipt.py"
         original_receipt = receipt_script.read_text()
-        mounted_check = '''set -euo pipefail
-[ -n "${PURRFECT_DISPATCH_LOCK_PATH:-}" ]
-[ -d "$PURRFECT_DISPATCH_LOCK_PATH" ]
-touch .tasks/receipt-saw-lock
+        mounted_check = '''def write_receipt(**kwargs):
+    lock = Path(os.environ.get("PURRFECT_DISPATCH_LOCK_PATH", ""))
+    if not lock.is_dir():
+        raise ReceiptError("workspace lock missing during receipt finalization")
+    Path(kwargs["spec_path"]).parents[1].joinpath("receipt-saw-lock").touch()
 '''
-        receipt_script.write_text(original_receipt.replace("set -euo pipefail\n", mounted_check, 1))
+        receipt_script.write_text(original_receipt.replace("def write_receipt(**kwargs):\n", mounted_check, 1))
         self.commit_fixture("instrument receipt lock")
         result = self.invoke(base)
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
@@ -405,7 +616,9 @@ touch .tasks/receipt-saw-lock
 
         result = self.invoke(base, env={"PROVIDER_EXIT": "7"})
         self.assertEqual(result.returncode, 7, result.stderr + result.stdout)
-        self.assertTrue(list((self.root / ".tasks/receipts").glob("worker-*.json")))
+        failed_receipts = list((self.root / ".tasks/receipts").glob("*.json"))
+        self.assertEqual(len(failed_receipts), 1)
+        self.assertEqual(json.loads(failed_receipts[0].read_text())["outcome"], "failed")
         self.assert_no_lock()
         self.clean_runs()
 
@@ -434,32 +647,42 @@ touch .tasks/receipt-saw-lock
 
         self.clean_runs()
         never_release = self.parent / "never-release-provider"
+        child_pid_path = self.parent / "provider-child-pid"
         launch_env["PROVIDER_WAIT_FOR"] = str(never_release)
+        launch_env["PROVIDER_CHILD_PID_PATH"] = str(child_pid_path)
         interrupted = subprocess.Popen(base, cwd=self.root, env=launch_env, text=True,
                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         deadline = time.time() + 5
-        while not invoked.exists() and time.time() < deadline:
+        while (not invoked.exists() or not child_pid_path.exists()) and time.time() < deadline:
             time.sleep(0.02)
         self.assertTrue(invoked.exists(), "interrupted provider did not start")
+        self.assertTrue(child_pid_path.exists(), "provider child did not start")
         provider_pid = json.loads(invoked.read_text())["pid"]
+        child_pid = int(child_pid_path.read_text())
         interrupted.terminate()
         interrupted.communicate(timeout=5)
         self.assertNotEqual(interrupted.returncode, 0)
+        interrupted_receipts = list((self.root / ".tasks/receipts").glob("*.json"))
+        self.assertEqual(len(interrupted_receipts), 1)
+        self.assertEqual(json.loads(interrupted_receipts[0].read_text())["outcome"], "interrupted")
         self.assert_no_lock()
         with self.assertRaises(ProcessLookupError):
             os.kill(provider_pid, 0)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(child_pid, 0)
 
     def test_both_real_wrappers_mount_the_dispatch_policy(self):
         self.write_fleet("codex", "test", "medium", "unknown")
         self.set_status("draft")
         worker = self.root / "scripts/spawn-worker.sh"
         original_worker = worker.read_text()
-        worker_gate = '''PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-worker \\
+        worker_gate = '''POLICY_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-worker \\
   --root "$ROOT" --workspace "$WORKSPACE" --mission "$MISSION" --fleet "$FLEET" \\
-  --task "$TASK_ABS" --feature "$FEATURE" --work-unit "$BASE"
+  --task "$TASK_ABS" --feature "$FEATURE" --work-unit "$BASE")" || exit $?
 '''
         self.assertIn(worker_gate, original_worker)
-        worker.write_text(original_worker.replace(worker_gate, ":\n", 1))
+        worker.write_text(original_worker.replace(worker_gate, "POLICY_JSON='{\"write_scope\":[\"allowed.txt\"]}'\n", 1))
+        self.commit_fixture("worker gate bypass mutation")
         result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
                               "--model", "test", "--feature", "F001"])
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
@@ -471,11 +694,12 @@ touch .tasks/receipt-saw-lock
         self.set_status("done")
         brain = self.root / "scripts/spawn-brain.sh"
         original_brain = brain.read_text()
-        brain_gate = '''PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-brain \\
-  --root "$ROOT" --workspace "$WORKSPACE" --mission "$MISSION" --fleet "$FLEET" --action "$ACTION"
+        brain_gate = '''POLICY_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-brain \\
+  --root "$ROOT" --workspace "$WORKSPACE" --mission "$MISSION" --fleet "$FLEET" --action "$ACTION")" || exit $?
 '''
         self.assertIn(brain_gate, original_brain)
-        brain.write_text(original_brain.replace(brain_gate, ":\n", 1))
+        brain.write_text(original_brain.replace(brain_gate, "POLICY_JSON='{\"write_scope\":[\"docs/missions/fixture/PROGRESS.md\"]}'\n", 1))
+        self.commit_fixture("brain gate bypass mutation")
         result = self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"])
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertTrue((self.root / ".tasks/invoked.json").exists())
