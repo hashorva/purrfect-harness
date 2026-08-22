@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-22 — GPT-5.6 Sol/high — F002 approved fleet frozen
+
+- **Artifact:** Created `docs/missions/20260821-execution-truth/fleet.json` only through the reviewed freeze command, approved by Zamir at `2026-08-22T05:52:55Z`. It binds the exact current inventory bytes `5d6b052eab152afbc8f121a8bc11403f1e0e74fb75b0d1a49a74cead759320c8` and has exact fleet-file SHA-256 `925564b2d1ec15c5a555128feab498b458354e38ed3fdc7f0e80a3addf562ce5`.
+- **Approved map:** Brain is healthy observed `gpt-5.6-sol` / high. Codex premium/economy are healthy observed `gpt-5.6-terra` / `gpt-5.6-luna`; Claude premium/economy are healthy aliases `sonnet` / `haiku`; Cursor and agy seats retain the Gate-0 models as explicitly degraded fallbacks. Worker effort is medium; agent speed is standard and other worker speeds are unknown.
+- **Immutability proof:** Validator passes; file mode is `0444`; a second real freeze exits 1 with `refusing to overwrite existing` and the exact file hash remains unchanged.
+- **Inventory migration:** Preserved the pre-schema machine inventory as ignored `.tasks/fleet-inventory.legacy-20260821.json`; the new mutable inventory records current agent/agy probe failures separately and does not affect frozen resolution.
+- **Acceptance boundary:** This is authorization/fleet state, not feature acceptance. F002 remains false until F005 produces a matching VerificationRecord and the orchestrator separately records acceptance.
+
 ## 2026-08-22 — GPT-5.6 Sol/high — T-007 review — PASS
 
 - **Frozen authority:** The real worker wrapper no longer generates, reads, or falls back through `.tasks/fleet-inventory.json`. Provider+tier maps to one approved mission `fleet.json` seat; provider/model/effort/speed and embedded mission path are equality assertions before ExecutionSpec persistence, and the resolved frozen model is the model authorized in the spec.
