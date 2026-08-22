@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-22 — Human override — T-006-R2 APPROVED
+
+- **Verdict:** Approved one final mechanical correction after the T-006-R1 review STOP.
+- **Scope:** Restore the exact pre-T-006 chooser, mount the three missed chooser counterexamples through emitted public inventory state, and replace the accidental Claude/alias biconditional with one-way provenance implications plus valid degraded-Claude regressions.
+- **Boundary:** Preserve all reviewed R1 policy and schemas. Do not wire dispatch, create `fleet.json`, edit feature state, or begin F003. F002 remains false pending T-007 and F005 acceptance.
+- **Fleet:** One attempt on approved Codex premium `gpt-5.6-terra`, effort `medium`, speed `unknown`.
+
 ## 2026-08-21 — GPT-5.6 Sol/high — T-006-R1 review — FAIL / STOP
 
 - **Receipt/spec truth:** Receipt `.tasks/receipts/worker-task-T-006-R1-20260821T213315Z.json` links successful run `c86e1868-9ac3-44e4-8d22-71f9b6ae4956` to immutable read-only spec bytes with exact SHA-256 `dd48b84d8a242c5d5c13b6b2d07f92827006ed3527d085b41940b7a8d9737ffb`, T-006-R1/F002, attempt 3, and the approved Terra/medium/unknown configuration. The worker stayed inside the five-file allow-list.
