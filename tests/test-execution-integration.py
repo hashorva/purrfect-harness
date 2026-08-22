@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,13 +21,23 @@ class WrapperIntegration(unittest.TestCase):
         self.root = self.parent / "repo"
         self.root.mkdir()
         (self.root / "scripts").mkdir()
-        for name in ("execution_spec.py", "execute_provider.py", "fleet_state.py", "spawn-worker.sh", "spawn-brain.sh", "write-receipt.sh"):
+        for name in ("execution_spec.py", "execute_provider.py", "fleet_state.py", "dispatch_policy.py",
+                     "spawn-worker.sh", "spawn-brain.sh", "write-receipt.sh"):
             shutil.copy2(ROOT / "scripts" / name, self.root / "scripts" / name)
         self.task = self.root / "docs/missions/fixture/tasks/T-001.md"
         self.task.parent.mkdir(parents=True)
-        self.task.write_text("task\n")
         self.mission = self.task.parent.parent
-        (self.mission / "GOAL.md").write_text("goal\n")
+        self.task.write_text("---\ntask_id: T-001\nfeature: F001\n---\n# Task\n")
+        (self.task.parent / "T-002.md").write_text("---\ntask_id: T-002\nfeature: F002\n---\n# Task\n")
+        (self.mission / "GOAL.md").write_text("---\nstatus: in-progress\n---\n# Goal\n")
+        (self.mission / "features.json").write_text(json.dumps({
+            "goal": "fixture",
+            "features": [
+                {"id": "F001", "description": "one", "bootstrap": False, "steps": [], "passes": False, "priority": 1},
+                {"id": "F002", "description": "two", "bootstrap": False, "steps": [], "passes": False, "priority": 2},
+            ],
+        }, indent=2) + "\n")
+        (self.root / ".gitignore").write_text(".tasks/\nbin/\nsame.json\n")
         self.git("init", "-q")
         self.git("config", "user.email", "t@example.invalid")
         self.git("config", "user.name", "t")
@@ -37,14 +48,21 @@ class WrapperIntegration(unittest.TestCase):
         self.bin = self.root / "bin"
         self.bin.mkdir()
         stub = '''#!/usr/bin/env python3
-import json, pathlib, sys
+import json, os, pathlib, sys, time
 specs = list(pathlib.Path('.tasks/specs').glob('*.json'))
 if not specs:
     raise SystemExit('provider invoked before spec persistence')
 pathlib.Path('.tasks/invoked.json').write_text(json.dumps({
     'provider': pathlib.Path(sys.argv[0]).name,
     'argv': sys.argv[1:], 'spec_existed': True,
+    'lock_existed': pathlib.Path(os.environ.get('PURRFECT_DISPATCH_LOCK_PATH', '')).is_dir(),
+    'pid': os.getpid(),
 }))
+wait_for = os.environ.get('PROVIDER_WAIT_FOR')
+if wait_for:
+    while not pathlib.Path(wait_for).exists():
+        time.sleep(0.02)
+raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
 '''
         for provider in PROVIDERS:
             path = self.bin / provider
@@ -67,6 +85,15 @@ pathlib.Path('.tasks/invoked.json').write_text(json.dumps({
 
     def clean_runs(self):
         shutil.rmtree(self.root / ".tasks", ignore_errors=True)
+
+    def commit_fixture(self, message="fixture state"):
+        self.git("add", "-A")
+        if self.git("status", "--porcelain").stdout:
+            self.git("commit", "--amend", "-qm", message)
+
+    def set_status(self, status):
+        (self.mission / "GOAL.md").write_text(f"---\nstatus: {status}\n---\n# Goal\n")
+        self.commit_fixture(f"status {status}")
 
     def write_fleet(self, provider, model, effort, speed, *, tier=None, mission_path="docs/missions/fixture", approved=True, seat_name=None):
         tier = tier or ("premium" if provider == "agent" else "economy")
@@ -98,6 +125,7 @@ pathlib.Path('.tasks/invoked.json').write_text(json.dumps({
             fleet.chmod(0o644)
         fleet.write_text(json.dumps(doc, sort_keys=True, separators=(",", ":")) + "\n")
         fleet.chmod(0o444)
+        self.commit_fixture("frozen fleet")
         return doc
 
     def assert_worker_rejected(self, args):
@@ -105,7 +133,20 @@ pathlib.Path('.tasks/invoked.json').write_text(json.dumps({
         self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertFalse((self.root / ".tasks/invoked.json").exists())
         self.assertFalse(list((self.root / ".tasks/specs").glob("*.json")) if (self.root / ".tasks/specs").exists() else [])
+        self.assertFalse(list((self.root / ".tasks/locks").glob("*.lock")) if (self.root / ".tasks/locks").exists() else [])
         self.clean_runs()
+
+    def assert_brain_rejected(self, args):
+        result = self.invoke(args)
+        self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertFalse((self.root / ".tasks/invoked.json").exists())
+        self.assertFalse(list((self.root / ".tasks/specs").glob("*.json")) if (self.root / ".tasks/specs").exists() else [])
+        self.assertFalse(list((self.root / ".tasks/locks").glob("*.lock")) if (self.root / ".tasks/locks").exists() else [])
+        self.clean_runs()
+
+    def assert_no_lock(self):
+        locks = self.root / ".tasks/locks"
+        self.assertFalse(list(locks.glob("*.lock")) if locks.exists() else [])
 
     @staticmethod
     def prompt_worker():
@@ -153,6 +194,7 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
         self.assertEqual(receipt["observed_configuration"], {"model": "unknown", "effort": "unknown", "speed": "unknown"})
         invoked = json.loads((self.root / ".tasks/invoked.json").read_text())
         self.assertTrue(invoked["spec_existed"])
+        self.assertTrue(invoked["lock_existed"])
         self.assertEqual(invoked["provider"], provider)
         return spec, specs[0], receipt, invoked
 
@@ -162,8 +204,8 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
                 with self.subTest(role=role, provider=provider):
                     model = f"{provider}-model"
                     speed = "fast" if provider == "agent" else "unknown"
-                    if role == "worker":
-                        self.write_fleet(provider, model, "high", speed)
+                    self.write_fleet(provider, model, "high", speed,
+                                     seat_name="brain" if role == "brain" else None)
                     args = (["bash", "scripts/spawn-worker.sh", provider, "docs/missions/fixture/tasks/T-001.md", "--provider", provider,
                              "--model", model, "--effort", "high", "--speed", speed, "--attempt", "2", "--feature", "F001"]
                             if role == "worker" else
@@ -181,6 +223,7 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
                     self.clean_runs()
 
     def test_sol_brain_and_unsupported_configs_fail_before_sentinel(self):
+        self.write_fleet("codex", "gpt-5.6-sol", "high", "unknown", seat_name="brain")
         result = self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review", "--provider", "codex",
                               "--model", "gpt-5.6-sol", "--effort", "high", "--speed", "unknown"])
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -191,8 +234,8 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
             for provider in PROVIDERS:
                 with self.subTest(role=role, provider=provider):
                     bad = ["--effort", "max"] if provider == "agent" else ["--speed", "fast"]
-                    if role == "worker":
-                        self.write_fleet(provider, "test", "medium", "standard" if provider == "agent" else "unknown")
+                    self.write_fleet(provider, "test", "medium", "standard" if provider == "agent" else "unknown",
+                                     seat_name="brain" if role == "brain" else None)
                     args = (["bash", "scripts/spawn-worker.sh", provider, "docs/missions/fixture/tasks/T-001.md", "--model", "test", "--feature", "F001", *bad]
                             if role == "worker" else
                             ["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review", "--provider", provider, "--model", "test", *bad])
@@ -247,9 +290,11 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
         worker = self.root / "scripts/spawn-worker.sh"
         original_worker = worker.read_text()
         worker.write_text(original_worker.replace('python3 "$ROOT/scripts/execute_provider.py"', 'true # adapter bypass', 1))
+        self.commit_fixture("adapter bypass mutation")
         result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--model", "test", "--feature", "F001"])
         self.assertFalse((self.root / ".tasks/invoked.json").exists(), result.stderr + result.stdout)
         worker.write_text(original_worker)
+        self.commit_fixture("restore provider adapter")
         self.clean_runs()
         result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--model", "test", "--feature", "F001"])
         self.assertEqual(result.returncode, 0); _, path, _, _ = self.linked(role="worker", provider="codex", model="test", effort="medium", speed="unknown", work_unit="T-001", feature="F001")
@@ -259,12 +304,190 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
         self.assertEqual(bad.returncode, 0, bad.stderr)
         policy.write_text(original_policy)
 
+    def test_worker_dispatch_gate_rejects_lifecycle_location_identity_dirty_and_cross_repo(self):
+        base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                "--model", "test", "--feature", "F001"]
+        self.write_fleet("codex", "test", "medium", "unknown")
+
+        for status in ("draft", "approved", "awaiting-gate", "done"):
+            with self.subTest(status=status):
+                self.set_status(status)
+                self.assert_worker_rejected(base)
+        self.set_status("in-progress")
+
+        outside = self.root / "outside.md"
+        outside.write_text("---\ntask_id: outside\nfeature: F001\n---\n")
+        self.commit_fixture("outside task")
+        self.assert_worker_rejected(["bash", "scripts/spawn-worker.sh", "codex", "outside.md",
+                                     "--model", "test", "--feature", "F001"])
+        self.assert_worker_rejected(base[:-1] + ["F002"])
+        self.assert_worker_rejected(base[:-2])
+
+        original_task = self.task.read_text()
+        self.task.write_text(original_task.replace("task_id: T-001", "task_id: T-999"))
+        self.commit_fixture("mismatched task identity")
+        self.assert_worker_rejected(base)
+        self.task.write_text(original_task)
+        self.commit_fixture("restore task identity")
+
+        features = self.mission / "features.json"
+        original_features = features.read_text()
+        changed = json.loads(original_features)
+        changed["features"][0]["passes"] = True
+        features.write_text(json.dumps(changed, indent=2) + "\n")
+        self.commit_fixture("accepted feature")
+        self.assert_worker_rejected(base)
+        features.write_text(original_features)
+        self.commit_fixture("restore pending feature")
+
+        dirty = self.root / "dirty.txt"
+        dirty.write_text("dirty\n")
+        self.assert_worker_rejected(base)
+        dirty.unlink()
+
+        external = self.parent / "external"
+        external.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=external, check=True)
+        self.assert_worker_rejected(base + ["--repo", str(external)])
+
+    def test_brain_role_policy_allows_only_draft_intake_and_frozen_review(self):
+        self.set_status("draft")
+        for action in ("mission-init", "gate0"):
+            result = self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", action,
+                                  "--provider", "codex", "--model", "draft-model",
+                                  "--effort", "high", "--speed", "unknown"])
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.linked(role="brain", provider="codex", model="draft-model", effort="high", speed="unknown",
+                        work_unit=action, feature=None)
+            self.assert_no_lock()
+            self.clean_runs()
+        self.assert_brain_rejected(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review",
+                                    "--provider", "codex", "--model", "review-model",
+                                    "--effort", "high", "--speed", "unknown"])
+
+        self.set_status("in-progress")
+        self.write_fleet("codex", "review-model", "high", "unknown", seat_name="brain")
+        for status in ("in-progress", "awaiting-gate"):
+            self.set_status(status)
+            result = self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"])
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.linked(role="brain", provider="codex", model="review-model", effort="high", speed="unknown",
+                        work_unit="review", feature=None)
+            self.assert_no_lock()
+            self.clean_runs()
+
+        self.assert_brain_rejected(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "gate0",
+                                    "--provider", "codex", "--model", "review-model",
+                                    "--effort", "high", "--speed", "unknown"])
+        self.set_status("done")
+        self.assert_brain_rejected(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"])
+
+    def test_workspace_lock_spans_provider_and_receipt_then_releases(self):
+        self.write_fleet("codex", "test", "medium", "unknown")
+        base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                "--model", "test", "--feature", "F001"]
+        receipt_script = self.root / "scripts/write-receipt.sh"
+        original_receipt = receipt_script.read_text()
+        mounted_check = '''set -euo pipefail
+[ -n "${PURRFECT_DISPATCH_LOCK_PATH:-}" ]
+[ -d "$PURRFECT_DISPATCH_LOCK_PATH" ]
+touch .tasks/receipt-saw-lock
+'''
+        receipt_script.write_text(original_receipt.replace("set -euo pipefail\n", mounted_check, 1))
+        self.commit_fixture("instrument receipt lock")
+        result = self.invoke(base)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertTrue((self.root / ".tasks/receipt-saw-lock").is_file())
+        self.assert_no_lock()
+        receipt_script.write_text(original_receipt)
+        self.commit_fixture("restore receipt writer")
+        self.clean_runs()
+
+        result = self.invoke(base, env={"PROVIDER_EXIT": "7"})
+        self.assertEqual(result.returncode, 7, result.stderr + result.stdout)
+        self.assertTrue(list((self.root / ".tasks/receipts").glob("worker-*.json")))
+        self.assert_no_lock()
+        self.clean_runs()
+
+        release = self.parent / "release-provider"
+        launch_env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
+                          PYTHONDONTWRITEBYTECODE="1", SPAWN_WORKER_TIMEOUT_SECS="0",
+                          PROVIDER_WAIT_FOR=str(release))
+        first = subprocess.Popen(base, cwd=self.root, env=launch_env, text=True,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        invoked = self.root / ".tasks/invoked.json"
+        deadline = time.time() + 5
+        while not invoked.exists() and time.time() < deadline:
+            time.sleep(0.02)
+        self.assertTrue(invoked.exists(), "first provider did not start")
+        first_invocation = invoked.read_bytes()
+        self.assertTrue(list((self.root / ".tasks/locks").glob("*.lock")))
+        specs_before = list((self.root / ".tasks/specs").glob("*.json"))
+        second = self.invoke(base)
+        self.assertNotEqual(second.returncode, 0, second.stderr + second.stdout)
+        self.assertEqual(invoked.read_bytes(), first_invocation)
+        self.assertEqual(list((self.root / ".tasks/specs").glob("*.json")), specs_before)
+        release.touch()
+        stdout, stderr = first.communicate(timeout=5)
+        self.assertEqual(first.returncode, 0, stderr + stdout)
+        self.assert_no_lock()
+
+        self.clean_runs()
+        never_release = self.parent / "never-release-provider"
+        launch_env["PROVIDER_WAIT_FOR"] = str(never_release)
+        interrupted = subprocess.Popen(base, cwd=self.root, env=launch_env, text=True,
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        deadline = time.time() + 5
+        while not invoked.exists() and time.time() < deadline:
+            time.sleep(0.02)
+        self.assertTrue(invoked.exists(), "interrupted provider did not start")
+        provider_pid = json.loads(invoked.read_text())["pid"]
+        interrupted.terminate()
+        interrupted.communicate(timeout=5)
+        self.assertNotEqual(interrupted.returncode, 0)
+        self.assert_no_lock()
+        with self.assertRaises(ProcessLookupError):
+            os.kill(provider_pid, 0)
+
+    def test_both_real_wrappers_mount_the_dispatch_policy(self):
+        self.write_fleet("codex", "test", "medium", "unknown")
+        self.set_status("draft")
+        worker = self.root / "scripts/spawn-worker.sh"
+        original_worker = worker.read_text()
+        worker_gate = '''PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-worker \\
+  --root "$ROOT" --workspace "$WORKSPACE" --mission "$MISSION" --fleet "$FLEET" \\
+  --task "$TASK_ABS" --feature "$FEATURE" --work-unit "$BASE"
+'''
+        self.assertIn(worker_gate, original_worker)
+        worker.write_text(original_worker.replace(worker_gate, ":\n", 1))
+        result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                              "--model", "test", "--feature", "F001"])
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertTrue((self.root / ".tasks/invoked.json").exists())
+        worker.write_text(original_worker)
+        self.clean_runs()
+
+        self.write_fleet("codex", "brain-model", "high", "unknown", seat_name="brain")
+        self.set_status("done")
+        brain = self.root / "scripts/spawn-brain.sh"
+        original_brain = brain.read_text()
+        brain_gate = '''PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-brain \\
+  --root "$ROOT" --workspace "$WORKSPACE" --mission "$MISSION" --fleet "$FLEET" --action "$ACTION"
+'''
+        self.assertIn(brain_gate, original_brain)
+        brain.write_text(original_brain.replace(brain_gate, ":\n", 1))
+        result = self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"])
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertTrue((self.root / ".tasks/invoked.json").exists())
+        brain.write_text(original_brain)
+
     def test_worker_uses_only_the_approved_frozen_fleet(self):
-        base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--feature", "F002"]
+        base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-002.md", "--feature", "F002"]
         self.assert_worker_rejected(base)  # missing fleet
 
         fleet = self.mission / "fleet.json"
         fleet.write_text("{bad")
+        self.commit_fixture("malformed fleet")
         self.assert_worker_rejected(base)  # malformed fleet
 
         self.write_fleet("codex", "frozen", "medium", "unknown", approved=False)
@@ -286,7 +509,7 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
         (self.root / ".tasks/fleet-inventory.json").write_text('{"model":"mutable-and-wrong"}\n')
         result = self.invoke(base + ["--model", "frozen"])
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-        spec, _, _, invoked = self.linked(role="worker", provider="codex", model="frozen", effort="medium", speed="unknown", work_unit="T-001", feature="F002")
+        spec, _, _, invoked = self.linked(role="worker", provider="codex", model="frozen", effort="medium", speed="unknown", work_unit="T-002", feature="F002")
         self.assertEqual(invoked["argv"], self.expected_argv("codex", "frozen", "medium", "unknown", spec["prompt"]))
 
     def test_all_worker_provider_tier_mappings_use_frozen_values(self):
@@ -296,11 +519,11 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
                     model = f"{provider}-{tier}-frozen"
                     speed = "fast" if provider == "agent" else "unknown"
                     self.write_fleet(provider, model, "high", speed, tier=tier)
-                    result = self.invoke(["bash", "scripts/spawn-worker.sh", provider, "docs/missions/fixture/tasks/T-001.md",
+                    result = self.invoke(["bash", "scripts/spawn-worker.sh", provider, "docs/missions/fixture/tasks/T-002.md",
                                           "--tier", tier, "--model", model, "--effort", "high", "--speed", speed, "--feature", "F002"])
                     self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
                     spec, _, _, invoked = self.linked(role="worker", provider=provider, model=model, effort="high", speed=speed,
-                                                       work_unit="T-001", feature="F002")
+                                                       work_unit="T-002", feature="F002")
                     self.assertEqual(invoked["argv"], self.expected_argv(provider, model, "high", speed, spec["prompt"]))
                     self.clean_runs()
 

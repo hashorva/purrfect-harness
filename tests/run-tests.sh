@@ -216,6 +216,7 @@ check "stub ORCHESTRATION at old path"       test -f "$TARGET/docs/ORCHESTRATION
 check "spawn-worker.sh installed +x"         test -x "$TARGET/scripts/spawn-worker.sh"
 check "execution spec tool installed"        test -f "$TARGET/scripts/execution_spec.py"
 check "provider adapter installed"           test -f "$TARGET/scripts/execute_provider.py"
+check "dispatch policy installed"            test -f "$TARGET/scripts/dispatch_policy.py"
 check "execution spec schema installed"      test -f "$TARGET/schemas/execution-spec.schema.json"
 check "active-mission.sh installed +x"       test -x "$TARGET/scripts/active-mission.sh"
 check "fleet-inventory.sh installed +x"      test -x "$TARGET/scripts/fleet-inventory.sh"
@@ -233,6 +234,7 @@ check "install did not commit"               sh -c "[ -n \"\$(git -C '$TARGET' s
 echo "== active-mission / spawn dry checks"
 mkdir -p "$TARGET/docs/missions/20990101-fixture/tasks"
 printf '%s\n' '---' 'status: in-progress' '---' '# Goal' > "$TARGET/docs/missions/20990101-fixture/GOAL.md"
+printf '%s\n' '---' 'task_id: T-001' 'feature: F001' '---' '# Task' > "$TARGET/docs/missions/20990101-fixture/tasks/T-001.md"
 echo '{}' > "$TARGET/docs/missions/20990101-fixture/features.json"
 check "active-mission finds fixture" sh -c "cd '$TARGET' && bash scripts/active-mission.sh | grep -q 20990101-fixture"
 check "spawn-worker rejects unknown worker" sh -c "cd '$TARGET' && ! bash scripts/spawn-worker.sh nope docs/missions/20990101-fixture/GOAL.md"
@@ -282,6 +284,13 @@ check "verify fails without receipts" sh -c "cd '$TARGET' && ! bash scripts/veri
 check "verify passes with brain+worker receipts" sh -c "cd '$TARGET' && bash scripts/verify-mission.sh docs/missions/20990101-fixture"
 check "spawn-worker --repo rejects missing path" sh -c "cd '$TARGET' && bash scripts/spawn-worker.sh agent docs/missions/20990101-fixture/GOAL.md --repo /nope/does/not/exist; test \$? -eq 1"
 
+# Successful dispatches below exercise the Phase 1 clean-workspace gate. Preserve
+# machine-local harness evidence and test sentinels outside Git truth, make F001
+# pending again after the receipt-verification fixture, then commit the baseline.
+printf '%s\n' '.tasks/' '.stubbin/' '.agy-args' '.claude-args' '.codex-*' '.agent-*' >> "$TARGET/.git/info/exclude"
+printf '%s\n' '{"goal":"t","features":[{"id":"F001","description":"Provider wrapper contract","bootstrap":false,"steps":[],"passes":false,"priority":1},{"id":"F002","description":"Other pending work","bootstrap":false,"steps":[],"passes":false,"priority":2}]}' > "$FEAT/features.json"
+git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "installed harness dispatch fixture"
+
 # ---- agy prompt-flag regression (2.2.3) ----
 # Antigravity's CLI uses a Go flag parser: -p/--print/--prompt takes the PROMPT AS
 # ITS VALUE. `agy -p --dangerously-skip-permissions ... "$PROMPT"` set
@@ -294,7 +303,7 @@ STUB_OUT="$TARGET/.agy-args"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" > "%s"\nexit 0\n' "$STUB_OUT" > "$STUBBIN/agy"
 chmod +x "$STUBBIN/agy"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
-    bash scripts/spawn-worker.sh agy docs/missions/20990101-fixture/GOAL.md --tier premium --effort high --feature F001 ) >/dev/null 2>&1 || true
+    bash scripts/spawn-worker.sh agy docs/missions/20990101-fixture/tasks/T-001.md --tier premium --effort high --feature F001 ) >/dev/null 2>&1 || true
 check "agy receives the real prompt as the value of -p" \
   sh -c "grep -q -- '-p Read ' '$STUB_OUT'"
 check "agy -p is not fed the permissions flag" \
@@ -312,7 +321,7 @@ CLAUDE_OUT="$TARGET/.claude-args"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" > "%s"\nexit 0\n' "$CLAUDE_OUT" > "$STUBBIN/claude"
 chmod +x "$STUBBIN/claude"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
-    bash scripts/spawn-worker.sh claude docs/missions/20990101-fixture/GOAL.md --tier premium --effort xhigh --feature F001 ) >/dev/null 2>&1 || true
+    bash scripts/spawn-worker.sh claude docs/missions/20990101-fixture/tasks/T-001.md --tier premium --effort xhigh --feature F001 ) >/dev/null 2>&1 || true
 check "claude receives the prompt immediately after -p" \
   sh -c "grep -q -- '-p Read ' '$CLAUDE_OUT'"
 check "claude prompt is not placed after --allowedTools" \
@@ -330,12 +339,12 @@ CODEX_STUB_PID="$TARGET/.codex-stub-pid"
 printf '#!/usr/bin/env bash\nset -euo pipefail\nprintf "%%s\\n" "$$" > "%s"\nwhile IFS= read -r _codex_stdin_line; do :; done\ntouch "%s"\nprintf "%%s\\n" "$(basename "$0")" "$@" > "%s"\nexit 0\n' "$CODEX_STUB_PID" "$CODEX_EOF_MARK" "$CODEX_OUT" > "$STUBBIN/codex"
 chmod +x "$STUBBIN/codex"
 CODEX_MODEL="codex-test-model"
-CODEX_PROMPT="Read docs/missions/20990101-fixture/GOAL.md and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder."
+CODEX_PROMPT="Read docs/missions/20990101-fixture/tasks/T-001.md and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder."
 CODEX_EXPECTED="$TARGET/.codex-expected"
 printf '%s\n' codex exec -C "$TARGET_CANONICAL" -s workspace-write -m "$CODEX_MODEL" \
   '-c' 'model_reasoning_effort="medium"' "$CODEX_PROMPT" > "$CODEX_EXPECTED"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
-    bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/GOAL.md \
+    bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/tasks/T-001.md \
       --tier economy --model "$CODEX_MODEL" --feature F001 ) >/dev/null 2>&1 || true
 check "codex receives the exact invocation with medium default" \
   cmp -s "$CODEX_EXPECTED" "$CODEX_OUT"
@@ -344,7 +353,7 @@ CODEX_EXPECTED_XHIGH="$TARGET/.codex-expected-xhigh"
 printf '%s\n' codex exec -C "$TARGET_CANONICAL" -s workspace-write -m "$CODEX_MODEL" \
   '-c' 'model_reasoning_effort="xhigh"' "$CODEX_PROMPT" > "$CODEX_EXPECTED_XHIGH"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
-    bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/GOAL.md \
+    bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/tasks/T-001.md \
       --tier premium --model "$CODEX_MODEL" --effort xhigh --feature F001 ) >/dev/null 2>&1 || true
 check "codex receives --effort xhigh" \
   cmp -s "$CODEX_EXPECTED_XHIGH" "$CODEX_OUT"
@@ -357,7 +366,7 @@ mkfifo "$CODEX_FIFO"
 exec 9<>"$CODEX_FIFO"
 set +e
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
-    bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/GOAL.md \
+    bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/tasks/T-001.md \
       --tier economy --model "$CODEX_MODEL" --feature F001 ) <"$CODEX_FIFO" >/dev/null 2>&1 &
 CODEX_PID=$!
 for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -395,14 +404,17 @@ AGENT_MODEL="agent-test-model"
 AGENT_EXPECTED="$TARGET/.agent-expected"
 printf '%s\n' agent -p --force --trust --workspace "$TARGET_CANONICAL" --model "${AGENT_MODEL}[effort=xhigh,fast=false]" "$CODEX_PROMPT" > "$AGENT_EXPECTED"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
-    bash scripts/spawn-worker.sh agent docs/missions/20990101-fixture/GOAL.md \
+    bash scripts/spawn-worker.sh agent docs/missions/20990101-fixture/tasks/T-001.md \
       --tier economy --model "$AGENT_MODEL" --effort xhigh --feature F001 ) >/dev/null 2>&1 || true
 check "agent receives the exact invocation with intact final prompt" \
   cmp -s "$AGENT_EXPECTED" "$AGENT_OUT"
 
 # ---- legacy parent-symlink must be migrated safely ----
 echo "== sync-skills parent-symlink migration"
-git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "harness install"
+git -C "$TARGET" add -A
+if ! git -C "$TARGET" diff --cached --quiet; then
+  git -C "$TARGET" commit -qm "harness install"
+fi
 rm -rf "$TARGET/.claude/skills"
 ln -s ../.agents/skills "$TARGET/.claude/skills"
 ( cd "$TARGET" && bash scripts/sync-skills.sh )
@@ -442,6 +454,7 @@ bash scripts/update-harness.sh --dev "$TARGET"
 check "update stayed on version branch" sh -c "git -C '$TARGET' branch --show-current | grep -q 'chore/harness-'"
 check "kit skill still present after update" test -f "$TARGET/.agents/skills/mission-init/SKILL.md"
 check "provider adapter remains after update" test -f "$TARGET/scripts/execute_provider.py"
+check "dispatch policy remains after update" test -f "$TARGET/scripts/dispatch_policy.py"
 check "fleet policy remains after update"    test -f "$TARGET/scripts/fleet_state.py"
 check "fleet schemas remain after update"    sh -c "test -f '$TARGET/schemas/fleet-inventory.schema.json' && test -f '$TARGET/schemas/mission-fleet.schema.json'"
 check "execution spec schema remains after update" test -f "$TARGET/schemas/execution-spec.schema.json"

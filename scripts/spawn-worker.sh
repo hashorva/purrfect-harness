@@ -10,7 +10,8 @@
 #   are equality assertions only and can never rebind the frozen mission.
 #
 # Cursor: premium=Grok (fallback Composer), economy=Composer.
-# --repo sets the worker CLI workspace only; logs/receipts/mission stay in this repo.
+# Phase 1 permits only this repository as the worker workspace; external --repo
+# targets fail before authorization persistence or provider launch.
 # Logs to .tasks/logs/<task-basename>-<utc>.log and receipts to .tasks/receipts/.
 # Orchestrators read exit + tail + receipt — never the full transcript.
 #
@@ -24,12 +25,49 @@ if [ -z "${SPAWN_WORKER_SNAPSHOT:-}" ]; then
   export SPAWN_WORKER_SNAPSHOT="$_snap"
   exec bash "$_snap" "$@"
 fi
-# Delete only the snapshot copy — never the real scripts/spawn-worker.sh.
-if [ "$0" = "$SPAWN_WORKER_SNAPSHOT" ]; then
-  trap 'rm -f "$SPAWN_WORKER_SNAPSHOT"' EXIT
-fi
-
 set -euo pipefail
+
+# Delete only the snapshot copy — never the real scripts/spawn-worker.sh. The
+# same EXIT cleanup also owns the workspace lock after it is acquired.
+SNAPSHOT_TO_DELETE=""
+if [ "$0" = "$SPAWN_WORKER_SNAPSHOT" ]; then
+  SNAPSHOT_TO_DELETE="$SPAWN_WORKER_SNAPSHOT"
+fi
+LOCK_PATH=""
+LOCK_TOKEN=""
+PROVIDER_PID=""
+
+cleanup() {
+  local exit_code=$? cleanup_failed=0
+  trap - EXIT
+  set +e
+  if [ -n "$PROVIDER_PID" ] && kill -0 "$PROVIDER_PID" 2>/dev/null; then
+    kill -TERM "-$PROVIDER_PID" 2>/dev/null || kill -TERM "$PROVIDER_PID" 2>/dev/null || true
+    for _cleanup_wait in 1 2 3 4 5 6 7 8 9 10; do
+      kill -0 "-$PROVIDER_PID" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 "-$PROVIDER_PID" 2>/dev/null; then
+      kill -KILL "-$PROVIDER_PID" 2>/dev/null || kill -KILL "$PROVIDER_PID" 2>/dev/null || true
+    fi
+    wait "$PROVIDER_PID" 2>/dev/null || true
+  fi
+  if [ -n "$LOCK_PATH" ] && [ -n "$LOCK_TOKEN" ]; then
+    PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" release-lock \
+      --root "$ROOT" --workspace "$WORKSPACE" --lock "$LOCK_PATH" --token "$LOCK_TOKEN" \
+      >/dev/null 2>&1 || cleanup_failed=1
+  fi
+  [ -z "$SNAPSHOT_TO_DELETE" ] || rm -f "$SNAPSHOT_TO_DELETE"
+  if [ "$cleanup_failed" -ne 0 ]; then
+    echo "ERROR: failed to release workspace lock" >&2
+    [ "$exit_code" -ne 0 ] || exit_code=1
+  fi
+  exit "$exit_code"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 usage() {
   echo "Usage: spawn-worker.sh [provider] <task.md> --provider NAME [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N]" >&2
@@ -83,7 +121,7 @@ TASK_ABS="$(cd "$(dirname "$TASK")" && pwd -P)/$(basename "$TASK")"
 TASK_REL="${TASK_ABS#"$ROOT"/}"
 BASE="$(basename "$TASK" .md)"
 
-# Worker workspace: optional --repo; default is this repo (ROOT).
+# Worker workspace: Phase 1 rejects every external repository target.
 if [ -n "$REPO_IN" ]; then
   # Quoted ~/... is not expanded by the calling shell — expand manually.
   REPO_IN="${REPO_IN/#\~/$HOME}"
@@ -95,6 +133,10 @@ if [ -n "$REPO_IN" ]; then
 else
   WORKSPACE="$ROOT"
 fi
+[ "$WORKSPACE" = "$ROOT" ] || {
+  echo "ERROR: cross-repository execution is disabled in Phase 1" >&2
+  exit 1
+}
 
 # Infer mission from task path when under docs/missions/<slug>/tasks/
 MISSION=""
@@ -105,13 +147,6 @@ if [ -z "$MISSION" ] && [ -x "$ROOT/scripts/active-mission.sh" ]; then
   MISSION="$(bash "$ROOT/scripts/active-mission.sh" 2>/dev/null || true)"
 fi
 [ -n "$MISSION" ] || MISSION="docs/missions/unknown"
-
-mkdir -p "$ROOT/.tasks/logs" "$ROOT/.tasks/receipts"
-# Timestamped logs: nested/stub runs of the same task basename must not clobber
-# the real dispatch transcript (that happened on T-001 / F007).
-STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-LOG_REL=".tasks/logs/${BASE}-${STAMP}.log"
-LOG="$ROOT/$LOG_REL"
 
 # Default tier when omitted: premium for agent (Grok-first), economy for others
 if [ -z "$TIER" ]; then
@@ -137,6 +172,13 @@ if [[ "$MISSION" = /* ]]; then
 else
   FLEET="$ROOT/$MISSION/fleet.json"
 fi
+
+# This is the mounted authorization gate. It runs before the lock, log/spec
+# persistence, and provider adapter so every rejection is mechanically pre-launch.
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-worker \
+  --root "$ROOT" --workspace "$WORKSPACE" --mission "$MISSION" --fleet "$FLEET" \
+  --task "$TASK_ABS" --feature "$FEATURE" --work-unit "$BASE"
+
 RESOLVE_ARGS=(python3 "$ROOT/scripts/fleet_state.py" resolve
   --fleet "$FLEET" --seat "$FLEET_SEAT" --mission-path "$MISSION"
   --provider "$WORKER" --effort "$EFFORT" --speed "$SPEED")
@@ -144,13 +186,23 @@ RESOLVE_ARGS=(python3 "$ROOT/scripts/fleet_state.py" resolve
 BINDING_JSON="$(PYTHONDONTWRITEBYTECODE=1 "${RESOLVE_ARGS[@]}")" || exit $?
 MODEL="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["model"])' <<<"$BINDING_JSON")"
 [ -n "$MODEL" ] || { echo "ERROR: frozen fleet returned an empty model" >&2; exit 1; }
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-capability \
+  --provider "$WORKER" --effort "$EFFORT" --speed "$SPEED"
 
-# Cross-repo workers cannot resolve TASK_REL against their workspace — use absolute path.
-if [ "$WORKSPACE" = "$ROOT" ]; then
-  PROMPT_TASK="$TASK_REL"
-else
-  PROMPT_TASK="$TASK_ABS"
-fi
+LOCK_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" acquire-lock \
+  --root "$ROOT" --workspace "$WORKSPACE")" || exit $?
+LOCK_PATH="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["path"])' <<<"$LOCK_JSON")"
+LOCK_TOKEN="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])' <<<"$LOCK_JSON")"
+export PURRFECT_DISPATCH_LOCK_PATH="$LOCK_PATH"
+
+mkdir -p "$ROOT/.tasks/logs" "$ROOT/.tasks/receipts"
+# Timestamped logs: nested/stub runs of the same task basename must not clobber
+# the real dispatch transcript (that happened on T-001 / F007).
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+LOG_REL=".tasks/logs/${BASE}-${STAMP}.log"
+LOG="$ROOT/$LOG_REL"
+
+PROMPT_TASK="$TASK_REL"
 PROMPT="Read ${PROMPT_TASK} and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder."
 [ -z "$EXTRA" ] || PROMPT+=" $EXTRA"
 
@@ -193,9 +245,9 @@ watchdog_wait() {
     if [ "$waited" -ge "$SPAWN_WORKER_TIMEOUT_SECS" ]; then
       echo "spawn-worker: TIMEOUT after ${SPAWN_WORKER_TIMEOUT_SECS}s — terminating pid $pid." | tee -a "$LOG"
       echo "spawn-worker: the CLI may have completed its work before hanging — inspect git log/status in $WORKSPACE before re-dispatching." | tee -a "$LOG"
-      kill -TERM "$pid" 2>/dev/null || true
+      kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
       sleep 5
-      if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; fi
+      if kill -0 "-$pid" 2>/dev/null; then kill -KILL "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true; fi
       wait "$pid" 2>/dev/null || true
       return "$TIMEOUT_EXIT"
     fi
@@ -207,9 +259,13 @@ watchdog_wait() {
 
 # Provider grammar and process launch are owned solely by the shared adapter.
 set +e
+set -m
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execute_provider.py" --spec "$SPEC_PATH" --sha256 "$SPEC_SHA256" >>"$LOG" 2>&1 < /dev/null &
-watchdog_wait $!
+PROVIDER_PID=$!
+set +m
+watchdog_wait "$PROVIDER_PID"
 EC=$?
+PROVIDER_PID=""
 set -e
 
 echo "----" | tee -a "$LOG"

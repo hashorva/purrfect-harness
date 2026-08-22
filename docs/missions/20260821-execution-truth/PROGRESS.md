@@ -4,6 +4,15 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-22 — GPT-5.6 Sol/high — T-008 / F003 dispatch gate
+
+- **Shared policy:** Added dependency-free `dispatch_policy.py` as the single lifecycle, task/feature/work-unit identity, approved-fleet, capability, repository, clean-tree, and token-owned workspace-lock authority. Worker implement is in-progress-only; draft brain mission-init/gate0 and frozen-fleet brain review have the exact role statuses approved at Gate 0. External `--repo` targets fail before ExecutionSpec or provider creation.
+- **Lock truth:** Both real wrappers acquire one atomic repository lock before ExecutionSpec persistence, export its path to the launched process, retain it through terminal receipt creation, and release it on success, provider failure, rejection, and trapped termination. Provider adapters run in an isolated process group so interruption terminates descendants before the lock is released; orphaned/conflicting locks fail closed.
+- **Mounted negatives:** Real-wrapper fixtures reject draft/approved/awaiting-gate/done workers, outside-mission tasks, missing/mismatched/accepted feature identity, dirty workspaces, unsupported configuration, external repositories, unapproved/malformed/wrong frozen fleets, invalid brain role states, and concurrent writers. Every prelaunch rejection leaves the provider sentinel and `.tasks/specs/` empty; positive draft brain and frozen review paths remain mounted.
+- **Non-vacuity:** Removing the worker policy call made the focused real-wrapper suite fail six assertions and visibly launched providers in forbidden lifecycle states. Removing the brain policy call made it fail two assertions and visibly launched Gate 0 from a non-draft mission. Both wrapper bytes were restored exactly before the green run. A receipt-mounted sentinel separately observed the lock during receipt execution.
+- **Verified:** Focused integration reports 10 tests green; `shellcheck scripts/*.sh tests/*.sh`, repository JSON validation, `git diff --check`, and the full install/update/provider suite reach `ALL TESTS PASSED`. The manifest installs and updates the shared policy.
+- **Acceptance boundary:** T-008 is orchestrator-owned because it edits both real launch wrappers, including the worker self-edit boundary. F003 remains `passes: false`; this is implementation evidence only, pending the F005 run-specific VerificationRecord and separate orchestrator acceptance.
+
 ## 2026-08-22 — GPT-5.6 Sol/high — fleet mode durability caveat
 
 - **Observed truth:** The freeze command and current checkout leave `fleet.json` mode `0444`, but Git records ordinary files as `100644` and does not preserve non-executable read-only permission bits across a fresh checkout.
