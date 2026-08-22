@@ -252,7 +252,9 @@ def freeze(args):
     doc={"schema_version":1,"mission":{"path":str(mission)},"inventory":{"sha256":sha(raw),"probed_at":inv["probed_at"]},"approval":{"status":"approved","approved_by":args.approved_by,"approved_at":args.approved_at},"seats":seats}
     validate_fleet(doc); atomic_write_new(fleet,canonical(doc).encode(),no_clobber=True,read_only=True); print(canonical(doc),end="")
 def resolve(args):
-    doc,_=read_json(args.fleet,"fleet",require_canonical=True); validate_fleet(doc); seat=doc["seats"].get(args.seat)
+    doc,_=read_json(args.fleet,"fleet",require_canonical=True); validate_fleet(doc)
+    if args.mission_path is not None and doc["mission"]["path"] != args.mission_path: fail("fleet mission path assertion failed")
+    seat=doc["seats"].get(args.seat)
     if seat is None: fail("fleet seat not found")
     for key in ("provider","model","effort","speed"):
         val=getattr(args,key)
@@ -262,7 +264,7 @@ def main():
     parser=argparse.ArgumentParser(); sub=parser.add_subparsers(dest="command",required=True)
     p=sub.add_parser("inventory"); p.add_argument("--json",action="store_true"); p.add_argument("--out",default=".tasks/fleet-inventory.json")
     p=sub.add_parser("freeze"); p.add_argument("--mission-dir",required=True); p.add_argument("--inventory",required=True); p.add_argument("--bindings",required=True); p.add_argument("--approved-by",required=True); p.add_argument("--approved-at",required=True)
-    p=sub.add_parser("resolve"); p.add_argument("--fleet",required=True); p.add_argument("--seat",required=True); p.add_argument("--provider"); p.add_argument("--model"); p.add_argument("--effort"); p.add_argument("--speed")
+    p=sub.add_parser("resolve"); p.add_argument("--fleet",required=True); p.add_argument("--seat",required=True); p.add_argument("--mission-path"); p.add_argument("--provider"); p.add_argument("--model"); p.add_argument("--effort"); p.add_argument("--speed")
     p=sub.add_parser("validate-inventory"); p.add_argument("file")
     p=sub.add_parser("validate-fleet"); p.add_argument("file")
     args=parser.parse_args()

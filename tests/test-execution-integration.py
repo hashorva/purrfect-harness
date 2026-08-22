@@ -20,7 +20,7 @@ class WrapperIntegration(unittest.TestCase):
         self.root = self.parent / "repo"
         self.root.mkdir()
         (self.root / "scripts").mkdir()
-        for name in ("execution_spec.py", "execute_provider.py", "spawn-worker.sh", "spawn-brain.sh", "write-receipt.sh"):
+        for name in ("execution_spec.py", "execute_provider.py", "fleet_state.py", "spawn-worker.sh", "spawn-brain.sh", "write-receipt.sh"):
             shutil.copy2(ROOT / "scripts" / name, self.root / "scripts" / name)
         self.task = self.root / "docs/missions/fixture/tasks/T-001.md"
         self.task.parent.mkdir(parents=True)
@@ -67,6 +67,45 @@ pathlib.Path('.tasks/invoked.json').write_text(json.dumps({
 
     def clean_runs(self):
         shutil.rmtree(self.root / ".tasks", ignore_errors=True)
+
+    def write_fleet(self, provider, model, effort, speed, *, tier=None, mission_path="docs/missions/fixture", approved=True, seat_name=None):
+        tier = tier or ("premium" if provider == "agent" else "economy")
+        seat_name = seat_name or ({"agent": "cursor"}.get(provider, provider) + f".{tier}")
+        family = {
+            ("agent", "premium"): "grok", ("agent", "economy"): "composer",
+            ("codex", "premium"): "terra", ("codex", "economy"): "luna",
+            ("agy", "premium"): "pro", ("agy", "economy"): "flash",
+            ("claude", "premium"): "sonnet", ("claude", "economy"): "haiku",
+        }[(provider, tier)]
+        capabilities = {
+            "agent": {"efforts": ["low", "medium", "high", "xhigh"], "speeds": ["standard", "fast"]},
+            "codex": {"efforts": ["low", "medium", "high", "xhigh"], "speeds": ["unknown"]},
+            "agy": {"efforts": ["low", "medium", "high"], "speeds": ["unknown"]},
+            "claude": {"efforts": ["low", "medium", "high", "xhigh", "max"], "speeds": ["unknown"]},
+        }[provider]
+        source = "alias" if provider == "claude" else "observed"
+        doc = {
+            "schema_version": 1,
+            "mission": {"path": mission_path},
+            "inventory": {"sha256": "0" * 64, "probed_at": "2026-08-21T00:00:00Z"},
+            "approval": {"status": "approved" if approved else "draft", "approved_by": "human", "approved_at": "2026-08-21T00:00:00Z"},
+            "seats": {seat_name: {"provider": provider, "model": model, "family": family,
+                                   "effort": effort, "speed": speed, "health": "healthy",
+                                   "source": source, "capabilities": capabilities}},
+        }
+        fleet = self.mission / "fleet.json"
+        if fleet.exists():
+            fleet.chmod(0o644)
+        fleet.write_text(json.dumps(doc, sort_keys=True, separators=(",", ":")) + "\n")
+        fleet.chmod(0o444)
+        return doc
+
+    def assert_worker_rejected(self, args):
+        result = self.invoke(args)
+        self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertFalse((self.root / ".tasks/invoked.json").exists())
+        self.assertFalse(list((self.root / ".tasks/specs").glob("*.json")) if (self.root / ".tasks/specs").exists() else [])
+        self.clean_runs()
 
     @staticmethod
     def prompt_worker():
@@ -123,6 +162,8 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
                 with self.subTest(role=role, provider=provider):
                     model = f"{provider}-model"
                     speed = "fast" if provider == "agent" else "unknown"
+                    if role == "worker":
+                        self.write_fleet(provider, model, "high", speed)
                     args = (["bash", "scripts/spawn-worker.sh", provider, "docs/missions/fixture/tasks/T-001.md", "--provider", provider,
                              "--model", model, "--effort", "high", "--speed", speed, "--attempt", "2", "--feature", "F001"]
                             if role == "worker" else
@@ -150,6 +191,8 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
             for provider in PROVIDERS:
                 with self.subTest(role=role, provider=provider):
                     bad = ["--effort", "max"] if provider == "agent" else ["--speed", "fast"]
+                    if role == "worker":
+                        self.write_fleet(provider, "test", "medium", "standard" if provider == "agent" else "unknown")
                     args = (["bash", "scripts/spawn-worker.sh", provider, "docs/missions/fixture/tasks/T-001.md", "--model", "test", "--feature", "F001", *bad]
                             if role == "worker" else
                             ["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review", "--provider", provider, "--model", "test", *bad])
@@ -159,6 +202,7 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
                     self.clean_runs()
 
     def test_spec_and_receipt_negatives(self):
+        self.write_fleet("codex", "model", "medium", "unknown")
         result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--model", "model", "--feature", "F001"])
         self.assertEqual(result.returncode, 0, result.stderr)
         spec, path, _, _ = self.linked(role="worker", provider="codex", model="model", effort="medium", speed="unknown", work_unit="T-001", feature="F001")
@@ -199,6 +243,7 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
 
     def test_mounted_bypass_proofs(self):
         """The test's real wrapper mount detects either integration guard being removed."""
+        self.write_fleet("codex", "test", "medium", "unknown")
         worker = self.root / "scripts/spawn-worker.sh"
         original_worker = worker.read_text()
         worker.write_text(original_worker.replace('python3 "$ROOT/scripts/execute_provider.py"', 'true # adapter bypass', 1))
@@ -213,6 +258,51 @@ Never claim a worker CLI ran unless .tasks/receipts/ proves it.'''.replace(
         bad = self.invoke(["bash", "scripts/write-receipt.sh", "--role", "worker", "--cli", "codex", "--model", "test", "--mission", "docs/missions/fixture", "--action", "task-T-001", "--work-unit", "T-001", "--exit", "0", "--log", ".tasks/logs/x.log", "--run-id", json.loads(path.read_text())["run_id"], "--spec", str(path), "--spec-sha256", "0" * 64])
         self.assertEqual(bad.returncode, 0, bad.stderr)
         policy.write_text(original_policy)
+
+    def test_worker_uses_only_the_approved_frozen_fleet(self):
+        base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--feature", "F002"]
+        self.assert_worker_rejected(base)  # missing fleet
+
+        fleet = self.mission / "fleet.json"
+        fleet.write_text("{bad")
+        self.assert_worker_rejected(base)  # malformed fleet
+
+        self.write_fleet("codex", "frozen", "medium", "unknown", approved=False)
+        self.assert_worker_rejected(base)
+        self.write_fleet("codex", "frozen", "medium", "unknown", mission_path="docs/missions/other")
+        self.assert_worker_rejected(base)
+        self.write_fleet("claude", "haiku", "medium", "unknown", seat_name="claude.economy")
+        self.assert_worker_rejected(base)  # mapped seat missing
+
+        for extra in (["--model", "other"], ["--effort", "high"], ["--speed", "fast"]):
+            self.write_fleet("codex", "frozen", "medium", "unknown")
+            self.assert_worker_rejected(base + extra)
+
+        self.write_fleet("agent", "composer", "medium", "standard", tier="economy", seat_name="codex.economy")
+        self.assert_worker_rejected(base)  # provider assertion
+
+        self.write_fleet("codex", "frozen", "medium", "unknown")
+        (self.root / ".tasks").mkdir(exist_ok=True)
+        (self.root / ".tasks/fleet-inventory.json").write_text('{"model":"mutable-and-wrong"}\n')
+        result = self.invoke(base + ["--model", "frozen"])
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        spec, _, _, invoked = self.linked(role="worker", provider="codex", model="frozen", effort="medium", speed="unknown", work_unit="T-001", feature="F002")
+        self.assertEqual(invoked["argv"], self.expected_argv("codex", "frozen", "medium", "unknown", spec["prompt"]))
+
+    def test_all_worker_provider_tier_mappings_use_frozen_values(self):
+        for provider in PROVIDERS:
+            for tier in ("economy", "premium"):
+                with self.subTest(provider=provider, tier=tier):
+                    model = f"{provider}-{tier}-frozen"
+                    speed = "fast" if provider == "agent" else "unknown"
+                    self.write_fleet(provider, model, "high", speed, tier=tier)
+                    result = self.invoke(["bash", "scripts/spawn-worker.sh", provider, "docs/missions/fixture/tasks/T-001.md",
+                                          "--tier", tier, "--model", model, "--effort", "high", "--speed", speed, "--feature", "F002"])
+                    self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                    spec, _, _, invoked = self.linked(role="worker", provider=provider, model=model, effort="high", speed=speed,
+                                                       work_unit="T-001", feature="F002")
+                    self.assertEqual(invoked["argv"], self.expected_argv(provider, model, "high", speed, spec["prompt"]))
+                    self.clean_runs()
 
 
 if __name__ == "__main__":

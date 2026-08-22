@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-22 — GPT-5.6 Sol/high — T-007 review — PASS
+
+- **Frozen authority:** The real worker wrapper no longer generates, reads, or falls back through `.tasks/fleet-inventory.json`. Provider+tier maps to one approved mission `fleet.json` seat; provider/model/effort/speed and embedded mission path are equality assertions before ExecutionSpec persistence, and the resolved frozen model is the model authorized in the spec.
+- **Negative matrix:** Mounted real-wrapper tests cover all eight provider/tier seats plus missing, malformed, unapproved, wrong-mission, missing-seat, provider/model/effort/speed mismatch, and changed mutable-inventory cases. Every rejection leaves both the provider sentinel and `.tasks/specs/` empty.
+- **Non-vacuity:** Redirecting the real wrapper to `.tasks/fleet-inventory.json` made `bash tests/run-tests.sh` fail at immutable wrapper integration and all installed provider sentinels. Separately bypassing explicit-model equality made the same real integration entry fail. Both lines were restored exactly.
+- **Verified:** Wrapper/fleet focused suites, ShellCheck, repository JSON validation, `git diff --check`, and the installed-harness repository suite reach `ALL TESTS PASSED`; no Python bytecode cache remains.
+- **Acceptance boundary:** T-007 is orchestrator-owned because dispatch workers may not self-edit their launcher; the successful T-006-R2 worker receipt remains F002 implementation evidence. F002 stays false pending a separately frozen real mission fleet and F005 VerificationRecord/orchestrator acceptance.
+
 ## 2026-08-22 — GPT-5.6 Sol/high — T-007 frozen-dispatch frontier
 
 - **Dependency:** T-006 policy core is independently accepted and committed through `c5c5372`; exact inventory, last-good, schemas, freeze, resolution, chooser, and mounted guard behavior are fixed substrate.

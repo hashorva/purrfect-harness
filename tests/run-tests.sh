@@ -248,6 +248,34 @@ check "verify-mission.sh installed +x" test -x "$TARGET/scripts/verify-mission.s
 echo "== verify-mission receipts"
 FEAT="$TARGET/docs/missions/20990101-fixture"
 printf '%s\n' '{"goal":"t","features":[{"id":"F001","description":"Mission folder active","bootstrap":true,"steps":[],"passes":true,"priority":1},{"id":"F002","description":"Real work mentions mission files in prose only","steps":[],"passes":true,"priority":2}]}' > "$FEAT/features.json"
+python3 - "$FEAT/fleet.json" <<'PY'
+import json, sys
+caps = {
+    "agent": {"efforts": ["low", "medium", "high", "xhigh"], "speeds": ["standard", "fast"]},
+    "codex": {"efforts": ["low", "medium", "high", "xhigh"], "speeds": ["unknown"]},
+    "agy": {"efforts": ["low", "medium", "high"], "speeds": ["unknown"]},
+    "claude": {"efforts": ["low", "medium", "high", "xhigh", "max"], "speeds": ["unknown"]},
+}
+def seat(provider, model, family, effort, speed):
+    return {"provider": provider, "model": model, "family": family, "effort": effort,
+            "speed": speed, "health": "healthy", "source": "alias" if provider == "claude" else "observed",
+            "capabilities": caps[provider]}
+doc = {
+    "schema_version": 1,
+    "mission": {"path": "docs/missions/20990101-fixture"},
+    "inventory": {"sha256": "0" * 64, "probed_at": "2026-08-21T00:00:00Z"},
+    "approval": {"status": "approved", "approved_by": "human", "approved_at": "2026-08-21T00:00:00Z"},
+    "seats": {
+        "agy.premium": seat("agy", "agy-test-model", "pro", "high", "unknown"),
+        "claude.premium": seat("claude", "claude-test-model", "sonnet", "xhigh", "unknown"),
+        "codex.economy": seat("codex", "codex-test-model", "luna", "medium", "unknown"),
+        "codex.premium": seat("codex", "codex-test-model", "terra", "xhigh", "unknown"),
+        "cursor.economy": seat("agent", "agent-test-model", "composer", "xhigh", "standard"),
+    },
+}
+open(sys.argv[1], "w").write(json.dumps(doc, sort_keys=True, separators=(",", ":")) + "\n")
+PY
+chmod 444 "$FEAT/fleet.json"
 check "verify fails without receipts" sh -c "cd '$TARGET' && ! bash scripts/verify-mission.sh docs/missions/20990101-fixture"
 ( cd "$TARGET" && bash scripts/write-receipt.sh --role brain --cli claude --model opus --mission docs/missions/20990101-fixture --action mission-init --exit 0 --log .tasks/logs/x.log --argv '["claude"]' >/dev/null )
 ( cd "$TARGET" && bash scripts/write-receipt.sh --role worker --cli agent --model composer-2.5 --mission docs/missions/20990101-fixture --action task-T-001 --exit 0 --log .tasks/logs/y.log --feature F002 --tier economy --argv '["agent"]' >/dev/null )
@@ -317,7 +345,7 @@ printf '%s\n' codex exec -C "$TARGET_CANONICAL" -s workspace-write -m "$CODEX_MO
   '-c' 'model_reasoning_effort="xhigh"' "$CODEX_PROMPT" > "$CODEX_EXPECTED_XHIGH"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/GOAL.md \
-      --tier economy --model "$CODEX_MODEL" --effort xhigh --feature F001 ) >/dev/null 2>&1 || true
+      --tier premium --model "$CODEX_MODEL" --effort xhigh --feature F001 ) >/dev/null 2>&1 || true
 check "codex receives --effort xhigh" \
   cmp -s "$CODEX_EXPECTED_XHIGH" "$CODEX_OUT"
 

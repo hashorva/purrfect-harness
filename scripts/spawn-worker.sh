@@ -5,10 +5,9 @@
 #        [--provider NAME] [--tier economy|premium] [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N] [--feature F00X] [--repo PATH] \
 #        [extra prompt...]
 #
-# Model resolution order:
-#   1. --model
-#   2. seat from .tasks/fleet-inventory.json (run fleet-inventory.sh if missing)
-#   3. family fallbacks from MODEL_ROUTING.md
+# Model resolution authority:
+#   mission fleet.json seat selected by provider+tier. --model/--effort/--speed
+#   are equality assertions only and can never rebind the frozen mission.
 #
 # Cursor: premium=Grok (fallback Composer), economy=Composer.
 # --repo sets the worker CLI workspace only; logs/receipts/mission stay in this repo.
@@ -113,7 +112,6 @@ mkdir -p "$ROOT/.tasks/logs" "$ROOT/.tasks/receipts"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 LOG_REL=".tasks/logs/${BASE}-${STAMP}.log"
 LOG="$ROOT/$LOG_REL"
-INV="$ROOT/.tasks/fleet-inventory.json"
 
 # Default tier when omitted: premium for agent (Grok-first), economy for others
 if [ -z "$TIER" ]; then
@@ -128,73 +126,24 @@ case "$TIER" in
   *) echo "ERROR: --tier must be economy|premium (got '$TIER')" >&2; exit 2 ;;
 esac
 
-# Ensure inventory exists (best-effort)
-if [ ! -f "$INV" ] && [ -x "$ROOT/scripts/fleet-inventory.sh" ]; then
-  bash "$ROOT/scripts/fleet-inventory.sh" --json >/dev/null 2>&1 || true
-fi
-
-resolve_model() {
-  local worker="$1" tier="$2" override="$3"
-  if [ -n "$override" ]; then
-    echo "$override"
-    return
-  fi
-  python3 - "$worker" "$tier" "$INV" <<'PY'
-import json, sys
-from pathlib import Path
-worker, tier, inv_path = sys.argv[1], sys.argv[2], sys.argv[3]
-seat_key = {
-    ("agent", "premium"): "cursor.premium",
-    ("agent", "economy"): "cursor.economy",
-    ("codex", "premium"): "codex.premium",
-    ("codex", "economy"): "codex.economy",
-    ("agy", "premium"): "agy.premium",
-    ("agy", "economy"): "agy.economy",
-    ("claude", "premium"): "claude.premium",
-    ("claude", "economy"): "claude.economy",
-}.get((worker, tier))
-
-fallbacks = {
-    ("agent", "premium"): "cursor-grok-4.5-high",
-    ("agent", "economy"): "composer-2.5",
-    ("codex", "premium"): "gpt-5.6-terra",
-    ("codex", "economy"): "gpt-5.6-luna",
-    ("agy", "premium"): "gemini-3.1-pro-high",
-    ("agy", "economy"): "gemini-3.6-flash-high",
-    ("claude", "premium"): "sonnet",
-    ("claude", "economy"): "haiku",
-}
-
-model = None
-fb = None
-if seat_key and Path(inv_path).exists():
-    doc = json.loads(Path(inv_path).read_text())
-    seat = (doc.get("seats") or {}).get(seat_key) or {}
-    model = seat.get("model")
-    fb = seat.get("fallback")
-    # Grok premium → Composer if marked unavailable
-    if seat.get("unavailable") and fb:
-        model = fb
-
-if not model:
-    model = fallbacks.get((worker, tier))
-
-# agent premium: if grok missing from inventory models list, use fallback composer
-if worker == "agent" and tier == "premium" and Path(inv_path).exists():
-    doc = json.loads(Path(inv_path).read_text())
-    models = (doc.get("clis") or {}).get("agent", {}).get("models") or []
-    seat = (doc.get("seats") or {}).get("cursor.premium") or {}
-    if models and model and "grok" in model.lower():
-        if not any("grok" in m.lower() for m in models):
-            model = seat.get("fallback") or fallbacks[("agent", "economy")]
-
-print(model or "")
-PY
-}
-
-MODEL="$(resolve_model "$WORKER" "$TIER" "$MODEL_OVERRIDE")"
-[ -n "$MODEL" ] || { echo "ERROR: could not resolve model for $WORKER/$TIER" >&2; exit 1; }
 [ -n "$SPEED" ] || { [ "$WORKER" = agent ] && SPEED="standard" || SPEED="unknown"; }
+
+case "$WORKER" in
+  agent) FLEET_SEAT="cursor.$TIER" ;;
+  codex|agy|claude) FLEET_SEAT="$WORKER.$TIER" ;;
+esac
+if [[ "$MISSION" = /* ]]; then
+  FLEET="$MISSION/fleet.json"
+else
+  FLEET="$ROOT/$MISSION/fleet.json"
+fi
+RESOLVE_ARGS=(python3 "$ROOT/scripts/fleet_state.py" resolve
+  --fleet "$FLEET" --seat "$FLEET_SEAT" --mission-path "$MISSION"
+  --provider "$WORKER" --effort "$EFFORT" --speed "$SPEED")
+[ -z "$MODEL_OVERRIDE" ] || RESOLVE_ARGS+=(--model "$MODEL_OVERRIDE")
+BINDING_JSON="$(PYTHONDONTWRITEBYTECODE=1 "${RESOLVE_ARGS[@]}")" || exit $?
+MODEL="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["model"])' <<<"$BINDING_JSON")"
+[ -n "$MODEL" ] || { echo "ERROR: frozen fleet returned an empty model" >&2; exit 1; }
 
 # Cross-repo workers cannot resolve TASK_REL against their workspace — use absolute path.
 if [ "$WORKSPACE" = "$ROOT" ]; then
