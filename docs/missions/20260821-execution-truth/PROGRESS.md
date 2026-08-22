@@ -4,6 +4,22 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-22 — GPT-5.6 Sol/high — T-006-R2 review — PASS
+
+- **Execution truth:** Receipt `.tasks/receipts/worker-task-T-006-R2-20260822T053736Z.json` links run `a6030a6a-2ab5-4c00-80b3-1e9c33140569` to exact read-only ExecutionSpec bytes (`b96a9c9ae5e6db495e12a467da9f6b323b9d0ce869b48737d0d8e2c128f8b2f1`), T-006-R2/F002, attempt 4, and Codex `gpt-5.6-terra` / medium / unknown. The diff is limited to the three task-allowed files.
+- **Exact policy:** The chooser now matches the pre-T-006 implementation byte-for-policy: stable inventory-order ties, exact `-fast` boundary, boundary-aware effort tokens and historical ordering/weights, and first-four-number scoring. All six chooser cases assert emitted `fleet-inventory.sh` state rather than calling the helper directly.
+- **Provenance agreement:** `validate-fleet` now enforces one-way alias/observed provider implications while accepting valid degraded Claude `last_good` and `fallback` seats. The schemas remain unchanged and agree with the executable policy.
+- **Non-vacuity:** Independently restoring the rejected R1 chooser made `bash tests/run-tests.sh` exit 1 at frozen fleet policy. Separately restoring the rejected Claude/alias biconditional produced the same mounted failure. Both exact corrected source blocks were restored before the positive run.
+- **Verified:** Focused fleet tests, ShellCheck, repository JSON validation, `git diff --check`, and the full repository suite reach `ALL TESTS PASSED`; no Python bytecode cache remains. T-006 policy core is accepted for integration, but F002 stays false pending T-007 frozen-dispatch wiring and later F005 acceptance evidence.
+
+## 2026-08-22 — Codex — T-006-R2 exact fleet correction
+
+- **Chooser:** Restored the exact pre-T-006 stable scorer: boundary-aware `fast` and effort tokens, historical weight ordering, first-four-number sum, and stable inventory-order tie selection. The three new public `fleet-inventory.sh` regressions assert emitted Codex premium seats for equal scores, `breakfast`, and embedded `notxhighish`; retained numeric, actual-fast, and effort cases remain mounted.
+- **Claude provenance:** Replaced the alias/Claude biconditional with independent one-way implications. Public `validate-fleet` fixtures accept degraded Claude `last_good` and `fallback` seats while retaining rejected non-Claude aliases and Claude observed seats.
+- **Guard proof:** Temporarily restored the rejected chooser approximation, then separately restored the rejected alias/Claude biconditional; each made `PYTHONDONTWRITEBYTECODE=1 bash tests/run-tests.sh` exit 1 at `frozen fleet policy`. Both exact corrected source bytes were restored before the positive run.
+- **Verified:** `shellcheck scripts/*.sh tests/*.sh`, repository JSON parsing, `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-fleet-state.py`, `PYTHONDONTWRITEBYTECODE=1 bash tests/run-tests.sh` (`ALL TESTS PASSED`), `git diff --check`, and no-bytecode checks pass. `features.json` remains untouched and F001/F002 remain false.
+- **Commit status:** Required scoped commit `fix: restore exact frozen fleet selection policy (T-006-R2)` is attempted next; this sandbox has previously denied `.git/index.lock` creation.
+
 ## 2026-08-22 — Human override — T-006-R2 APPROVED
 
 - **Verdict:** Approved one final mechanical correction after the T-006-R1 review STOP.

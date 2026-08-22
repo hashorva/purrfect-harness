@@ -164,11 +164,20 @@ def validate_inventory(doc):
 def choose(values, family):
     choices=[x for x in values if family in x.lower()]
     def score(model):
-        lower=model.lower()
-        effort=next((weight for token,weight in (("xhigh",50),("max",45),("high",40),("medium",20),("low",10),("none",0)) if token in lower),0)
-        version=sum(int(part) for part in re.findall(r"\d+",model)[:4])
-        return version + effort + (-100 if "fast" in lower else 0)
-    return max(sorted(choices), key=score) if choices else None
+        score = 0
+        lower = model.lower()
+        if lower.endswith("-fast") or "-fast-" in lower:
+            score -= 100
+        for token, weight in (
+            ("xhigh", 50), ("high", 40), ("max", 45),
+            ("medium", 20), ("low", 10), ("none", 0),
+        ):
+            if re.search(rf"(^|[-_]){token}($|[-_])", lower):
+                score += weight
+                break
+        score += sum(int(part) for part in re.findall(r"\d+", model)[:4])
+        return score
+    return sorted(choices, key=score, reverse=True)[0] if choices else None
 def make_seats(providers,last_good):
     result={}
     for seat,(provider,family) in SEAT_SPECS.items():
@@ -220,7 +229,8 @@ def validate_fleet(doc):
         if v["health"] not in {"healthy","degraded","unknown"} or v["source"] not in {"observed","alias","last_good","fallback"}: fail("fleet seat health/source invalid")
         if v["source"] in {"observed","alias"} and v["health"] != "healthy": fail("observed or alias fleet seat must be healthy")
         if v["source"] in {"last_good","fallback"} and v["health"] != "degraded": fail("guessed or retained fleet seat must be degraded")
-        if (v["source"] == "alias") != (v["provider"] == "claude"): fail("alias is Claude-only and observed is non-Claude")
+        if v["source"] == "alias" and v["provider"] != "claude": fail("alias is Claude-only")
+        if v["source"] == "observed" and v["provider"] == "claude": fail("observed is non-Claude")
         caps=v["capabilities"]
         if caps != CAPABILITIES[v["provider"]]: fail("fleet seat capabilities must equal canonical provider matrix")
         if v["family"] not in {family for p,family in SEAT_SPECS.values() if p == v["provider"]}: fail("fleet seat provider/family mismatch")
