@@ -4,6 +4,11 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-22 — GPT-5.6 Sol/high — fleet mode durability caveat
+
+- **Observed truth:** The freeze command and current checkout leave `fleet.json` mode `0444`, but Git records ordinary files as `100644` and does not preserve non-executable read-only permission bits across a fresh checkout.
+- **Authority implication:** Runtime `chmod` is defense in depth, not durable authorization. Phase-1 durability comes from no-clobber publication plus the upcoming F003 clean-worktree gate and F005 exact-byte VerificationRecord/acceptance linkage. F002 remains false until those dependencies close; no stronger filesystem-immutability claim is made.
+
 ## 2026-08-22 — GPT-5.6 Sol/high — F002 approved fleet frozen
 
 - **Artifact:** Created `docs/missions/20260821-execution-truth/fleet.json` only through the reviewed freeze command, approved by Zamir at `2026-08-22T05:52:55Z`. It binds the exact current inventory bytes `5d6b052eab152afbc8f121a8bc11403f1e0e74fb75b0d1a49a74cead759320c8` and has exact fleet-file SHA-256 `925564b2d1ec15c5a555128feab498b458354e38ed3fdc7f0e80a3addf562ce5`.
