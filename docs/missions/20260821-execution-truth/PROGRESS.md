@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-22 — GPT-5.6 Sol/high — T-007 frozen-dispatch frontier
+
+- **Dependency:** T-006 policy core is independently accepted and committed through `c5c5372`; exact inventory, last-good, schemas, freeze, resolution, chooser, and mounted guard behavior are fixed substrate.
+- **Task boundary:** T-007 is the smallest remaining F002 integration: worker provider/tier maps to an approved mission fleet seat, all CLI configuration is assertion-only, and mutable inventory is removed from dispatch. The shared resolver gains only mission-path equality.
+- **Ownership:** This wrapper edit is orchestrator-owned under the dispatch skill's self-edit prohibition. Existing F002 worker receipts remain implementation evidence; F002 stays false until F005 supplies fresh verification/acceptance truth.
+- **Non-goals:** No mission lifecycle, task/feature identity, workspace cleanliness/lock, cross-repo, expanded receipt, verification, or acceptance policy; those remain F003–F005. The real mission fleet is frozen only after this wiring passes review.
+
 ## 2026-08-22 — GPT-5.6 Sol/high — T-006-R2 review — PASS
 
 - **Execution truth:** Receipt `.tasks/receipts/worker-task-T-006-R2-20260822T053736Z.json` links run `a6030a6a-2ab5-4c00-80b3-1e9c33140569` to exact read-only ExecutionSpec bytes (`b96a9c9ae5e6db495e12a467da9f6b323b9d0ce869b48737d0d8e2c128f8b2f1`), T-006-R2/F002, attempt 4, and Codex `gpt-5.6-terra` / medium / unknown. The diff is limited to the three task-allowed files.
