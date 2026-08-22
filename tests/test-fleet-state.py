@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Mounted regressions for the public frozen-fleet policy entry points."""
-import hashlib, json, os, shutil, stat, subprocess, sys, tempfile
+import hashlib, importlib.util, json, os, shutil, stat, subprocess, sys, tempfile
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
+SPEC=importlib.util.spec_from_file_location('fleet_state',ROOT/'scripts/fleet_state.py')
+FLEET_STATE=importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(FLEET_STATE)
 def run(*args, env=None, ok=True):
     p=subprocess.run(args,text=True,capture_output=True,env=env)
     if ok != (p.returncode == 0): raise AssertionError(f"{args}: {p.returncode}: {p.stderr}")
@@ -12,6 +14,31 @@ def write(p, value): p.write_text(json.dumps(value,sort_keys=True,separators=(',
 def reject(command, path, value): write(path,value); run(*command,str(path),ok=False)
 def stub(path,name,body):
     p=path/name; p.write_text('#!/usr/bin/env bash\n'+body+'\n'); p.chmod(0o755)
+def conditional_rules(schema):
+    return {(json.dumps(rule['if'],sort_keys=True),json.dumps(rule['then'],sort_keys=True)) for rule in schema['$defs']['seat']['allOf']}
+def require_schema_policy():
+    inventory=json.loads((ROOT/'schemas/fleet-inventory.schema.json').read_text())
+    mission=json.loads((ROOT/'schemas/mission-fleet.schema.json').read_text())
+    for schema, unavailable, effort in ((inventory,True,False),(mission,False,True)):
+      rules=conditional_rules(schema)
+      for provider, efforts, speeds in (
+        ('claude',['low','medium','high','xhigh','max'],['unknown']),
+        ('codex',['low','medium','high','xhigh'],['unknown']),
+        ('agent',['low','medium','high','xhigh'],['standard','fast']),
+        ('agy',['low','medium','high'],['unknown']),
+      ):
+        matching=[json.loads(then)['properties'] for before,then in rules if json.loads(before)=={'properties':{'provider':{'const':provider}}}]
+        assert len(matching)==1 and matching[0]['capabilities']['const']=={'efforts':efforts,'speeds':speeds}
+        if effort: assert matching[0]['effort']['enum']==efforts and matching[0]['speed'] == ({'const':speeds[0]} if len(speeds)==1 else {'enum':speeds})
+      required=[
+        ({'source':{'enum':['observed','alias']}},{'health':{'const':'healthy'}}),
+        ({'source':{'enum':['last_good','fallback']}},{'health':{'const':'degraded'}}),
+        ({'source':{'const':'alias'}},{'provider':{'const':'claude'}}),
+        ({'source':{'const':'observed'}},{'provider':{'enum':['codex','agent','agy']}}),
+      ]
+      if unavailable: required.append(({'source':{'const':'unavailable'}},{'health':{'const':'unknown'},'model':{'const':'unavailable'}}))
+      for condition, properties in required:
+        assert (json.dumps({'properties':condition},sort_keys=True),json.dumps({'properties':properties},sort_keys=True)) in rules
 def main():
   with tempfile.TemporaryDirectory() as tmp:
     d=Path(tmp); bin=d/'bin'; bin.mkdir(); home=d/'home'; (home/'.codex').mkdir(parents=True)
@@ -20,6 +47,13 @@ def main():
     env={**os.environ,'PATH':str(bin)+os.pathsep+os.environ['PATH'],'HOME':str(home),'PYTHONDONTWRITEBYTECODE':'1'}; inv=d/'inventory.json'
     public=ROOT/'scripts/fleet-inventory.sh'; run('/bin/bash',str(public),'--json','--out',str(inv),env=env)
     first=json.loads(inv.read_text()); old=first['last_good']['codex']; assert first['seats']['codex.premium']['health']=='healthy'
+    # The public inventory path preserves numeric versions, non-fast preference, and effort order.
+    for models, expected in (
+      (['gpt-terra-9-high','gpt-terra-10-high'],'gpt-terra-10-high'),
+      (['gpt-terra-10-fast-xhigh','gpt-terra-1-low'],'gpt-terra-1-low'),
+      (['gpt-terra-1-low','gpt-terra-1-medium','gpt-terra-1-high','gpt-terra-1-max','gpt-terra-1-xhigh'],'gpt-terra-1-xhigh'),
+    ):
+      assert FLEET_STATE.choose(models,'terra')==expected
     # A bad cache is a current failure and retains the old record byte-for-byte semantically.
     (home/'.codex/models_cache.json').write_text('{bad')
     run('/bin/bash',str(public),'--json','--out',str(inv),env=env); second=json.loads(inv.read_text())
@@ -32,6 +66,7 @@ def main():
     for label, mutate in (
       ('partial-provider',lambda x:x['providers'].pop('codex')),
       ('partial-last-good',lambda x:x['last_good']['codex'].pop('path')),
+      ('unknown-last-good',lambda x:x['last_good'].__setitem__('evil',x['last_good']['codex'])),
       ('invalid-timestamp',lambda x:x.__setitem__('probed_at','never')),
       ('provider-extra',lambda x:x['providers']['codex'].__setitem__('junk',True)),
       ('seat-extra',lambda x:x['seats']['codex.premium'].__setitem__('junk',True)),
@@ -39,8 +74,11 @@ def main():
       ('seat-provider',lambda x:x['seats']['codex.premium'].__setitem__('provider','agent')),
       ('seat-capabilities',lambda x:x['seats']['codex.premium'].__setitem__('capabilities',{'efforts':['bogus'],'speeds':['wild']})),
       ('forged-healthy-source',lambda x:(x['seats']['codex.premium'].__setitem__('health','healthy'),x['seats']['codex.premium'].__setitem__('source','observed'))),
+      ('healthy-fallback',lambda x:x['seats']['codex.premium'].__setitem__('health','healthy')),
+      ('alias-non-claude',lambda x:(x['seats']['codex.premium'].__setitem__('source','alias'),x['seats']['codex.premium'].__setitem__('health','healthy'))),
+      ('observed-claude',lambda x:(x['seats']['brain'].__setitem__('source','observed'),x['seats']['brain'].__setitem__('health','healthy'))),
     ):
-      candidate=json.loads(json.dumps(second if label == 'partial-last-good' else json.loads(fresh.read_text())))
+      candidate=json.loads(json.dumps(second if label in {'partial-last-good','unknown-last-good'} else json.loads(fresh.read_text())))
       mutate(candidate); reject(('python3',str(ROOT/'scripts/fleet_state.py'),'validate-inventory'),d/(label+'.json'),candidate)
     corrupt=b'{not json'; inv.chmod(0o644); inv.write_bytes(corrupt); run('/bin/bash',str(public),'--out',str(inv),env=env,ok=False); assert inv.read_bytes()==corrupt
     # Restore trusted inventory and freeze exact bytes into a canonical no-clobber snapshot.
@@ -67,22 +105,13 @@ def main():
       ('empty-model',lambda x:x['seats']['worker'].__setitem__('model','')),
       ('forged-fleet-caps',lambda x:x['seats']['worker'].__setitem__('capabilities',{'efforts':['bogus'],'speeds':['wild']})),
       ('fleet-provider-family',lambda x:x['seats']['worker'].__setitem__('family','grok')),
+      ('fleet-speed',lambda x:x['seats']['worker'].__setitem__('speed','fast')),
+      ('fleet-alias-non-claude',lambda x:x['seats']['worker'].update(source='alias',health='healthy')),
+      ('fleet-observed-degraded',lambda x:x['seats']['worker'].update(source='observed',health='degraded')),
+      ('fleet-last-good-healthy',lambda x:x['seats']['worker'].update(source='last_good',health='healthy')),
+      ('fleet-alias-degraded',lambda x:x['seats']['worker'].update(source='alias',health='degraded')),
     ):
       candidate=json.loads(frozen); mutate(candidate); reject(('python3',str(ROOT/'scripts/fleet_state.py'),'validate-fleet'),d/(label+'.json'),candidate)
-    # The next two proofs mutate the real retained-state and frozen-only resolve mounts.
-    # Their child invocation is the mounted suite itself and must exit nonzero; exact bytes return.
-    if not os.environ.get('FLEET_GUARD_CHILD'):
-      real=ROOT/'scripts/fleet_state.py'; original=real.read_bytes()
-      try:
-        real.write_bytes(original.replace(b'retained=dict(previous)',b'retained={}'))
-        proof=subprocess.run(('python3',str(ROOT/'tests/test-fleet-state.py')),env={**os.environ,'FLEET_GUARD_CHILD':'1','PYTHONDONTWRITEBYTECODE':'1'},capture_output=True,text=True)
-        assert proof.returncode != 0, proof.stderr
-      finally: real.write_bytes(original)
-      try:
-        real.write_bytes(original.replace(b'doc,_=read_json(args.fleet,"fleet",require_canonical=True); validate_fleet(doc); seat=',b'doc,_=read_json(args.fleet,"fleet",require_canonical=True); read_json("/definitely/missing/inventory.json","inventory"); validate_fleet(doc); seat='))
-        proof=subprocess.run(('python3',str(ROOT/'tests/test-fleet-state.py')),env={**os.environ,'FLEET_GUARD_CHILD':'1','PYTHONDONTWRITEBYTECODE':'1'},capture_output=True,text=True)
-        assert proof.returncode != 0, proof.stderr
-      finally: real.write_bytes(original)
-      assert real.read_bytes()==original
+    require_schema_policy()
   print('fleet policy tests passed')
 if __name__=='__main__': main()

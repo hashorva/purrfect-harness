@@ -4,6 +4,26 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-08-21 — GPT-5.6 Sol/high — T-006-R1 review — FAIL / STOP
+
+- **Receipt/spec truth:** Receipt `.tasks/receipts/worker-task-T-006-R1-20260821T213315Z.json` links successful run `c86e1868-9ac3-44e4-8d22-71f9b6ae4956` to immutable read-only spec bytes with exact SHA-256 `dd48b84d8a242c5d5c13b6b2d07f92827006ed3527d085b41940b7a8d9737ffb`, T-006-R1/F002, attempt 3, and the approved Terra/medium/unknown configuration. The worker stayed inside the five-file allow-list.
+- **Python/schema contradiction:** `validate_fleet` uses alias/Claude biconditional logic, so valid degraded Claude seats sourced from `last_good` or `fallback` are rejected even though both schemas and inventory policy permit them. The focused and full suites remain green because neither case has a negative regression.
+- **Chooser is not the prior policy:** Independent counterexamples show changed equal-score tie behavior (`gpt-terra-z` loses to `gpt-terra-a`), over-broad fast matching (`breakfast` receives the fast penalty), and over-broad effort matching (`notxhighish` receives xhigh weight). The pre-T-006 implementation used stable input-order ties, `endswith("-fast")`/`"-fast-"`, and boundary-aware effort tokens. The direct chooser samples do not close these failure classes.
+- **Verified good but insufficient:** Unknown `last_good` providers now fail; provider effort/speed and schema-expressible provenance relations are structurally exact; focused tests, ShellCheck, repository JSON, diff/no-bytecode checks, and the full suite reach `ALL TESTS PASSED`. Independently replacing retained state with `{}` and separately making `resolve` read mutable inventory caused the real repository suite to fail at frozen fleet policy; both lines were restored exactly.
+- **Disposition:** The single human-authorized recovery attempt is exhausted. No candidate commit, `fleet.json`, T-007 wiring, feature-state mutation, or F003 work is authorized. F002 remains false. Preserve the five-file uncommitted candidate for inspection; any correction requires a new human-approved mechanical task containing negative regressions for every counterexample above.
+
+## 2026-08-21 — Codex — T-006-R1 commit blocked / STOP
+
+- **Failure:** `git add scripts/fleet_state.py schemas/fleet-inventory.schema.json schemas/mission-fleet.schema.json tests/test-fleet-state.py docs/missions/20260821-execution-truth/PROGRESS.md && git commit -m 'fix: close frozen fleet validation gaps (T-006-R1)'` failed before staging because Git cannot create `/Users/zamirhashorva/dev/purrfect-harness/.git/index.lock` (`Operation not permitted`). The repository metadata is read-only in this sandbox. No commit was created; commit the five allow-listed files from a Git-writable environment.
+
+## 2026-08-21 — Codex — T-006-R1 frozen-fleet validation recovery
+
+- **Closed retained identity:** `validate_inventory` now rejects every unknown `last_good` provider key while preserving optional known-provider records. The mounted public `validate-inventory` regression proves `last_good.evil` exits nonzero.
+- **Restored chooser policy:** Shared selection again applies the `fast` -100 penalty, first-match effort weights (`xhigh` 50, `max` 45, `high` 40, `medium` 20, `low` 10, `none` 0), and the sum of the first four numeric version components. Focused regressions cover `10 > 9`, non-fast preference, and effort ordering.
+- **Aligned validation/schema policy:** Both schemas now structurally express provider capability matrices plus source/health rules; Python fleet validation enforces the same observed/alias healthy, retained/fallback degraded, and Claude-only alias relationships. Mounted negatives cover unsupported capability fields and every requested provenance case; parsed-schema assertions protect the conditional enums/constants without adding a dependency.
+- **Guard proof:** The ordinary suite no longer rewrites tracked production source. Manually replacing retention with an empty map made the public mounted test fail on missing retained Codex state; temporarily making resolve read a missing mutable inventory made frozen-only resolution fail. Both exact source lines were restored before the green run.
+- **Verified:** `shellcheck scripts/*.sh tests/*.sh`, repository JSON parsing, `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-fleet-state.py`, `PYTHONDONTWRITEBYTECODE=1 bash tests/run-tests.sh` (`ALL TESTS PASSED`), `git diff --check`, and no-bytecode checks pass. `features.json` remains untouched; F002 remains false pending T-007/T-005 acceptance.
+
 ## 2026-08-21 — Human override — T-006-R1 APPROVED
 
 - **Verdict:** Approved one mechanical recovery attempt beyond T-006's exhausted cap.

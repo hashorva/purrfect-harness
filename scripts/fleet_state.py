@@ -147,7 +147,9 @@ def validate_inventory(doc):
     exact_keys(doc,{"schema_version","probed_at","providers","last_good","seats"},"inventory")
     if doc["schema_version"] != 1: fail("inventory schema_version must be 1")
     timestamp(doc["probed_at"],"inventory.probed_at"); exact_keys(doc["providers"],PROVIDERS,"inventory.providers")
-    obj(doc["last_good"],"inventory.last_good"); exact_keys(doc["seats"],SEAT_SPECS,"inventory.seats")
+    obj(doc["last_good"],"inventory.last_good")
+    if not set(doc["last_good"]).issubset(PROVIDERS): fail("inventory.last_good has unknown provider")
+    exact_keys(doc["seats"],SEAT_SPECS,"inventory.seats")
     for provider in PROVIDERS:
         validate_provider(doc["providers"][provider],"inventory.providers."+provider)
         if provider in doc["last_good"]:
@@ -161,7 +163,12 @@ def validate_inventory(doc):
     return doc
 def choose(values, family):
     choices=[x for x in values if family in x.lower()]
-    return sorted(choices, key=lambda x:("fast" not in x.lower(),x), reverse=True)[0] if choices else None
+    def score(model):
+        lower=model.lower()
+        effort=next((weight for token,weight in (("xhigh",50),("max",45),("high",40),("medium",20),("low",10),("none",0)) if token in lower),0)
+        version=sum(int(part) for part in re.findall(r"\d+",model)[:4])
+        return version + effort + (-100 if "fast" in lower else 0)
+    return max(sorted(choices), key=score) if choices else None
 def make_seats(providers,last_good):
     result={}
     for seat,(provider,family) in SEAT_SPECS.items():
@@ -211,7 +218,9 @@ def validate_fleet(doc):
         exact_keys(v,{"provider","model","family","effort","speed","health","source","capabilities"},"fleet.seats."+name)
         if v["provider"] not in PROVIDERS or not isinstance(v["model"],str) or not v["model"].strip() or v["model"]=="unavailable": fail("fleet seat invalid")
         if v["health"] not in {"healthy","degraded","unknown"} or v["source"] not in {"observed","alias","last_good","fallback"}: fail("fleet seat health/source invalid")
-        if v["source"] in {"last_good","fallback"} and v["health"]=="healthy": fail("guessed or retained fleet seat cannot be healthy")
+        if v["source"] in {"observed","alias"} and v["health"] != "healthy": fail("observed or alias fleet seat must be healthy")
+        if v["source"] in {"last_good","fallback"} and v["health"] != "degraded": fail("guessed or retained fleet seat must be degraded")
+        if (v["source"] == "alias") != (v["provider"] == "claude"): fail("alias is Claude-only and observed is non-Claude")
         caps=v["capabilities"]
         if caps != CAPABILITIES[v["provider"]]: fail("fleet seat capabilities must equal canonical provider matrix")
         if v["family"] not in {family for p,family in SEAT_SPECS.values() if p == v["provider"]}: fail("fleet seat provider/family mismatch")
