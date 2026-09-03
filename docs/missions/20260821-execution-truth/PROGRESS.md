@@ -4,6 +4,15 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-03 — GPT-5.6 Sol/high — T-009 / F004 review — FAIL
+
+- **Effect review:** Commit `e36dd3f` correctly centralizes provider lifecycle and strict UUID receipt creation, and its declared focused/full checks are green, but it does not satisfy the process-tree cleanup exit criterion for every terminal outcome.
+- **Independent real-entry reproduction:** Through an isolated fixture's real `scripts/spawn-worker.sh`, a provider spawned a 60-second child and then exited 0. The wrapper exited 0, wrote one valid `completed` receipt, and left the child alive (`completed_descendant_alive=true`). `terminate_tree()` returns as soon as the direct provider has exited, so it never signals the still-live provider process group on completed or failed parent exits.
+- **Coverage gap:** The mounted suite asserts descendant cleanup only for interruption. It records completed, failed, timed-out, and launch-failed receipts, but does not attach a descendant to the completed or failed cases; therefore the green suite cannot prove the task's all-outcomes cleanup claim.
+- **Positive evidence:** `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-integration.py` reports 14 tests green; ShellCheck, repository JSON validation, `git diff --check`, and the no-bytecode check pass; `PYTHONDONTWRITEBYTECODE=1 bash tests/run-tests.sh` reaches `ALL TESTS PASSED`.
+- **Disposition:** F004 remains `passes: false`. Do not dispatch T-010/F005 yet. Author a bounded T-009 correction task that reaps the provider process group after normal success and failure and mounts real-entry descendant regressions for both outcomes; this review did not re-implement worker scope and did not claim a worker CLI run.
+- **Brain evidence:** `.tasks/logs/33689103-3a56-4cde-ae80-9c08199f5d1d.log` (brain review log; not worker evidence).
+
 ## 2026-08-22 — Codex — T-009 / F004 strict terminal execution evidence
 
 - **Lifecycle truth:** Added ExecutionSpec v2 with immutable non-empty write scope while preserving v1 readability. Both real wrappers now delegate launch, timeout, interruption, process-group termination, Git before/after capture, and no-clobber UUID receipt creation to one dependency-free runner; shell wrappers retain authorization and the workspace lock. Receipt failure is a hard exit.
