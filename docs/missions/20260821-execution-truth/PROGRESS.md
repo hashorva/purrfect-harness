@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-03 — Codex — T-010 / F005 run-bound verification and separate acceptance
+
+- **Implementation:** Added dependency-free `verification_record.py`, the `verify-mission.sh --run-id <uuid>` real entry point, `accept-feature.sh`, and the VerificationRecord schema. Verification binds the exact strict worker receipt, exact persisted spec bytes, task bytes loaded from `receipt.git_before.head`, JSON-argv task commands, and the receipt's Git snapshot before and after every check. It atomically publishes one canonical read-only record with command-output digests only; it never edits `features.json`.
+- **Acceptance and audit:** Acceptance validates the canonical record hash and all spec/receipt/task links, rejects an active dispatch lock or `PURRFECT_DISPATCH_LOCK_PATH`, and atomically adds only `accepted_run_id`, `accepted_verification_sha256`, `accepted_at`, and `accepted_by` to one pending feature. Mission audit now requires these exact links for every accepted non-bootstrap feature; `--require-workers` requires accepted verified worker evidence.
+- **Mounted positive/negative evidence:** `tests/test-verification-record.py` runs the real worker, verifier, and acceptance scripts. It proves a pass record is immutable and has no acceptance fields; feature state is unchanged until acceptance; duplicate verification, wrong record hash, and an active dispatch environment fail; accepted evidence passes a `--require-workers` audit. Existing mounted receipt regressions were updated to exercise the new flow and still reject no-op, out-of-scope, malformed, missing-log, and bad-hash evidence.
+- **Guard proof:** In a mounted repository, removing the verifier's pre/post snapshot checks and adding an unrelated dirty path made the real `verify-mission.sh --run-id` entry point incorrectly return success. The exact policy bytes were restored after the observed false pass. This proves the snapshot guard is mounted and non-vacuous.
+- **Checks:** ShellCheck, repository JSON parsing, `git diff --check`, the 16 existing mounted execution-integration cases (run in three bounded groups), and the two new VerificationRecord mounted cases pass. A direct `bash tests/run-tests.sh` invocation was started twice, but this worker transport returned before the long integration stage emitted its final banner; no full-suite-pass claim is made from that incomplete invocation. No feature was accepted; F005 remains `passes: false`.
+
 ## 2026-09-03 — Codex — T-010 / F005 dispatch blocked by active workspace lock
 
 - **Baseline:** Before dispatch, the working tree was clean; repository JSON parsing, `shellcheck scripts/*.sh tests/*.sh`, `bash tests/run-tests.sh`, and `git diff --check` exited successfully.

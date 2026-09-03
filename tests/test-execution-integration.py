@@ -24,13 +24,14 @@ class WrapperIntegration(unittest.TestCase):
         (self.root / "scripts").mkdir()
         for name in ("execution_spec.py", "execution_receipt.py", "execution_runner.py",
                      "execute_provider.py", "fleet_state.py", "dispatch_policy.py",
-                     "spawn-worker.sh", "spawn-brain.sh", "verify-mission.sh", "write-receipt.sh"):
+                     "spawn-worker.sh", "spawn-brain.sh", "verify-mission.sh", "verification_record.py",
+                     "accept-feature.sh", "write-receipt.sh"):
             shutil.copy2(ROOT / "scripts" / name, self.root / "scripts" / name)
         self.task = self.root / "docs/missions/fixture/tasks/T-001.md"
         self.task.parent.mkdir(parents=True)
         self.mission = self.task.parent.parent
-        self.task.write_text("---\ntask_id: T-001\nfeature: F001\n---\n# Task\n\n## Files you MAY touch\n- `allowed.txt`\n- `docs/missions/fixture/PROGRESS.md`\n")
-        (self.task.parent / "T-002.md").write_text("---\ntask_id: T-002\nfeature: F002\n---\n# Task\n\n## Files you MAY touch\n- `allowed.txt`\n- `docs/missions/fixture/PROGRESS.md`\n")
+        self.task.write_text("---\ntask_id: T-001\nfeature: F001\n---\n# Task\n\n## Files you MAY touch\n- `allowed.txt`\n- `docs/missions/fixture/PROGRESS.md`\n\n## Verification commands\n- [\"git\",\"status\",\"--porcelain\"]\n")
+        (self.task.parent / "T-002.md").write_text("---\ntask_id: T-002\nfeature: F002\n---\n# Task\n\n## Files you MAY touch\n- `allowed.txt`\n- `docs/missions/fixture/PROGRESS.md`\n\n## Verification commands\n- [\"git\",\"status\",\"--porcelain\"]\n")
         (self.mission / "GOAL.md").write_text("---\nstatus: in-progress\n---\n# Goal\n")
         (self.mission / "features.json").write_text(json.dumps({
             "goal": "fixture",
@@ -443,7 +444,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.git("commit", "-qm", "accept fixture feature")
         result = self.invoke(verify)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("no-op", result.stdout + result.stderr)
+        self.assertIn("missing acceptance evidence", result.stdout + result.stderr)
 
         # Re-open the feature, dispatch an in-scope change, then accept it.
         features["features"][0]["passes"] = False
@@ -452,10 +453,16 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.git("commit", "-qm", "reopen fixture feature")
         changed = self.invoke(worker_args, env={"PROVIDER_ACTION": "dirty"})
         self.assertEqual(changed.returncode, 0, changed.stderr + changed.stdout)
-        features["features"][0]["passes"] = True
-        (self.mission / "features.json").write_text(json.dumps(features, indent=2) + "\n")
-        self.git("add", "-A")
-        self.git("commit", "-qm", "accept changed fixture feature")
+        run_id = next(path.stem for path in (self.root / ".tasks/receipts").glob("*.json")
+                      if json.loads(path.read_text())["role"] == "worker" and json.loads(path.read_text())["workspace_changed"])
+        verified = self.invoke(["bash", "scripts/verify-mission.sh", "--run-id", run_id, "docs/missions/fixture"])
+        self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        record = self.root / "docs/missions/fixture/verification" / f"{run_id}.json"
+        record_hash = hashlib.sha256(record.read_bytes()).hexdigest()
+        accepted = self.invoke(["bash", "scripts/accept-feature.sh", "--run-id", run_id,
+                                "--verification-sha256", record_hash, "--accepted-by", "test", "docs/missions/fixture"],
+                               env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
+        self.assertEqual(accepted.returncode, 0, accepted.stderr + accepted.stdout)
         result = self.invoke(verify)
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
@@ -515,7 +522,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.git("commit", "-qm", "accept out-of-scope fixture")
         result = self.invoke(["bash", "scripts/verify-mission.sh", "docs/missions/fixture"])
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("scope=fail", result.stdout + result.stderr)
+        self.assertIn("missing acceptance evidence", result.stdout + result.stderr)
 
     def test_mounted_bypass_proofs(self):
         """Real wrapper mounts expose adapter and terminal-receipt bypass mutations."""

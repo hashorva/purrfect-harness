@@ -76,6 +76,7 @@ check "documentation guard rejects an enforced-permissions claim" documentation_
 echo "== immutable execution spec and provider adapter"
 check "ExecutionSpec and provider adapter contracts" python3 tests/test-execution-spec.py
 check "immutable spec integration through real wrappers" python3 tests/test-execution-integration.py
+check "VerificationRecord and acceptance real-entry contracts" python3 tests/test-verification-record.py
 check "ExecutionSpec focused test leaves no scripts bytecode" test ! -e "$HARNESS/scripts/__pycache__"
 
 echo "== frozen fleet policy"
@@ -252,6 +253,9 @@ import shutil;
 assert 'agy.premium' in d['seats'] and 'agy.economy' in d['seats']\""
 check "spawn-brain.sh installed +x" test -x "$TARGET/scripts/spawn-brain.sh"
 check "verify-mission.sh installed +x" test -x "$TARGET/scripts/verify-mission.sh"
+check "VerificationRecord policy installed" test -f "$TARGET/scripts/verification_record.py"
+check "accept-feature.sh installed +x" test -x "$TARGET/scripts/accept-feature.sh"
+check "VerificationRecord schema installed" test -f "$TARGET/schemas/verification-record.schema.json"
 # receipt greenlight
 echo "== verify-mission receipts"
 FEAT="$TARGET/docs/missions/20990101-fixture"
@@ -297,14 +301,25 @@ git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "strict receipt fixture"
 ( cd "$TARGET" && PATH="$VERIFY_BIN:$PATH" VERIFY_WRITE=1 SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/tasks/T-002.md \
       --tier economy --model codex-test-model --feature F002 ) >/dev/null
-python3 - "$FEAT/features.json" <<'PY'
-import json, sys
-path = sys.argv[1]
-doc = json.load(open(path))
-doc["features"][1]["passes"] = True
-open(path, "w").write(json.dumps(doc, separators=(",", ":")) + "\n")
+VERIFY_RUN_ID="$(python3 - "$TARGET/.tasks/receipts" <<'PY'
+import json, pathlib, sys
+for path in pathlib.Path(sys.argv[1]).glob('*.json'):
+    doc = json.loads(path.read_text())
+    if doc['role'] == 'worker' and doc['feature'] == 'F002':
+        print(doc['run_id'])
+        break
+else:
+    raise SystemExit(1)
 PY
-git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "accept strict receipt fixture"
+)"
+( cd "$TARGET" && bash scripts/verify-mission.sh --run-id "$VERIFY_RUN_ID" docs/missions/20990101-fixture ) >/dev/null
+VERIFY_HASH="$(python3 - "$FEAT/verification/$VERIFY_RUN_ID.json" <<'PY'
+import hashlib, pathlib, sys
+print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())
+PY
+)"
+( cd "$TARGET" && env -u PURRFECT_DISPATCH_LOCK_PATH bash scripts/accept-feature.sh --run-id "$VERIFY_RUN_ID" --verification-sha256 "$VERIFY_HASH" --accepted-by test docs/missions/20990101-fixture ) >/dev/null
+git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "accept strict verification fixture"
 check "verify passes with brain+worker receipts" sh -c "cd '$TARGET' && bash scripts/verify-mission.sh docs/missions/20990101-fixture"
 check "spawn-worker --repo rejects missing path" sh -c "cd '$TARGET' && bash scripts/spawn-worker.sh agent docs/missions/20990101-fixture/GOAL.md --repo /nope/does/not/exist; test \$? -eq 1"
 
