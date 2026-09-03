@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-03 — Codex — T-010 / F005 dispatch blocked by active workspace lock
+
+- **Baseline:** Before dispatch, the working tree was clean; repository JSON parsing, `shellcheck scripts/*.sh tests/*.sh`, `bash tests/run-tests.sh`, and `git diff --check` exited successfully.
+- **Dispatch evidence:** The required pinned invocation `bash scripts/spawn-worker.sh codex docs/missions/20260821-execution-truth/tasks/T-010.md --tier premium --feature F005` failed closed before provider launch with `ERROR: workspace is already locked: /Users/zamirhashorva/dev/purrfect-harness/.tasks/locks/workspace-365a3cb8b610ed9c5ac766eb746af40942a5377cf5a789b57f7f7bdfdc5a0f6c.lock`.
+- **Lock evidence:** The lock directory remains present after 30 seconds. Its `owner.json` binds PID `79752` and token `eab07b5e-4fbd-415b-84f7-f984b307f260`; this environment cannot query that PID. The lock was not removed or bypassed.
+- **Disposition:** No worker attempt or receipt exists, no F005 implementation was made, `features.json` remains untouched, and no VerificationRecord or acceptance claim is made. Resume only after the lock owner releases the workspace lock.
+
 ## 2026-09-03 — GPT-5.6 Sol/high — T-009-R1 / F004 review — PASS
 
 - **Effect review:** Commit `3a1ff00` closes the bounded normal-exit descendant leak without changing ExecutionSpec v2, ExecutionReceipt v1, wrapper, lock, outcome, timeout, interruption, or scope contracts. `terminate_tree()` now signals the provider process group after direct-provider exit, retains bounded TERM-then-KILL cleanup, and reaps the direct provider when the group is already absent.
