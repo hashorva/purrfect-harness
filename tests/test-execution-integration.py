@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -169,6 +170,37 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
     def assert_no_lock(self):
         locks = self.root / ".tasks/locks"
         self.assertFalse(list(locks.glob("*.lock")) if locks.exists() else [])
+
+    def assert_normal_exit_descendant_cleanup(self, *, provider_exit, outcome):
+        self.clean_runs()
+        child_pid_path = self.parent / f"normal-exit-child-{provider_exit}"
+        base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                "--model", "normal-exit-model", "--feature", "F001"]
+        child_pid = None
+        try:
+            result = self.invoke(base, env={
+                "PROVIDER_CHILD_PID_PATH": str(child_pid_path),
+                "PROVIDER_EXIT": str(provider_exit),
+            })
+            self.assertEqual(result.returncode, provider_exit, result.stderr + result.stdout)
+            self.assertTrue(child_pid_path.exists(), result.stderr + result.stdout)
+            child_pid = int(child_pid_path.read_text())
+            receipts = list((self.root / ".tasks/receipts").glob("*.json"))
+            self.assertEqual(len(receipts), 1)
+            receipt = json.loads(receipts[0].read_text())
+            self.assertEqual(receipt["outcome"], outcome)
+            valid = self.invoke([
+                sys.executable, "scripts/execution_receipt.py", "validate", "--receipt", str(receipts[0]),
+            ])
+            self.assertEqual(valid.returncode, 0, valid.stderr)
+            with self.assertRaises(ProcessLookupError):
+                os.kill(child_pid, 0)
+        finally:
+            if child_pid is not None:
+                try:
+                    os.kill(child_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
     @staticmethod
     def prompt_worker():
@@ -360,6 +392,31 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             self.assertEqual(doc["changed_paths"], ["allowed.txt"])
             self.assertTrue(doc["workspace_changed"])
             self.assertEqual(doc["scope"]["result"], "pass")
+
+    def test_normal_provider_exit_reaps_descendants_before_worker_return(self):
+        self.write_fleet("codex", "normal-exit-model", "medium", "unknown")
+        self.assert_normal_exit_descendant_cleanup(provider_exit=0, outcome="completed")
+        self.assert_normal_exit_descendant_cleanup(provider_exit=7, outcome="failed")
+
+    def test_normal_exit_descendant_regressions_are_non_vacuous(self):
+        self.write_fleet("codex", "normal-exit-model", "medium", "unknown")
+        runner = self.root / "scripts/execution_runner.py"
+        corrected = runner.read_bytes()
+        corrected_text = corrected.decode()
+        current_guard = "    if process is None:\n        return\n"
+        reproduced_guard = "    if process is None or process.poll() is not None:\n        return\n"
+        self.assertEqual(corrected_text.count(current_guard), 1)
+        runner.write_text(corrected_text.replace(current_guard, reproduced_guard, 1))
+        self.commit_fixture("reproduce normal-exit descendant leak")
+        try:
+            with self.assertRaises(AssertionError):
+                self.assert_normal_exit_descendant_cleanup(provider_exit=0, outcome="completed")
+            with self.assertRaises(AssertionError):
+                self.assert_normal_exit_descendant_cleanup(provider_exit=7, outcome="failed")
+        finally:
+            runner.write_bytes(corrected)
+        self.assertEqual(runner.read_bytes(), corrected)
+        self.commit_fixture("restore corrected normal-exit cleanup")
 
     def test_real_verifier_rejects_out_of_scope_noop_and_corrupt_evidence(self):
         self.write_fleet("codex", "model", "medium", "unknown", include_brain=True)

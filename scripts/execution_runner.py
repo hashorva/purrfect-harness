@@ -17,25 +17,48 @@ RECEIPT_FAILURE_EXIT = 125
 
 
 def terminate_tree(process):
-    if process is None or process.poll() is not None:
+    if process is None:
         return
+
+    def group_exists():
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    def wait_for_group(timeout):
+        deadline = time.monotonic() + timeout
+        while group_exists():
+            # poll() reaps the direct provider once it has exited, but its
+            # descendants can still own the process group.
+            process.poll()
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.02)
+        process.wait()
+        return True
+
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
+        # A missing process group is already clean; still reap a direct
+        # provider if it has not been collected yet.
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("provider process tree could not be reaped") from exc
         return
-    try:
-        process.wait(timeout=1)
+    if wait_for_group(1):
         return
-    except subprocess.TimeoutExpired:
-        pass
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
-    try:
-        process.wait(timeout=1)
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("provider process tree could not be reaped") from exc
+    if not wait_for_group(1):
+        raise RuntimeError("provider process tree could not be reaped")
 
 
 def run(args):

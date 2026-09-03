@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-03 — Codex — T-009-R1 normal-exit descendant cleanup
+
+- **Correction:** `scripts/execution_runner.py` now signals the provider process group even when the direct provider has already exited, waits for the entire group to disappear after TERM, escalates to KILL within the existing bounded cleanup window when necessary, and reaps the direct provider when a missing group is already clean. ExecutionSpec v2, ExecutionReceipt v1, wrapper, lock, outcome, timeout, interruption, and scope contracts are unchanged.
+- **Mounted real-entry regressions:** The real `scripts/spawn-worker.sh` starts a provider that records a long-lived child then exits 0, and separately exits 7. The wrapper respectively returns 0/7, writes exactly one valid terminal receipt with `completed`/`failed`, and the recorded child PID no longer exists before wrapper return.
+- **Non-vacuity:** Restoring `if process is None or process.poll() is not None: return` in the mounted runner made both normal-success and normal-failure descendant regressions fail because their children remained alive. The exact corrected runner bytes were restored and asserted byte-for-byte before the final green run.
+- **Verified:** `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-integration.py` completed 16 tests (`OK`); ShellCheck, repository JSON validation, `git diff --check`, and the no-bytecode check pass; `bash tests/run-tests.sh` completed with `ALL TESTS PASSED`.
+- **Acceptance boundary:** F004 remains `passes: false`. This is implementation evidence only; no F004/F005 acceptance or feature-state change was made.
+
 ## 2026-09-03 — GPT-5.6 Sol/high — T-009 / F004 review — FAIL
 
 - **Effect review:** Commit `e36dd3f` correctly centralizes provider lifecycle and strict UUID receipt creation, and its declared focused/full checks are green, but it does not satisfy the process-tree cleanup exit criterion for every terminal outcome.
