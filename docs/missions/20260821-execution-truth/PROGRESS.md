@@ -4,6 +4,16 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-03 — GPT-5.6 Sol/high — T-009-R1 / F004 review — PASS
+
+- **Effect review:** Commit `3a1ff00` closes the bounded normal-exit descendant leak without changing ExecutionSpec v2, ExecutionReceipt v1, wrapper, lock, outcome, timeout, interruption, or scope contracts. `terminate_tree()` now signals the provider process group after direct-provider exit, retains bounded TERM-then-KILL cleanup, and reaps the direct provider when the group is already absent.
+- **Mounted real-entry proof:** The real `scripts/spawn-worker.sh` regressions cover provider exit 0/`completed` and exit 7/`failed`; each returns the provider status, writes exactly one valid terminal receipt, and proves the recorded long-lived child is absent before wrapper return.
+- **Independent guard proof:** In an isolated mounted fixture, restoring the reproduced `process.poll() is not None` early return made both real-entry cases fail specifically with `ProcessLookupError not raised`, proving the children survived. The repository runner was not mutated and the working tree remained clean during this proof.
+- **Verification:** Focused integration completed 16 tests; ShellCheck, repository JSON validation, `git diff --check`, the no-bytecode check, and `bash tests/run-tests.sh` pass (`ALL TESTS PASSED`). `bash scripts/verify-mission.sh docs/missions/20260821-execution-truth` also exits 0 for the current mission state.
+- **Attribution:** Worker receipt `.tasks/receipts/30125a86-0cd0-4f60-b65d-0b6f5627f5aa.json` is a completed Codex premium T-009-R1/F004 run with `workspace_changed: true`, exact spec-hash linkage, passing scope, and only allow-listed changed paths. Independent code review reported no findings.
+- **Disposition:** T-009-R1 passes review. F004 remains `passes: false`; no feature was accepted and T-010/F005 was not dispatched in this review action.
+- **Brain evidence:** `.tasks/logs/7ad00e55-fa5a-42d7-9450-0fb34719d413.log` (brain review log only; not worker evidence).
+
 ## 2026-09-03 — Codex — T-009-R1 normal-exit descendant cleanup
 
 - **Correction:** `scripts/execution_runner.py` now signals the provider process group even when the direct provider has already exited, waits for the entire group to disappear after TERM, escalates to KILL within the existing bounded cleanup window when necessary, and reaps the direct provider when a missing group is already clean. ExecutionSpec v2, ExecutionReceipt v1, wrapper, lock, outcome, timeout, interruption, and scope contracts are unchanged.
