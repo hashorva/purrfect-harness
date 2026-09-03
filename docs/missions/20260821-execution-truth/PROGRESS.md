@@ -4,6 +4,15 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-03 — GPT-5.6 Sol/high — T-010 attempt 2 / F005 review — FAIL / STOP
+
+- **Blocking acceptance-link failure:** The real `accept-feature.sh` path does not compare the VerificationRecord's feature, mission, work unit, attempt, or recorded Git states with the bound receipt. In a mounted repository, I changed a passing F001 record's `feature` to `F002`, recomputed its caller-supplied hash, and the real acceptance entry point returned `ACCEPT OK`; F001 stayed false, F002 became true with the F001 run ID, and `verify-mission.sh --require-workers` also returned `VERIFY OK`. This violates the required exact same-run feature binding and proves the current acceptance/audit guards are bypassable.
+- **Real task/parser failure:** `task_at_base()` requires JSON bullets immediately after the heading and passes the entire Markdown bullet payload directly to `json.loads`. The committed T-010 task has a blank line and code-span backticks, as do normal mission task conventions. Therefore `verify-mission.sh --run-id 9a1752ee-846a-4e85-a969-171f1351c746 ...` fails with `committed task authorizes no verification commands`; the full repository suite independently exits 1 at the same real path after `== verify-mission receipts`.
+- **Verified good:** The focused two-case VerificationRecord test, ShellCheck, repository JSON parsing, `git diff --check`, and the mission-wide audit with all features still false pass. Receipt `.tasks/receipts/9a1752ee-846a-4e85-a969-171f1351c746.json` proves Codex premium `gpt-5.6-terra`, feature F005, attempt 2, exit 0, a changed workspace, and an in-scope Git-visible delta across the nine allow-listed paths.
+- **Evidence:** Brain review log `.tasks/logs/dfb7bd41-9f94-4c1d-9cf7-96993971a259.log`; worker log `.tasks/logs/9a1752ee-846a-4e85-a969-171f1351c746.log`.
+- **Commit status:** `git commit -m 'docs(mission): record T-010 verification review'` could not create `.git/index.lock` in this sandbox (`Operation not permitted`), so this review entry remains an unstaged workspace change.
+- **Disposition:** T-010 has reached its two-attempt cap and cannot be accepted. F005 remains `passes: false`; no VerificationRecord or feature acceptance was created in this mission. A human-approved rewritten correction must bind every record identity/state field to the exact receipt and exercise the repository's real Markdown task format through the full suite.
+
 ## 2026-09-03 — Codex — T-010 / F005 run-bound verification and separate acceptance
 
 - **Implementation:** Added dependency-free `verification_record.py`, the `verify-mission.sh --run-id <uuid>` real entry point, `accept-feature.sh`, and the VerificationRecord schema. Verification binds the exact strict worker receipt, exact persisted spec bytes, task bytes loaded from `receipt.git_before.head`, JSON-argv task commands, and the receipt's Git snapshot before and after every check. It atomically publishes one canonical read-only record with command-output digests only; it never edits `features.json`.
