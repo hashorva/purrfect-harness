@@ -18,6 +18,7 @@ UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-
 HEX = re.compile(r"^[0-9a-f]{64}$")
 COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
 RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$")
+SAFE_RELATIVE_PATH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*$")
 GIT_FIELDS = {"head", "status_porcelain_v1_z_sha256", "status_entry_count", "dirty_paths"}
 RECORD_FIELDS = {"schema_version", "run_id", "mission", "feature", "work_unit", "attempt",
                  "execution_spec", "execution_receipt", "task", "receipt_git_after",
@@ -74,7 +75,6 @@ def atomic_create(path, data):
         directory = os.open(path.parent, os.O_RDONLY)
         try: os.fsync(directory)
         finally: os.close(directory)
-        os.chmod(path, 0o400)
     finally:
         if temporary is not None:
             try: temporary.unlink()
@@ -202,8 +202,8 @@ def validate_record(record):
     for item in (record["execution_spec"], record["execution_receipt"], record["task"]):
         if not isinstance(item, dict) or not isinstance(item.get("path"), str) or not HEX.fullmatch(item.get("sha256", "")): fail("VerificationRecord link is invalid")
     if set(record["execution_spec"]) != {"path", "sha256"} or not Path(record["execution_spec"]["path"]).is_absolute(): fail("VerificationRecord spec link is invalid")
-    if set(record["execution_receipt"]) != {"path", "sha256"} or not re.fullmatch(r"\.tasks/receipts/[0-9a-f-]+\.json", record["execution_receipt"]["path"]): fail("VerificationRecord receipt link is invalid")
-    if set(record["task"]) != {"path", "sha256", "git_commit"} or not COMMIT.fullmatch(record["task"]["git_commit"]): fail("VerificationRecord task link is invalid")
+    if set(record["execution_receipt"]) != {"path", "sha256"} or not re.fullmatch(r"\.tasks/receipts/" + UUID.pattern[1:-1] + r"\.json", record["execution_receipt"]["path"]): fail("VerificationRecord receipt link is invalid")
+    if set(record["task"]) != {"path", "sha256", "git_commit"} or not SAFE_RELATIVE_PATH.fullmatch(record["task"]["path"]) or not COMMIT.fullmatch(record["task"]["git_commit"]): fail("VerificationRecord task link is invalid")
     for name in ("receipt_git_after", "verification_git_before", "verification_git_after"):
         state = record[name]
         if not isinstance(state, dict) or set(state) != GIT_FIELDS or not COMMIT.fullmatch(state.get("head", "")) or not HEX.fullmatch(state.get("status_porcelain_v1_z_sha256", "")) or isinstance(state.get("status_entry_count"), bool) or not isinstance(state.get("status_entry_count"), int) or state["status_entry_count"] < 0 or not isinstance(state.get("dirty_paths"), list) or not all(isinstance(p, str) and p and not p.startswith("/") and ".." not in p.split("/") for p in state["dirty_paths"]): fail("VerificationRecord Git snapshot is invalid")
@@ -292,9 +292,25 @@ def audit(root, mission, require_workers=False):
         failures.append(f"no completed, in-scope brain ExecutionReceipt for exact mission {mission_rel}")
     for feature in features:
         if not isinstance(feature, dict): failures.append("feature is not an object"); continue
-        if feature.get("passes") is True and feature.get("bootstrap") is not True:
+        if feature.get("bootstrap") is not True:
             required = ("accepted_run_id", "accepted_verification_sha256", "accepted_at", "accepted_by")
-            if any(k not in feature for k in required): failures.append(f"feature {feature.get('id')}: missing acceptance evidence"); continue
+            has_acceptance = any(k in feature for k in required)
+            if type(feature.get("passes")) is not bool:
+                failures.append(f"feature {feature.get('id')}: passes must be boolean"); continue
+            if feature["passes"] is False:
+                if has_acceptance: failures.append(f"feature {feature.get('id')}: unaccepted feature has stale acceptance evidence")
+                continue
+            if any(k not in feature for k in required):
+                failures.append(f"feature {feature.get('id')}: missing acceptance evidence"); continue
+            if (not UUID.fullmatch(feature["accepted_run_id"]) or not HEX.fullmatch(feature["accepted_verification_sha256"])
+                    or not isinstance(feature["accepted_at"], str) or not RFC3339.fullmatch(feature["accepted_at"])
+                    or not isinstance(feature["accepted_by"], str) or not feature["accepted_by"].strip()
+                    or feature["accepted_by"].strip() != feature["accepted_by"]):
+                failures.append(f"feature {feature.get('id')}: acceptance metadata is invalid"); continue
+            try:
+                datetime.fromisoformat(feature["accepted_at"].replace("Z", "+00:00"))
+            except ValueError:
+                failures.append(f"feature {feature.get('id')}: acceptance metadata is invalid"); continue
             try:
                 record, raw = load_record(mission / "verification" / f"{feature['accepted_run_id']}.json")
                 if digest(raw) != feature["accepted_verification_sha256"] or record["result"] != "pass" or record["feature"] != feature["id"]: raise VerificationError("record does not match accepted feature")

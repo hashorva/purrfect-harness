@@ -3,7 +3,9 @@
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import unittest
@@ -64,18 +66,12 @@ class VerificationRecordIntegration(unittest.TestCase):
         audited = self.call("bash", "scripts/verify-mission.sh", "--require-workers", self.mission)
         self.assertEqual(audited.returncode, 0, audited.stderr + audited.stdout)
 
-    def test_mount_fails_when_snapshot_binding_is_removed(self):
-        policy = self.fixture.root / "scripts/verification_record.py"
-        original = policy.read_text()
-        self.assertIn('if before != receipt["git_after"]: fail(', original)
-        policy.write_text(original.replace('if before != receipt["git_after"]: fail("current Git snapshot does not equal receipt git_after before checks")', '# snapshot guard bypass', 1).replace('if after != receipt["git_after"]: passed = False', '# snapshot guard bypass', 1))
-        self.fixture.commit_fixture("snapshot guard bypass")
+    def test_unrelated_git_visible_change_fails_real_snapshot_guard_without_record(self):
         (self.fixture.root / "unrelated.txt").write_text("must invalidate verification\n")
-        bypassed = self.call("bash", "scripts/verify-mission.sh", "--run-id", self.run_id, self.mission)
-        self.assertEqual(bypassed.returncode, 0, bypassed.stderr + bypassed.stdout)
-        policy.write_text(original)
-        (self.fixture.root / "unrelated.txt").unlink()
-        self.fixture.commit_fixture("restore snapshot guard")
+        denied = self.call("bash", "scripts/verify-mission.sh", "--run-id", self.run_id, self.mission)
+        self.assertNotEqual(denied.returncode, 0, denied.stderr + denied.stdout)
+        self.assertIn("Git snapshot", denied.stderr + denied.stdout)
+        self.assertFalse((self.fixture.mission / "verification" / f"{self.run_id}.json").exists())
 
     def test_rehashed_cross_feature_record_fails_real_acceptance_and_audit(self):
         """The supplied hash asserts bytes; it cannot authorize a re-bound identity."""
@@ -202,10 +198,17 @@ class VerificationRecordIntegration(unittest.TestCase):
         self.assertEqual(set(schema["required"]), policy.RECORD_FIELDS)
         self.assertEqual(schema["properties"]["commands"]["minItems"], 1)
         self.assertEqual(schema["$defs"]["gitState"]["additionalProperties"], False)
+        task_pattern = schema["$defs"]["taskLink"]["properties"]["path"]["pattern"]
+        receipt_pattern = schema["$defs"]["receiptLink"]["allOf"][1]["properties"]["path"]["pattern"]
+        self.assertTrue(re.fullmatch(task_pattern, valid["task"]["path"]))
+        self.assertTrue(re.fullmatch(receipt_pattern, valid["execution_receipt"]["path"]))
         weakest = (
             ("empty argv", lambda d: d["commands"][0].update(argv=[])),
             ("empty command item", lambda d: d["commands"][0].update(argv=[""])),
             ("empty task path", lambda d: d["task"].update(path="")),
+            ("absolute task path", lambda d: d["task"].update(path="/tmp/task.md")),
+            ("traversing task path", lambda d: d["task"].update(path="docs/../task.md")),
+            ("noncanonical receipt UUID", lambda d: d["execution_receipt"].update(path=".tasks/receipts/not-a-uuid.json")),
             ("negative snapshot count", lambda d: d["receipt_git_after"].update(status_entry_count=-1)),
             ("undeclared property", lambda d: d.update(extra=None)),
         )
@@ -215,6 +218,35 @@ class VerificationRecordIntegration(unittest.TestCase):
                 change(candidate)
                 with self.assertRaises(policy.VerificationError):
                     policy.validate_record(candidate)
+
+    def test_audit_rejects_invalid_or_stale_acceptance_metadata_before_record_loading(self):
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", self.run_id, self.mission)
+        self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        record = self.fixture.mission / "verification" / f"{self.run_id}.json"
+        good_hash = hashlib.sha256(record.read_bytes()).hexdigest()
+        accepted = self.call("bash", "scripts/accept-feature.sh", "--run-id", self.run_id,
+                             "--verification-sha256", good_hash, "--accepted-by", "reviewer", self.mission,
+                             env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
+        self.assertEqual(accepted.returncode, 0, accepted.stderr + accepted.stdout)
+        features_path = self.fixture.mission / "features.json"
+        accepted_doc = json.loads(features_path.read_text())
+        cases = (
+            ("nonboolean passes", lambda f: f.update(passes=1)),
+            ("stale false acceptance", lambda f: f.update(passes=False)),
+            ("bad run UUID", lambda f: f.update(accepted_run_id="bad")),
+            ("uppercase hash", lambda f: f.update(accepted_verification_sha256=good_hash.upper())),
+            ("non-UTC timestamp", lambda f: f.update(accepted_at="2026-09-03T00:00:00+00:00")),
+            ("blank accepted by", lambda f: f.update(accepted_by=" reviewer ")),
+        )
+        for label, mutate in cases:
+            with self.subTest(label=label):
+                doc = json.loads(json.dumps(accepted_doc))
+                mutate(doc["features"][0])
+                features_path.write_text(json.dumps(doc, indent=2) + "\n")
+                audited = self.call("bash", "scripts/verify-mission.sh", "--require-workers", self.mission)
+                self.assertNotEqual(audited.returncode, 0, label + ": " + audited.stderr + audited.stdout)
+                self.assertIn("feature F001", audited.stderr + audited.stdout)
+        features_path.write_text(json.dumps(accepted_doc, indent=2) + "\n")
 
     def test_wrong_acceptance_hash_is_rejected_at_the_real_entry_point(self):
         verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", self.run_id, self.mission)
@@ -238,21 +270,43 @@ class VerificationRecordIntegration(unittest.TestCase):
             ("identity-rebind", 'for key, value in expected.items():', 'for key, value in ():', "test_revalidation_rejects_every_bound_identity_state_and_hash"),
             ("snapshot-rebind", 'if record["verification_git_before"] != receipt["git_after"] or record["verification_git_after"] != receipt["git_after"]:',
              'if False:', "test_revalidation_rejects_every_bound_identity_state_and_hash"),
+            ("snapshot-pre-post", 'if before != receipt["git_after"]: fail("current Git snapshot does not equal receipt git_after before checks")\n',
+             'if False:\n', "test_unrelated_git_visible_change_fails_real_snapshot_guard_without_record"),
             ("lock", 'if os.environ.get("PURRFECT_DISPATCH_LOCK_PATH") or (lock_dir.is_dir() and list(lock_dir.glob("*.lock"))):',
              'if False:', "test_real_run_verification_is_immutable_and_acceptance_is_separate"),
             ("acceptance-hash", 'if digest(raw) != expected_hash or record["result"] != "pass":',
              'if record["result"] != "pass":', "test_wrong_acceptance_hash_is_rejected_at_the_real_entry_point"),
         )
+        selected = os.environ.get("GUARD_MUTATION_LABEL")
         for label, old, new, target in mutations:
+            if selected and label != selected:
+                continue
             with self.subTest(label=label):
-                self.assertIn(old, original)
-                policy.write_text(original.replace(old, new, 1))
+                source = original
+                if label in {"spec-hash", "receipt-hash"}:
+                    start = source.index("def revalidate_record")
+                    prefix, revalidation = source[:start], source[start:]
+                    self.assertIn(old, revalidation)
+                    source = prefix + revalidation.replace(old, new, 1)
+                elif label == "snapshot-pre-post":
+                    self.assertIn(old, source)
+                    self.assertIn('if after != receipt["git_after"]: passed = False', source)
+                    source = source.replace(old, new, 1).replace('if after != receipt["git_after"]: passed = False', 'if False: passed = False', 1)
+                else:
+                    self.assertIn(old, source)
+                    source = source.replace(old, new, 1)
+                policy.write_text(source)
                 try:
                     result = subprocess.run([sys.executable, "tests/test-verification-record.py",
                                              f"VerificationRecordIntegration.{target}"], cwd=ROOT,
-                                            env={**__import__("os").environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                                            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
                                             text=True, capture_output=True)
-                    self.assertNotEqual(result.returncode, 0, label + ": guard mutation did not break real entry\n" + result.stdout + result.stderr)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(result.returncode, 0, label + ": guard mutation did not break real entry\n" + output)
+                    self.assertIn("AssertionError", output, label + ": mutation failed before its test assertion\n" + output)
+                    self.assertNotIn("NameError", output, label + ": mutation produced a construction error\n" + output)
+                    self.assertNotIn("SyntaxError", output, label + ": mutation produced a syntax error\n" + output)
+                    self.assertNotIn("\nERROR", output, label + ": mutation produced a test setup error\n" + output)
                 finally:
                     policy.write_text(original)
                 self.assertEqual(policy.read_text(), original)

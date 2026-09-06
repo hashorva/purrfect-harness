@@ -4,6 +4,20 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-06 — Orchestrator — T-010-R2 attempt 1 review checkpoint
+
+- **Independent final banners:** The exact attempt-1 dirty snapshot passes `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verification-record.py` with 10 tests and final `OK`; ShellCheck, repository JSON parsing, `git diff --check`, no-bytecode, and `PYTHONDONTWRITEBYTECODE=1 bash tests/run-tests.sh` all pass with final `ALL TESTS PASSED`.
+- **Guard review:** Eight named mutations fail at their intended mounted `AssertionError`, contain no `NameError`, `SyntaxError`, or setup error, and restore the policy bytes between runs. The worker receipt `.tasks/receipts/b360709c-c19d-4995-8b76-da66217860bf.json` is completed, changed, and in scope.
+- **Final consistency scope:** Before Sol review, use T-010-R2 attempt 2 only to make malformed non-string record/acceptance fields fail as controlled `VerificationError` rather than uncaught `TypeError`, and align task-link validation with ExecutionReceipt's existing safe relative-path contract so legitimate internal spaces are not rejected while absolute, traversal, CR/LF, empty, and edge-whitespace paths still fail. Mount schema/executable regressions for both.
+- **Acceptance boundary:** No repository VerificationRecord or feature mutation exists; F005 remains false pending the final consistency run and Sol/high review.
+
+## 2026-09-06 — Codex — T-010-R2 — STOP: focused final banner unavailable
+
+- **Pre-fix reproduction:** The focused weakest-value case was red: executable `validate_record()` accepted `task.path: ""` although the shipped schema required a non-empty value. The reviewed R1 WIP also had a disabled VerificationRecord snapshot-rebind guard and a transient disabled caller acceptance-hash guard.
+- **Scoped correction:** `VerificationRecord` now rejects empty, absolute, traversing, and noncanonical task links, and receipt links must name one canonical RFC UUID file in both executable policy and schema. Mission audit now rejects non-boolean `passes`, stale fields on false non-bootstrap features, and malformed true-feature run/hash/time/identity metadata before loading a record. The immutable record publisher no longer performs a redundant chmod after publication. The snapshot regression is a normal real `verify-mission.sh --run-id` negative: an unrelated Git-visible path fails before a record exists.
+- **Guard evidence and restoration:** Each named mutation was run individually from the repository root against its intended focused entry: task-at-base, spec hash, receipt hash, identity rebind, VerificationRecord snapshot rebind, verifier pre/post snapshot enforcement, dispatch lock, and acceptance hash. Each run returned red through the expected test assertion (not `NameError`, `SyntaxError`, or setup error), and `scripts/verification_record.py` was restored byte-for-byte before the next mutation. The three new focused mounted cases (weakest schema/executable values, acceptance metadata, and normal dirty-snapshot refusal) pass.
+- **Hard stop:** `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verification-record.py` was invoked on the unmodified implementation, but this transport ended while `test_required_guard_mutations_break_the_real_focused_entry_and_restore` was running and emitted no final `OK` banner. Per T-010-R2’s iteration policy, no aggregate run, F005 acceptance, VerificationRecord creation, or `features.json` edit is claimed. Human intervention is required to obtain the final focused and aggregate banners.
+
 ## 2026-09-06 — Orchestrator — T-010-R1 attempt 2 review — FAIL
 
 - **Reproduced focused failure:** `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verification-record.py` runs nine cases and fails `empty task path`: the schema declares `task.path` non-empty, but the executable `validate_record()` accepts `""`. The attempt-2 progress claim that focused cases were exercised is not completion evidence.
