@@ -18,7 +18,6 @@ UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-
 HEX = re.compile(r"^[0-9a-f]{64}$")
 COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
 RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$")
-SAFE_RELATIVE_PATH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*$")
 GIT_FIELDS = {"head", "status_porcelain_v1_z_sha256", "status_entry_count", "dirty_paths"}
 RECORD_FIELDS = {"schema_version", "run_id", "mission", "feature", "work_unit", "attempt",
                  "execution_spec", "execution_receipt", "task", "receipt_git_after",
@@ -31,6 +30,18 @@ class VerificationError(ValueError):
 
 def fail(message):
     raise VerificationError(message)
+
+
+def matches(pattern, value):
+    """Return false, rather than leaking TypeError, for malformed JSON values."""
+    return isinstance(value, str) and pattern.fullmatch(value) is not None
+
+
+def safe_task_path(value):
+    """Match the receipt's repository-relative task contract, plus line safety."""
+    return (isinstance(value, str) and bool(value) and value.strip() == value and
+            "\r" not in value and "\n" not in value and not Path(value).is_absolute() and
+            ".." not in Path(value).parts)
 
 
 def now():
@@ -195,22 +206,25 @@ def verify(root, mission, run_id):
 
 def validate_record(record):
     if not isinstance(record, dict) or set(record) != RECORD_FIELDS or record.get("schema_version") != 1: fail("VerificationRecord has invalid fields")
-    if not UUID.fullmatch(record["run_id"]) or record["result"] not in {"pass", "fail"}: fail("VerificationRecord has invalid identity or result")
+    if not matches(UUID, record["run_id"]) or not isinstance(record["result"], str) or record["result"] not in {"pass", "fail"}: fail("VerificationRecord has invalid identity or result")
     for field in ("mission", "feature", "work_unit"):
         if not isinstance(record[field], str) or not record[field]: fail("VerificationRecord has invalid identity")
     if isinstance(record["attempt"], bool) or not isinstance(record["attempt"], int) or record["attempt"] < 1: fail("VerificationRecord attempt is invalid")
     for item in (record["execution_spec"], record["execution_receipt"], record["task"]):
-        if not isinstance(item, dict) or not isinstance(item.get("path"), str) or not HEX.fullmatch(item.get("sha256", "")): fail("VerificationRecord link is invalid")
+        if not isinstance(item, dict) or not isinstance(item.get("path"), str) or not matches(HEX, item.get("sha256")): fail("VerificationRecord link is invalid")
     if set(record["execution_spec"]) != {"path", "sha256"} or not Path(record["execution_spec"]["path"]).is_absolute(): fail("VerificationRecord spec link is invalid")
-    if set(record["execution_receipt"]) != {"path", "sha256"} or not re.fullmatch(r"\.tasks/receipts/" + UUID.pattern[1:-1] + r"\.json", record["execution_receipt"]["path"]): fail("VerificationRecord receipt link is invalid")
-    if set(record["task"]) != {"path", "sha256", "git_commit"} or not SAFE_RELATIVE_PATH.fullmatch(record["task"]["path"]) or not COMMIT.fullmatch(record["task"]["git_commit"]): fail("VerificationRecord task link is invalid")
+    if set(record["execution_receipt"]) != {"path", "sha256"} or not matches(re.compile(r"\.tasks/receipts/" + UUID.pattern[1:-1] + r"\.json"), record["execution_receipt"]["path"]): fail("VerificationRecord receipt link is invalid")
+    if set(record["task"]) != {"path", "sha256", "git_commit"} or not safe_task_path(record["task"]["path"]) or not matches(COMMIT, record["task"]["git_commit"]): fail("VerificationRecord task link is invalid")
     for name in ("receipt_git_after", "verification_git_before", "verification_git_after"):
         state = record[name]
-        if not isinstance(state, dict) or set(state) != GIT_FIELDS or not COMMIT.fullmatch(state.get("head", "")) or not HEX.fullmatch(state.get("status_porcelain_v1_z_sha256", "")) or isinstance(state.get("status_entry_count"), bool) or not isinstance(state.get("status_entry_count"), int) or state["status_entry_count"] < 0 or not isinstance(state.get("dirty_paths"), list) or not all(isinstance(p, str) and p and not p.startswith("/") and ".." not in p.split("/") for p in state["dirty_paths"]): fail("VerificationRecord Git snapshot is invalid")
+        if not isinstance(state, dict) or set(state) != GIT_FIELDS or not matches(COMMIT, state.get("head")) or not matches(HEX, state.get("status_porcelain_v1_z_sha256")) or isinstance(state.get("status_entry_count"), bool) or not isinstance(state.get("status_entry_count"), int) or state["status_entry_count"] < 0 or not isinstance(state.get("dirty_paths"), list) or not all(isinstance(p, str) and p and not p.startswith("/") and ".." not in p.split("/") for p in state["dirty_paths"]): fail("VerificationRecord Git snapshot is invalid")
     if not isinstance(record["commands"], list) or not record["commands"]: fail("VerificationRecord commands are invalid")
     for command in record["commands"]:
-        if set(command) != {"argv", "started_at", "finished_at", "exit_code", "stdout_sha256", "stderr_sha256"} or not isinstance(command["argv"], list) or not command["argv"] or not all(isinstance(v, str) and v for v in command["argv"]): fail("VerificationRecord command is invalid")
-        if not isinstance(command["exit_code"], int) or isinstance(command["exit_code"], bool) or not RFC3339.fullmatch(command["started_at"]) or not RFC3339.fullmatch(command["finished_at"]) or not HEX.fullmatch(command["stdout_sha256"]) or not HEX.fullmatch(command["stderr_sha256"]): fail("VerificationRecord command evidence is invalid")
+        if (not isinstance(command, dict) or
+                set(command) != {"argv", "started_at", "finished_at", "exit_code", "stdout_sha256", "stderr_sha256"} or
+                not isinstance(command["argv"], list) or not command["argv"] or
+                not all(isinstance(v, str) and v for v in command["argv"])): fail("VerificationRecord command is invalid")
+        if not isinstance(command["exit_code"], int) or isinstance(command["exit_code"], bool) or not matches(RFC3339, command["started_at"]) or not matches(RFC3339, command["finished_at"]) or not matches(HEX, command["stdout_sha256"]) or not matches(HEX, command["stderr_sha256"]): fail("VerificationRecord command evidence is invalid")
         try:
             started = datetime.fromisoformat(command["started_at"].replace("Z", "+00:00"))
             finished = datetime.fromisoformat(command["finished_at"].replace("Z", "+00:00"))
@@ -252,7 +266,7 @@ def revalidate_record(root, mission, record):
 
 
 def accept(root, mission, run_id, expected_hash, accepted_by):
-    if not HEX.fullmatch(expected_hash) or not isinstance(accepted_by, str) or not accepted_by.strip() or accepted_by.strip() != accepted_by: fail("verification hash or accepted_by is invalid")
+    if not matches(HEX, expected_hash) or not isinstance(accepted_by, str) or not accepted_by.strip() or accepted_by.strip() != accepted_by: fail("verification hash or accepted_by is invalid")
     lock_dir = root / ".tasks/locks"
     if os.environ.get("PURRFECT_DISPATCH_LOCK_PATH") or (lock_dir.is_dir() and list(lock_dir.glob("*.lock"))):
         fail("acceptance refuses while a dispatch workspace lock exists")
@@ -263,9 +277,9 @@ def accept(root, mission, run_id, expected_hash, accepted_by):
     feature_path = mission / "features.json"
     try: doc = json.loads(feature_path.read_text())
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc: raise VerificationError(f"cannot read features.json: {exc}") from exc
-    matches = [f for f in doc.get("features", []) if isinstance(f, dict) and f.get("id") == record["feature"]]
-    if len(matches) != 1 or matches[0].get("passes") is not False or any(k in matches[0] for k in ("accepted_run_id", "accepted_verification_sha256", "accepted_at", "accepted_by")): fail("feature is not in an acceptable prior state")
-    feature = matches[0]; feature.update({"passes": True, "accepted_run_id": run_id, "accepted_verification_sha256": expected_hash, "accepted_at": now(), "accepted_by": accepted_by})
+    feature_matches = [f for f in doc.get("features", []) if isinstance(f, dict) and f.get("id") == record["feature"]]
+    if len(feature_matches) != 1 or feature_matches[0].get("passes") is not False or any(k in feature_matches[0] for k in ("accepted_run_id", "accepted_verification_sha256", "accepted_at", "accepted_by")): fail("feature is not in an acceptable prior state")
+    feature = feature_matches[0]; feature.update({"passes": True, "accepted_run_id": run_id, "accepted_verification_sha256": expected_hash, "accepted_at": now(), "accepted_by": accepted_by})
     atomic_replace(feature_path, json.dumps(doc, indent=2, ensure_ascii=False) .encode("utf-8") + b"\n")
 
 
@@ -273,6 +287,7 @@ def audit(root, mission, require_workers=False):
     feature_path = mission / "features.json"
     try: features = json.loads(feature_path.read_text())["features"]
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError) as exc: raise VerificationError(f"cannot read features.json: {exc}") from exc
+    if not isinstance(features, list): fail("features.json features must be an array")
     failures = []
     mission_rel = mission.relative_to(root).as_posix()
     brains = []
@@ -302,7 +317,7 @@ def audit(root, mission, require_workers=False):
                 continue
             if any(k not in feature for k in required):
                 failures.append(f"feature {feature.get('id')}: missing acceptance evidence"); continue
-            if (not UUID.fullmatch(feature["accepted_run_id"]) or not HEX.fullmatch(feature["accepted_verification_sha256"])
+            if (not matches(UUID, feature["accepted_run_id"]) or not matches(HEX, feature["accepted_verification_sha256"])
                     or not isinstance(feature["accepted_at"], str) or not RFC3339.fullmatch(feature["accepted_at"])
                     or not isinstance(feature["accepted_by"], str) or not feature["accepted_by"].strip()
                     or feature["accepted_by"].strip() != feature["accepted_by"]):

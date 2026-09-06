@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-06 — Codex — T-010-R2 final type-safety and task-path contract closure
+
+- **Closed scope only:** `VerificationRecord` now returns controlled `VerificationError` failures for malformed non-string record links, identities, command evidence, and acceptance metadata. Its task-link policy now agrees with the existing ExecutionReceipt safe repository-relative path contract: legitimate internal spaces are accepted; empty, absolute, traversing, CR/LF-containing, and edge-whitespace paths are rejected. The shipped schema expresses the same weakest-value boundary.
+- **Mounted evidence:** The focused validator/schema regression covers empty, absolute, traversal, CR/LF, edge-whitespace, canonical receipt UUID, internal-space, and non-string values. The acceptance audit regression proves malformed non-string UUID/hash/time/identity metadata fails before record loading. All eight named real-entry guard mutations (task-at-base, spec hash, receipt hash, identity rebind, snapshot rebind, snapshot pre/post, lock, and acceptance hash) failed through their intended assertion with no setup/syntax/traceback failure and restored exact source bytes.
+- **Final banners:** `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verification-record.py` — 10 tests, `OK` (66.182s). `shellcheck scripts/*.sh tests/*.sh`, repository JSON parsing, `git diff --check`, and the no-bytecode check passed; `PYTHONDONTWRITEBYTECODE=1 bash tests/run-tests.sh` ended `ALL TESTS PASSED`.
+- **Authority preserved:** No VerificationRecord was created in this repository, `features.json` was not edited, and F005 remains false for a later clean qualification/acceptance run.
+
 ## 2026-09-06 — Orchestrator — T-010-R2 attempt 1 review checkpoint
 
 - **Independent final banners:** The exact attempt-1 dirty snapshot passes `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verification-record.py` with 10 tests and final `OK`; ShellCheck, repository JSON parsing, `git diff --check`, no-bytecode, and `PYTHONDONTWRITEBYTECODE=1 bash tests/run-tests.sh` all pass with final `ALL TESTS PASSED`.

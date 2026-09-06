@@ -18,7 +18,7 @@
     "link": {"type": "object", "required": ["path", "sha256"], "additionalProperties": false, "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
     "specLink": {"allOf": [{"$ref": "#/$defs/link"}, {"properties": {"path": {"pattern": "^/"}}}]},
     "receiptLink": {"allOf": [{"$ref": "#/$defs/link"}, {"properties": {"path": {"pattern": "^\\.tasks/receipts/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.json$"}}}]},
-    "taskLink": {"type": "object", "required": ["path", "sha256", "git_commit"], "additionalProperties": false, "properties": {"path": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*$"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "git_commit": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"}}},
+    "taskLink": {"type": "object", "required": ["path", "sha256", "git_commit"], "additionalProperties": false, "properties": {"path": {"type": "string", "pattern": "^(?!\\s)(?!.*\\s$)(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[\\r\\n]).+$"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "git_commit": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"}}},
     "gitState": {"type": "object", "required": ["head", "status_porcelain_v1_z_sha256", "status_entry_count", "dirty_paths"], "additionalProperties": false, "properties": {"head": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"}, "status_porcelain_v1_z_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "status_entry_count": {"type": "integer", "minimum": 0}, "dirty_paths": {"type": "array", "items": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"}}}}
   }
 }

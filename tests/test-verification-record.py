@@ -208,11 +208,31 @@ class VerificationRecordIntegration(unittest.TestCase):
             ("empty task path", lambda d: d["task"].update(path="")),
             ("absolute task path", lambda d: d["task"].update(path="/tmp/task.md")),
             ("traversing task path", lambda d: d["task"].update(path="docs/../task.md")),
+            ("newline task path", lambda d: d["task"].update(path="docs/tasks/one\ntwo.md")),
+            ("edge whitespace task path", lambda d: d["task"].update(path=" docs/tasks/T-001.md")),
             ("noncanonical receipt UUID", lambda d: d["execution_receipt"].update(path=".tasks/receipts/not-a-uuid.json")),
             ("negative snapshot count", lambda d: d["receipt_git_after"].update(status_entry_count=-1)),
             ("undeclared property", lambda d: d.update(extra=None)),
         )
         for name, change in weakest:
+            with self.subTest(name=name):
+                candidate = json.loads(json.dumps(valid))
+                change(candidate)
+                with self.assertRaises(policy.VerificationError):
+                    policy.validate_record(candidate)
+        valid_with_internal_space = json.loads(json.dumps(valid))
+        valid_with_internal_space["task"]["path"] = "docs/missions/fixture/tasks/T 001.md"
+        self.assertEqual(policy.validate_record(valid_with_internal_space), valid_with_internal_space)
+        malformed = (
+            ("non-string run id", lambda d: d.update(run_id=1)),
+            ("non-string result", lambda d: d.update(result=[])),
+            ("non-string receipt hash", lambda d: d["execution_receipt"].update(sha256=1)),
+            ("non-string task path", lambda d: d["task"].update(path=1)),
+            ("non-string task commit", lambda d: d["task"].update(git_commit=1)),
+            ("non-object command", lambda d: d.update(commands=[1])),
+            ("non-string command timestamp", lambda d: d["commands"][0].update(started_at=1)),
+        )
+        for name, change in malformed:
             with self.subTest(name=name):
                 candidate = json.loads(json.dumps(valid))
                 change(candidate)
@@ -237,6 +257,10 @@ class VerificationRecordIntegration(unittest.TestCase):
             ("uppercase hash", lambda f: f.update(accepted_verification_sha256=good_hash.upper())),
             ("non-UTC timestamp", lambda f: f.update(accepted_at="2026-09-03T00:00:00+00:00")),
             ("blank accepted by", lambda f: f.update(accepted_by=" reviewer ")),
+            ("non-string run UUID", lambda f: f.update(accepted_run_id=1)),
+            ("non-string acceptance hash", lambda f: f.update(accepted_verification_sha256=1)),
+            ("non-string timestamp", lambda f: f.update(accepted_at=1)),
+            ("non-string accepted by", lambda f: f.update(accepted_by=1)),
         )
         for label, mutate in cases:
             with self.subTest(label=label):
