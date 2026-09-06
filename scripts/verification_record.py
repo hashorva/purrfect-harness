@@ -16,6 +16,9 @@ from execution_spec import SpecError, load_persisted, spec_sha256
 
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 HEX = re.compile(r"^[0-9a-f]{64}$")
+COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
+RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$")
+GIT_FIELDS = {"head", "status_porcelain_v1_z_sha256", "status_entry_count", "dirty_paths"}
 RECORD_FIELDS = {"schema_version", "run_id", "mission", "feature", "work_unit", "attempt",
                  "execution_spec", "execution_receipt", "task", "receipt_git_after",
                  "verification_git_before", "verification_git_after", "commands", "result"}
@@ -79,12 +82,14 @@ def atomic_create(path, data):
 
 
 def atomic_replace(path, data):
+    mode = path.stat().st_mode & 0o777
     fd, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     temporary = Path(name)
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(data); handle.flush(); os.fsync(handle.fileno())
         os.replace(temporary, path)
+        os.chmod(path, mode)
         directory = os.open(path.parent, os.O_RDONLY)
         try: os.fsync(directory)
         finally: os.close(directory)
@@ -110,13 +115,23 @@ def task_at_base(root, receipt):
     values = dict(re.findall(r"^([a-z_]+): ([^\n]+)$", front.group(1), re.M))
     if values.get("task_id") != receipt["work_unit"] or values.get("feature") != receipt["feature"]:
         fail("committed task identity does not match receipt")
-    marker = re.search(r"^## Verification commands\n((?:- .*\n?)*)", text, re.M)
-    if not marker:
+    sections = list(re.finditer(r"^## Verification commands[ \t]*\n", text, re.M))
+    if len(sections) != 1:
         fail("committed task has no Verification commands section")
+    body = text[sections[0].end():]
+    # A single customary blank line is allowed, but anything other than consecutive
+    # code-span bullets ends this section (and a malformed bullet fails closed).
+    if body.startswith("\n"):
+        body = body[1:]
     commands = []
-    for line in marker.group(1).splitlines():
-        if not line.startswith("- "): fail("verification command is not a JSON argv bullet")
-        try: argv = json.loads(line[2:])
+    for line in body.splitlines():
+        if not line:
+            break
+        if line.startswith("## "):
+            break
+        if not line.startswith("- `") or not line.endswith("`") or line.count("`") != 2:
+            fail("verification command must be one Markdown JSON code span bullet")
+        try: argv = json.loads(line[3:-1])
         except json.JSONDecodeError as exc: raise VerificationError("verification command is not JSON") from exc
         if not isinstance(argv, list) or not argv or not all(isinstance(x, str) and x for x in argv):
             fail("verification command must be a non-empty JSON argv of strings")
@@ -153,12 +168,16 @@ def verify(root, mission, run_id):
     passed = True
     for argv in commands:
         started = now()
-        completed = subprocess.run(argv, cwd=root, capture_output=True)
+        try:
+            completed = subprocess.run(argv, cwd=root, stdin=subprocess.DEVNULL, capture_output=True)
+            exit_code, stdout, stderr = completed.returncode, completed.stdout, completed.stderr
+        except OSError as exc:
+            exit_code, stdout, stderr = 127, b"", str(exc).encode("utf-8", "replace")
         finished = now()
         outcomes.append({"argv": argv, "started_at": started, "finished_at": finished,
-                         "exit_code": completed.returncode, "stdout_sha256": digest(completed.stdout),
-                         "stderr_sha256": digest(completed.stderr)})
-        passed = passed and completed.returncode == 0
+                         "exit_code": exit_code, "stdout_sha256": digest(stdout),
+                         "stderr_sha256": digest(stderr)})
+        passed = passed and exit_code == 0
     after = snapshot(root)
     if after != receipt["git_after"]: passed = False
     record = {"schema_version": 1, "run_id": run_id, "mission": receipt["mission"], "feature": receipt["feature"],
@@ -181,10 +200,16 @@ def validate_record(record):
     if isinstance(record["attempt"], bool) or not isinstance(record["attempt"], int) or record["attempt"] < 1: fail("VerificationRecord attempt is invalid")
     for item in (record["execution_spec"], record["execution_receipt"], record["task"]):
         if not isinstance(item, dict) or not isinstance(item.get("path"), str) or not HEX.fullmatch(item.get("sha256", "")): fail("VerificationRecord link is invalid")
+    if set(record["execution_spec"]) != {"path", "sha256"} or not Path(record["execution_spec"]["path"]).is_absolute(): fail("VerificationRecord spec link is invalid")
+    if set(record["execution_receipt"]) != {"path", "sha256"} or not re.fullmatch(r"\.tasks/receipts/[0-9a-f-]+\.json", record["execution_receipt"]["path"]): fail("VerificationRecord receipt link is invalid")
+    if set(record["task"]) != {"path", "sha256", "git_commit"} or not COMMIT.fullmatch(record["task"]["git_commit"]): fail("VerificationRecord task link is invalid")
+    for name in ("receipt_git_after", "verification_git_before", "verification_git_after"):
+        state = record[name]
+        if not isinstance(state, dict) or set(state) != GIT_FIELDS or not COMMIT.fullmatch(state.get("head", "")) or not HEX.fullmatch(state.get("status_porcelain_v1_z_sha256", "")) or isinstance(state.get("status_entry_count"), bool) or not isinstance(state.get("status_entry_count"), int) or state["status_entry_count"] < 0 or not isinstance(state.get("dirty_paths"), list) or not all(isinstance(p, str) and p and not p.startswith("/") and ".." not in p.split("/") for p in state["dirty_paths"]): fail("VerificationRecord Git snapshot is invalid")
     if not isinstance(record["commands"], list) or not record["commands"]: fail("VerificationRecord commands are invalid")
     for command in record["commands"]:
         if set(command) != {"argv", "started_at", "finished_at", "exit_code", "stdout_sha256", "stderr_sha256"} or not isinstance(command["argv"], list) or not command["argv"] or not all(isinstance(v, str) and v for v in command["argv"]): fail("VerificationRecord command is invalid")
-        if not isinstance(command["exit_code"], int) or not HEX.fullmatch(command["stdout_sha256"]) or not HEX.fullmatch(command["stderr_sha256"]): fail("VerificationRecord command evidence is invalid")
+        if not isinstance(command["exit_code"], int) or isinstance(command["exit_code"], bool) or not RFC3339.fullmatch(command["started_at"]) or not RFC3339.fullmatch(command["finished_at"]) or not HEX.fullmatch(command["stdout_sha256"]) or not HEX.fullmatch(command["stderr_sha256"]): fail("VerificationRecord command evidence is invalid")
     return record
 
 
@@ -196,6 +221,29 @@ def load_record(path):
     return validate_record(record), raw
 
 
+def revalidate_record(root, mission, record):
+    """Rebind every record assertion to the exact current receipt/spec/base task."""
+    receipt, receipt_path, spec_path, spec_raw, task, task_raw, commands = bind(root, mission, record["run_id"])
+    expected = {
+        "mission": receipt["mission"], "run_id": receipt["run_id"], "feature": receipt["feature"],
+        "work_unit": receipt["work_unit"], "attempt": receipt["attempt"],
+        "execution_spec": {"path": str(spec_path), "sha256": digest(spec_raw)},
+        "execution_receipt": {"path": receipt_path.relative_to(root).as_posix(), "sha256": digest(receipt_path.read_bytes())},
+        "task": {"path": task, "sha256": digest(task_raw), "git_commit": receipt["git_before"]["head"]},
+        "receipt_git_after": receipt["git_after"],
+    }
+    for key, value in expected.items():
+        if record.get(key) != value: fail(f"VerificationRecord {key} does not match exact execution evidence")
+    if record["verification_git_before"] != receipt["git_after"] or record["verification_git_after"] != receipt["git_after"]:
+        fail("VerificationRecord verification snapshots do not equal receipt git_after")
+    if [item["argv"] for item in record["commands"]] != commands:
+        fail("VerificationRecord commands do not match committed task authorization")
+    command_ok = all(item["exit_code"] == 0 for item in record["commands"])
+    if (record["result"] == "pass") != command_ok:
+        fail("VerificationRecord result contradicts command outcomes")
+    return receipt
+
+
 def accept(root, mission, run_id, expected_hash, accepted_by):
     if not HEX.fullmatch(expected_hash) or not isinstance(accepted_by, str) or not accepted_by.strip() or accepted_by.strip() != accepted_by: fail("verification hash or accepted_by is invalid")
     lock_dir = root / ".tasks/locks"
@@ -204,9 +252,7 @@ def accept(root, mission, run_id, expected_hash, accepted_by):
     record_path = mission / "verification" / f"{run_id}.json"
     record, raw = load_record(record_path)
     if digest(raw) != expected_hash or record["result"] != "pass": fail("verification record hash does not name a passing record")
-    receipt, receipt_path, spec_path, spec_raw, task, task_raw, commands = bind(root, mission, run_id)
-    if record["execution_spec"] != {"path": str(spec_path), "sha256": digest(spec_raw)} or record["execution_receipt"] != {"path": receipt_path.relative_to(root).as_posix(), "sha256": digest(receipt_path.read_bytes())} or record["task"] != {"path": task, "sha256": digest(task_raw), "git_commit": receipt["git_before"]["head"]} or record["commands"] and [c["argv"] for c in record["commands"]] != commands:
-        fail("VerificationRecord links no longer match exact execution evidence")
+    revalidate_record(root, mission, record)
     feature_path = mission / "features.json"
     try: doc = json.loads(feature_path.read_text())
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc: raise VerificationError(f"cannot read features.json: {exc}") from exc
@@ -245,7 +291,7 @@ def audit(root, mission, require_workers=False):
             try:
                 record, raw = load_record(mission / "verification" / f"{feature['accepted_run_id']}.json")
                 if digest(raw) != feature["accepted_verification_sha256"] or record["result"] != "pass" or record["feature"] != feature["id"]: raise VerificationError("record does not match accepted feature")
-                bind(root, mission, record["run_id"])
+                revalidate_record(root, mission, record)
             except (VerificationError, KeyError) as exc: failures.append(f"feature {feature.get('id')}: {exc}")
     if require_workers and not any(isinstance(f, dict) and f.get("passes") is True and f.get("bootstrap") is not True for f in features): failures.append("--require-workers needs an accepted verified worker feature")
     if failures: raise VerificationError("; ".join(failures))

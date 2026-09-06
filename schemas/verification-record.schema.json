@@ -9,10 +9,16 @@
     "run_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
     "mission": {"type": "string", "minLength": 1}, "feature": {"type": "string", "minLength": 1}, "work_unit": {"type": "string", "minLength": 1},
     "attempt": {"type": "integer", "minimum": 1}, "result": {"enum": ["pass", "fail"]},
-    "execution_spec": {"$ref": "#/$defs/link"}, "execution_receipt": {"$ref": "#/$defs/link"},
-    "task": {"allOf": [{"$ref": "#/$defs/link"}, {"required": ["git_commit"], "properties": {"git_commit": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"}}}]},
-    "receipt_git_after": {"type": "object"}, "verification_git_before": {"type": "object"}, "verification_git_after": {"type": "object"},
-    "commands": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["argv", "started_at", "finished_at", "exit_code", "stdout_sha256", "stderr_sha256"], "properties": {"argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "started_at": {"type": "string"}, "finished_at": {"type": "string"}, "exit_code": {"type": "integer"}, "stdout_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "stderr_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}
+    "execution_spec": {"$ref": "#/$defs/specLink"}, "execution_receipt": {"$ref": "#/$defs/receiptLink"},
+    "task": {"$ref": "#/$defs/taskLink"},
+    "receipt_git_after": {"$ref": "#/$defs/gitState"}, "verification_git_before": {"$ref": "#/$defs/gitState"}, "verification_git_after": {"$ref": "#/$defs/gitState"},
+    "commands": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["argv", "started_at", "finished_at", "exit_code", "stdout_sha256", "stderr_sha256"], "properties": {"argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}, "started_at": {"type": "string", "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?Z$"}, "finished_at": {"type": "string", "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?Z$"}, "exit_code": {"type": "integer"}, "stdout_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "stderr_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}
   },
-  "$defs": {"link": {"type": "object", "required": ["path", "sha256"], "additionalProperties": false, "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}}
+  "$defs": {
+    "link": {"type": "object", "required": ["path", "sha256"], "additionalProperties": false, "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "specLink": {"allOf": [{"$ref": "#/$defs/link"}, {"properties": {"path": {"pattern": "^/"}}}]},
+    "receiptLink": {"allOf": [{"$ref": "#/$defs/link"}, {"properties": {"path": {"pattern": "^\\.tasks/receipts/[0-9a-f-]+\\.json$"}}}]},
+    "taskLink": {"type": "object", "required": ["path", "sha256", "git_commit"], "additionalProperties": false, "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "git_commit": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"}}},
+    "gitState": {"type": "object", "required": ["head", "status_porcelain_v1_z_sha256", "status_entry_count", "dirty_paths"], "additionalProperties": false, "properties": {"head": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"}, "status_porcelain_v1_z_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "status_entry_count": {"type": "integer", "minimum": 0}, "dirty_paths": {"type": "array", "items": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"}}}}
+  }
 }

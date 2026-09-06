@@ -30,8 +30,8 @@ class WrapperIntegration(unittest.TestCase):
         self.task = self.root / "docs/missions/fixture/tasks/T-001.md"
         self.task.parent.mkdir(parents=True)
         self.mission = self.task.parent.parent
-        self.task.write_text("---\ntask_id: T-001\nfeature: F001\n---\n# Task\n\n## Files you MAY touch\n- `allowed.txt`\n- `docs/missions/fixture/PROGRESS.md`\n\n## Verification commands\n- [\"git\",\"status\",\"--porcelain\"]\n")
-        (self.task.parent / "T-002.md").write_text("---\ntask_id: T-002\nfeature: F002\n---\n# Task\n\n## Files you MAY touch\n- `allowed.txt`\n- `docs/missions/fixture/PROGRESS.md`\n\n## Verification commands\n- [\"git\",\"status\",\"--porcelain\"]\n")
+        self.task.write_text("---\ntask_id: T-001\nfeature: F001\n---\n# Task\n\n## Files you MAY touch\n- `allowed.txt`\n- `docs/missions/fixture/PROGRESS.md`\n\n## Verification commands\n\n- `[\"git\",\"status\",\"--porcelain\"]`\n")
+        (self.task.parent / "T-002.md").write_text("---\ntask_id: T-002\nfeature: F002\n---\n# Task\n\n## Files you MAY touch\n- `allowed.txt`\n- `docs/missions/fixture/PROGRESS.md`\n\n## Verification commands\n\n- `[\"git\",\"status\",\"--porcelain\"]`\n")
         (self.mission / "GOAL.md").write_text("---\nstatus: in-progress\n---\n# Goal\n")
         (self.mission / "features.json").write_text(json.dumps({
             "goal": "fixture",

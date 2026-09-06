@@ -241,7 +241,7 @@ printf '%s\n' '---' 'status: in-progress' '---' '# Goal' > "$TARGET/docs/mission
 # shellcheck disable=SC2016  # task fixture requires literal Markdown backticks
 printf '%s\n' '---' 'task_id: T-001' 'feature: F001' '---' '# Task' '' '## Files you MAY touch' '- `proof.txt`' > "$TARGET/docs/missions/20990101-fixture/tasks/T-001.md"
 # shellcheck disable=SC2016  # task fixture requires literal Markdown backticks
-printf '%s\n' '---' 'task_id: T-002' 'feature: F002' '---' '# Task' '' '## Files you MAY touch' '- `proof.txt`' > "$TARGET/docs/missions/20990101-fixture/tasks/T-002.md"
+printf '%s\n' '---' 'task_id: T-002' 'feature: F002' '---' '# Task' '' '## Files you MAY touch' '- `proof.txt`' '' '## Verification commands' '' '- `["git","status","--porcelain"]`' > "$TARGET/docs/missions/20990101-fixture/tasks/T-002.md"
 echo '{}' > "$TARGET/docs/missions/20990101-fixture/features.json"
 check "active-mission finds fixture" sh -c "cd '$TARGET' && bash scripts/active-mission.sh | grep -q 20990101-fixture"
 check "spawn-worker rejects unknown worker" sh -c "cd '$TARGET' && ! bash scripts/spawn-worker.sh nope docs/missions/20990101-fixture/GOAL.md"

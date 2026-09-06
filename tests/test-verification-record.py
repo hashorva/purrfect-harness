@@ -67,6 +67,60 @@ class VerificationRecordIntegration(unittest.TestCase):
         (self.fixture.root / "unrelated.txt").unlink()
         self.fixture.commit_fixture("restore snapshot guard")
 
+    def test_rehashed_cross_feature_record_fails_real_acceptance_and_audit(self):
+        """The supplied hash asserts bytes; it cannot authorize a re-bound identity."""
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", self.run_id, self.mission)
+        self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        record_path = self.fixture.mission / "verification" / f"{self.run_id}.json"
+        record_path.chmod(0o600)
+        forged = json.loads(record_path.read_text())
+        forged["feature"] = "F002"
+        forged_raw = (json.dumps(forged, sort_keys=True, separators=(",", ":")) + "\n").encode()
+        record_path.write_bytes(forged_raw)
+        forged_hash = hashlib.sha256(forged_raw).hexdigest()
+        denied = self.call("bash", "scripts/accept-feature.sh", "--run-id", self.run_id,
+                           "--verification-sha256", forged_hash, "--accepted-by", "reviewer", self.mission,
+                           env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
+        self.assertNotEqual(denied.returncode, 0, denied.stderr + denied.stdout)
+        features_path = self.fixture.mission / "features.json"
+        features = json.loads(features_path.read_text())
+        feature = features["features"][1]
+        feature.update({"passes": True, "accepted_run_id": self.run_id,
+                        "accepted_verification_sha256": forged_hash,
+                        "accepted_at": "2026-09-03T00:00:00Z", "accepted_by": "reviewer"})
+        features_path.write_text(json.dumps(features, indent=2) + "\n")
+        audited = self.call("bash", "scripts/verify-mission.sh", "--require-workers", self.mission)
+        self.assertNotEqual(audited.returncode, 0, audited.stderr + audited.stdout)
+        self.assertIn("feature", audited.stderr + audited.stdout)
+
+    def test_real_verifier_rejects_non_markdown_command_bullets_at_receipt_base(self):
+        task = self.fixture.task.parent / "T-002.md"
+        task.write_text("---\ntask_id: T-002\nfeature: F002\n---\n# Task\n\n## Files you MAY touch\n- `allowed.txt`\n\n## Verification commands\n- [\"git\",\"status\"]\n")
+        self.fixture.commit_fixture("malformed verification command fixture")
+        worker = self.call("bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-002.md",
+                           "--model", "model", "--feature", "F002", env={"PROVIDER_ACTION": "dirty"})
+        self.assertEqual(worker.returncode, 0, worker.stderr + worker.stdout)
+        run_id = next(path.stem for path in (self.fixture.root / ".tasks/receipts").glob("*.json")
+                      if json.loads(path.read_text())["feature"] == "F002")
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", run_id, self.mission)
+        self.assertNotEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        self.assertIn("Markdown JSON code span", verified.stderr + verified.stdout)
+
+    def test_launch_error_persists_a_failed_record(self):
+        task = self.fixture.task.parent / "T-002.md"
+        task.write_text("---\ntask_id: T-002\nfeature: F002\n---\n# Task\n\n## Files you MAY touch\n- `allowed.txt`\n\n## Verification commands\n\n- `[\"definitely-not-a-command\"]`\n")
+        self.fixture.commit_fixture("launch failure verification command fixture")
+        worker = self.call("bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-002.md",
+                           "--model", "model", "--feature", "F002", env={"PROVIDER_ACTION": "dirty"})
+        self.assertEqual(worker.returncode, 0, worker.stderr + worker.stdout)
+        run_id = next(path.stem for path in (self.fixture.root / ".tasks/receipts").glob("*.json")
+                      if json.loads(path.read_text())["feature"] == "F002")
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", run_id, self.mission)
+        self.assertNotEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        record = json.loads((self.fixture.mission / "verification" / f"{run_id}.json").read_text())
+        self.assertEqual(record["result"], "fail")
+        self.assertEqual(record["commands"][0]["exit_code"], 127)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
