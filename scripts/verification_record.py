@@ -87,9 +87,10 @@ def atomic_replace(path, data):
     temporary = Path(name)
     try:
         with os.fdopen(fd, "wb") as handle:
-            handle.write(data); handle.flush(); os.fsync(handle.fileno())
+            # Set the final mode while this name is still private.  A chmod after
+            # replace could report an error after the acceptance mutation landed.
+            handle.write(data); handle.flush(); os.fchmod(handle.fileno(), mode); os.fsync(handle.fileno())
         os.replace(temporary, path)
-        os.chmod(path, mode)
         directory = os.open(path.parent, os.O_RDONLY)
         try: os.fsync(directory)
         finally: os.close(directory)
@@ -210,6 +211,12 @@ def validate_record(record):
     for command in record["commands"]:
         if set(command) != {"argv", "started_at", "finished_at", "exit_code", "stdout_sha256", "stderr_sha256"} or not isinstance(command["argv"], list) or not command["argv"] or not all(isinstance(v, str) and v for v in command["argv"]): fail("VerificationRecord command is invalid")
         if not isinstance(command["exit_code"], int) or isinstance(command["exit_code"], bool) or not RFC3339.fullmatch(command["started_at"]) or not RFC3339.fullmatch(command["finished_at"]) or not HEX.fullmatch(command["stdout_sha256"]) or not HEX.fullmatch(command["stderr_sha256"]): fail("VerificationRecord command evidence is invalid")
+        try:
+            started = datetime.fromisoformat(command["started_at"].replace("Z", "+00:00"))
+            finished = datetime.fromisoformat(command["finished_at"].replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise VerificationError("VerificationRecord command timestamps are invalid") from exc
+        if finished < started: fail("VerificationRecord command timestamps are out of order")
     return record
 
 

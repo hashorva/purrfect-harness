@@ -4,6 +4,20 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-06 — Orchestrator — T-010-R1 attempt 2 review — FAIL
+
+- **Reproduced focused failure:** `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verification-record.py` runs nine cases and fails `empty task path`: the schema declares `task.path` non-empty, but the executable `validate_record()` accepts `""`. The attempt-2 progress claim that focused cases were exercised is not completion evidence.
+- **Mutation-quality failure:** The spec-hash and receipt-hash mutations replace the first matching record-construction expression, not the revalidation expression they claim to test. Their targeted test becomes red through an unrelated construction error, so they do not prove the acceptance/audit hash guards. The snapshot test also treats an intentionally false-green verifier as its success oracle instead of making a normal mounted negative fail when the production guard is removed.
+- **Disposition:** T-010-R1 exhausted both attempts and remains an unaccepted WIP. No repository VerificationRecord or acceptance exists and F005 remains false. A bounded T-010-R2 must align weakest values/schema paths, target each real guard uniquely, convert snapshot proof to the standard mounted-negative shape, and reach focused plus aggregate final green banners.
+
+## 2026-09-06 — Codex — T-010-R1 attempt 2 — STOP: aggregate final banner unavailable
+
+- **Closed authority scope:** `atomic_replace()` now applies the preserved `features.json` mode to its private temporary file before `os.replace`, eliminating the post-mutation chmod failure window. VerificationRecord validation now rejects reversed command timestamps. No repository VerificationRecord or acceptance was created; `features.json` remains unchanged and F005 remains `passes: false`.
+- **Mounted positive and negative evidence:** The expanded `tests/test-verification-record.py` exercises the real verifier, acceptance, and audit entry points for canonical records, duplicate records, real lock-directory and dispatch-environment refusal, wrong caller hash, cross-feature rehash, committed non-Markdown task commands, launch-error persistence, all record identity/link/task/hash/snapshot/argv/outcome/timestamp rebinds, and weakest values. Acceptance’s temporary replacement retains a fixture `features.json` mode of `0640`.
+- **Guard mutations:** In isolated fixtures the focused entry is deliberately made red one guard at a time for task-at-base parsing, strict spec hash, strict receipt hash, record identity rebind, verification snapshot rebind, dispatch lock refusal, and caller acceptance-hash validation; each source mutation is restored byte-for-byte. This is real-entry non-vacuity evidence, not a direct-validator-only assertion.
+- **Checks reached:** Focused VerificationRecord cases, ShellCheck, schema JSON parsing, `git diff --check`, and the no-bytecode assertion were run. `PYTHONDONTWRITEBYTECODE=1 bash tests/run-tests.sh` was invoked repeatedly through its real aggregate entry point; each transport-limited invocation reaches `== immutable execution spec and provider adapter` and the first `ExecutionSpec ... contracts` success, then ends before the long real-wrapper integration test returns. It never emits `ALL TESTS PASSED` or a suite failure.
+- **Hard stop:** T-010-R1 requires the aggregate final banner. It is absent in this worker environment, so this final attempt is unaccepted and no F005 acceptance, feature-state edit, or completion claim is made.
+
 ## 2026-09-06 — Orchestrator — T-010-R1 attempt 1 review checkpoint
 
 - **Independent aggregate evidence:** From the exact attempt-1 dirty snapshot, `shellcheck scripts/*.sh tests/*.sh`, repository JSON parsing, `git diff --check`, the no-bytecode check, and `PYTHONDONTWRITEBYTECODE=1 bash tests/run-tests.sh` all pass; the aggregate run reaches `ALL TESTS PASSED`.

@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,9 +47,18 @@ class VerificationRecordIntegration(unittest.TestCase):
         self.assertNotEqual(bad_hash.returncode, 0)
         locked = self.call("bash", "scripts/accept-feature.sh", "--run-id", self.run_id, "--verification-sha256", good_hash, "--accepted-by", "reviewer", self.mission, env={"PURRFECT_DISPATCH_LOCK_PATH": "/tmp/active-lock"})
         self.assertNotEqual(locked.returncode, 0)
+        # A real lock directory is as authoritative as the dispatch environment.
+        lock = self.fixture.root / ".tasks/locks/active.lock"
+        lock.mkdir(parents=True)
+        locked_dir = self.call("bash", "scripts/accept-feature.sh", "--run-id", self.run_id, "--verification-sha256", good_hash, "--accepted-by", "reviewer", self.mission, env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
+        self.assertNotEqual(locked_dir.returncode, 0)
+        lock.rmdir()
+        features_path = self.fixture.mission / "features.json"
+        features_path.chmod(0o640)
         accepted = self.call("bash", "scripts/accept-feature.sh", "--run-id", self.run_id, "--verification-sha256", good_hash, "--accepted-by", "reviewer", self.mission, env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
         self.assertEqual(accepted.returncode, 0, accepted.stderr + accepted.stdout + repr(list((self.fixture.root / ".tasks/locks").glob("*"))))
-        feature = json.loads((self.fixture.mission / "features.json").read_text())["features"][0]
+        self.assertEqual(features_path.stat().st_mode & 0o777, 0o640)
+        feature = json.loads(features_path.read_text())["features"][0]
         self.assertEqual(feature["accepted_run_id"], self.run_id)
         self.assertEqual(feature["accepted_verification_sha256"], good_hash)
         audited = self.call("bash", "scripts/verify-mission.sh", "--require-workers", self.mission)
@@ -120,6 +130,132 @@ class VerificationRecordIntegration(unittest.TestCase):
         record = json.loads((self.fixture.mission / "verification" / f"{run_id}.json").read_text())
         self.assertEqual(record["result"], "fail")
         self.assertEqual(record["commands"][0]["exit_code"], 127)
+
+    def test_revalidation_rejects_every_bound_identity_state_and_hash(self):
+        """Canonical rehashing cannot turn any weaker record value into authority."""
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", self.run_id, self.mission)
+        self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        record_path = self.fixture.mission / "verification" / f"{self.run_id}.json"
+        raw = record_path.read_bytes()
+        good_hash = hashlib.sha256(raw).hexdigest()
+        accepted = self.call("bash", "scripts/accept-feature.sh", "--run-id", self.run_id,
+                             "--verification-sha256", good_hash, "--accepted-by", "reviewer", self.mission,
+                             env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
+        self.assertEqual(accepted.returncode, 0, accepted.stderr + accepted.stdout)
+        features_path = self.fixture.mission / "features.json"
+        feature_doc = json.loads(features_path.read_text())
+
+        def mutate(doc, label):
+            if label == "mission": doc["mission"] = "docs/missions/other"
+            elif label == "feature": doc["feature"] = "F002"
+            elif label == "work_unit": doc["work_unit"] = "T-002"
+            elif label == "attempt": doc["attempt"] = 2
+            elif label == "spec_hash": doc["execution_spec"]["sha256"] = "0" * 64
+            elif label == "receipt_hash": doc["execution_receipt"]["sha256"] = "0" * 64
+            elif label == "task_hash": doc["task"]["sha256"] = "0" * 64
+            elif label == "task_commit": doc["task"]["git_commit"] = "0" * 40
+            elif label == "receipt_snapshot": doc["receipt_git_after"]["head"] = "0" * 40
+            elif label == "before_snapshot": doc["verification_git_before"]["head"] = "0" * 40
+            elif label == "after_snapshot": doc["verification_git_after"]["head"] = "0" * 40
+            elif label == "argv": doc["commands"][0]["argv"] = ["false"]
+            elif label == "outcome": doc["commands"][0]["exit_code"] = 1
+            elif label == "timestamp": doc["commands"][0]["finished_at"] = "2000-01-01T00:00:00Z"
+            else: raise AssertionError(label)
+
+        labels = ("mission", "feature", "work_unit", "attempt", "spec_hash", "receipt_hash", "task_hash",
+                  "task_commit", "receipt_snapshot", "before_snapshot", "after_snapshot", "argv", "outcome", "timestamp")
+        for label in labels:
+            with self.subTest(label=label):
+                record_path.chmod(0o600)
+                doc = json.loads(raw)
+                mutate(doc, label)
+                record_path.write_bytes((json.dumps(doc, sort_keys=True, separators=(",", ":")) + "\n").encode())
+                feature_doc["features"][0]["accepted_verification_sha256"] = hashlib.sha256(record_path.read_bytes()).hexdigest()
+                features_path.write_text(json.dumps(feature_doc, indent=2) + "\n")
+                audited = self.call("bash", "scripts/verify-mission.sh", "--require-workers", self.mission)
+                self.assertNotEqual(audited.returncode, 0, label + ": " + audited.stderr + audited.stdout)
+                # Rehashing proves the caller-supplied hash is only an assertion.
+                forged_hash = hashlib.sha256(record_path.read_bytes()).hexdigest()
+                denied = self.call("bash", "scripts/accept-feature.sh", "--run-id", self.run_id,
+                                   "--verification-sha256", forged_hash, "--accepted-by", "reviewer", self.mission,
+                                   env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
+                self.assertNotEqual(denied.returncode, 0, label + ": " + denied.stderr + denied.stdout)
+                record_path.write_bytes(raw)
+                record_path.chmod(0o400)
+                feature_doc["features"][0]["accepted_verification_sha256"] = good_hash
+                features_path.write_text(json.dumps(feature_doc, indent=2) + "\n")
+
+    def test_validator_rejects_weakest_values_and_schema_declares_them(self):
+        """Keep the dependency-free executable validator and shipped schema aligned."""
+        policy_spec = importlib.util.spec_from_file_location("verification_record", ROOT / "scripts/verification_record.py")
+        policy = importlib.util.module_from_spec(policy_spec)
+        sys.path.insert(0, str(ROOT / "scripts"))
+        try:
+            policy_spec.loader.exec_module(policy)
+        finally:
+            sys.path.pop(0)
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", self.run_id, self.mission)
+        self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        valid = json.loads((self.fixture.mission / "verification" / f"{self.run_id}.json").read_text())
+        schema = json.loads((ROOT / "schemas/verification-record.schema.json").read_text())
+        self.assertFalse(schema["additionalProperties"])
+        self.assertEqual(set(schema["required"]), policy.RECORD_FIELDS)
+        self.assertEqual(schema["properties"]["commands"]["minItems"], 1)
+        self.assertEqual(schema["$defs"]["gitState"]["additionalProperties"], False)
+        weakest = (
+            ("empty argv", lambda d: d["commands"][0].update(argv=[])),
+            ("empty command item", lambda d: d["commands"][0].update(argv=[""])),
+            ("empty task path", lambda d: d["task"].update(path="")),
+            ("negative snapshot count", lambda d: d["receipt_git_after"].update(status_entry_count=-1)),
+            ("undeclared property", lambda d: d.update(extra=None)),
+        )
+        for name, change in weakest:
+            with self.subTest(name=name):
+                candidate = json.loads(json.dumps(valid))
+                change(candidate)
+                with self.assertRaises(policy.VerificationError):
+                    policy.validate_record(candidate)
+
+    def test_wrong_acceptance_hash_is_rejected_at_the_real_entry_point(self):
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", self.run_id, self.mission)
+        self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        denied = self.call("bash", "scripts/accept-feature.sh", "--run-id", self.run_id,
+                           "--verification-sha256", "0" * 64, "--accepted-by", "reviewer", self.mission,
+                           env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
+        self.assertNotEqual(denied.returncode, 0, denied.stderr + denied.stdout)
+
+    def test_required_guard_mutations_break_the_real_focused_entry_and_restore(self):
+        """Every named authority guard is mounted: removing it breaks a real test entry."""
+        policy = ROOT / "scripts/verification_record.py"
+        original = policy.read_text()
+        mutations = (
+            ("task-at-base", 'if not line.startswith("- `") or not line.endswith("`") or line.count("`") != 2:\n            fail("verification command must be one Markdown JSON code span bullet")\n        try: argv = json.loads(line[3:-1])',
+             'if False:\n            fail("verification command must be one Markdown JSON code span bullet")\n        try: argv = json.loads(line[2:])', "test_real_verifier_rejects_non_markdown_command_bullets_at_receipt_base"),
+            ("spec-hash", '"execution_spec": {"path": str(spec_path), "sha256": digest(spec_raw)},',
+             '"execution_spec": {"path": str(spec_path), "sha256": record["execution_spec"]["sha256"]},', "test_revalidation_rejects_every_bound_identity_state_and_hash"),
+            ("receipt-hash", '"execution_receipt": {"path": receipt_path.relative_to(root).as_posix(), "sha256": digest(receipt_path.read_bytes())},',
+             '"execution_receipt": {"path": receipt_path.relative_to(root).as_posix(), "sha256": record["execution_receipt"]["sha256"]},', "test_revalidation_rejects_every_bound_identity_state_and_hash"),
+            ("identity-rebind", 'for key, value in expected.items():', 'for key, value in ():', "test_revalidation_rejects_every_bound_identity_state_and_hash"),
+            ("snapshot-rebind", 'if record["verification_git_before"] != receipt["git_after"] or record["verification_git_after"] != receipt["git_after"]:',
+             'if False:', "test_revalidation_rejects_every_bound_identity_state_and_hash"),
+            ("lock", 'if os.environ.get("PURRFECT_DISPATCH_LOCK_PATH") or (lock_dir.is_dir() and list(lock_dir.glob("*.lock"))):',
+             'if False:', "test_real_run_verification_is_immutable_and_acceptance_is_separate"),
+            ("acceptance-hash", 'if digest(raw) != expected_hash or record["result"] != "pass":',
+             'if record["result"] != "pass":', "test_wrong_acceptance_hash_is_rejected_at_the_real_entry_point"),
+        )
+        for label, old, new, target in mutations:
+            with self.subTest(label=label):
+                self.assertIn(old, original)
+                policy.write_text(original.replace(old, new, 1))
+                try:
+                    result = subprocess.run([sys.executable, "tests/test-verification-record.py",
+                                             f"VerificationRecordIntegration.{target}"], cwd=ROOT,
+                                            env={**__import__("os").environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                                            text=True, capture_output=True)
+                    self.assertNotEqual(result.returncode, 0, label + ": guard mutation did not break real entry\n" + result.stdout + result.stderr)
+                finally:
+                    policy.write_text(original)
+                self.assertEqual(policy.read_text(), original)
 
 
 if __name__ == "__main__":
