@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-06 — GPT-5.6 Sol/high — T-010-R2 attempt 2 review — PASS
+
+- **Effect review:** Commit `203b79a` is limited to T-010-R2's four changed allow-listed files. Malformed non-string VerificationRecord and acceptance values now fail through controlled `VerificationError` paths; the executable and shipped task-link policies accept legitimate internal spaces while rejecting empty, absolute, traversing, CR/LF-containing, and edge-whitespace paths; the receipt link is restricted to one canonical UUID filename.
+- **Mounted guard proof:** The real `verify-mission.sh` and `accept-feature.sh` callers reach the reviewed policy. `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verification-record.py` passes all 10 cases in 65.388s, including eight named mutations that each make its mounted entry-point regression fail and restore `scripts/verification_record.py` exactly. Receipt `.tasks/receipts/80728737-ba6d-4816-ab19-9f1dea1e6700.json` proves a completed, changed, in-scope Codex premium T-010-R2/F005 attempt over exactly the four allow-listed changed paths.
+- **Repository gate:** `shellcheck scripts/*.sh tests/*.sh`, parsing all 10 repository JSON files, `git diff --check`, and the no-bytecode check pass. `PYTHONDONTWRITEBYTECODE=1 bash tests/run-tests.sh` exits 0 with `ALL TESTS PASSED`; the review leaves no mutation residue before this progress append.
+- **Disposition:** T-010-R2 passes implementation review. F005 remains `passes: false`: this mission contains no VerificationRecord for the worker attempt, so no feature acceptance or gate/status advance is authorized. The next action is a fresh clean qualification run followed by run-specific verification and separate orchestrator acceptance.
+- **Brain review log:** `.tasks/logs/40a501f3-7d88-48fc-839b-63cdab96a053.log` (review log only; not worker evidence).
+
 ## 2026-09-06 — Codex — T-010-R2 final type-safety and task-path contract closure
 
 - **Closed scope only:** `VerificationRecord` now returns controlled `VerificationError` failures for malformed non-string record links, identities, command evidence, and acceptance metadata. Its task-link policy now agrees with the existing ExecutionReceipt safe repository-relative path contract: legitimate internal spaces are accepted; empty, absolute, traversing, CR/LF-containing, and edge-whitespace paths are rejected. The shipped schema expresses the same weakest-value boundary.
