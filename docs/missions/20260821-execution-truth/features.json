@@ -53,7 +53,11 @@
         "The workspace lock is held through receipt creation and released on every terminal outcome",
         "Full deterministic tests plus ShellCheck pass"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "e8be38ad-c5c9-470e-a77f-e406cb09895a",
+      "accepted_verification_sha256": "510818de50f9004e677a590919e9e435ea78610a633ca4df21d5bee3f48d2694",
+      "accepted_at": "2026-09-07T15:43:06.660523Z",
+      "accepted_by": "Codex orchestrator"
     },
     {
       "id": "F004",
