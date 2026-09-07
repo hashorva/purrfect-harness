@@ -4,6 +4,19 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-07 — Orchestrator — F002 accepted
+
+- **Authorization and execution:** T-013 authorized the frozen Codex economy `gpt-5.6-luna` qualification for F002. Strict run `45a4debf-ca62-44a8-8b1d-efa183ff1c4f` completed with a Git-visible, in-scope change limited to the worker's append-only progress entry.
+- **Verification:** The run-specific verifier executed the three exact commands committed in T-013; all exited 0 and produced immutable VerificationRecord `verification/45a4debf-ca62-44a8-8b1d-efa183ff1c4f.json`, SHA-256 `064590271895cb2e62ec96aa3f49260ddb34c0bae5cc9d8f926d6e1b0d462ccb`.
+- **Acceptance:** With no active dispatch lock, the orchestrator separately accepted that exact record. F002 alone changed to `passes: true`; the VerificationRecord has no acceptance fields.
+
+## 2026-09-07 — Codex — T-013 F002 qualification — PASS
+
+- **Focused verification:** `python3 tests/test-fleet-state.py` exited 0 with `fleet policy tests passed`; `python3 tests/test-execution-integration.py` ran 16 tests and reached the final `OK` banner.
+- **Aggregate verification:** `bash tests/run-tests.sh` exited 0 and reached the final `ALL TESTS PASSED` banner.
+- **Scope and state:** The checks ran against the current committed repository state. `features.json` is byte-identical to `HEAD` (SHA-256 `99e6351e079defa40854f4de5b004ac0581ce6395ea8128a2bed96b6b0f53acb`), F002 remains `passes: false`, and this qualification changes only this append-only `PROGRESS.md` entry.
+- **Authority boundary:** This worker created no VerificationRecord and did not change feature state. Only the orchestrator may create the VerificationRecord and change feature state after this run returns.
+
 ## 2026-09-07 — Orchestrator — F001 accepted
 
 - **Authorization and execution:** T-012 authorized the frozen Codex economy `gpt-5.6-luna` qualification for F001. Strict run `e137e486-a49a-4194-a0e7-fbd844b23836` completed with a Git-visible, in-scope change limited to the worker's append-only progress entry.

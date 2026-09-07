@@ -34,7 +34,11 @@
         "A live inventory change after Gate 0 cannot silently rebind an active mission",
         "Full deterministic tests plus ShellCheck pass"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "45a4debf-ca62-44a8-8b1d-efa183ff1c4f",
+      "accepted_verification_sha256": "064590271895cb2e62ec96aa3f49260ddb34c0bae5cc9d8f926d6e1b0d462ccb",
+      "accepted_at": "2026-09-07T15:32:03.489536Z",
+      "accepted_by": "Codex orchestrator"
     },
     {
       "id": "F003",
