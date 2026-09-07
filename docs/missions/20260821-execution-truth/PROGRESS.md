@@ -4,6 +4,28 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-07 — Orchestrator — T-017 review FAIL: unversioned adapter invalidates history
+
+- **Mission-wide reproduction:** With T-017's otherwise narrow Codex argv change applied, `bash scripts/verify-mission.sh --require-workers docs/missions/20260821-execution-truth` rejected every historical Codex receipt, including all six accepted feature runs, because `receipt_link()` re-derived old `resolved_configuration` using the current changed adapter.
+- **Architectural finding:** ExecutionSpec v2 binds provider/model/effort/speed but not the version of the provider argv contract. Therefore any legitimate adapter evolution either invalidates immutable historical evidence or forces the verifier to trust mutable current policy. T-017's green isolated suite did not mount existing mission history and missed this failure class.
+- **Restoration:** The four T-017 implementation/test files were restored to exact `HEAD` bytes. The parent mission audit returns `VERIFY OK`; only append-only progress remains changed. T-017's invalid receipt is retained as negative evidence and is not accepted.
+- **Correction boundary:** T-018 must add one spec-bound provider contract version, preserve v1/v2 contract-1 validation, emit v3/contract-2 for new runs, and add the scoped Codex Git mount only in contract 2. It must mount both historical-survival and new-argv removal negatives. F007 remains false.
+
+## 2026-09-07 — Orchestrator — T-017 implementation checkpoint, not F007 evidence
+
+- **Effect review:** The candidate keeps Codex `-s workspace-write`, adds one `--add-dir <repo>/.git`, updates all three existing exact-argv oracles, and adds named same-repository assertions for brain and worker. It does not add a sandbox bypass, another writable root, provider rebind, dependency, or lifecycle abstraction.
+- **Independent checks:** `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-spec.py` passed 8 tests; `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-integration.py` passed 17 tests; ShellCheck passed; and the full repository suite reached `ALL TESTS PASSED`.
+- **Receipt disposition:** T-017 run `74294c79-7522-4b76-8cce-9a19c2cd740c` ended wrapper status 125 because the in-flight run invoked the pre-change adapter but terminal receipt validation loaded the changed adapter and correctly rejected the mismatch. Its dirty implementation is a scoped checkpoint only, not verification or acceptance evidence.
+- **Next:** Commit the reviewed correction, prove the exact mount assertion red under isolated removal and green after restoration, update the disposable consumer through `--dev`, then rerun its same T-001 Luna smoke from a clean committed base. F007 remains false.
+
+## 2026-09-07 — Codex — T-017 F007 Codex Git metadata mount correction — PASS
+
+- **Provider contract:** Codex retains `-s workspace-write` and now receives exactly one `--add-dir <repo>/.git` pair. The mounted assertion names and checks the same repository's `.git` path for both brain and worker roles.
+- **Mounted guard proof:** Removing only the new pair from the copied `execute_provider.py` made the real worker wrapper reach the exact argv assertion and fail with `AssertionError: 0 != 1 : Codex must mount exactly one Git directory`. The copied adapter bytes were restored exactly before the final run.
+- **Exact argv coverage:** Updated the focused provider contract, mounted brain/worker integration, and installed-wrapper shell stub oracles; `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-spec.py` ran 8 tests green and `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-integration.py` ran 17 tests green.
+- **Repository gates:** `shellcheck scripts/*.sh tests/*.sh` exited 0; `bash tests/run-tests.sh` reached `ALL TESTS PASSED`; `git diff --check` passed.
+- **Scope and authority:** Only the four implementation/test files named by T-017 plus this append-only progress entry changed. `features.json` remains unchanged, F007 remains `passes: false`, and no smoke evidence, VerificationRecord, verification artifact, or acceptance state was created. This worker did not commit; the dirty snapshot is ready for orchestrator review.
+
 ## 2026-09-07 — Orchestrator — F007 real smoke reproduction: Codex Git metadata denied
 
 - **Disposable run:** In `/private/tmp/purrfect-phase1-smoke.u8HMBn`, installed candidate `2.3.1` via explicit `--dev`, committed a clean baseline, initialized the one-feature mission from installed templates, froze fresh healthy/observed `codex.economy` → `gpt-5.6-luna`, and completed real Sol/high brain run `63934d38-0754-4be6-af85-b583a903593e`.
