@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-07 — Orchestrator — Human GATE 1 ready
+
+- **Feature state:** F001–F006 are separately accepted; each points to its own strict worker run and immutable passing VerificationRecord. F007 remains false and no Gate 2 or smoke acceptance is claimed.
+- **Deterministic evidence:** Every accepted run executed its committed feature-specific checks plus the aggregate repository suite. The final pre-gate `bash scripts/verify-mission.sh --require-workers docs/missions/20260821-execution-truth` returned `VERIFY OK` across all six accepted records.
+- **Negative evidence:** The mounted suites retain the reproduced failures for spec/receipt binding, fleet fallback and rebinding, dispatch preconditions and locking, null/no-op/out-of-scope receipts, process-tree cleanup, VerificationRecord rebinding/weakest values/acceptance separation, and distribution ownership/release safety.
+- **Gate boundary:** Mission status is `awaiting-gate`. A human verdict is required before status returns to `in-progress` and the disposable consuming-repository F007 smoke is authorized.
+
 ## 2026-09-07 — Orchestrator — F006 accepted
 
 - **Authorization and execution:** T-016 authorized the frozen Codex economy `gpt-5.6-luna` qualification for F006. Strict run `0646da8f-b814-4b32-a476-9da0e19c264e` completed with a Git-visible, in-scope change limited to the worker's append-only progress entry.
