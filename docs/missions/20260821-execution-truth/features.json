@@ -73,7 +73,11 @@
         "Wrong spec hash, missing log, or malformed receipt fails through the real verification entry point",
         "Full deterministic tests plus ShellCheck pass"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "0182ddee-5df9-4e9c-9649-41dd6df608d7",
+      "accepted_verification_sha256": "65adaf0171bc4d001837f5e979da69656c3ee7c2ae97f74165189c0981e2f3f8",
+      "accepted_at": "2026-09-07T15:53:25.345469Z",
+      "accepted_by": "Codex orchestrator"
     },
     {
       "id": "F005",

@@ -4,6 +4,19 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-07 — Orchestrator — F004 accepted
+
+- **Authorization and execution:** T-015 authorized the frozen Codex economy `gpt-5.6-luna` qualification for F004. Strict run `0182ddee-5df9-4e9c-9649-41dd6df608d7` completed with a Git-visible, in-scope change limited to the worker's append-only progress entry.
+- **Verification:** The run-specific verifier executed the three exact commands committed in T-015; all exited 0 and produced immutable VerificationRecord `verification/0182ddee-5df9-4e9c-9649-41dd6df608d7.json`, SHA-256 `65adaf0171bc4d001837f5e979da69656c3ee7c2ae97f74165189c0981e2f3f8`.
+- **Acceptance:** With no active dispatch lock, the orchestrator separately accepted that exact record. F004 alone changed to `passes: true`; the VerificationRecord has no acceptance fields.
+
+## 2026-09-07 — Codex — T-015 F004 qualification — PASS
+
+- **Focused verification:** `python3 tests/test-execution-integration.py` exited 0, ran 16 tests, and reached the final `OK` banner, including terminal-outcome and descendant-cleanup cases.
+- **Repository gates:** `shellcheck scripts/*.sh tests/*.sh` exited 0; `bash tests/run-tests.sh` exited 0 and reached the final `ALL TESTS PASSED` banner.
+- **Scope and state:** Checks ran against the current committed repository state. Only this append to `PROGRESS.md` changes the workspace. `features.json` remains byte-identical to its pre-run state (SHA-256 `67ee7837a81330cffcbd57a13563e4ec4db0b725a4d32401348d8145c5aa158d`), and F004 remains `passes: false`.
+- **Authority boundary:** This worker created no VerificationRecord and did not change feature state. Only the orchestrator may create the VerificationRecord and change feature state after this run returns.
+
 ## 2026-09-07 — Orchestrator — F003 accepted
 
 - **Authorization and execution:** T-014 authorized the frozen Codex economy `gpt-5.6-luna` qualification for F003. Strict run `e8be38ad-c5c9-470e-a77f-e406cb09895a` completed with a Git-visible, in-scope change limited to the worker's append-only progress entry.
