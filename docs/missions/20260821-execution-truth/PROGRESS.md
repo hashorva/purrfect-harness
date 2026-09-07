@@ -4,6 +4,19 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-07 — Orchestrator — F005 accepted
+
+- **Authorization and execution:** T-011 authorized the frozen Codex economy `gpt-5.6-luna` qualification for F005. Strict run `20a79f1c-5f38-4387-9d18-d7bc2eb7d55b` completed with a Git-visible, in-scope change limited to this append-only progress log.
+- **Verification:** The run-specific verifier executed the three exact commands committed in T-011; all exited 0 and produced immutable VerificationRecord `verification/20a79f1c-5f38-4387-9d18-d7bc2eb7d55b.json`, SHA-256 `f0977ce55a316b38d0fba4ee1d6c9635dd2f05965640e1c5baae0da29904b850`.
+- **Acceptance:** With no active dispatch lock, the orchestrator separately accepted that exact record. F005 alone changed to `passes: true` and records the run ID, verification hash, timestamp, and accepting identity; the VerificationRecord contains no acceptance fields.
+
+## 2026-09-06 — Codex — T-011 F005 qualification — PASS
+
+- **Focused verification:** `python3 tests/test-verification-record.py` completed all 10 tests with the final `OK` banner (`Ran 10 tests in 65.139s`).
+- **Repository gates:** `shellcheck scripts/*.sh tests/*.sh` exited 0, and `bash tests/run-tests.sh` completed with the final `ALL TESTS PASSED` banner.
+- **Scope and state:** The checks ran against the clean committed state; only this append to `PROGRESS.md` changes the workspace. `features.json` remains byte-identical to `HEAD`, and F005 remains `passes: false`.
+- **Authority boundary:** This worker created no VerificationRecord and did not change feature state. Only the orchestrator may create the VerificationRecord and change feature state after this run returns.
+
 ## 2026-09-06 — GPT-5.6 Sol/high — T-010-R2 attempt 2 review — PASS
 
 - **Effect review:** Commit `203b79a` is limited to T-010-R2's four changed allow-listed files. Malformed non-string VerificationRecord and acceptance values now fail through controlled `VerificationError` paths; the executable and shipped task-link policies accept legitimate internal spaces while rejecting empty, absolute, traversing, CR/LF-containing, and edge-whitespace paths; the receipt link is restricted to one canonical UUID filename.

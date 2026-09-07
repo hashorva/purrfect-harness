@@ -77,7 +77,11 @@
         "Worker attempts to edit features.json fail scope verification; accepted features record accepted_run_id, accepted_verification_sha256, accepted_at, and accepted_by",
         "Full deterministic tests plus ShellCheck pass"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "20a79f1c-5f38-4387-9d18-d7bc2eb7d55b",
+      "accepted_verification_sha256": "f0977ce55a316b38d0fba4ee1d6c9635dd2f05965640e1c5baae0da29904b850",
+      "accepted_at": "2026-09-07T15:09:13.080706Z",
+      "accepted_by": "Codex orchestrator"
     },
     {
       "id": "F006",
