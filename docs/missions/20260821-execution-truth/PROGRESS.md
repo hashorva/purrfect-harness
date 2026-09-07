@@ -4,6 +4,19 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-07 — Orchestrator — F006 accepted
+
+- **Authorization and execution:** T-016 authorized the frozen Codex economy `gpt-5.6-luna` qualification for F006. Strict run `0646da8f-b814-4b32-a476-9da0e19c264e` completed with a Git-visible, in-scope change limited to the worker's append-only progress entry.
+- **Verification:** The run-specific verifier executed the three exact commands committed in T-016; all exited 0 and produced immutable VerificationRecord `verification/0646da8f-b814-4b32-a476-9da0e19c264e.json`, SHA-256 `45883617fe563fa8fd086da5e21a9632b678c9f088fa5897ba6fea0f93b3ca26`.
+- **Acceptance:** With no active dispatch lock, the orchestrator separately accepted that exact record. F006 alone changed to `passes: true`; the VerificationRecord has no acceptance fields.
+
+## 2026-09-07 — Codex — T-016 F006 qualification — PASS
+
+- **Manifest validation:** `python3 scripts/harness-manifest.py validate` exited 0 and reported canonical release version `2.3.1`.
+- **Repository gates:** `bash -lc 'shellcheck scripts/*.sh tests/*.sh'` exited 0; `bash tests/run-tests.sh` exited 0 and reached the final `ALL TESTS PASSED` banner.
+- **Scope and state:** Checks ran against the current committed repository state. Only this append to `PROGRESS.md` changes the workspace. `features.json` remains byte-identical to the pre-run committed state (SHA-256 `daaa529a7b4be108dec06ad6aa0cab1bdb4d2b4ea64ba2524008d7b3c553c8ae`), and F006 remains `passes: false`.
+- **Authority boundary:** This worker created no VerificationRecord and did not change feature state. Only the orchestrator may create the VerificationRecord and change feature state after this run returns.
+
 ## 2026-09-07 — Orchestrator — F004 accepted
 
 - **Authorization and execution:** T-015 authorized the frozen Codex economy `gpt-5.6-luna` qualification for F004. Strict run `0182ddee-5df9-4e9c-9649-41dd6df608d7` completed with a Git-visible, in-scope change limited to the worker's append-only progress entry.

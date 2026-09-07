@@ -114,7 +114,11 @@
         "The harness has a real repository-specific AGENTS.md, the consumer skeleton moves to a template, completion/symlink docs are consistent, and Claude enforcement claims are accurate",
         "All reproduced distribution regressions, full deterministic tests, JSON validation, and ShellCheck pass"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "0646da8f-b814-4b32-a476-9da0e19c264e",
+      "accepted_verification_sha256": "45883617fe563fa8fd086da5e21a9632b678c9f088fa5897ba6fea0f93b3ca26",
+      "accepted_at": "2026-09-07T16:02:03.306446Z",
+      "accepted_by": "Codex orchestrator"
     },
     {
       "id": "F007",
