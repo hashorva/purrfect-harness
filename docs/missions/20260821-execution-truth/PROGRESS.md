@@ -4,6 +4,20 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-07 — Orchestrator — F001 accepted
+
+- **Authorization and execution:** T-012 authorized the frozen Codex economy `gpt-5.6-luna` qualification for F001. Strict run `e137e486-a49a-4194-a0e7-fbd844b23836` completed with a Git-visible, in-scope change limited to the worker's append-only progress entry.
+- **Verification:** The run-specific verifier executed the three exact commands committed in T-012; all exited 0 and produced immutable VerificationRecord `verification/e137e486-a49a-4194-a0e7-fbd844b23836.json`, SHA-256 `aacf969b9925903f65d21dc0d88d436eef1190117495f6eaf0843e33055c6d52`.
+- **Acceptance:** With no active dispatch lock, the orchestrator separately accepted that exact record. F001 alone changed to `passes: true`; the VerificationRecord has no acceptance fields.
+- **Failed prelaunch evidence:** Earlier run `1152be5a-745b-4fe2-875c-c669aeb29bbe` exited 1 before model work because the sandbox denied Codex state-database access. It was not verified or accepted and contributed no workspace change.
+
+## 2026-09-07 — Codex — T-012 F001 qualification — PASS
+
+- **Focused verification:** `python3 tests/test-execution-spec.py` ran 7 tests and reached the final `OK` banner; `python3 tests/test-execution-integration.py` ran 16 tests and reached the final `OK` banner.
+- **Aggregate verification:** `bash tests/run-tests.sh` exited 0 and reached the final `ALL TESTS PASSED` banner.
+- **Scope and state:** The checks ran against the current committed repository state. `features.json` is byte-identical to `HEAD`, F001 remains `passes: false`, and this qualification changes only this append-only `PROGRESS.md` entry.
+- **Authority boundary:** This worker created no VerificationRecord and did not change feature state. Only the orchestrator may create the VerificationRecord and change feature state after this run returns.
+
 ## 2026-09-07 — Orchestrator — F005 accepted
 
 - **Authorization and execution:** T-011 authorized the frozen Codex economy `gpt-5.6-luna` qualification for F005. Strict run `20a79f1c-5f38-4387-9d18-d7bc2eb7d55b` completed with a Git-visible, in-scope change limited to this append-only progress log.

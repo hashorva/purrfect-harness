@@ -15,7 +15,11 @@
         "Unsupported requested effort or speed fails before launch, while unobservable provider values are recorded as unknown rather than guessed",
         "No provider path uses eval, and full deterministic tests plus ShellCheck pass"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "e137e486-a49a-4194-a0e7-fbd844b23836",
+      "accepted_verification_sha256": "aacf969b9925903f65d21dc0d88d436eef1190117495f6eaf0843e33055c6d52",
+      "accepted_at": "2026-09-07T15:20:47.250563Z",
+      "accepted_by": "Codex orchestrator"
     },
     {
       "id": "F002",
