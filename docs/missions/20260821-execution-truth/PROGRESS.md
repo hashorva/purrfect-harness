@@ -4,6 +4,12 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-07 — Orchestrator — F007 real smoke reproduction: Codex Git metadata denied
+
+- **Disposable run:** In `/private/tmp/purrfect-phase1-smoke.u8HMBn`, installed candidate `2.3.1` via explicit `--dev`, committed a clean baseline, initialized the one-feature mission from installed templates, froze fresh healthy/observed `codex.economy` → `gpt-5.6-luna`, and completed real Sol/high brain run `63934d38-0754-4be6-af85-b583a903593e`.
+- **Reproduced failure:** Real Luna worker run `cb1ee2dd-42b4-4877-82a9-fafc135aa4e2` created the exact nonce at only `smoke/nonce.txt`; its receipt records `workspace_changed: true` and scope `pass`. Its required commit failed at `.git/index.lock` because the Codex adapter uses `workspace-write` without explicitly adding the repository's Git metadata directory. HEAD stayed unchanged and the committed commit/clean-tree checks failed.
+- **Disposition:** No VerificationRecord or acceptance exists; parent F007 and consumer F001 remain false. T-017 is limited to explicit same-repository `<repo>/.git` writable addition plus exact mounted argv regressions. The failed receipt/log and nonce copy remain preserved in the disposable repository's ignored `.tasks/failed-runs/` evidence.
+
 ## 2026-09-07 — Human GATE 1 — APPROVED
 
 - **Verdict:** Zamir approved Gate 1 after reviewing the F001–F006 acceptance summary and the green mission-wide worker-evidence audit.
