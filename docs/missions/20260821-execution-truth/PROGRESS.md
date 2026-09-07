@@ -4,6 +4,12 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-07 — Human GATE 1 — APPROVED
+
+- **Verdict:** Zamir approved Gate 1 after reviewing the F001–F006 acceptance summary and the green mission-wide worker-evidence audit.
+- **Authorized next scope:** Resume `in-progress` for F007 only: install the candidate into a separate disposable consuming repository through explicit development mode, freeze a freshly observed healthy Codex/Luna economy binding, run one real nonce-bearing one-file worker change, verify that exact run, accept it separately, and archive reconstructable evidence.
+- **Boundaries retained:** No Phase 2+ work, cross-repository dispatch, provider waiver, adaptive routing, release/tag mutation, or acceptance without the real smoke chain is authorized. If the fresh consumer inventory cannot truthfully supply the approved economy binding, stop before dispatch.
+
 ## 2026-09-07 — Orchestrator — Human GATE 1 ready
 
 - **Feature state:** F001–F006 are separately accepted; each points to its own strict worker run and immutable passing VerificationRecord. F007 remains false and no Gate 2 or smoke acceptance is claimed.
