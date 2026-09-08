@@ -1,0 +1,25 @@
+{
+  "mission": "20260907-execution-truth-smoke",
+  "rules": "Workers must not edit this file. Only the orchestrator may set passes from false to true after a matching passing VerificationRecord exists and must record accepted_run_id, accepted_verification_sha256, accepted_at, and accepted_by. Descriptions and steps are immutable after Gate 0.",
+  "features": [
+    {
+      "id": "F001",
+      "category": "execution-truth-smoke",
+      "priority": 1,
+      "bootstrap": false,
+      "description": "A real authenticated Codex/Luna worker creates and commits exactly one authorized nonce file, and the same run is linked through immutable authorization, observed execution, deterministic verification, and separate orchestrator acceptance.",
+      "steps": [
+        "Committed mission/task/fleet evidence authorizes Codex economy gpt-5.6-luna at medium effort and only smoke/nonce.txt",
+        "The real worker writes exact nonce 5818a92a-4798-4c29-832f-81e71012bece and makes one commit containing only smoke/nonce.txt",
+        "The strict terminal receipt links the immutable spec, records completed execution, exact Git-visible change, and passing one-file scope",
+        "Run-specific verification executes the committed checks and writes a passing immutable VerificationRecord with no acceptance fields",
+        "The orchestrator separately accepts that exact VerificationRecord and mission-wide worker verification passes"
+      ],
+      "passes": true,
+      "accepted_run_id": "afdb7a45-b4b5-4f90-a335-a96263e7276a",
+      "accepted_verification_sha256": "7a6c6f07991cdbdaacc645c23d90e5927943f4055b72b7cfe9bd9cf5e44f958e",
+      "accepted_at": "2026-09-08T11:15:59.173865Z",
+      "accepted_by": "Zamir via parent Human Gate 1"
+    }
+  ]
+}

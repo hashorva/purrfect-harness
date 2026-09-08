@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "source_repository": "$CONSUMER_REPO",
+  "parent_harness_checkpoint": "6b357cd231401308da72095e781dbeec56c1047a",
+  "harness_baseline_commit": "a7b48cd0f0ca1583305b0d0aa79516f5a82a7bd8",
+  "smoke_commit": {
+    "commit": "8e9b6addfd03878fcebbca57bd59a9d6f59514c4",
+    "parent": "a7b48cd0f0ca1583305b0d0aa79516f5a82a7bd8",
+    "subject": "feat: write Phase 1 smoke nonce (T-001)",
+    "authored_at": "2026-09-08T13:14:51+02:00",
+    "committed_at": "2026-09-08T13:14:51+02:00",
+    "changed_paths": ["smoke/nonce.txt"],
+    "nonce_blob_oid": "cf2f0526da10279b81dbe3948999a563da09d5d1",
+    "nonce_sha256": "3d62eab4a7528b83d2e1de6fbe00111f741ec1c439840b7a6009b51f3dc91f86"
+  },
+  "acceptance_commit": {
+    "commit": "cba71a0ec4de4e25b8f43e643bc4a98b6fe67dc8",
+    "parent": "8e9b6addfd03878fcebbca57bd59a9d6f59514c4",
+    "subject": "docs(mission): accept real Phase 1 smoke",
+    "changed_paths": [
+      "docs/missions/20260907-execution-truth-smoke/PROGRESS.md",
+      "docs/missions/20260907-execution-truth-smoke/features.json",
+      "docs/missions/20260907-execution-truth-smoke/verification/afdb7a45-b4b5-4f90-a335-a96263e7276a.json"
+    ]
+  },
+  "final_mission_audit": "VERIFY OK: docs/missions/20260907-execution-truth-smoke"
+}
+

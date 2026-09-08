@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "evidence": "Phase 1 F007 real-provider smoke",
+  "sha256": {
+    "README.md": "f472a23f9c93bbf294fc629002c839d5cf2a5b27d97f73dfc95ce20401a5e868",
+    "consumer/GOAL.md": "f28dfe4a272e7fa6a308241c2ad4f47862756c365740348de7cc4024a315c9b4",
+    "consumer/PROGRESS.md": "96fe45af1881cb6b3d421bd894fa9ce2b54f1bbb2947fb91abf7e667d83eda1b",
+    "consumer/T-001.md": "788f550fc8b990619166fc4c85a42dfe12caf3a8435dbb66a3d9b9289691669b",
+    "consumer/commit-evidence.json": "defd44296960921b4e1f3d60c5c8595d9762b12b39de52daf95a106535a1ce9a",
+    "consumer/consumer-history.bundle": "e3372634c6c97b09c317066ca8924a3ef3a3510a37e4b90e604546e78a69315b",
+    "consumer/execution-receipt.json": "28778477323aa763462c0adcc61e4090b327d231346388217e33f30c4f5c4f77",
+    "consumer/execution-spec.json": "b024561034d9ed6e50bbac2601056f6701f25b070eeada2b372b523ca132a0f5",
+    "consumer/features.json": "e931ab0ee7f6483088d0caaba6eb4000e88c0fff5a3b44d5bd12ee34c58471a9",
+    "consumer/fleet.json": "edcfc013413525fecefd1c38a9e9f485baae0884ef8afba5f34f6468dd71aeb6",
+    "consumer/nonce.txt": "3d62eab4a7528b83d2e1de6fbe00111f741ec1c439840b7a6009b51f3dc91f86",
+    "consumer/verification-record.json": "7a6c6f07991cdbdaacc645c23d90e5927943f4055b72b7cfe9bd9cf5e44f958e",
+    "consumer/worker.log.sanitized": "5ab12ab45e777ec16116c09998a9ddd6587f920949de06f603bc3273ef3f1492",
+    "reconstruct.py": "4036f9ba5feca7022dff4ad12c652246fc94203a0b372d6110b7c507a159ba90",
+    "test-reconstruct.sh": "282885af1406afafcc0e049011eeccb957bdc293c90cd494d7769906a6f64aa9"
+  }
+}

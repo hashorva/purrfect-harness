@@ -1,0 +1,500 @@
+spawn-worker: worker=codex tier=economy model=gpt-5.6-luna task=docs/missions/20260907-execution-truth-smoke/tasks/T-001.md feature=F001 mission=docs/missions/20260907-execution-truth-smoke run_id=afdb7a45-b4b5-4f90-a335-a96263e7276a log=.tasks/logs/afdb7a45-b4b5-4f90-a335-a96263e7276a.log repo=$CONSUMER_REPO
+prompt: Read docs/missions/20260907-execution-truth-smoke/tasks/T-001.md and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder.
+----
+Reading additional input from stdin...
+2026-09-08T11:14:16.139948Z ERROR codex_models_manager::cache: failed to load models cache: missing field `base_instructions` at line 132 column 5
+2026-09-08T11:14:16.378434Z  WARN codex_core_plugins::manifest: ignoring hooks: expected a string, string array, object, or object array; found object
+2026-09-08T11:14:16.379255Z  WARN codex_core_plugins::manifest: ignoring hooks: expected a string, string array, object, or object array; found object
+2026-09-08T11:14:16.407339Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/
+2026-09-08T11:14:16.407365Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/
+OpenAI Codex v0.146.0
+--------
+workdir: $CONSUMER_REPO
+model: gpt-5.6-luna
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, $CONSUMER_REPO/.git]
+reasoning effort: medium
+reasoning summaries: none
+session id: [redacted]
+--------
+user
+Read docs/missions/20260907-execution-truth-smoke/tasks/T-001.md and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder.
+2026-09-08T11:14:16.515616Z  WARN codex_core_plugins::manifest: ignoring hooks: expected a string, string array, object, or object array; found object
+2026-09-08T11:14:16.516542Z  WARN codex_core_plugins::manifest: ignoring hooks: expected a string, string array, object, or object array; found object
+2026-09-08T11:14:16.562669Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/
+2026-09-08T11:14:16.562695Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/
+codex
+I’ll inspect the binding task, mission state, and any skills it names, then make only the authorized change, run the exact verification, and append the required mission progress entry.
+exec
+/bin/zsh -lc "sed -n '1,240p' docs/missions/20260907-execution-truth-smoke/tasks/T-001.md && echo '--- active ---' && bash scripts/active-mission.sh && echo '--- status ---' && git status --short && echo '--- files ---' && rg --files docs/missions/20260907-execution-truth-smoke .agents/skills | sed -n '1,160p'" in $CONSUMER_REPO
+ succeeded in 0ms:
+---
+task_id: T-001
+feature: F001
+worker: codex
+invocation: codex economy — frozen gpt-5.6-luna / medium
+max_attempts: 2
+---
+
+# Task: Create and commit the exact Phase 1 smoke nonce
+
+## Before you write any code
+1. Read `AGENTS.md`, this mission's newest progress entries and F001, then run
+   `git log --oneline -10` and confirm the tree is clean.
+2. Read `.agents/skills/guard-verification/SKILL.md` completely. You are already the
+   dispatched worker; do not invoke any brain or worker launcher.
+3. Confirm the frozen fleet resolves `codex.economy` to `gpt-5.6-luna`, medium effort,
+   unknown speed, healthy observed source.
+
+## Objective
+Create `smoke/nonce.txt` with exactly this one line and a final newline:
+
+```text
+PURRFECT_PHASE1_NONCE=5818a92a-4798-4c29-832f-81e71012bece
+```
+
+Use `apply_patch`, run the exact verification commands below, and commit exactly that
+one file. For this single-file proof, this task's one-file rule deliberately supersedes
+the generic request to append PROGRESS: do not edit mission files. The orchestrator will
+record progress only after the strict receipt exists.
+
+## Files you MAY touch
+- `smoke/nonce.txt` (new)
+
+## Files you MUST NOT touch
+- `docs/**`, `.agents/**`, `.claude/**`, `.codex/**`, `.cursor/**`, `.gemini/**`
+- `scripts/**`, `schemas/**`, `harness-manifest.json`, `AGENTS.md`, `.gitignore`
+- every path other than `smoke/nonce.txt`; never edit `features.json` or PROGRESS
+
+## Verification commands
+
+- `["python3","-c","from pathlib import Path; assert Path('smoke/nonce.txt').read_text() == 'PURRFECT_PHASE1_NONCE=5818a92a-4798-4c29-832f-81e71012bece\\n'"]`
+- `["python3","-c","import subprocess; p=subprocess.check_output(['git','diff-tree','--no-commit-id','--name-only','-r','HEAD'], text=True).splitlines(); assert p == ['smoke/nonce.txt'], p; assert subprocess.check_output(['git','log','-1','--pretty=%s'], text=True).strip() == 'feat: write Phase 1 smoke nonce (T-001)'"]`
+- `["python3","-c","import subprocess; assert subprocess.check_output(['git','status','--porcelain'], text=True) == ''"]`
+
+## Exit criteria (all must be true)
+- [ ] Exact nonce content exists with one final newline
+- [ ] HEAD contains exactly one changed path: `smoke/nonce.txt`
+- [ ] Working tree is clean after the commit
+- [ ] Commit message is `feat: write Phase 1 smoke nonce (T-001)`
+- [ ] No mission or harness file changed; do not append PROGRESS
+
+## Iteration policy
+Max 2 attempts. If an exit criterion fails, stop and report without touching any other
+file. Do not rewrite the nonce, task, checks, fleet, or mission policy.
+--- active ---
+docs/missions/20260907-execution-truth-smoke
+--- status ---
+--- files ---
+docs/missions/20260907-execution-truth-smoke/fleet.json
+docs/missions/20260907-execution-truth-smoke/PROGRESS.md
+docs/missions/20260907-execution-truth-smoke/GOAL.md
+docs/missions/20260907-execution-truth-smoke/features.json
+.agents/skills/mission-init/SKILL.md
+docs/missions/20260907-execution-truth-smoke/tasks/T-001.md
+.agents/skills/cloudflare-deploy/SKILL.md
+.agents/skills/mcp-hygiene/SKILL.md
+.agents/skills/guard-verification/SKILL.md
+.agents/skills/react-conventions/SKILL.md
+.agents/skills/shadcn-luma/SKILL.md
+.agents/skills/dispatch-worker/SKILL.md
+.agents/skills/skillify/SKILL.md
+.agents/skills/supabase-migration/SKILL.md
+
+codex
+The task’s binding allow-list contains only `smoke/nonce.txt` and explicitly says its one-file rule supersedes the generic `PROGRESS.md` requirement. I’ll honor that exact scope; appending progress would violate the task’s “every path other than `smoke/nonce.txt`” prohibition.
+exec
+/bin/zsh -lc "sed -n '1,260p' AGENTS.md; echo '--- progress ---'; tail -n 80 docs/missions/20260907-execution-truth-smoke/PROGRESS.md; echo '--- F001 ---'; sed -n '1,220p' docs/missions/20260907-execution-truth-smoke/features.json; echo '--- log ---'; git log --oneline -10; echo '--- guard skill ---'; sed -n '1,320p' .agents/skills/guard-verification/SKILL.md; echo '--- fleet ---'; cat docs/missions/20260907-execution-truth-smoke/fleet.json" in $CONSUMER_REPO
+ succeeded in 0ms:
+---
+spec: AGENTS.md v1.1 (aligned to FinDuck skeleton, Jul 2026)
+tools:
+  { Claude Code (backend/execution), Antigravity (frontend), Codex (execution), Cursor (parallel implementation) }
+---
+
+# Purrfect Phase 1 Disposable Consumer — Agent Instructions
+
+## Product
+
+This disposable repository exists only to prove the installed Purrfect Harness Phase 1
+execution path. Its sole product change is one nonce-bearing text file created by the
+approved smoke worker; it has no deployed service or external users.
+
+## Stack
+
+- Frontend: none
+- Backend: none
+- Database: none
+- Auth: local provider CLI only; credentials remain outside Git
+- Deploy: none
+- Local toolchain: Bash, Python 3, Git, and the installed harness
+
+## Deployment discipline
+
+- No deployment exists; never add one during the smoke.
+- Do not add tags, remotes, dependencies, or external services.
+
+## Commands
+
+| Task | Command |
+| --- | --- |
+| Install harness | `bash /path/to/purrfect-harness/scripts/install-harness.sh --dev .` |
+| Fleet inventory | `bash scripts/fleet-inventory.sh` |
+| Dispatch | `bash scripts/spawn-worker.sh codex <task> --tier economy --feature F001` |
+| Verify run | `bash scripts/verify-mission.sh --run-id <uuid> <mission>` |
+| Verify mission | `bash scripts/verify-mission.sh --require-workers <mission>` |
+| Accept | `bash scripts/accept-feature.sh --run-id <uuid> --verification-sha256 <sha256> --accepted-by <identity> <mission>` |
+
+## Security invariants — never violate
+
+- Never copy provider credentials, state databases, or environment values into evidence.
+- The worker may edit only the single task-authorized nonce path.
+- Cross-repository dispatch is forbidden; run the installed wrapper from this repository.
+- Do not edit installed harness files during the smoke.
+- Never commit secrets. `.env*` stays untracked.
+
+## Database rules
+
+- Schema changes follow `.agents/skills/supabase-migration/SKILL.md` — CLI creates the file,
+  then dry-run → push → verify → commit. MCP is read-only verification, never a write path.
+- No database exists; database changes are out of scope.
+
+## Frontend rules
+
+- No frontend exists; UI changes are out of scope.
+- For any future UI work → consult `docs/DESIGN.md` if added and
+  `.agents/skills/shadcn-luma/SKILL.md` before changing components or adding styles
+
+## Repo boundary
+
+- This smoke repository is the entire worker boundary. The parent harness repository is
+  evidence/archive authority only and must not be edited by this repository's worker.
+
+## Skills (procedures — read before improvising)
+
+Reusable procedures live in `.agents/skills/` (Agent Skills open standard; canonical
+source of truth). Tool discovery paths contain per-skill symlinks to it — edit skills
+ONLY in `.agents/skills/`. If a task matches a skill (migrations, shadcn/Luma UI, MCP
+usage, deploys, components), read that SKILL.md and follow it. Re-deriving a procedure
+a skill already covers is a failed task.
+
+## Workflow
+
+- Inspect existing file structure before editing — audit before assuming
+- Prefer small, reviewable diffs — one concern per commit
+- Do not introduce new production dependencies without explaining the reason
+- Do not edit `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, or any file under `docs/` unless
+  the task is explicitly about project instructions or agent rules
+- Run only the exact committed JSON-argv verification commands; there is no build.
+- When stuck or if planning exceeds 3 iterations without a clear path → STOP, output
+  your current hypothesis, and request human intervention. Never guess on schema,
+  security, or architecture.
+
+## Orchestrated missions (GOAL/features loop — active only when a mission is)
+
+Some work runs as an orchestrator/worker loop. Full protocol:
+`docs/missions/ORCHESTRATION.md`. A mission is **active** when exactly one folder
+under `docs/missions/<slug>/` has `GOAL.md` status `in-progress` or `awaiting-gate`
+(`bash scripts/active-mission.sh`). Model routing lives only at
+`docs/missions/MODEL_ROUTING.md` — load at GATE 0 / mission advance, not casually.
+When active, these rules apply on top of everything above:
+
+- **Session start (bearings):** resolve the active mission dir; read its `PROGRESS.md`
+  (last 3 entries), `features.json`, and `git log --oneline -10` before editing anything.
+  Verify baseline before implementing; if the repo is broken, fix/report that first.
+- **One feature per session.** Pick the assigned (or highest-priority) `passes: false`
+  feature. Never start a second one in the same session.
+- **`features.json` is append-only truth.** Workers never edit it. Only the orchestrator
+  may accept a feature by changing `"passes": false → true`, after the current
+  `bash scripts/verify-mission.sh` verification succeeds. Editing or removing
+  descriptions/steps is a failed task. `GOAL.md` is narrative; if they disagree,
+  `features.json` wins.
+- **Session end (clean state):** checks green, committed with a descriptive message, one
+  entry appended to mission `PROGRESS.md`. A human gate requires a recorded Human GATE
+  verdict and status update; chat approval alone is not the record.
+- **WORKER_TASK files are binding.** If you received one, it is your entire scope; its
+  file allow/deny lists override any broader interpretation of the goal. Respect its
+  iteration policy, then STOP and report.
+- **Local CLI workers + receipts.** Brain via `scripts/spawn-brain.sh`; workers via
+  `scripts/spawn-worker.sh --tier … --feature F00X`. Both write receipts. Before the
+  orchestrator accepts a feature or greenlights a gate/`status: done`,
+  `bash scripts/verify-mission.sh` must exit 0. PROGRESS prose is not proof.
+
+## Repo structure (key paths)
+
+- `smoke/nonce.txt` — sole worker-authored product artifact
+- `docs/missions/` — orchestration protocol, templates, and mission instances
+- `.agents/skills/` — canonical agent skills (linked into per-tool discovery paths)
+- `docs/missions/` — orchestration protocol, MODEL_ROUTING, templates, mission folders
+- `scripts/active-mission.sh` / `scripts/spawn-brain.sh` / `scripts/spawn-worker.sh` /
+  `scripts/fleet-inventory.sh` / `scripts/verify-mission.sh`
+--- progress ---
+---
+note: Append-only. Newest entry on top. One entry per worker session or human gate.
+---
+
+# Progress
+
+## 2026-09-07 — Orchestrator — T-001 infrastructure failure, not accepted
+
+- **Run:** Real authenticated Codex economy `gpt-5.6-luna` run `cb1ee2dd-42b4-4877-82a9-fafc135aa4e2` created the exact nonce at only `smoke/nonce.txt`; its receipt records `workspace_changed: true` and scope `pass`.
+- **Reproduced blocker:** The worker's `git commit` failed because Codex `workspace-write` denied `.git/index.lock`. HEAD remained `f6f2138`, the nonce stayed untracked, and the task's committed commit/clean-tree checks failed.
+- **Disposition:** This is an infrastructure failure and does not consume a task attempt. No VerificationRecord was created and F001 remains false. Preserve the receipt/log and retry only after the parent harness mounts scoped same-repository Git metadata access for Codex and gains a regression.
+
+## 2026-09-07 — Human GATE 0 — APPROVED
+
+- **Verdict:** Parent mission Human Gate 1 approval authorizes this exact one-feature F007 smoke; no additional feature or scope is introduced.
+- **Brain:** Real Codex `gpt-5.6-sol` / high mission-init run `63934d38-0754-4be6-af85-b583a903593e` completed with an in-scope receipt and the mission verifier returned `VERIFY OK`.
+- **Approved worker bind:** Fresh inventory and immutable `fleet.json` bind only `codex.economy` → `gpt-5.6-luna`, medium effort, unknown speed, healthy/observed. Healthy Terra, Grok, Composer, and Claude aliases remain unselected; degraded Antigravity fallbacks are rejected for this smoke.
+- **Approved feature:** F001 must create and commit exact nonce `5818a92a-4798-4c29-832f-81e71012bece` in only `smoke/nonce.txt`, then follow receipt → run-specific verification → separate orchestrator acceptance.
+- **Next:** Mission status is `approved`; advance to `in-progress` only immediately before the real worker dispatch.
+
+## 2026-09-07 — Mission brain — mission-init audit
+
+- **Did:** Confirmed the existing draft mission scaffold contains GOAL.md, features.json, PROGRESS.md, and only the initial tasks/T-001.md required at initialization; no worker was dispatched.
+- **Verified:** No active mission; GOAL status is `draft`; features.json parses; all four CLI paths exist; fresh fleet inventory was written to `.tasks/fleet-inventory.json`.
+- **Brain log:** `.tasks/logs/63934d38-0754-4be6-af85-b583a903593e.log` (present; no CLI receipt claim made by this entry).
+- **Blocked / handoff notes:** GATE 0 remains pending; retain draft status and require human approval of F001 plus the fleet bind map before dispatch.
+
+## 2026-09-07 — Orchestrator — mission initialized from installed templates
+
+- **Scope:** One F001 feature proves a real Luna worker's exact one-file nonce change through spec, receipt, verification, and separate acceptance.
+- **Parent authority:** Parent mission `20260821-execution-truth` Human Gate 1 approved this F007 smoke contingent on a fresh healthy observed Codex/Luna binding.
+- **Inventory:** Fresh consumer inventory reports `codex.economy` as healthy/observed `gpt-5.6-luna`; degraded Antigravity fallbacks are not eligible for this run.
+- **Boundary:** Worker progress append is intentionally disabled so the ExecutionSpec write scope and worker commit remain exactly one file; the orchestrator records mission progress after the run.
+--- F001 ---
+{
+  "mission": "20260907-execution-truth-smoke",
+  "rules": "Workers must not edit this file. Only the orchestrator may set passes from false to true after a matching passing VerificationRecord exists and must record accepted_run_id, accepted_verification_sha256, accepted_at, and accepted_by. Descriptions and steps are immutable after Gate 0.",
+  "features": [
+    {
+      "id": "F001",
+      "category": "execution-truth-smoke",
+      "priority": 1,
+      "bootstrap": false,
+      "description": "A real authenticated Codex/Luna worker creates and commits exactly one authorized nonce file, and the same run is linked through immutable authorization, observed execution, deterministic verification, and separate orchestrator acceptance.",
+      "steps": [
+        "Committed mission/task/fleet evidence authorizes Codex economy gpt-5.6-luna at medium effort and only smoke/nonce.txt",
+        "The real worker writes exact nonce 5818a92a-4798-4c29-832f-81e71012bece and makes one commit containing only smoke/nonce.txt",
+        "The strict terminal receipt links the immutable spec, records completed execution, exact Git-visible change, and passing one-file scope",
+        "Run-specific verification executes the committed checks and writes a passing immutable VerificationRecord with no acceptance fields",
+        "The orchestrator separately accepts that exact VerificationRecord and mission-wide worker verification passes"
+      ],
+      "passes": false
+    }
+  ]
+}
+--- log ---
+a7b48cd chore: update Purrfect execution contract candidate
+8708670 docs(mission): record Codex git-write smoke failure
+f6f2138 docs(mission): open disposable smoke dispatch
+b467962 docs(mission): approve disposable smoke Gate 0
+a793624 docs(mission): record real smoke brain audit
+1b7781d docs(mission): bootstrap execution truth smoke
+5c37e9e chore: install Purrfect Harness 2.3.1 in development mode
+2f0cbe9 chore: establish disposable consumer baseline
+--- guard skill ---
+---
+name: guard-verification
+description: Prove that a check actually checks. MUST be used when adding, reviewing or accepting any guard, gate, validator, constraint, assertion or safety test — and before flipping a feature to passing on the strength of one. Catches the two ways a guard silently does nothing: it is never called from the real entry point, or it is satisfiable by an empty value. Use whenever a test passes and you have not seen the guard fail.
+---
+
+# Guard verification — a check that cannot fail is not a check
+
+## The failure this prevents
+
+A guard is written correctly, gets unit tests, the tests pass, review approves it — and it
+**never runs where it matters**, or it **runs but nothing can violate it**. The suite is green,
+the feature is marked done, and the protection does not exist. This is not a hypothetical: it has
+shipped three times in this studio, each time behind a fully green test run.
+
+Two shapes, one lesson.
+
+### Shape 1 — the guard is never mounted
+
+The validator is correct. The only code that ever calls it is the test.
+
+- A language switcher was built correctly and wired into one surface; a second surface rendered a
+  hardcoded control. Component tests exercised the component; the app rendered something else.
+- A publication guard handled its flag correctly. The build wired that flag into four other places
+  and never into the validator — **the only caller passing the flag was a unit test.** Flipping the
+  flag published documents the guard existed to block.
+
+### Shape 2 — the constraint is trivially satisfiable
+
+The guard runs, but the failing case cannot occur.
+
+- `NOT NULL` on an explanatory text column: satisfied by `''`. The schema *looks* like it
+  guarantees an explanation exists.
+- An extraction that falls back to empty when its pattern does not match: `const body = m ? m[0] : ''`.
+  When the markup changes, zero items are found, **the loop over them passes**, and the gate reports
+  success having examined nothing.
+
+**A trivially satisfiable constraint is worse than none**, because the code now looks like it
+guarantees something and reviewers stop asking.
+
+## Procedure
+
+### 1. Find the real callers
+
+```bash
+# replace <guardName> with the exported function / flag / option
+grep -rn "<guardName>" --include="*.ts" --include="*.tsx" --include="*.js" . \
+  | grep -v -E "\.(test|spec)\.|__tests__|/tests?/"
+```
+
+**If that returns nothing, the guard is not mounted.** If it returns only definitions and no call
+from a build script, request handler, CI step or migration, it is not mounted either.
+
+### 2. Trace to the entry point
+
+Name the exact thing that runs in production or CI — `npm run build`, the route handler, the
+workflow step. "It's exported and importable" is not mounted. **Write the entry point down**; you
+will run it in step 3.
+
+### 3. Break it and watch the real path fail
+
+The only proof. Temporarily disable the guard — comment the condition, invert it, or feed a
+deliberately violating fixture — then run **the entry point from step 2**, not the unit test.
+
+- The entry point must **fail**. If it still succeeds, the guard is not protecting that path.
+- Restore the guard exactly. **`git diff <guard file>` must be empty** before you commit.
+- Put the observed failure output in the PR or progress entry. An assertion nobody has seen fail is
+  an assumption.
+
+### 4. Ask what happens when the fallback fires
+
+For every `?? ''`, `|| []`, `? x : ''`, `.catch(() => null)`, optional match or default value inside
+a guard:
+
+> If this fallback fires, does the check **pass**?
+
+If yes, it is a no-op wearing a guard's clothes. Make it throw, naming what it could not parse.
+
+### 5. Ask what the weakest satisfying value is
+
+For every constraint, construct the laziest input that satisfies it.
+
+| Constraint | Weakest satisfying value | Fix |
+| --- | --- | --- |
+| `NOT NULL` on text | `''` | add `length(trim(x)) > 0` |
+| "list is present" | `[]` | require non-empty |
+| "field exists" | `null` / `undefined` | require a value and a shape |
+| regex extraction | no match → empty | fail loudly instead of returning empty |
+
+If the weakest satisfying value is something you would reject in review, the constraint does not
+express your intent.
+
+### 6. Write the regression test against the mount point
+
+Assert on **what the entry point produced** — emitted files, response body, database state — not on
+the validator's return value.
+
+**The test must fail if the wiring is removed**, not only if the logic is wrong. A test that calls
+the validator directly still passes when nobody calls the validator, which is exactly how shape 1
+survives review.
+
+## Self-verification checklist
+
+- [ ] Non-test callers of the guard exist, and I named the entry point that reaches it
+- [ ] I disabled the guard, ran the **entry point**, and **saw it fail**
+- [ ] The guard is restored — `git diff` on its file is empty
+- [ ] Every fallback inside the guard fails loudly rather than passing
+- [ ] I constructed the weakest satisfying value and it is genuinely acceptable
+- [ ] A regression test asserts against the mount point and would fail if the wiring were removed
+- [ ] The observed failure output is recorded where a reviewer will read it
+
+## Never
+
+- Never accept a green suite as evidence a guard works. It is evidence the guard's *logic* works.
+- Never let a unit test that calls the validator directly stand in for proof of wiring.
+- Never leave a fallback that turns "could not check" into "passed".
+- Never mark a guard feature done without having seen it fail once.
+- Never "fix" a failing guard by changing the data it was built to reject — that is the guard
+  working. Removing the blocker is a separate, human decision.
+--- fleet ---
+{"approval":{"approved_at":"2026-09-07T17:22:32Z","approved_by":"Zamir via parent Human Gate 1","status":"approved"},"inventory":{"probed_at":"2026-09-07T17:18:55Z","sha256":"64e0c4945531eb066f735e0c1e9bbe354b15ee94e9ed48ddc6b3b90072848ef5"},"mission":{"path":"docs/missions/20260907-execution-truth-smoke"},"schema_version":1,"seats":{"codex.economy":{"capabilities":{"efforts":["low","medium","high","xhigh"],"speeds":["unknown"]},"effort":"medium","family":"luna","health":"healthy","model":"gpt-5.6-luna","provider":"codex","source":"observed","speed":"unknown"}}}
+
+codex
+Baseline checks passed: the tree was clean, F001 is still false, and the frozen fleet binds `codex.economy` to healthy/observed `gpt-5.6-luna` at medium effort with unknown speed. The guard-verification procedure is not materially applicable to this nonce-only artifact because no guard is being added or accepted; I’ve read it as required and will use the task’s exact committed checks.
+apply patch
+patch: completed
+$CONSUMER_REPO/smoke/nonce.txt
+diff --git a/smoke/nonce.txt b/smoke/nonce.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..cf2f0526da10279b81dbe3948999a563da09d5d1
+--- /dev/null
++++ b/smoke/nonce.txt
+@@ -0,0 +1 @@
++PURRFECT_PHASE1_NONCE=5818a92a-4798-4c29-832f-81e71012bece
+
+diff --git a/smoke/nonce.txt b/smoke/nonce.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..cf2f0526da10279b81dbe3948999a563da09d5d1
+--- /dev/null
++++ b/smoke/nonce.txt
+@@ -0,0 +1 @@
++PURRFECT_PHASE1_NONCE=5818a92a-4798-4c29-832f-81e71012bece
+
+exec
+/bin/zsh -lc "python3 -c \"from pathlib import Path; assert Path('smoke/nonce.txt').read_text() == 'PURRFECT_PHASE1_NONCE=5818a92a-4798-4c29-832f-81e71012bece\\n'\" && git status --short && git diff -- smoke/nonce.txt && git add smoke/nonce.txt && git commit -m 'feat: write Phase 1 smoke nonce (T-001)'" in $CONSUMER_REPO
+ succeeded in 0ms:
+?? smoke/
+[chore/harness-2.3.1 8e9b6ad] feat: write Phase 1 smoke nonce (T-001)
+ 1 file changed, 1 insertion(+)
+ create mode 100644 smoke/nonce.txt
+
+diff --git a/smoke/nonce.txt b/smoke/nonce.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..cf2f0526da10279b81dbe3948999a563da09d5d1
+--- /dev/null
++++ b/smoke/nonce.txt
+@@ -0,0 +1 @@
++PURRFECT_PHASE1_NONCE=5818a92a-4798-4c29-832f-81e71012bece
+
+codex
+The nonce was created with the exact required content and committed as `8e9b6ad` with the mandated message. I’m running all three terminal verification commands now, including the commit-path and clean-tree assertions.
+exec
+/bin/zsh -lc "python3 -c \"from pathlib import Path; assert Path('smoke/nonce.txt').read_text() == 'PURRFECT_PHASE1_NONCE=5818a92a-4798-4c29-832f-81e71012bece\\n'\"
+python3 -c \"import subprocess; p=subprocess.check_output(['git','diff-tree','--no-commit-id','--name-only','-r','HEAD'], text=True).splitlines(); assert p == ['smoke/nonce.txt'], p; assert subprocess.check_output(['git','log','-1','--pretty=%s'], text=True).strip() == 'feat: write Phase 1 smoke nonce (T-001)'\"
+python3 -c \"import subprocess; assert subprocess.check_output(['git','status','--porcelain'], text=True) == ''\"
+git status --short && git log -1 --oneline" in $CONSUMER_REPO
+ succeeded in 0ms:
+8e9b6ad feat: write Phase 1 smoke nonce (T-001)
+
+diff --git a/smoke/nonce.txt b/smoke/nonce.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..cf2f0526da10279b81dbe3948999a563da09d5d1
+--- /dev/null
++++ b/smoke/nonce.txt
+@@ -0,0 +1 @@
++PURRFECT_PHASE1_NONCE=5818a92a-4798-4c29-832f-81e71012bece
+
+codex
+Completed T-001 exactly.
+
+- Created exact nonce in [smoke/nonce.txt]($CONSUMER_REPO/smoke/nonce.txt)
+- Commit: `8e9b6ad feat: write Phase 1 smoke nonce (T-001)`
+- All three verification commands passed
+- Working tree is clean
+- `PROGRESS.md` was not edited because the task explicitly forbids it and limits changes to `smoke/nonce.txt`.
+diff --git a/smoke/nonce.txt b/smoke/nonce.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..cf2f0526da10279b81dbe3948999a563da09d5d1
+--- /dev/null
++++ b/smoke/nonce.txt
+@@ -0,0 +1 @@
++PURRFECT_PHASE1_NONCE=5818a92a-4798-4c29-832f-81e71012bece
+
+tokens used
+33,982
+Completed T-001 exactly.
+
+- Created exact nonce in [smoke/nonce.txt]($CONSUMER_REPO/smoke/nonce.txt)
+- Commit: `8e9b6ad feat: write Phase 1 smoke nonce (T-001)`
+- All three verification commands passed
+- Working tree is clean
+- `PROGRESS.md` was not edited because the task explicitly forbids it and limits changes to `smoke/nonce.txt`.
+----
+exit=0

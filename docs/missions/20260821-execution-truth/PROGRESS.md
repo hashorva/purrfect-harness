@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-08 — Orchestrator — F007 smoke archived and reconstructable
+
+- **Consumer outcome:** Disposable consumer run `afdb7a45-b4b5-4f90-a335-a96263e7276a` used frozen healthy/observed Codex economy `gpt-5.6-luna`, ExecutionSpec v3/provider contract 2, and write scope exactly `smoke/nonce.txt`. Its strict receipt records completed exit 0, one commit `8e9b6addfd03878fcebbca57bd59a9d6f59514c4`, only the nonce path, scope pass, and clean before/after snapshots.
+- **Verification and acceptance:** All three committed smoke checks passed in immutable consumer VerificationRecord SHA-256 `7a6c6f07991cdbdaacc645c23d90e5927943f4055b72b7cfe9bd9cf5e44f958e`. The consumer orchestrator separately accepted that exact run/hash, and `verify-mission.sh --require-workers` returned `VERIFY OK` after acceptance.
+- **Durable archive:** `evidence/f007/` contains the frozen fleet, exact task/spec/receipt/VerificationRecord/feature state, nonce, commit metadata, full Git bundle, sanitized worker log, hashes, and a dependency-free reconstruction checker. The raw log remains only in the disposable repository; the archive replaces its repository and home paths and redacts the provider session id.
+- **Fresh-process guard proof:** A copy of the archive executed under an empty environment reconstructed all four truths and emitted `"result": "PASS"`. Its mounted test also observed a raw nonce tamper fail at the manifest hash and a rehashed acceptance-run rebind fail at the semantic acceptance guard. T-019 is limited to independent qualification; F007 remains false pending its VerificationRecord and Human Gate 2.
+
 ## 2026-09-08 — GPT-5.6 Sol/high — T-018 review — PASS
 
 - **Effect review:** Commit `8298222` is limited to T-018's allow-list. ExecutionSpec v3 requires immutable provider contract 2 for new runs; canonical v1/v2 evidence remains contract 1. Only Codex contract 2 adds exactly `--add-dir <repo>/.git` while retaining `-s workspace-write`; the other provider argv contracts are unchanged.
