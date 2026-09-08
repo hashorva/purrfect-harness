@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 PROVIDERS = ("codex", "claude", "agent", "agy")
@@ -211,7 +212,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
     def expected_argv(self, provider, model, effort, speed, prompt):
         repo = self.physical_root
         if provider == "codex":
-            return ["exec", "-C", repo, "-s", "workspace-write", "-m", model, "-c", f'model_reasoning_effort="{effort}"', prompt]
+            return ["exec", "-C", repo, "-s", "workspace-write", "--add-dir", str(Path(repo) / ".git"), "-m", model, "-c", f'model_reasoning_effort="{effort}"', prompt]
         if provider == "claude":
             return ["-p", prompt, "--model", model, "--effort", effort, "--allowedTools", "Read,Write,Edit,Bash"]
         if provider == "agy":
@@ -242,7 +243,8 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertEqual(receipt["exit_code"], 0)
         self.assertFalse(receipt["workspace_changed"])
         self.assertEqual(receipt["scope"]["result"], "pass")
-        self.assertEqual(spec["schema_version"], 2)
+        self.assertEqual(spec["schema_version"], 3)
+        self.assertEqual(spec["provider_contract_version"], 2)
         self.assertEqual(receipt["log_path"], f".tasks/logs/{spec['run_id']}.log")
         self.assertNotIn(spec["prompt"], json.dumps(receipt))
         invoked = json.loads((self.root / ".tasks/invoked.json").read_text())
@@ -274,6 +276,78 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                     if provider == "agy":
                         self.assertEqual(invoked["argv"][-2:], ["-p", spec["prompt"]])
                     self.clean_runs()
+
+    def test_historical_contract_one_evidence_survives_contract_two_and_mutation_is_mounted(self):
+        """A v2 receipt remains auditable by the real mission entry point after v3 exists."""
+        self.write_fleet("codex", "legacy-model", "medium", "unknown", include_brain=True)
+        brain = self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"])
+        self.assertEqual(brain.returncode, 0, brain.stderr + brain.stdout)
+        run_id = str(uuid.uuid4())
+        legacy = {
+            "schema_version": 2, "run_id": run_id, "mission": "docs/missions/fixture", "work_unit": "T-001",
+            "role": "worker", "feature": "F001", "provider": "codex", "model": "legacy-model",
+            "effort": "medium", "speed": "unknown", "repo": self.physical_root,
+            "base_commit": self.git("rev-parse", "HEAD").stdout.strip(), "attempt": 1,
+            "prompt": self.prompt_worker(), "write_scope": ["allowed.txt"],
+        }
+        source = self.parent / "legacy-v2.json"
+        source.write_text(json.dumps(legacy, sort_keys=True, separators=(",", ":")) + "\n")
+        persisted = self.invoke([sys.executable, "scripts/execution_spec.py", "persist", "--input", str(source)])
+        self.assertEqual(persisted.returncode, 0, persisted.stderr)
+        details = json.loads(persisted.stdout)
+        launched = self.invoke([
+            sys.executable, "scripts/execution_runner.py", "--spec", details["path"], "--spec-sha256", details["sha256"],
+            "--log", f".tasks/logs/{run_id}.log", "--timeout", "0", "--task", "docs/missions/fixture/tasks/T-001.md", "--tier", "economy",
+        ], env={"PROVIDER_ACTION": "dirty"})
+        self.assertEqual(launched.returncode, 0, launched.stderr + launched.stdout)
+        receipt_path = self.root / ".tasks/receipts" / f"{run_id}.json"
+        receipt = json.loads(receipt_path.read_text())
+        self.assertEqual(receipt["resolved_configuration"]["argv_sha256"], hashlib.sha256(
+            (json.dumps(["codex", "exec", "-C", self.physical_root, "-s", "workspace-write", "-m", "legacy-model", "-c", 'model_reasoning_effort="medium"', self.prompt_worker()], separators=(",", ":")) + "\n").encode()
+        ).hexdigest())
+        verified = self.invoke(["bash", "scripts/verify-mission.sh", "--run-id", run_id, "docs/missions/fixture"])
+        self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        record = self.mission / "verification" / f"{run_id}.json"
+        accepted = self.invoke(["bash", "scripts/accept-feature.sh", "--run-id", run_id,
+                                "--verification-sha256", hashlib.sha256(record.read_bytes()).hexdigest(),
+                                "--accepted-by", "test", "docs/missions/fixture"], env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
+        self.assertEqual(accepted.returncode, 0, accepted.stderr + accepted.stdout)
+        audit = ["bash", "scripts/verify-mission.sh", "--require-workers", "docs/missions/fixture"]
+        self.assertEqual(self.invoke(audit).returncode, 0)
+
+        adapter = self.root / "scripts/execute_provider.py"
+        original = adapter.read_text()
+        self.assertIn('contract_version = spec.get("provider_contract_version", 1)', original)
+        adapter.write_text(original.replace('contract_version = spec.get("provider_contract_version", 1)',
+                                            'contract_version = spec.get("provider_contract_version", 2)', 1))
+        self.commit_fixture("mutate legacy provider contract")
+        try:
+            rejected = self.invoke(audit)
+            self.assertNotEqual(rejected.returncode, 0, rejected.stderr + rejected.stdout)
+            self.assertIn("resolved_configuration does not match shared adapter evidence", rejected.stderr + rejected.stdout)
+        finally:
+            adapter.write_text(original)
+        self.assertEqual(adapter.read_text(), original)
+
+    def test_removing_contract_two_git_mount_fails_real_new_wrapper_argv_assertion(self):
+        self.write_fleet("codex", "new-model", "medium", "unknown")
+        adapter = self.root / "scripts/execute_provider.py"
+        original = adapter.read_text()
+        old = 'codex_git_dir = (["--add-dir", str(Path(repo) / ".git")]\n                         if contract_version == 2 else [])'
+        self.assertIn(old, original)
+        adapter.write_text(original.replace(old, "codex_git_dir = []", 1))
+        self.commit_fixture("remove contract two Git mount")
+        try:
+            result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                                  "--model", "new-model", "--feature", "F001"])
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            spec, _, _, invoked = self.linked(role="worker", provider="codex", model="new-model", effort="medium",
+                                               speed="unknown", work_unit="T-001", feature="F001")
+            with self.assertRaises(AssertionError):
+                self.assertEqual(invoked["argv"], self.expected_argv("codex", "new-model", "medium", "unknown", spec["prompt"]))
+        finally:
+            adapter.write_text(original)
+        self.assertEqual(adapter.read_text(), original)
 
     def test_sol_brain_and_unsupported_configs_fail_before_sentinel(self):
         self.write_fleet("codex", "gpt-5.6-sol", "high", "unknown", seat_name="brain")

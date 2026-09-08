@@ -4,6 +4,19 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-08 — Orchestrator — T-018 independent verification checkpoint
+
+- **Independent checks:** The focused ExecutionSpec suite passed 8 tests, the real-wrapper integration suite passed 18 tests, the VerificationRecord/acceptance suite passed 10 tests, ShellCheck and `git diff --check` passed, and the aggregate repository suite reached `ALL TESTS PASSED` when run alone.
+- **Historical compatibility:** `bash scripts/verify-mission.sh --require-workers docs/missions/20260821-execution-truth` returned `VERIFY OK` with the v3/contract-2 candidate applied, proving all six accepted historical v1/v2-linked records still resolve through contract 1.
+- **Disposition:** The scoped T-018 candidate is ready for an immutable review checkpoint so the clean-tree Sol/high review gate can run. This is not F007 completion: `features.json` remains unchanged, and no VerificationRecord or acceptance artifact has been created.
+
+## 2026-09-08 — Codex — T-018 F007 provider-contract versioning — STOP: aggregate banner unavailable
+
+- **Implementation:** ExecutionSpec v3 adds required immutable `provider_contract_version: 2`; fresh construction emits v3. Exact v1/v2 canonical loading remains unchanged and implies contract 1. Only Codex contract 2 adds exactly `--add-dir <repo>/.git` while retaining `-s workspace-write`; all other argv remains byte-identical.
+- **Historical and mounted proofs:** The integration suite creates a v2 Codex contract-1 worker receipt, verifies and accepts it through the real mission entry points, then makes that legacy resolution use contract 2 and observes `verify-mission.sh --require-workers` reject it with `resolved_configuration does not match shared adapter evidence`. A separate copied-adapter mutation removes the contract-2 Git pair; the real new worker wrapper runs and the exact argv assertion fails. Both copied adapter byte sequences are restored exactly.
+- **Completed checks:** `python3 tests/test-execution-spec.py` passed 8 tests; `python3 tests/test-execution-integration.py` passed; `shellcheck scripts/*.sh tests/*.sh` passed; `git diff --check` passed; and `bash scripts/verify-mission.sh --require-workers docs/missions/20260821-execution-truth` returned `VERIFY OK` after the implementation.
+- **Blocking final banner:** Repeated `bash tests/run-tests.sh` invocations reached `== immutable execution spec and provider adapter` and `ok : ExecutionSpec and provider adapter contracts`, then this execution transport terminated the aggregate process during its silent integration stage before it emitted `ALL TESTS PASSED` or a test failure. A background attempt produced the same partial transcript. Under T-018's iteration policy, do not claim the aggregate suite green or accept F007. `features.json` remains unchanged; no VerificationRecord or acceptance artifact was created. The scoped dirty snapshot is left for orchestrator/Sol review and retry.
+
 ## 2026-09-07 — Orchestrator — T-017 review FAIL: unversioned adapter invalidates history
 
 - **Mission-wide reproduction:** With T-017's otherwise narrow Codex argv change applied, `bash scripts/verify-mission.sh --require-workers docs/missions/20260821-execution-truth` rejected every historical Codex receipt, including all six accepted feature runs, because `receipt_link()` re-derived old `resolved_configuration` using the current changed adapter.

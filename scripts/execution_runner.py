@@ -65,8 +65,8 @@ def run(args):
     spec, raw = load_persisted(args.spec)
     if spec_sha256(raw) != args.spec_sha256:
         raise SpecError("persisted spec SHA-256 does not match authorization")
-    if spec["schema_version"] != 2:
-        raise SpecError("execution runner requires ExecutionSpec v2")
+    if spec["schema_version"] not in {2, 3}:
+        raise SpecError("execution runner requires ExecutionSpec v2 or v3")
     argv, env_overrides = provider_contract(spec)
     log = Path(args.log)
     expected_log = Path(spec["repo"]) / ".tasks/logs" / f"{spec['run_id']}.log"

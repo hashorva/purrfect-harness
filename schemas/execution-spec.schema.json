@@ -74,6 +74,35 @@
         }
       },
       "allOf": [{ "$ref": "#/$defs/roleRules" }]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "run_id", "mission", "work_unit", "role", "feature", "provider", "model", "effort", "speed", "repo", "base_commit", "attempt", "prompt", "write_scope", "provider_contract_version"],
+      "properties": {
+        "schema_version": { "const": 3 },
+        "run_id": { "$ref": "#/$defs/commonProperties/run_id" },
+        "mission": { "$ref": "#/$defs/commonProperties/mission" },
+        "work_unit": { "$ref": "#/$defs/commonProperties/work_unit" },
+        "role": { "$ref": "#/$defs/commonProperties/role" },
+        "feature": { "$ref": "#/$defs/commonProperties/feature" },
+        "provider": { "$ref": "#/$defs/commonProperties/provider" },
+        "model": { "$ref": "#/$defs/commonProperties/model" },
+        "effort": { "$ref": "#/$defs/commonProperties/effort" },
+        "speed": { "$ref": "#/$defs/commonProperties/speed" },
+        "repo": { "$ref": "#/$defs/commonProperties/repo" },
+        "base_commit": { "$ref": "#/$defs/commonProperties/base_commit" },
+        "attempt": { "$ref": "#/$defs/commonProperties/attempt" },
+        "prompt": { "$ref": "#/$defs/commonProperties/prompt" },
+        "write_scope": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)(?!\\.git(?:/|$))(?!\\.tasks(?:/|$))[^\\\\\\r\\n]+$" }
+        },
+        "provider_contract_version": { "const": 2 }
+      },
+      "allOf": [{ "$ref": "#/$defs/roleRules" }]
     }
   ]
 }

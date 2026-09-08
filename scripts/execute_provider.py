@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+from pathlib import Path
 import re
 import subprocess
 import sys
@@ -20,7 +21,12 @@ def provider_contract(spec):
             raise SpecError("codex does not support requested effort")
         if speed != "unknown":
             raise SpecError("codex speed must be unknown")
-        argv = ["codex", "exec", "-C", repo, "-s", "workspace-write", "-m", model,
+        # v1/v2 predate the marker and therefore bind the historical contract 1.
+        # Only a v3 authorization can select contract 2.
+        contract_version = spec.get("provider_contract_version", 1)
+        codex_git_dir = (["--add-dir", str(Path(repo) / ".git")]
+                         if contract_version == 2 else [])
+        argv = ["codex", "exec", "-C", repo, "-s", "workspace-write", *codex_git_dir, "-m", model,
                 "-c", f'model_reasoning_effort="{effort}"', prompt]
     elif provider == "claude":
         if effort not in {"low", "medium", "high", "xhigh", "max"}:

@@ -75,6 +75,13 @@ class ExecutionSpecContract(unittest.TestCase):
         value.update(changes)
         return value
 
+    def spec_v3(self, provider="codex", role="brain", **changes):
+        value = self.spec_v2(provider=provider, role=role)
+        value["schema_version"] = 3
+        value["provider_contract_version"] = 2
+        value.update(changes)
+        return value
+
     def persist(self, spec, check=True):
         source = self.tmp / f"input-{uuid.uuid4()}.json"
         source.write_text(json.dumps(spec))
@@ -93,11 +100,13 @@ class ExecutionSpecContract(unittest.TestCase):
 
     def test_schema_and_validator_reject_weakest_invalid_values(self):
         schema = json.loads((ROOT / "schemas" / "execution-spec.schema.json").read_text())
-        self.assertEqual(len(schema["oneOf"]), 2)
+        self.assertEqual(len(schema["oneOf"]), 3)
         self.assertFalse(schema["oneOf"][0]["additionalProperties"])
         self.assertEqual(set(schema["oneOf"][0]["required"]), set(self.spec()))
         self.assertFalse(schema["oneOf"][1]["additionalProperties"])
         self.assertEqual(set(schema["oneOf"][1]["required"]), set(self.spec_v2()))
+        self.assertFalse(schema["oneOf"][2]["additionalProperties"])
+        self.assertEqual(set(schema["oneOf"][2]["required"]), set(self.spec_v3()))
         cases = [
             ({"schema_version": 3}, "schema_version"),
             ({"run_id": "not-a-uuid"}, "run_id"),
@@ -139,6 +148,9 @@ class ExecutionSpecContract(unittest.TestCase):
             with self.subTest(write_scope=candidate):
                 self.assertNotEqual(self.persist(self.spec_v2(write_scope=candidate), check=False).returncode, 0)
         self.assertEqual(self.persist(self.spec_v2()).returncode, 0)
+        self.assertEqual(self.persist(self.spec_v3()).returncode, 0)
+        self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=1), check=False).returncode, 0)
+        self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=True), check=False).returncode, 0)
 
     def test_persistence_is_canonical_hashed_and_no_clobber(self):
         value = self.spec()
@@ -155,24 +167,41 @@ class ExecutionSpecContract(unittest.TestCase):
         self.assertNotEqual(amended["run_id"], value["run_id"])
         self.assertTrue(self.persist(amended).returncode == 0)
 
-    def test_exact_dry_run_contract_for_every_provider_and_role(self):
-        expected = {
+    def test_versioned_exact_dry_run_contract_for_every_provider_and_role(self):
+        contract_one = {
             "codex": lambda s: ["codex", "exec", "-C", str(self.repo), "-s", "workspace-write", "-m", "test-model", "-c", 'model_reasoning_effort="medium"', "exact prompt"],
             "claude": lambda s: ["claude", "-p", "exact prompt", "--model", "test-model", "--effort", "medium", "--allowedTools", "Read,Write,Edit,Bash"],
             "agy": lambda s: ["agy", "--dangerously-skip-permissions", "--print-timeout", "30m", "--model", "test-model", "--effort", "medium", "-p", "exact prompt"],
             "agent": lambda s: ["agent", "-p", "--force", "--trust", "--workspace", str(self.repo), "--model", "test-model[effort=medium,fast=false]", "exact prompt"],
         }
-        for provider in expected:
+        for provider in contract_one:
             for role in ("brain", "worker"):
                 with self.subTest(provider=provider, role=role):
                     changes = {"speed": "standard"} if provider == "agent" else {}
-                    path, digest = self.persisted(self.spec(provider=provider, role=role, **changes))
+                    for legacy in (self.spec(provider=provider, role=role, **changes), self.spec_v2(provider=provider, role=role, **changes)):
+                        path, digest = self.persisted(legacy)
+                        result = json.loads(self.adapter(path, digest).stdout)
+                        self.assertEqual(result["argv"], contract_one[provider](None))
+                        self.assertEqual(result["env_overrides"], {})
+                        self.assertEqual(result["observed"], {"model": "unknown", "effort": "unknown", "speed": "unknown"})
+                    path, digest = self.persisted(self.spec_v3(provider=provider, role=role, **changes))
                     result = json.loads(self.adapter(path, digest).stdout)
-                    self.assertEqual(result["argv"], expected[provider](None))
-                    self.assertEqual(result["env_overrides"], {})
-                    self.assertEqual(result["observed"], {"model": "unknown", "effort": "unknown", "speed": "unknown"})
-        fast, fast_digest = self.persisted(self.spec(provider="agent", speed="fast"))
+                    expected = contract_one[provider](None)
+                    if provider == "codex":
+                        expected = expected[:6] + ["--add-dir", str(self.repo / ".git")] + expected[6:]
+                    self.assertEqual(result["argv"], expected)
+        fast, fast_digest = self.persisted(self.spec_v3(provider="agent", speed="fast"))
         self.assertEqual(json.loads(self.adapter(fast, fast_digest).stdout)["argv"][-2], "test-model[effort=medium,fast=true]")
+
+    def test_construct_emits_v3_contract_2(self):
+        spec, path, _ = execution_spec.construct(
+            role="worker", mission="docs/missions/fixture", feature="F001", work_unit="T-001", attempt=1,
+            provider="codex", model="test-model", effort="medium", speed="unknown", repo=str(self.repo),
+            prompt="exact prompt", write_scope=["allowed.txt"],
+        )
+        self.assertEqual(spec["schema_version"], 3)
+        self.assertEqual(spec["provider_contract_version"], 2)
+        self.assertEqual(json.loads(path.read_text()), spec)
 
     def test_negative_adapter_paths_do_not_invoke_provider_sentinel(self):
         env = dict(__import__("os").environ)

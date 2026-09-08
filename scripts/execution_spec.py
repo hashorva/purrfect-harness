@@ -16,6 +16,7 @@ FIELDS_V1 = frozenset(("schema_version", "run_id", "mission", "work_unit", "role
                        "provider", "model", "effort", "speed", "repo", "base_commit",
                        "attempt", "prompt"))
 FIELDS_V2 = FIELDS_V1 | {"write_scope"}
+FIELDS_V3 = FIELDS_V2 | {"provider_contract_version"}
 ROLES = frozenset(("brain", "worker"))
 PROVIDERS = frozenset(("codex", "claude", "agent", "agy"))
 COMMIT = re.compile(r"^[0-9a-fA-F]{40,64}$")
@@ -83,9 +84,9 @@ def validate(spec):
     if not isinstance(spec, dict):
         raise SpecError("spec must be an object")
     version = spec.get("schema_version")
-    fields = FIELDS_V1 if version == 1 else FIELDS_V2 if version == 2 else None
+    fields = FIELDS_V1 if version == 1 else FIELDS_V2 if version == 2 else FIELDS_V3 if version == 3 else None
     if fields is None:
-        raise SpecError("schema_version must equal 1 or 2")
+        raise SpecError("schema_version must equal 1, 2, or 3")
     if set(spec) != fields:
         missing = sorted(fields - set(spec))
         extra = sorted(set(spec) - fields)
@@ -114,8 +115,11 @@ def validate(spec):
         raise SpecError("brain feature must be JSON null")
     if isinstance(spec["attempt"], bool) or not isinstance(spec["attempt"], int) or spec["attempt"] < 1:
         raise SpecError("attempt must be a positive integer")
-    if version == 2:
+    if version >= 2:
         validate_write_scope(spec["write_scope"])
+    if version == 3 and (isinstance(spec["provider_contract_version"], bool) or
+                         spec["provider_contract_version"] != 2):
+        raise SpecError("provider_contract_version must equal 2")
     repo = _repo(spec["repo"])
     if not COMMIT.fullmatch(spec["base_commit"]):
         raise SpecError("base_commit must be a full Git object ID")
@@ -221,7 +225,7 @@ def construct(*, role, mission, feature, work_unit, attempt, provider, model, ef
     except subprocess.CalledProcessError as exc:
         raise SpecError("cannot resolve current Git commit") from exc
     spec = {
-        "schema_version": 2,
+        "schema_version": 3,
         "run_id": run_id or str(uuid.uuid4()),
         "mission": mission,
         "work_unit": work_unit,
@@ -236,6 +240,7 @@ def construct(*, role, mission, feature, work_unit, attempt, provider, model, ef
         "attempt": attempt,
         "prompt": prompt,
         "write_scope": write_scope,
+        "provider_contract_version": 2,
     }
     path, digest = persist(spec)
     return spec, path, digest

@@ -380,7 +380,7 @@ chmod +x "$STUBBIN/codex"
 CODEX_MODEL="codex-test-model"
 CODEX_PROMPT="Read docs/missions/20990101-fixture/tasks/T-001.md and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder."
 CODEX_EXPECTED="$TARGET/.codex-expected"
-printf '%s\n' codex exec -C "$TARGET_CANONICAL" -s workspace-write -m "$CODEX_MODEL" \
+printf '%s\n' codex exec -C "$TARGET_CANONICAL" -s workspace-write --add-dir "$TARGET_CANONICAL/.git" -m "$CODEX_MODEL" \
   '-c' 'model_reasoning_effort="medium"' "$CODEX_PROMPT" > "$CODEX_EXPECTED"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/tasks/T-001.md \
@@ -389,7 +389,7 @@ check "codex receives the exact invocation with medium default" \
   cmp -s "$CODEX_EXPECTED" "$CODEX_OUT"
 
 CODEX_EXPECTED_XHIGH="$TARGET/.codex-expected-xhigh"
-printf '%s\n' codex exec -C "$TARGET_CANONICAL" -s workspace-write -m "$CODEX_MODEL" \
+printf '%s\n' codex exec -C "$TARGET_CANONICAL" -s workspace-write --add-dir "$TARGET_CANONICAL/.git" -m "$CODEX_MODEL" \
   '-c' 'model_reasoning_effort="xhigh"' "$CODEX_PROMPT" > "$CODEX_EXPECTED_XHIGH"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/tasks/T-001.md \

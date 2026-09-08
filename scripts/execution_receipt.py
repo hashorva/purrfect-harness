@@ -84,8 +84,8 @@ def capture_before(spec_path, digest):
     spec, raw = load_persisted(spec_path)
     if spec_sha256(raw) != digest:
         fail("execution spec SHA-256 does not match authorization")
-    if spec["schema_version"] != 2:
-        fail("new execution receipts require ExecutionSpec v2")
+    if spec["schema_version"] not in {2, 3}:
+        fail("execution receipts require ExecutionSpec v2 or v3")
     before = snapshot(spec["repo"])
     if before["head"] != spec["base_commit"]:
         fail("Git HEAD before launch does not match the authorized base commit")
@@ -196,8 +196,8 @@ def build_receipt(*, spec_path, digest, before, started_at, finished_at, outcome
     spec, raw = load_persisted(spec_path)
     if spec_sha256(raw) != digest:
         fail("execution spec SHA-256 does not match exact persisted bytes")
-    if spec["schema_version"] != 2:
-        fail("new execution receipts require ExecutionSpec v2")
+    if spec["schema_version"] not in {2, 3}:
+        fail("execution receipts require ExecutionSpec v2 or v3")
     linked = receipt_link(
         run_id=spec["run_id"], path=spec_path, digest=digest, role=spec["role"],
         mission=spec["mission"], work_unit=spec["work_unit"],
