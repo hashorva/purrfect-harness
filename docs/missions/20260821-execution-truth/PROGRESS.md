@@ -4,6 +4,12 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-08 — Codex — T-019 F007 archived smoke qualification — PASS
+
+- **Qualification:** `reconstruct.py` emitted `"result": "PASS"` from archived files alone; the Git bundle proved the nonce commit and separate acceptance commit; and the fresh-process mounted test reached `RECONSTRUCTION TESTS PASSED`, observing raw hash tampering and rehashed acceptance rebinding failures at their intended guards.
+- **Repository gates:** The exact ShellCheck command, `bash tests/run-tests.sh` (`ALL TESTS PASSED`), and `bash scripts/verify-mission.sh --require-workers docs/missions/20260821-execution-truth` (`VERIFY OK`) passed.
+- **Boundary:** Only this append-only progress entry changed and is committed by T-019; F007 remains `passes: false`, with no VerificationRecord, feature acceptance, or human gate/status change made.
+
 ## 2026-09-08 — Orchestrator — F007 smoke archived and reconstructable
 
 - **Consumer outcome:** Disposable consumer run `afdb7a45-b4b5-4f90-a335-a96263e7276a` used frozen healthy/observed Codex economy `gpt-5.6-luna`, ExecutionSpec v3/provider contract 2, and write scope exactly `smoke/nonce.txt`. Its strict receipt records completed exit 0, one commit `8e9b6addfd03878fcebbca57bd59a9d6f59514c4`, only the nonce path, scope pass, and clean before/after snapshots.
