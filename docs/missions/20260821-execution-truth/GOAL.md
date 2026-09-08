@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: awaiting-gate
 owner: Zamir
 orchestrator: gpt-5.6-sol-high
 created: 2026-08-21
