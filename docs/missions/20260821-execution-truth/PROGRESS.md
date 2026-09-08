@@ -4,6 +4,12 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-08 — Human GATE 2 — APPROVED / F007 accepted
+
+- **Verdict:** Zamir approved Human Gate 2 after the authenticated real-provider smoke and fresh-process reconstruction checkpoint. No waiver substitutes for the real Codex/Luna evidence.
+- **Acceptance:** The orchestrator accepted parent qualification run `e2a602fe-7aca-44d6-b639-b7880757f13d` against immutable VerificationRecord SHA-256 `cc787a8b5a20c614c8e099490843166ab61e1c6ae1be12734134b5b3f3d9c21a`. F007 alone changed to `passes: true`; the VerificationRecord remains free of acceptance fields.
+- **Completion:** All seven Phase 1 features are separately accepted. Mission status is `done`; the final audit must continue to validate every accepted run and the archived consumer chain.
+
 ## 2026-09-08 — Orchestrator — Human GATE 2 ready
 
 - **Qualification run:** Parent T-019 run `e2a602fe-7aca-44d6-b639-b7880757f13d` completed under frozen Codex economy `gpt-5.6-luna`, changed and committed only its authorized progress entry, and ended with a clean tree and scope `pass`.

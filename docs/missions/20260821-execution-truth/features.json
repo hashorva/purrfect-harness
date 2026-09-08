@@ -134,7 +134,11 @@
         "From a fresh shell/process, reconstruct what was authorized, what ran, what changed, what passed, and what was accepted using only archived repository evidence",
         "No waiver substitutes for a real provider; unavailable authentication leaves the mission awaiting Gate 2"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "e2a602fe-7aca-44d6-b639-b7880757f13d",
+      "accepted_verification_sha256": "cc787a8b5a20c614c8e099490843166ab61e1c6ae1be12734134b5b3f3d9c21a",
+      "accepted_at": "2026-09-08T14:55:20.126669Z",
+      "accepted_by": "Zamir — Human Gate 2"
     }
   ]
 }
