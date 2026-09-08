@@ -4,6 +4,16 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-09-08 — GPT-5.6 Sol/high — T-018 review — PASS
+
+- **Effect review:** Commit `8298222` is limited to T-018's allow-list. ExecutionSpec v3 requires immutable provider contract 2 for new runs; canonical v1/v2 evidence remains contract 1. Only Codex contract 2 adds exactly `--add-dir <repo>/.git` while retaining `-s workspace-write`; the other provider argv contracts are unchanged.
+- **Compatibility boundary:** ExecutionReceipt stays at v1 and VerificationRecord remains unchanged. The runner and receipt builder accept linked v3 specs, while the current mission audit still validates all six historical accepted v1/v2-linked runs through contract 1.
+- **Mounted guard proof:** The historical mutation reaches the real mission audit and fails on shared-adapter evidence when legacy specs are incorrectly resolved through contract 2. Removing the contract-2 Codex Git pair reaches the real worker wrapper and makes its exact argv oracle fail. Both mutations restore the copied adapter bytes.
+- **Worker evidence:** Receipt `.tasks/receipts/74a1eaf2-fe63-42e5-ba1d-30963a72a10f.json` proves a completed Codex premium T-018/F007 run with Git-visible changes confined to the nine allow-listed paths and scope result `pass`; the earlier `102142ce-0c80-4a7a-8656-41eded04c7df` run failed before editing and is not implementation evidence.
+- **Independent verification:** ExecutionSpec passed 8 tests, real-wrapper integration passed 18 tests, VerificationRecord/acceptance passed 10 tests, ShellCheck, repository JSON validation, `git diff --check`, and the aggregate suite passed with `ALL TESTS PASSED`; `bash scripts/verify-mission.sh --require-workers docs/missions/20260821-execution-truth` returned `VERIFY OK`.
+- **Disposition:** T-018 passes implementation review. F007 remains `passes: false`: no disposable-consumer smoke VerificationRecord or orchestrator acceptance exists yet, so no feature, gate, or mission-status advance is authorized.
+- **Brain review log:** `.tasks/logs/292bee76-b7a1-4e54-a616-c1621f4a4fe4.log` (review log only; not worker evidence).
+
 ## 2026-09-08 — Orchestrator — T-018 independent verification checkpoint
 
 - **Independent checks:** The focused ExecutionSpec suite passed 8 tests, the real-wrapper integration suite passed 18 tests, the VerificationRecord/acceptance suite passed 10 tests, ShellCheck and `git diff --check` passed, and the aggregate repository suite reached `ALL TESTS PASSED` when run alone.
