@@ -1,6 +1,6 @@
 {
   "mission": "{{MISSION_NAME}}",
-  "rules": "Agents may ONLY flip 'passes' from false to true, after verifying every step. Editing or removing descriptions/steps is unacceptable and will be treated as a failed task. Keep the 'bootstrap' field on every feature: false (default) means a worker implements it and verify-mission requires a worker receipt; true means no worker will ever run it (orchestrator-authored docs, AGENTS.md, mission scaffolding). Set it when authoring — adding it after GATE 0 is an edit to an approved feature.",
+  "rules": "Workers never edit this file. Only the orchestrator accepts a non-bootstrap feature using accept-feature.sh after a matching passing VerificationRecord exists, recording accepted_run_id, accepted_verification_sha256, accepted_at, and accepted_by with passes:true. Editing or removing approved descriptions/steps is unacceptable. Keep bootstrap on every feature: false (default) requires verified worker execution and separate acceptance; true exempts work no worker will ever run, such as mission scaffolding or orchestrator decisions. Set it when authoring; never add it after GATE 0 to excuse missing evidence.",
   "features": [
     {
       "id": "F001",

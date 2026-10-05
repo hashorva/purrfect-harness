@@ -25,7 +25,7 @@ Worker only, Luma-styled, live on staging behind auth.}}
 - Hard rules: see AGENTS.md PROJECT block — all apply.
 - {{mission-specific: e.g. no new dependencies without orchestrator approval}}
 
-## Fleet (worker invocations for THIS mission — dispatch-worker reads this table)
+## Fleet (proposal and narrative copy of this mission's frozen fleet.json)
 
 Filled at GATE 0 from `bash scripts/fleet-inventory.sh` (human confirms or remaps).
 
@@ -53,12 +53,17 @@ Spawn helpers (prefer these so logs land in `.tasks/logs/`):
 
 | Worker | Economy | Premium |
 |---|---|---|
-| agent | `bash scripts/spawn-worker.sh agent <task> --tier economy` | `... --tier premium` (Grok; Composer fallback) |
-| codex | `bash scripts/spawn-worker.sh codex <task> --tier economy` | `... --tier premium` |
-| agy | `bash scripts/spawn-worker.sh agy <task> --tier economy` (Flash) | `... --tier premium` (Pro) — prefer for UI |
-| claude | `bash scripts/spawn-worker.sh claude <task> --tier economy` | `... --tier premium` |
+| agent | `bash scripts/spawn-worker.sh agent <task> --tier economy --feature F00X --effort <approved> --speed <approved>` | same flags with `--tier premium` (Grok; Composer fallback) |
+| codex | `bash scripts/spawn-worker.sh codex <task> --tier economy --feature F00X --effort <approved> --speed <approved>` | same flags with `--tier premium` |
+| agy | `bash scripts/spawn-worker.sh agy <task> --tier economy --feature F00X --effort <approved> --speed <approved>` (Flash) | same flags with `--tier premium` (Pro) — prefer for UI |
+| claude | `bash scripts/spawn-worker.sh claude <task> --tier economy --feature F00X --effort <approved> --speed <approved>` | same flags with `--tier premium` |
 
-Per-task `invocation:` / `--model` overrides this table for one spawn.
+Freeze the human-approved bindings with `scripts/fleet_state.py freeze` as
+described in the mission-init skill. Dispatch reads only `fleet.json`.
+Per-task `invocation:` documents the approved bind; `--model`, `--effort`, and
+`--speed` are equality assertions and cannot override the frozen seat.
+Worker dispatch requires `status: in-progress` and a committed task; transition
+and commit before the first launch. Cross-repository execution is disabled.
 
 ## Human gates
 - GATE 0: feature list + **fleet inventory map** + **brain receipt** (`verify-mission.sh`) approved before any dispatch

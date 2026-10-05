@@ -1,44 +1,56 @@
 ---
 task_id: T-{{NNN}}
-feature: {{F00X from features.json}}
-worker: agent | codex | agy | claude
-invocation: {{optional — overrides the GOAL.md Fleet row for this task only; also set on escalation}}
+feature: {{F00X}}
+worker: {{WORKER}}
+invocation: {{INVOCATION}}
 max_attempts: 2
 ---
 
-# Task: {{one-line objective}}
+# Task: {{OBJECTIVE}}
 
 ## Before you write any code
-1. Read `AGENTS.md` (root) — hard rules are binding.
-2. Read this mission's `PROGRESS.md` (last 3 entries) and run `git log --oneline -10`.
-   Mission dir: `docs/missions/{{slug}}/` (or `$(bash scripts/active-mission.sh)`).
-3. Read these skills and follow them exactly:
-   - `.agents/skills/{{skill-1}}/SKILL.md`
-   - `.agents/skills/{{skill-2}}/SKILL.md`
-4. Baseline: run `{{TYPECHECK_CMD}}` and start `{{DEV_CMD}}`. If broken, stop and report.
+
+1. Read `AGENTS.md`, this task, `{{MISSION}}/features.json`, and the newest
+   mission `PROGRESS.md` entries. Run `git log --oneline -10`.
+2. Read `{{SKILL_PATH}}` and the other skills required by the task.
+3. Baseline: run `{{BASELINE_CMD}}`. If broken, stop and report.
+4. You are the dispatched worker. Do not launch another worker or brain.
 
 ## Objective
-{{Precise description. Reference exact files relative to known landmarks. Include
-snippets/signatures where ambiguity is possible. Pre-answer every decision branch —
-the worker must not need to ask anything.}}
+
+{{OBJECTIVE}}
+
+The invocation above records the approved provider, tier, model, effort, and
+speed from this mission's frozen `fleet.json`; it cannot override that file.
+Complete only this feature and stay within the allow-list below.
 
 ## Files you MAY touch
-- {{src/pages/FundDetail.tsx}}
-- {{src/components/fund/*}}
+
+- `{{ALLOWED_PATH}}`
+- `{{MISSION}}/PROGRESS.md` (prepend one entry only)
 
 ## Files you MUST NOT touch
-- {{supabase/** (no schema changes in this task)}}
-- {{src/contexts/AuthContext.tsx}}
-- features.json descriptions/steps (flip `passes` only)
+
+- `{{DENIED_PATH}}`
+- `{{MISSION}}/features.json`
+- `{{MISSION}}/fleet.json`
+- existing execution specs, receipts, and VerificationRecords
+
+## Verification commands
+
+- `{{VERIFY_ARGV}}`
 
 ## Exit criteria (all must be true)
-- [ ] Feature {{F00X}} steps verified end-to-end
-- [ ] `{{TYPECHECK_CMD}}` green
-- [ ] `{{TEST_CMD}}` green
-- [ ] Commit with message `{{type}}: {{short description}} (T-{{NNN}})`
-- [ ] Mission PROGRESS.md entry appended
+
+- [ ] Feature {{F00X}} steps verified with the checks above
+- [ ] Every reproduced failure has a negative regression at its real entry point
+- [ ] Only allow-listed files changed; final Git tree is clean
+- [ ] Mission PROGRESS.md records the result and any missing evidence
+- [ ] Scoped change and progress entry committed as `{{COMMIT_MESSAGE}}`
+- [ ] No feature acceptance or gate/status change made by this worker
 
 ## Iteration policy
-Max {{2}} attempts. If exit criteria still fail, STOP, commit nothing further, write a
-PROGRESS.md entry describing the failure, and report back — the orchestrator will
-rewrite the task.
+
+Max {{2}} attempts under this task. If exit criteria still fail, stop, record the
+exact failure in PROGRESS.md, and report back for a correction task. Never claim
+success when a required check's final result is unavailable.

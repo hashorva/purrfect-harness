@@ -1,6 +1,6 @@
 ---
 title: Orchestration Protocol
-version: 2.2.0
+version: 2.3.1
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -26,8 +26,8 @@ chair if it meets all five requirements:
 1. Reads and follows `.agents/skills/` (mission-init, dispatch-worker, skillify)
 2. Can run shell commands and BLOCK on child processes (worker spawns)
 3. Respects GATE 0 — never dispatches before human approval of features.json
-4. Never edits features.json descriptions/steps; only the orchestrator accepts a
-   feature by flipping `passes` after current verification evidence
+4. Never edits approved features.json descriptions/steps; only the orchestrator
+   accepts a feature through `accept-feature.sh` after current verification evidence
 5. Writes its actions to the shared artifacts (PROGRESS.md, git) — not private memory
 
 Claude Code may use the bundled client permission configuration in
@@ -37,9 +37,10 @@ orchestrator remains accountable to the same repository rules and verification.
 
 **Local CLI rule:** when the loop runs on a Mac with studio CLIs installed, the
 orchestrator MUST spawn the **brain** via `scripts/spawn-brain.sh` and workers via
-`scripts/spawn-worker.sh` (or exact Fleet invocations). Each spawn writes a receipt
-under `.tasks/receipts/`. Before flipping `passes` or registering a human GATE as
-done, `bash scripts/verify-mission.sh` must exit 0. Doing all features inside one
+`scripts/spawn-worker.sh`. Each spawn writes a UUID-keyed spec, log, and terminal
+receipt under `.tasks/`. Only the shared adapter resolves provider arguments.
+Before acceptance, run verification for the exact run UUID; before advancing a
+gate/status, the current mission audit must exit 0. Doing all features inside one
 Cursor chat without spawns is a failed dispatch — PROGRESS prose is not proof.
 
 ## Roles & dispatch table
@@ -82,25 +83,26 @@ with `bash scripts/active-mission.sh`.
 │    - Verify local CLIs + run scripts/fleet-inventory.sh (ALWAYS show map at GATE 0)
 │    - Expand into features.json — every feature: description + verify steps + passes:false
 │    - Human approves feature list + seat binds  ← GATE 0
-│    - On approval: status → approved, then in-progress on first dispatch
+│    - Freeze approved bindings as mission fleet.json; commit approved state
+│    - Explicitly transition and commit in-progress before first dispatch
 │
 ├─ 2. DISPATCH (orchestrator, each cycle)
-│    - Pick next passes:false feature(s)
+│    - Pick one assigned passes:false feature
 │    - Write tasks/T-XXX.md from the template (one feature = one task)
 │    - Choose worker; spawn via scripts/spawn-worker.sh (BLOCKING)
 │
 ├─ 3. EXECUTE (worker, one session per task)
 │    - Bearings: pwd → mission PROGRESS.md → features.json → git log
-│    - Baseline check: typecheck + dev server + smoke test
+│    - Baseline check: the task's project-appropriate checks
 │    - Read the skills the task file names
 │    - Implement ONLY the task. Test end-to-end; report evidence to the orchestrator.
-│    - Commit. Append PROGRESS.md entry.
+│    - Commit scoped implementation and PROGRESS.md; leave a clean tree.
 │
 ├─ 4. REVIEW (orchestrator)
 │    - Read the diff (git diff or PR), PROGRESS.md entry, and verify claims
 │    - Check against AGENTS.md hard rules and the task's deny-list
-│    - PASS → run current verification, then the orchestrator alone may accept the
-│      feature in features.json. FAIL → write a correction task (do NOT let the same
+│    - PASS → verify the exact run, then accept its VerificationRecord hash through
+│      accept-feature.sh. FAIL → write a correction task (do NOT let the same
 │      worker "keep trying" without a rewritten task — that's how context rots)
 │    - Recurring failure class? → add a line to AGENTS.md or a skill  ← the flywheel
 │
@@ -110,6 +112,54 @@ with `bash scripts/active-mission.sh`.
        Human GATE entry to PROGRESS.md (required — chat alone is not the record).
      - Scope changes go through the orchestrator → features.json append. Never verbal.
 ```
+
+## Execution truth and acceptance
+
+Worker dispatch requires an `in-progress` mission, one committed task for one
+pending feature, a clean tree, approved canonical `fleet.json`, supported
+configuration, and an exclusive workspace lock. External `--repo` targets are
+disabled in Phase 1. Task `invocation:` is descriptive; model/effort/speed flags
+are equality assertions against the frozen seat. Live inventory cannot rebind it.
+
+One UUID links four distinct truths:
+
+| Artifact | Question it answers |
+| --- | --- |
+| `.tasks/specs/<uuid>.json` | What was authorized before launch? |
+| `.tasks/receipts/<uuid>.json` | What actually ran and changed? |
+| `<mission>/verification/<uuid>.json` | Did that run pass its committed checks? |
+| Feature acceptance fields in `features.json` | Which verified run did the orchestrator accept? |
+
+Current ExecutionSpec v3 binds provider contract 2; v1/v2 evidence retains
+historical contract 1 semantics. A receipt records Git-visible before/after
+state, commits, changed paths, scope, and terminal outcome. The scope guarantee
+is limited to Git-visible changes in the declared workspace; it is not general
+filesystem containment. Unknown provider observations remain `unknown`.
+
+After effect review, before any further Git-visible change:
+
+```bash
+bash scripts/verify-mission.sh --run-id "$RUN_ID" "$MISSION"
+```
+
+The verifier reads JSON argv bullets from the task at the receipt's base commit,
+requires the current snapshot to equal the receipt's after snapshot before and
+after checks, and atomically creates an immutable VerificationRecord. It does not
+change feature acceptance. Only the orchestrator then runs:
+
+```bash
+VERIFICATION_SHA256=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' \
+  "$MISSION/verification/$RUN_ID.json")
+bash scripts/accept-feature.sh --run-id "$RUN_ID" \
+  --verification-sha256 "$VERIFICATION_SHA256" --accepted-by "orchestrator identity" "$MISSION"
+bash scripts/verify-mission.sh --require-workers "$MISSION"
+```
+
+Acceptance records `accepted_run_id`, `accepted_verification_sha256`, `accepted_at`,
+and `accepted_by`. A failed, no-op, unrelated, legacy, or null-evidence run cannot
+stand in for this chain. Retain old artifacts without manufacturing acceptance.
+If review or later commits moved the snapshot, dispatch a bounded qualification
+task for the pending feature and verify its new run; do not rewrite old evidence.
 
 ## Human GATE registration (binding)
 
@@ -162,7 +212,10 @@ is a protocol failure — future humans/agents cannot see the decision.
 Use `docs/missions/templates/WORKER_TASK.template.md`. Non-negotiable fields: objective (one
 feature), context pointers (files to read, skills to follow), file allow-list, file
 deny-list, exit criteria as binary checklist, test commands, iteration policy
-(max attempts before escalating back to orchestrator).
+(max attempts before escalating back to orchestrator). The allow-list uses
+backtick-quoted relative-path bullets. Verification commands use consecutive
+Markdown code-span bullets containing non-empty JSON argv arrays; a missing or
+malformed section is rejected. Workers never edit features.json or accept work.
 
 ## Escalation triggers (worker → orchestrator, immediately)
 

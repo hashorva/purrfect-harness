@@ -1,6 +1,6 @@
 ---
 title: Missions
-version: 2.0.0
+version: 2.3.1
 ---
 
 # Missions
@@ -21,6 +21,8 @@ docs/missions/
     GOAL.md
     features.json
     PROGRESS.md
+    fleet.json              # immutable human-approved dispatch bindings
+    verification/           # immutable run-specific VerificationRecords
     tasks/                  # WORKER_TASK files for this mission
       T-001.md
 ```
@@ -50,18 +52,29 @@ stops at GATE 0.
 bash scripts/fleet-inventory.sh    # seat → model map; write .tasks/fleet-inventory.json
 ```
 
-Always show the map at GATE 0; human may remapp binds. See MODEL_ROUTING.md.
+Always show the map at GATE 0; the human may remap binds before approval.
+Freeze the approved map as mission `fleet.json` using the mission-init skill.
+Dispatch reads that snapshot, not mutable inventory. See MODEL_ROUTING.md.
 
 ## Brain + worker receipts (proof of CLI)
 
 ```bash
-bash scripts/spawn-brain.sh <mission> mission-init   # Claude Opus → log + receipt
-bash scripts/spawn-worker.sh agent <task> --tier premium --feature F00X
-bash scripts/spawn-worker.sh agent <task> --tier premium --feature F00X --repo ~/Projects/other-repo
-bash scripts/verify-mission.sh <mission>             # must exit 0 before greenlight
+# Draft brain action: pass the proposed chair's concrete configuration.
+bash scripts/spawn-brain.sh "$MISSION" mission-init \
+  --provider "$BRAIN_PROVIDER" --model "$BRAIN_MODEL" \
+  --effort "$BRAIN_EFFORT" --speed "$BRAIN_SPEED"
+# After Human Gate 0, frozen fleet, and committed in-progress status:
+bash scripts/spawn-worker.sh agent "$MISSION/tasks/T-XXX.md" \
+  --tier premium --feature F00X --effort "$APPROVED_EFFORT" --speed "$APPROVED_SPEED"
+bash scripts/verify-mission.sh --run-id "$RUN_ID" "$MISSION"
+# Effect review and separate accept-feature.sh invocation precede this audit:
+bash scripts/verify-mission.sh --require-workers "$MISSION"
 ```
 
-PROGRESS alone is not evidence. Greenlight requires `.tasks/receipts/*.json`.
+PROGRESS alone is not evidence. One UUID links `.tasks/specs/<uuid>.json`,
+`.tasks/receipts/<uuid>.json`, the mission VerificationRecord, and orchestrator
+acceptance fields. See ORCHESTRATION.md for the exact acceptance command.
+External `--repo` execution is disabled in Phase 1.
 
 ## Spawning a worker on this machine
 
@@ -69,7 +82,9 @@ Orchestrators must call the real CLIs installed on the Mac (not re-implement
 inside one Cursor chat). Prefer:
 
 ```bash
-bash scripts/spawn-worker.sh <codex|agent|agy|claude> docs/missions/<slug>/tasks/T-XXX.md --tier premium|economy --feature F00X
+bash scripts/spawn-worker.sh "$PROVIDER" "$MISSION/tasks/T-XXX.md" \
+  --tier "$TIER" --feature F00X --attempt 1 \
+  --effort "$APPROVED_EFFORT" --speed "$APPROVED_SPEED"
 ```
 
 See `.agents/skills/dispatch-worker/SKILL.md` and `MODEL_ROUTING.md` (mission

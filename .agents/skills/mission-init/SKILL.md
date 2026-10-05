@@ -1,65 +1,43 @@
 ---
 name: mission-init
 description: >
-  Bootstrap an orchestrated mission: create a dated folder under docs/missions/
-  with GOAL.md, features.json, PROGRESS.md, and the first WORKER_TASK from the
-  repo's templates. MUST be used whenever the user says "start a mission",
-  "new goal", "bootstrap the loop", "let's run the orchestration on X", or asks
-  to begin orchestrated work of any kind. Also use to re-scope an existing
-  mission. Produces files mechanically from docs/missions/templates/ — never
-  freestyle the formats. Runs fleet-inventory at GATE 0 and always shows the
-  seat→model map for human confirm/swap. Default chair is Opus (Cursor intake
-  plans briefly; Opus weighs and orchestrates) unless the human names otherwise.
+  Bootstrap or re-scope an orchestrated mission from docs/missions/templates/.
+  MUST be used when beginning orchestrated work. Present the feature list and
+  truthful fleet inventory at Human Gate 0, then freeze approved bindings in the
+  mission's fleet.json before worker dispatch. Default chair is Opus unless the
+  human names another chair.
 ---
 
 # Mission init (orchestrator only)
 
-## Step 0 — Preconditions
+## 1. Establish scope and chair
 
-- No active mission: run `bash scripts/active-mission.sh`. If it prints a path,
-  STOP and ask the human whether to finish (`status: done`), keep waiting on a
-  gate, or re-scope. Never start a second `in-progress` / `awaiting-gate` mission.
-- Also refuse leftover root `GOAL.md` / `features.json` (pre-2.0 layout) — move
-  or delete them first.
-- Read AGENTS.md (hard rules constrain every feature) and skim docs/ filenames
-  so features reference real docs.
-- Load `docs/missions/MODEL_ROUTING.md` once for this GATE 0 decision.
+Read AGENTS.md and docs/missions/MODEL_ROUTING.md. Run
+`bash scripts/active-mission.sh`; do not create a second active mission. For an
+existing active mission, follow the human's direction to finish, wait, or re-scope.
+Root-level GOAL.md and features.json are obsolete; resolve them before starting.
 
-## Chair resolution (before writing files)
+Determine outcome, forcing function, non-goals, human gates, and fleet tier.
+Default brain is Opus. A human-named chair or “you are the orchestrator” selects
+that chair; “no orchestration” means this skill does not govern the work.
+Fable is named only, never an automatic escalation.
 
-Default brain = **Opus**. Exceptions (human must say, or session already is):
-
-| Signal | Chair |
-|---|---|
-| Already on Opus (Claude Code **or** Cursor UI) | This session |
-| “You are the orchestrator” / “no handoff” | Current model |
-| “No orchestration — just execute” | STOP mission-init; implement in chat |
-| “Orchestrator = Fable” | Fable (**named only** — never auto-escalate) |
-| “Orchestrator = Codex highest” / Sol | Inventory `brain_codex` / family `sol` |
-
-**Cursor intake:** if a brief plan exists in a Cursor (often Grok) chat, Opus
-reads it, weighs whether the split looks balanced, then continues mission-init.
-Do not treat the intake chat as the orchestrator unless named above.
-
-## Step 0b — Local CLI inventory (mandatory)
+## 2. Inventory the local fleet
 
 ```bash
-command -v claude; command -v codex; command -v agent; command -v agy
+command -v claude
+command -v codex
+command -v agent
+command -v agy
 bash scripts/fleet-inventory.sh
 ```
 
-Always present the printed seat→model map at GATE 0. Human may remap any seat
-(economy ↔ premium, or brain) before approval. Copy approved binds into GOAL
-Fleet. Missing a CLI → strike that row; do not invent invocations.
+Present the actual seat/provider/model/family/health/source map at Gate 0.
+Unavailable providers cannot be bound. Failed probes preserve per-provider
+last-good state as degraded; fallback guesses remain degraded, never observed.
+Inventory is a local proposal, not worker dispatch authority.
 
-## Step 1 — Extract the mission (interview only if needed)
-
-From the user's paragraph (and any Cursor intake brief), determine: outcome,
-forcing function, out-of-scope, human gates, chair (above), fleet tier
-(economy | premium | mixed). Slug: `YYYYMMDD-short-kebab-name`. At most 3
-clarifying questions. Do not write files until the outcome is unambiguous.
-
-## Step 2 — Write the mission folder FROM TEMPLATES
+## 3. Create and fill the templates
 
 ```bash
 SLUG="{{YYYYMMDD-short-name}}"
@@ -71,74 +49,99 @@ cp docs/missions/templates/PROGRESS.template.md "$MISSION/PROGRESS.md"
 cp docs/missions/templates/WORKER_TASK.template.md "$MISSION/tasks/T-001.md"
 ```
 
-Fill placeholders. Set `status: draft`. Paste inventory binds into Fleet.
-Validate: `python3 -c "import json; json.load(open('$MISSION/features.json'))"`.
-Only create `tasks/T-001.md` at init (later tasks after reviews).
+Fill every placeholder and keep GOAL status `draft`. Include proposed seats
+in GOAL Fleet and author one pending feature per task. Validate JSON and commit
+the draft before launching a brain; all launcher paths require a clean tree.
 
-### `"bootstrap"` — set it at authoring time, never after
+The worker task must contain:
 
-Every feature carries a `"bootstrap"` boolean. It is **not** cosmetic:
-`verify-mission.sh` requires a worker receipt for each `passes: true` feature
-**unless** that feature is `"bootstrap": true`.
+- matching filename stem, `task_id`, and `feature`;
+- a `Files you MAY touch` section of backtick-quoted relative paths/globs;
+- PROGRESS.md in the allow-list if the worker will update it;
+- a `Verification commands` section with consecutive code-span bullets,
+  each containing a non-empty JSON argv of non-empty strings;
+- a scope, baseline, exit criteria, and bounded iteration policy.
 
-- **`false` (the default)** — anything a worker will implement. Needs a receipt.
-- **`true`** — features **no worker will ever run**: orchestrator-authored `AGENTS.md`
-  and docs edits, mission scaffolding, decisions recorded by the brain.
+Example command bullet:
 
-**Keep the field on every feature you author.** The template ships it as `false` on each
-entry; when you write a real `features.json` it is tempting to drop it as noise. Don't —
-a missing field is not `true`, but it does mean the mission's own record no longer says
-whether a receipt was ever expected.
-
-Getting this wrong is quiet, not loud. A `passes: true` orchestrator-only feature with no
-`bootstrap` flag makes `verify-mission` fall back to accepting *any* worker receipt and
-emit only a WARN, so the mission goes green on a receipt that belongs to a different
-feature. That has already happened once in a real mission.
-
-**Decide it when you write the feature, not when the gate complains.** Adding
-`"bootstrap": true` after GATE 0 is an edit to an approved feature — the one thing
-`features.json`'s own rules forbid — so the honest fix at that point is to flag it and
-carry it to the next mission, which costs a whole cycle.
-
-## Step 3 — GATE 0 (mandatory stop)
-
-**Brain CLI proof (mandatory unless human names current-chat chair):**
-
-```bash
-bash scripts/fleet-inventory.sh
-bash scripts/spawn-brain.sh "$MISSION" mission-init   # real claude --model opus
-# If human said "you are the orchestrator" / already on Opus in this chat:
-#   bash scripts/spawn-brain.sh "$MISSION" waiver --reason "already on Opus in Cursor"
-bash scripts/verify-mission.sh "$MISSION"             # must pass before greenlight
+```markdown
+- `["bash","tests/run-tests.sh"]`
 ```
 
-PROGRESS prose is not proof. Greenlight = `.tasks/receipts/brain-*.json` with
-`exit: 0` and `cli: claude` (or documented `waiver`).
+Commit the finalized task before dispatch: verification reads its authorized
+commands from the receipt's base commit, not from a later edited task.
 
-Present:
+### Bootstrap is an authoring decision
 
-1. Feature list (id + description + priority)
-2. **Full fleet inventory map** (seat / CLI / model / family) — confirm or swap
-3. Resolved brain + concrete model + **brain receipt path**
-4. T-001 worker + tier (premium Grok vs economy Composer for Cursor, etc.)
-5. Assumptions
+Keep a `bootstrap` boolean on every feature. Use `"bootstrap": false` for worker
+implementation; acceptance needs an exact passing VerificationRecord linked to
+its spec and receipt. `"bootstrap": true` exempts work no worker will run, such as scaffolding
+or recorded orchestrator decisions. It does not exempt code merely because a
+worker failed.
 
-DO NOT dispatch until the human approves the features **and** the bind map
-**and** `verify-mission.sh` is green for brain.
+Choose the exemption before Gate 0. The current audit fails closed for missing
+non-bootstrap evidence; it never borrows another feature's receipt.
 
-On approval:
-1. Append Human — GATE 0 PROGRESS entry (include approved binds + receipt path).
-2. Set GOAL `status: approved` → `in-progress` on first spawn.
-3. Follow `.agents/skills/dispatch-worker/SKILL.md` with
-   `scripts/spawn-worker.sh … --tier … --feature F00X`.
+## 4. Obtain real brain evidence and present Gate 0
+
+Select the proposed brain variables from the truthful inventory and the human's
+chair choice:
+
+```bash
+bash scripts/spawn-brain.sh "$MISSION" mission-init \
+  --provider "$BRAIN_PROVIDER" --model "$BRAIN_MODEL" \
+  --effort "$BRAIN_EFFORT" --speed "$BRAIN_SPEED"
+bash scripts/verify-mission.sh "$MISSION"
+```
+
+Draft `mission-init` and `gate0` actions permit explicit configuration;
+later `review` uses the frozen brain seat. Keep the tree clean between launches.
+
+The audit requires a completed, in-scope brain ExecutionReceipt under
+`.tasks/receipts/<run-id>.json`, linked to exact persisted spec bytes.
+A current-chat chair does not waive local CLI evidence. There is no `waiver`
+action.
+
+Present the feature list, complete inventory map, proposed brain configuration
+and receipt UUID, first task/provider/tier, and any degraded bindings or assumptions.
+Do not dispatch workers before the human approves the feature list and bind map.
+
+## 5. Freeze the approved map and transition explicitly
+
+After approval, prepare `.tasks/gate0-bindings.json` from the approved seats.
+Each output seat maps to:
+
+```json
+{"inventory_seat":"<inventory key>","effort":"<approved effort>","speed":"<approved speed>"}
+```
+
+The output `brain` may select inventory `brain`, `brain_codex`, or
+`brain_fable` according to the human's chair choice. Do not re-probe between
+approval and freezing. Set APPROVED_BY and the RFC3339 APPROVED_AT timestamp
+from the actual verdict.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/fleet_state.py freeze \
+  --mission-dir "$MISSION" --inventory .tasks/fleet-inventory.json \
+  --bindings .tasks/gate0-bindings.json \
+  --approved-by "$APPROVED_BY" --approved-at "$APPROVED_AT"
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/fleet_state.py validate-fleet "$MISSION/fleet.json"
+```
+
+This creates canonical immutable `fleet.json`; it cannot overwrite an existing
+snapshot. Log the Human Gate 0 verdict, exact bindings, and brain UUID in
+PROGRESS.md. Set status `approved` and commit.
+
+Before first dispatch, explicitly transition to `in-progress`, run the mission
+audit, and commit the transition. The wrapper does not promote `approved`.
+Then use dispatch-worker with explicit tier, feature, attempt, effort, and speed.
 
 ## Never
 
-- Never invent file formats — templates only.
-- Never write features AGENTS.md forbids.
-- Never auto-escalate to Fable.
-- Never put mission files at repo root.
-- Never skip showing the inventory map at GATE 0.
-- Never flip `passes: true` or `status: done` without `bash scripts/verify-mission.sh` green.
-- Never claim Claude/Cursor CLI ran without a matching `.tasks/receipts/*.json`.
-- Never implement allow-listed worker files in the orchestrator chat when spawn-worker is available.
+- Never invent mission formats or use root-level mission files.
+- Never hide degraded inventory or skip the human bind-map approval.
+- Never dispatch from a mutable inventory, task override, or GOAL narrative.
+- Never rewrite an approved fleet to repair a failed dispatch.
+- Never use a waiver or legacy receipt as current CLI proof.
+- Never let workers edit features.json or accept their own work.
+- Never advance a gate/status without current mission audit evidence.

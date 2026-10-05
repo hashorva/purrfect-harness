@@ -336,5 +336,61 @@ class VerificationRecordIntegration(unittest.TestCase):
                 self.assertEqual(policy.read_text(), original)
 
 
+class ShippedWorkerTemplateIntegration(unittest.TestCase):
+    """The distributed template must authorize a usable real worker run."""
+
+    def setUp(self):
+        self.fixture = module.WrapperIntegration("runTest")
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.tearDown)
+        self.fixture.write_fleet("codex", "model", "medium", "unknown", include_brain=True)
+        self.mission = "docs/missions/fixture"
+
+    def render_template(self):
+        values = {
+            "NNN": "001", "F00X": "F001", "F00X from features.json": "F001",
+            "WORKER": "codex", "INVOCATION": "codex economy / model / medium / unknown",
+            "MISSION": self.mission, "slug": "fixture", "ALLOWED_PATH": "allowed.txt",
+            "DENIED_PATH": "outside.txt", "SKILL_PATH": ".agents/skills/guard-verification/SKILL.md",
+            "BASELINE_CMD": "git status --porcelain", "OBJECTIVE": "Change allowed.txt only.",
+            "VERIFY_ARGV": json.dumps(["python3", "-c", "from pathlib import Path; assert Path('allowed.txt').read_text().startswith('allowed change')"]),
+            "COMMIT_MESSAGE": "test: template qualification (T-001)", "2": "2",
+            # Keep the regression meaningful against the pre-Phase-1 template too.
+            "src/pages/FundDetail.tsx": "allowed.txt",
+            "src/components/fund/*": "docs/missions/fixture/PROGRESS.md",
+        }
+        template = (ROOT / "docs/missions/templates/WORKER_TASK.template.md").read_text()
+        return re.sub(r"\{\{(.*?)\}\}", lambda match: values.get(match.group(1), "fixture"), template, flags=re.S)
+
+    def run_template(self, task):
+        self.fixture.task.write_text(task)
+        self.fixture.commit_fixture("render shipped worker task")
+        result = self.fixture.invoke([
+            "bash", "scripts/spawn-worker.sh", "codex",
+            f"{self.mission}/tasks/T-001.md", "--tier", "economy", "--feature", "F001",
+        ], env={"PROVIDER_ACTION": "dirty"})
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        receipt = next((self.fixture.root / ".tasks/receipts").glob("*.json"))
+        return receipt.stem
+
+    def test_rendered_shipped_template_verifies_through_real_entry_points(self):
+        run_id = self.run_template(self.render_template())
+        features = (self.fixture.mission / "features.json").read_bytes()
+        verified = self.fixture.invoke(["bash", "scripts/verify-mission.sh", "--run-id", run_id, self.mission])
+        self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        record = json.loads((self.fixture.mission / "verification" / f"{run_id}.json").read_text())
+        self.assertEqual(record["result"], "pass")
+        self.assertEqual(record["commands"][0]["exit_code"], 0)
+        self.assertEqual((self.fixture.mission / "features.json").read_bytes(), features)
+
+    def test_missing_template_verification_section_is_rejected_without_record(self):
+        task = re.sub(r"## Verification commands\n.*?(?=## |\Z)", "", self.render_template(), flags=re.S)
+        run_id = self.run_template(task)
+        verified = self.fixture.invoke(["bash", "scripts/verify-mission.sh", "--run-id", run_id, self.mission])
+        self.assertNotEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        self.assertIn("no Verification commands section", verified.stderr + verified.stdout)
+        self.assertFalse((self.fixture.mission / "verification" / f"{run_id}.json").exists())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

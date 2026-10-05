@@ -1,87 +1,75 @@
 ---
 title: Publishing & Releasing on GitHub
-updated: 2026-07-19
+updated: 2026-10-06
 ---
 
 <!-- markdownlint-disable MD025 -->
 
-# Publishing the harness (first time) and releasing (every version)
+# Publishing and releasing on GitHub
 
-Prereqs: `gh` installed and authenticated (`gh auth status`), macOS.
+[RELEASING.md](RELEASING.md) is the versioning, preparation, tag, and consumer
+adoption procedure. This document covers GitHub publication. The current
+`2.3.1` version remains an untagged development baseline; it is not a release
+decision.
 
-## A. First publish (once)
+Prerequisites: Git, GitHub CLI, and an authenticated account authorized for the
+target repository. Run `gh auth status` before publication.
+
+## First publication
+
+Only create a remote or repository when explicitly requested. In an existing
+Git repository with no GitHub remote:
 
 ```bash
-# 1. Make the kit a git repo (kit files at the ROOT — no wrapper folder)
-cd ~/dev/purrfect-harness          # wherever you unzipped/keep the kit
-git init
-git add -A
-git commit -m "feat: agent harness kit v1.11.0"
-
-# 2. Run the tests locally BEFORE publishing anything
-bash tests/run-tests.sh            # must end with ALL TESTS PASSED
-brew install shellcheck            # if missing
-shellcheck scripts/*.sh tests/*.sh
-
-# 3a. If the GitHub repo does NOT exist yet:
 gh repo create purrfect-harness --public --source=. --remote=origin --push
-
-# 3b. If you already created an EMPTY repo named purrfect-harness on github.com:
-git remote add origin "https://github.com/$(gh api user -q .login)/purrfect-harness.git"
-git branch -M main
-git push -u origin main
-
-# 4. Watch CI go green
-gh run watch
 ```
 
-## B. Release a version (every time — matches docs/RELEASING.md)
+If the remote already exists, inspect it and publish to that repository rather
+than adding or replacing it. Repository visibility is a human choice.
+
+## Release an existing repository
+
+1. Follow RELEASING.md: select the version, prepare the changelog/manifest/README,
+   run checks, commit, and create the authorized annotated tag.
+2. Validate the clean tagged source with
+   `bash scripts/install-harness.sh --validate-release`.
+3. Push the reviewed main branch and that exact tag.
+4. Confirm the main CI and tag-triggered Release workflow both succeed.
+5. Inspect the release notes and download link for the generated ZIP.
+
+The Release workflow runs the shared manifest validator with
+`--require-release --trigger-tag "$GITHUB_REF_NAME"`, so an unrelated second
+tag on HEAD cannot authorize a release. It then uses the first CHANGELOG entry
+for notes and creates the GitHub Release itself.
+
+Use GitHub CLI to inspect results after pushing:
 
 ```bash
-# 0. `2.3.1` is the current untagged development baseline after published v2.3.0;
-#    it is not a release decision. CHANGELOG.md, README frontmatter, and
-#    harness-manifest.json must name the
-#    same version. The release workflow runs the shared validator, which also
-#    requires that annotated tag to point at HEAD and a clean source tree (use
-#    --dev only for local smoke before tagging).
-# 1. Annotated tag, prefixed with v
-git tag -a v1.11.0 -m "v1.11.0 — model routing, dual-brand orchestrator, CI/CD"
-git push origin main --follow-tags
-
-# 2. The Release workflow now: guards tag==CHANGELOG, builds the zip,
-#    publishes a GitHub Release with notes extracted from CHANGELOG.
-gh run watch
-gh release view v1.11.0
+gh run list --workflow ci.yml --limit 5
+gh run list --workflow release.yml --limit 5
+# Substitute the actual run id and approved version.
+gh run watch RUN_ID
+gh release view vX.Y.Z
 ```
 
-## C. Recommended repo settings (once, optional)
+## Failure handling
+
+- Version/tag/manifest mismatch: inspect the failing shared validator output.
+  Preserve every published tag. Prepare a corrected new version instead of
+  deleting and reusing a pushed tag.
+- CI failure: fix the reported check, rerun it locally, and publish the reviewed
+  correction under the release procedure.
+- An incomplete release job: inspect its logs and existing release assets before
+  retrying. Do not create a second release or replace published evidence blindly.
+
+## Consumer propagation
+
+After the release succeeds, use the updater from its clean tagged source:
 
 ```bash
-# Protect main: PRs + green CI required (solo-friendly: no review requirement)
-gh api -X PUT "repos/{owner}/purrfect-harness/branches/main/protection" \
-  -F required_status_checks[strict]=true \
-  -F "required_status_checks[contexts][]=lint-and-test" \
-  -F enforce_admins=false \
-  -F required_pull_request_reviews=null \
-  -F restrictions=null
+bash scripts/update-harness.sh /absolute/path/to/consumer
 ```
 
-If the API call syntax fights you, set it in the UI instead:
-Settings → Branches → Add rule → `main` → require status checks → lint-and-test.
-
-## D. Day-to-day flow after publishing
-
-1. Change kit files on a branch → PR → CI green → merge (or push to main
-   directly if you skip protection; CI still runs).
-2. Add a CHANGELOG entry per RELEASING.md (MAJOR/MINOR/PATCH semantics).
-3. Tag + push (section B) → Release appears automatically.
-4. Propagate to products: `bash scripts/update-harness.sh /path/to/repo`.
-
-## Failure modes
-
-- Release workflow fails "Tag != CHANGELOG": you tagged before updating
-  CHANGELOG.md. Fix CHANGELOG, `git tag -d vX.Y.Z`, `git push origin
-:refs/tags/vX.Y.Z`, re-tag.
-- CI fails on shellcheck after editing a script: read the SC code it prints;
-  they are almost always real bugs (unquoted vars, word-splitting).
-- `gh repo create` says name exists: you are in case 3b — add the remote.
+Review and qualify the consumer change before merging. The updater preserves
+project-owned instructions and mission instances; the migration review in
+RELEASING.md remains necessary.

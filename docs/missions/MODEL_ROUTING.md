@@ -1,7 +1,7 @@
 ---
 title: Model Routing Policy
-version: 2.1.1
-updated: 2026-07-27
+version: 2.3.1
+updated: 2026-10-06
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -16,21 +16,22 @@ Opus / you name the chair). Cursor workers: Grok premium, Composer economy.
 Concrete slugs come from a probed fleet inventory at GATE 0; families in this
 file are durable. Always show the map at GATE 0 so the human can swap binds.
 
-Prices live ONLY in the dated appendix. When they change, bump the appendix
-date — never let a stale number pose as current.
+These family labels describe routing preferences, not current vendor availability
+or pricing. The probed inventory reports the models this machine can bind.
 
 ## Durable seats (names rot; seats don’t)
 
 | Seat             | Job                                                                          |
 | ---------------- | ---------------------------------------------------------------------------- |
-| `brain`          | Orchestrator — plans mission, writes features/tasks, reviews, flips `passes` |
+| `brain`          | Orchestrator — plans mission, writes features/tasks, reviews, accepts verified runs |
 | `worker.premium` | Judgment-heavy implementation                                                |
 | `worker.economy` | Volume / tight / safely delegable work                                       |
 
-Concrete model IDs are **bound** by `scripts/fleet-inventory.sh` into families
+Concrete model IDs are **proposed** by `scripts/fleet-inventory.sh` into families
 (`opus`, `fable`, `sol`, `grok`, `composer`, `terra`, `luna`, `sonnet`, `haiku`, …).
 GATE 0 always prints the bind map; the human may remap any seat before dispatch.
-Binds freeze for the mission (re-probe only at the next GATE 0).
+Binds freeze as canonical mission `fleet.json` after human approval. Re-probing
+the local inventory cannot change an active mission's authorization.
 
 ## Who chairs (`brain`)
 
@@ -61,7 +62,7 @@ chat as chair or the session is already Opus.
 
 Rule of thumb: **judgment up, volume down.**
 
-## Worker families (defaults; GATE 0 Fleet + inventory win)
+## Worker families (Gate 0 preferences; frozen fleet authorizes dispatch)
 
 ### Cursor (`agent` CLI)
 
@@ -126,11 +127,14 @@ bash scripts/fleet-inventory.sh --json   # JSON only
 - Classify into seats by **family regex**, not hard-pinned version strings.
 - **Always show** the map at GATE 0; human may interchange economy/premium (or
   brain) binds before approval.
-- Log the approved binds in PROGRESS.md + the mission GOAL Fleet table.
+- Log the approved binds in PROGRESS.md + the mission GOAL Fleet table, and
+  persist them with `scripts/fleet_state.py freeze` as described in mission-init.
+  GOAL is narrative; dispatch authority is the immutable mission `fleet.json`.
 - Snapshot path `.tasks/fleet-inventory.json` is machine-local (gitignore
   `.tasks/`); do not commit auth-specific lists.
-- If a probe fails: use last good snapshot + warn; if none, use family
-  fallbacks in this file and say so at GATE 0.
+- If a probe fails: retain last-good per-provider state and mark it degraded;
+  without retained state, label any policy fallback as degraded. Unavailable
+  models cannot be bound. Present health/source explicitly at Gate 0.
 
 **Alias / inventory doctrine:** mid-mission, do not re-bind. Finish on the
 approved map; adopt new vendor flagships at the next GATE 0.
@@ -140,36 +144,19 @@ approved map; adopt new vendor flagships at the next GATE 0.
 Prefer:
 
 ```bash
-bash scripts/spawn-worker.sh agent  docs/missions/<slug>/tasks/T-XXX.md --tier premium
-bash scripts/spawn-worker.sh agent  docs/missions/<slug>/tasks/T-XXX.md --tier economy
-bash scripts/spawn-worker.sh codex  docs/missions/<slug>/tasks/T-XXX.md --tier premium
-bash scripts/spawn-worker.sh codex  docs/missions/<slug>/tasks/T-XXX.md --tier economy
-bash scripts/spawn-worker.sh agy    docs/missions/<slug>/tasks/T-XXX.md --tier premium
-bash scripts/spawn-worker.sh agy    docs/missions/<slug>/tasks/T-XXX.md --tier economy
-bash scripts/spawn-worker.sh claude docs/missions/<slug>/tasks/T-XXX.md --tier economy
+MISSION=$(bash scripts/active-mission.sh)
+bash scripts/spawn-worker.sh "$PROVIDER" "$MISSION/tasks/T-XXX.md" \
+  --tier "$TIER" --feature F00X --attempt 1 \
+  --effort "$APPROVED_EFFORT" --speed "$APPROVED_SPEED"
 ```
 
-`--model <id>` overrides inventory for one spawn. Task frontmatter `invocation:`
-still wins over Fleet when set.
+Use the provider/tier/effort/speed from the approved frozen seat. `--model <id>`,
+effort, and speed are equality assertions; task frontmatter `invocation:` is
+descriptive. None can override `fleet.json`. A fallback is a Gate 0 proposal or
+an explicit selection of another already-approved seat, never a silent dispatch
+rebind. External `--repo` execution is disabled in Phase 1.
 
-## Appendix — price snapshot (verified 2024-05-16, DECAYS FAST)
+## Pricing
 
-| Vendor      | API list         | $/Mtok in              | $/Mtok out               |
-| ----------- | ---------------- | ---------------------- | ------------------------ |
-| Cursor      | Composer 2.5     | 0.50                   | 2.50                     |
-| Cursor      | Grok 4.5         | 2                      | 6                        |
-| Antigravity | Gemini 3.5 Flash | 1.5                    | 9                        |
-| Antigravity | Gemini 3.1 Pro   | 2                      | 12                       |
-| Codex       | GPT-5.6 Sol      | 5                      | 30                       |
-| Codex       | GPT-5.6 Terra    | 1                      | 5                        |
-| Claude      | Fable 5          | 10                     | 50                       |
-| Claude      | Opus 5           | 5                      | 25                       |
-| Claude      | Sonnet 5         | 2 intro (3 from Sep 1) | 10 intro (15 from Sep 1) |
-
-| Notes                                                                                         |
-| --------------------------------------------------------------------------------------------- |
-| Subscriptions: Opus+Sonnet in Claude Pro                                                      |
-| Sol (medium effort) in ChatGPT Plus;                                                          |
-| Fable = Max-only since 2026-07-20, Pro gets one-time $100 credit then API rates.              |
-| Tokenizer caveat: Sonnet 5 emits ~30% more tokens.                                            |
-| Anthropic tokens run ~15% smaller than OpenAI's — sticker prices are not directly comparable. |
+Consult current vendor pricing and the account's actual subscription when cost
+matters. This protocol does not treat an old price table as execution authority.

@@ -1,7 +1,7 @@
 ---
 title: Agent Harness Kit
 version: 2.3.1
-updated: 2026-08-5
+updated: 2026-10-06
 ---
 
 # Agent Harness Kit
@@ -33,12 +33,15 @@ flowchart TD
   Dispatch --> Spawn["spawn-worker.sh --tier"]
   Spawn --> Workers["Grok premium / Composer economy"]
   Workers --> Files["edit + commit + PROGRESS.md"]
-  Files --> Review["Opus review vs AGENTS.md"]
+  Files --> Receipt["UUID ExecutionReceipt: actual invocation + Git delta"]
+  Receipt --> Review["Brain reviews effects vs AGENTS.md"]
 
   Review -->|fail| Rewrite["rewrite task max 2"]
   Rewrite --> Dispatch
 
-  Review -->|pass| Flip["orchestrator accepts verified feature"]
+  Review -->|pass| Verify["verify-mission.sh --run-id: VerificationRecord"]
+  Verify -->|pass| Flip["accept-feature.sh: orchestrator acceptance"]
+  Verify -->|fail| Rewrite
 
   %% Invisible layout constraint:
   %% keeps Flip below Rewrite without drawing a visible connection
@@ -74,12 +77,39 @@ If content is in the wrong layer, move it — a fat AGENTS.md is context rot by 
    harness's own `AGENTS.md` describes the harness, not a consuming project.
 4. **Goal file = JSON feature list, not prose.** Per Anthropic's long-running-agent
    research: agents one-shot and declare victory early when goals are prose. A
-   `features.json` with `passes: false` items, edited only by flipping `passes`, fixes
-   both failure modes. `GOAL.md` holds the narrative; `features.json` holds the truth.
+   `features.json` starts with `passes: false` items. Workers report evidence;
+   only the orchestrator accepts a passing VerificationRecord, recording the run
+   UUID and exact verification hash. `GOAL.md` holds the narrative; `features.json`
+   holds acceptance truth.
 5. **One feature per worker session, clean state at the end.** Session protocol: get
    bearings → verify nothing is broken → one feature → test → commit → update PROGRESS.md.
 6. **MCP is a tool, not furniture.** Query MCP, write the result to a file, work from the
    file. Don't keep servers hot in a worker's context. See the `mcp-hygiene` skill.
+
+## Phase 1 execution truth
+
+Each dispatch persists an immutable ExecutionSpec before launching a provider.
+The shared adapter constructs actual argv, and the runner produces a terminal
+ExecutionReceipt with Git-visible before/after state, changed paths, commits,
+scope, and outcome. Unknown provider observations remain `unknown`.
+
+Human Gate 0 approves bindings frozen in mission `fleet.json`. Workers require
+a clean `in-progress` workspace and a committed task for one pending feature.
+Task/model flags cannot override frozen bindings. Cross-repository execution is
+disabled; one workspace lock prevents concurrent dispatch writers.
+
+`verify-mission.sh --run-id <uuid> <mission>` executes the committed task's JSON
+argv checks and creates an immutable VerificationRecord for that same snapshot.
+`accept-feature.sh` separately records the orchestrator's acceptance in feature
+state. The mission audit validates this chain before a gate/status advances.
+Scope verification covers Git-visible changes in the declared workspace; it is
+not general filesystem containment.
+
+Phase 1's real authenticated consumer smoke and reconstruction evidence are at
+[`docs/missions/20260821-execution-truth/evidence/f007/`](docs/missions/20260821-execution-truth/evidence/f007/).
+The current `2.3.1` identifier is a development baseline; normal install/update
+requires a clean source at the manifest's annotated release tag. See
+[RELEASING.md](docs/RELEASING.md) for final numbering and migration review.
 
 ## Purrfect Install
 
@@ -97,7 +127,7 @@ flowchart TD
   H[("purrfect-harness clone")] -->|"bash scripts/install-harness.sh TARGET"| I["installer"]
   I --> P1["Layer 3 skills<br/>.agents/skills/"]
   I --> P2["Layer 2 knowledge<br/>docs/missions/ (protocol + templates)"]
-  I --> P3["Enforcement<br/>.claude/ settings + rules + agents"]
+  I --> P3["Client permissions<br/>.claude/ settings + rules + agents"]
   I --> P4["Layer 1 rules<br/>AGENTS.md with placeholders + thin CLAUDE.md / GEMINI.md"]
   P1 --> SYM["per-skill symlinks<br/>inside discovery directories"]
   P4 --> YOU["YOU: fill AGENTS.md placeholders,<br/>delete unused skills, adapt settings.json"]
@@ -111,12 +141,10 @@ no `.harness-version` yet (a brand-new shyft.me, one day). Everything copies in
 cleanly because nothing collides. What the script does by default:
 
 ```bash
-# the whole payload is copy-if-absent:
-PAYLOAD=$(find .agents/skills docs/templates .claude/rules .claude/agents -type f; \
-          echo "docs/ORCHESTRATION.md"; echo ".claude/settings.json"; ...)
-for f in $PAYLOAD; do copy_one "$f"; done
-# then `sync-skills.sh` creates per-skill links inside real discovery directories.
-# It preserves discovery entries not owned by harness-manifest.json.
+# From a clean published tagged harness source:
+bash scripts/install-harness.sh /absolute/path/to/consumer
+# Payload and ownership come from harness-manifest.json.
+# sync-skills.sh creates per-skill links and preserves foreign discovery entries.
 ```
 
 What remains manual, always — the script cannot know your project:
@@ -149,7 +177,7 @@ flowchart TD
   K3 --> R
   R --> OK{"only harness paths changed?<br/>build and tests green?"}
   OK -- "yes" --> M["commit, merge to dev, then main"]
-  OK -- "no" --> U["git checkout -- . and retry"]
+  OK -- "no" --> U["inspect the diff and resolve the specific conflict"]
 ```
 
 An "existing" repo (a finduck) probably already has an AGENTS.md, its own docs/,
@@ -266,7 +294,8 @@ flowchart TD
 
 | Path | Role |
 |---|---|
-| `AGENTS.md` | Universal root context (project block + agnostic rules) |
+| `AGENTS.md` | Repository-specific instructions for this harness |
+| `docs/templates/AGENTS.md.template` | Consumer skeleton, customized and owned by the consumer |
 | `CLAUDE.md`, `GEMINI.md` | Thin wrappers → AGENTS.md |
 | `docs/missions/ORCHESTRATION.md` | The loop: orchestrator protocol, worker dispatch, review gates |
 | `docs/missions/MODEL_ROUTING.md` | GATE 0 / mission-advance model routing (mission-scoped only) |
@@ -275,7 +304,9 @@ flowchart TD
 | `.agents/skills/` | Canonical skills (portable, agnostic core) |
 | `scripts/sync-skills.sh` | Symlinks skills into every tool's path |
 | `scripts/active-mission.sh` | Resolve the single active mission folder |
-| `scripts/spawn-worker.sh` | Spawn local CLI workers with economy pins + logs |
+| `scripts/spawn-worker.sh`, `scripts/spawn-brain.sh` | Authorized local CLI runs with immutable specs and terminal receipts |
+| `scripts/verify-mission.sh`, `scripts/accept-feature.sh` | Run-specific verification, separate acceptance, and mission audit |
+| `harness-manifest.json` | Distribution ownership and exact release/version policy |
 
 ## Claude Code client permission configuration (`.claude/`)
 

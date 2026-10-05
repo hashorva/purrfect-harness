@@ -1,174 +1,159 @@
 ---
 name: dispatch-worker
 description: >
-  How the orchestrator dispatches a WORKER_TASK to a local worker CLI
-  (codex, agent/Cursor, agy/Antigravity, claude -p) via scripts/spawn-worker.sh
-  and processes the result. MUST be used in the DISPATCH and REVIEW steps.
-  Cursor: Grok for premium, Composer for economy (Grok falls back to Composer).
-  Always prefer spawn-worker + fleet from fleet-inventory over hand-rolled flags.
-  Orchestrator-only; workers never dispatch other workers.
+  Dispatch and review a WORKER_TASK through scripts/spawn-worker.sh using the
+  mission's approved frozen fleet. MUST be used in the DISPATCH and REVIEW steps.
+  Bind execution, receipt, verification, and orchestrator acceptance to one UUID
+  run. Orchestrator-only; workers never dispatch other workers.
 ---
 
 # Dispatch a worker (orchestrator only)
 
-## Cost pinning is MANDATORY
+## Authority and scope
 
-Every dispatch pins model + tier. Account defaults (flagship, max effort) are a
-failed dispatch.
+Run from the consuming repository root. Read AGENTS.md and
+docs/missions/ORCHESTRATION.md for project rules and human gates.
 
-| CLI | Economy | Premium |
-|---|---|---|
-| `agent` | Composer (`--tier economy`) | **Grok** (`--tier premium`; Composer if Grok unavailable) |
-| `codex` | inventory `codex.economy` (Luna-class) | inventory `codex.premium` (Terra-class) |
-| `agy` | Gemini Flash-class (`agy.economy`) | Gemini Pro-class (`agy.premium`) — **prefer for UI / shadcn / Luma** |
-| `claude` | haiku | sonnet |
+Choose provider and tier from the mission's approved `fleet.json`. Live
+inventory and the GOAL Fleet table explain the proposal; only the frozen file
+authorizes worker dispatch. `invocation:` in a task is descriptive.
+`--model`, `--effort`, and `--speed` assert equality with the frozen seat;
+they cannot override it. Pass the approved effort and speed explicitly.
 
-```bash
-bash scripts/spawn-worker.sh agent "$MISSION/tasks/T-XXX.md" --tier premium --feature F00X
-bash scripts/spawn-worker.sh agent "$MISSION/tasks/T-XXX.md" --tier economy --feature F00X
-bash scripts/spawn-worker.sh codex "$MISSION/tasks/T-XXX.md" --tier economy --feature F00X
-# Worker repo lives elsewhere (e.g. purrfect-worker): workspace only; logs/receipts stay here
-bash scripts/spawn-worker.sh agent "$MISSION/tasks/T-XXX.md" --tier premium --feature F00X \
-  --repo ~/Projects/purrfect-worker
-```
+Routing preferences apply when selecting approved seats: Cursor premium Grok
+or economy Composer, Codex inventory premium/economy, agy for an approved UI
+lane, and Claude Sonnet/Haiku. An unavailable lane requires an explicit
+orchestrator routing decision. Never silently fall back or rebind mid-mission.
 
-**Never dispatch a worker to edit `scripts/spawn-worker.sh` through `spawn-worker.sh`.**
-The wrapper re-execs from a snapshot (2.2.2+) so self-edits are safe, but prefer
-orchestrator-owned harness changes when possible.
+Phase 1 runs in one repository. External `--repo` targets are rejected before
+provider launch. There is no cross-repository dispatch or parallel scheduling.
 
-Each spawn writes `.tasks/logs/…` **and** `.tasks/receipts/worker-*.json`.
-Before flipping `passes: true` or asking for a human GATE:
+## 1. Establish preconditions
 
-```bash
-bash scripts/verify-mission.sh "$MISSION"
-```
+- Read the task, mission PROGRESS.md, features.json, and `git log --oneline -10`.
+- Mission status must already be `in-progress`; the wrapper does not promote
+  `approved` automatically.
+- The task is a direct Markdown file under the mission's `tasks/` directory.
+  Its filename stem equals `task_id`, and its feature equals `--feature`.
+- The feature is `passes: false`. The approved frozen fleet exists.
+- The task's `Files you MAY touch` section contains only backtick-quoted
+  repository-relative path/glob bullets, including PROGRESS.md if it will change.
+- The task is committed before dispatch. Its `Verification commands` section
+  contains consecutive Markdown code-span bullets, each a non-empty JSON argv.
+- The tree is clean, the task baseline passes, the target CLI is available, and
+  no worker or verifier is concurrently changing this workspace.
 
-No receipt → not greenlit. PROGRESS claims without receipts are a protocol failure.
+The wrapper validates authorization before persisting a spec or launching the
+provider. Its exclusive workspace lock lasts through terminal receipt creation.
 
-**Invocation precedence:** task `invocation:` > GOAL Fleet bind > inventory seat
-> MODEL_ROUTING family fallback.
+## 2. Dispatch the approved seat
 
-Before spawn: `MISSION=$(bash scripts/active-mission.sh)`; read Fleet; use
-`--tier` unless frontmatter overrides. First use of a CLI: `<cli> --help`.
-
-**Escalation:** raise tier only after a CAPABILITY failure, one step at a time,
-`escalated: true` in frontmatter + PROGRESS. Never escalate brain to Fable
-unless the human names Fable.
-
-Delegate small safe work to Composer (economy) — do not burn Grok on boilerplate.
-
-## Step 0 — Preconditions
-
-- Active mission `in-progress` (or promote `approved` on first spawn).
-- Working tree CLEAN.
-- Task under `$MISSION/tasks/` names one feature.
-- Target CLI on PATH; if not, reassign — do not silently absorb into orchestrator
-  chat when the Fleet CLI is healthy.
-
-## Step 1 — Choose worker + tier
-
-1. Needs judgment beyond task/skills? → orchestrator handles or splits.
-2. **UI / shadcn / Luma / appearance / chatbuilding** and agy healthy? → `agy`
-   (premium for multi-file layout; economy for polish) — spend Antigravity credits
-   on purpose unless the human pinned Cursor/Codex for that feature.
-3. Many files / repo context (non-UI)? → `agent` **premium** (Grok).
-4. Small safe / boilerplate (non-UI)? → `agent` **economy** (Composer) or economy seats.
-5. Tight verifiable scope? → `codex` with inventory tier.
-6. Human said “use agy” / GATE 0 UI lane → `agy` even for non-UI if they want.
-7. High-volume low-judgment? → economy seats (`agy` flash, Composer, Luna, Haiku).
-
-Home-fleet reminder: Cursor intake → default Grok/Composer; Codex chair → default
-Terra/Luna; neither excludes agy when UI (or explicit) says so.
-
-### 🔴 Codex sandbox limits — check BEFORE routing to `codex`
-
-`codex exec -s workspace-write` denies every write outside the workspace. That part is fixable with
-`--add-dir` (repeatable; `.git` is a default) — e.g. `~/.supabase`,
-`~/Library/Preferences/.wrangler`.
-
-**These three are NOT fixable. Reassign the task instead — each cost a failed dispatch to learn:**
-
-| Limit | Symptom | Route to |
-| --- | --- | --- |
-| Cannot **bind a TCP port** | no dev server, no Playwright, no `vitest-pool-workers` (it starts `workerd`) | any task needing a running server → `agent` |
-| Cannot **read the macOS keychain** | `supabase db push` fails *"Access token not provided"* while `migration list` succeeds — the lane looks authenticated right up to the step that matters | any Supabase **write**/management API → `agent` |
-| Cannot **reach the npm registry** | `registry.npmjs.org` → `ENOTFOUND`; the package is not cached | any task that **adds a dependency** → `agent` |
-
-The registry and keychain are reachable *outside* the sandbox, so a passing check in the
-orchestrator chat proves nothing about the worker. **Ask what the task needs, not whether it works
-for you.**
-
-⚠️ Codex is still the right seat for tight, verifiable, offline work — build output inspection,
-schema-file authoring, deterministic transforms. Verify against **emitted files** and `vitest`,
-and say so in the task body so the worker does not stall reaching for a server.
-
-## Step 2 — Spawn (blocking; log never to context)
+Example for a mission whose frozen Codex economy seat has medium effort and
+unknown speed:
 
 ```bash
 MISSION=$(bash scripts/active-mission.sh)
-bash scripts/spawn-worker.sh agent "$MISSION/tasks/T-XXX.md" --tier premium
-echo "exit=$?"
+bash scripts/spawn-worker.sh codex "$MISSION/tasks/T-XXX.md" \
+  --tier economy --feature F00X --attempt 1 --effort medium --speed unknown
 ```
 
-Judge by exit code, `tail -20` of `.tasks/logs/T-XXX.log`, `git status`,
-`git diff --stat`. Then code-reviewer subagent against AGENTS.md + deny-list.
+For Cursor, use the approved `agent` tier and its explicit `standard` or `fast`
+speed. Check the frozen seat before adapting the example.
 
-## Step 3 — Outcomes
+The launcher prints `run_id` and the log path. Keep that UUID; never select a
+receipt by timestamp, task name, or “latest success.” One run writes:
 
-- **PASS** → verify steps, flip `passes: true`, ensure PROGRESS entry.
-- **CAPABILITY FAIL** → consumes attempt; rewrite task (max 2) or reassign.
-- **INFRASTRUCTURE FAIL** (429 / auth / no edits) → does not consume attempt;
-  reassign; if Grok infra-fails on agent premium, retry `--tier economy`
-  (Composer) or next CLI.
+- `.tasks/specs/<run-id>.json`: immutable authorization before launch
+- `.tasks/logs/<run-id>.log`: provider transcript
+- `.tasks/receipts/<run-id>.json`: terminal execution evidence
 
-### False-green checklist — `exit=0` is not proof of work
+The shared runner manages timeout/interruption and provider process-tree cleanup.
+The wrappers default to 2400 seconds via `SPAWN_WORKER_TIMEOUT_SECS` or
+`SPAWN_BRAIN_TIMEOUT_SECS`; zero disables the timeout.
 
-Two silent false-greens have already reached this point undetected: agy's
-Go-style flag parser once swallowed the prompt into `-p`'s value and exited 0
-having only answered a question about the flag (`catalog-truth` F004); a
-mocked test suite reported green twice without touching the target file
-(`catalog-truth` F009).
+The worker wrapper snapshots itself before running. A scoped self-edit requires
+an explicit task and review of the wrapper's restoration/lifecycle invariants;
+the snapshot does not make arbitrary execution-policy edits safe.
 
-`scripts/spawn-worker.sh` now captures git state around every CLI invocation
-and `scripts/write-receipt.sh` records it on the receipt as `commits_made` /
-`dirty_after` / `workspace_changed`. `scripts/verify-mission.sh` hard-fails any
-`passes: true` feature whose matched receipt has `exit=0` but
-`workspace_changed: false` — that mechanical check is not optional and you
-cannot bypass it by re-running `verify-mission.sh`. Receipts written before
-this existed have `workspace_changed: null` and only WARN; treat a WARN as "go
-verify the diff by hand," not as a pass.
+## 3. Review observed effects
 
-Before trusting ANY receipt as a PASS, in addition to `verify-mission.sh` green:
+Use the exact receipt, scoped Git diff/commits, PROGRESS entry, and a short log
+tail. Do not stream full transcripts into review context. Apply the project's
+code-reviewer procedure and guard-verification for guards or safety tests.
 
-- [ ] `git diff --stat` (worker's workspace) shows changes in the task's
-      allow-listed files, not just wherever `workspace_changed` says nonzero
-- [ ] `tail -40` of `.tasks/logs/…` shows the CLI actually reading the task and
-      producing tool calls/edits — not prose *about* a flag, a refusal, or a
-      question back to the user
-- [ ] The receipt's `feature` field matches the feature being flipped (see
-      "Never" below — a missing tag is not silently acceptable)
-- [ ] If `workspace_changed` is `false` and the task expected code changes,
-      that is an INFRASTRUCTURE or CAPABILITY fail per Step 3 above — rewrite
-      or reassign, never re-flip `passes: true` on the same receipt
+Receipt fields include `outcome`, `exit_code`, `git_before`, `git_after`,
+`commits`, `changed_paths`, `workspace_changed`, and `scope`. Check that:
 
-## Human gates
+- UUID, mission, feature, work unit, attempt, and spec hash identify this dispatch.
+- Outcome is `completed`, exit code is zero, workspace changed is true, and
+  `scope.result` is `pass`.
+- Changed paths and commits demonstrate the requested work within the allow-list.
+- The log shows actual work, not a flag explanation, refusal, or unanswered question.
+- Required checks have final results, and the current Git snapshot still equals
+  the receipt's after snapshot.
 
-Set `awaiting-gate` → ask for GATE n verdict → PROGRESS Human entry → `done` or
-`in-progress`.
+New worker evidence cannot use null workspace-change values or legacy
+`worker-*.json` receipts as a warning-only substitute. Exit zero alone is not
+proof of implementation.
 
-## Parallelism
+If later review/progress commits changed the snapshot before run-specific
+verification, do not rewrite the old receipt. Create a bounded qualification
+task for the same pending feature, commit its checks and allow-list, and run
+it from a clean base. Review and verify that new run; retain the implementation
+run as evidence of its own effects.
 
-Never two workers in the same working tree. Pipeline task-writing while one runs.
-Cross-repo parallel OK.
+## 4. Verify, then accept separately
+
+Do this before making any further Git-visible change after the reviewed run:
+
+```bash
+RUN_ID="<UUID printed by the launcher>"
+bash scripts/verify-mission.sh --run-id "$RUN_ID" "$MISSION"
+```
+
+This executes the verification argv from the task at the receipt's base commit.
+It requires the current Git snapshot to equal the receipt's after snapshot before
+and after the checks. It creates one immutable record at
+`$MISSION/verification/$RUN_ID.json`; it does not accept the feature.
+
+Only after a passing result and effect review may the orchestrator compute the
+exact record hash and accept:
+
+```bash
+VERIFICATION_SHA256=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' \
+  "$MISSION/verification/$RUN_ID.json")
+bash scripts/accept-feature.sh --run-id "$RUN_ID" \
+  --verification-sha256 "$VERIFICATION_SHA256" --accepted-by "orchestrator identity" "$MISSION"
+bash scripts/verify-mission.sh --require-workers "$MISSION"
+```
+
+Acceptance records `accepted_run_id`, `accepted_verification_sha256`,
+`accepted_at`, and `accepted_by` in features.json. No separate acceptance
+artifact is needed. Commit verification and acceptance with the progress record.
+
+## 5. Handle failures and gates
+
+- Implementation/capability failure: follow the task's attempt limit and write a
+  bounded correction task before retrying. An approved alternative seat may be
+  selected explicitly; do not mutate the frozen fleet.
+- Infrastructure failure (auth, quota, launch, transport): record what actually
+  happened. It does not justify claiming success or changing an immutable record.
+- No-op execution: investigate the task and log; do not treat exit zero as evidence.
+- Missing final test output: report the check as unproven. An independent check
+  can qualify a candidate, but cannot manufacture a passing VerificationRecord
+  for an older snapshot.
+- Before advancing a gate/status, run the current mission audit. Record the
+  human verdict in PROGRESS.md and update status according to the approved gate.
+
+Workers never accept features or change mission gates. Bootstrap exemptions must
+be declared at feature authoring; they do not convert worker code into exempt work.
 
 ## Never
 
-- Never stream full worker transcripts into orchestrator context.
-- Never let workers edit features.json descriptions, AGENTS.md, docs/, skills.
-- Never skip inventory-approved binds without a task `invocation:` override.
-- Never auto-escalate to Fable.
-- Never flip `passes: true` without `verify-mission.sh` green and a worker receipt
-  tagged `--feature F00X` for that feature (orchestrator-only features need
-  `"bootstrap": true` in features.json — never inferred from description text).
-- Never implement the worker allow-list inside the orchestrator chat when the
-  Fleet CLI is installed — that produces no receipt and fails verify.
+- Never use hand-written provider flags to bypass the shared adapter or frozen fleet.
+- Never omit `--feature` or borrow another run's success.
+- Never edit a persisted spec, receipt, or VerificationRecord to fit a later outcome.
+- Never flip `passes` manually in place of the acceptance entry point.
+- Never launch two writers or a verifier alongside a worker in the same workspace.
+- Never dispatch an external repository through `--repo`.
+- Never let a worker change features.json, fleet approval, or gates.

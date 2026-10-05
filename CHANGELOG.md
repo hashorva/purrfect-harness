@@ -2,53 +2,58 @@
 
 ## 2.3.1 (2026-08-13)
 
-- **Distribution truth (development baseline; not yet released):** `2.3.1` remains
-  an untagged development build after published annotated `v2.3.0`. A
-  schema-versioned `harness-manifest.json` now owns every distributable skill,
-  payload, update path, discovery target, and consumer AGENTS skeleton. The shared
-  validator is mounted by release CI, install, update, and sync; ordinary
-  propagation requires an exact clean annotated tag while `--dev` is the explicit
-  local smoke escape. Install/update reject unsafe manifest ownership and invalid
-  installed versions; sync preserves foreign discovery skills; the harness root
-  AGENTS is repository-specific and the complete consumer skeleton is at
-  `docs/templates/AGENTS.md.template`.
+- **Development baseline; not yet released:** `2.3.1` remains an untagged development
+  baseline after published annotated `v2.3.0`. Phase 1 is complete, including Human
+  Gates 1/2 and the real consumer smoke. Final release numbering requires downstream
+  migration review; this development identifier does not decide it.
 
-- **Instruction and documentation truth:** root `AGENTS.md` now names mission
-  bearings, one-feature scope, clean completion, local CLI receipts, current
-  verification, and orchestrator-only feature acceptance. The consumer template
-  keeps the complete skeleton while reserving feature acceptance to the
-  orchestrator. Current docs describe per-skill discovery links (including legacy
-  parent-link replacement) and `.claude/settings.json` as client permission
-  configuration, not an absolute security boundary.
+- **Execution authorization:** every brain/worker run atomically persists a UUID-keyed
+  immutable ExecutionSpec before provider launch. One shared adapter constructs exact
+  argv for Codex, Cursor agent, agy, and Claude. Current spec v3 binds provider
+  contract 2; legacy v1/v2 specs retain contract 1, so adapter evolution does not
+  reinterpret historical receipts. Codex contract 2 retains workspace-write and
+  explicitly mounts the same repository's Git metadata.
 
-- **`verify-mission.sh`: a feature's own receipt is now required — no more borrowing someone
-  else's.** The per-feature loop had a soft path that, finding no receipt tagged for a feature,
-  accepted **any** worker receipt with `exit=0` and printed a WARN. FinDuck's
-  `20260813-public-surface-perf` hit the consequence live: a hung `agent` CLI was SIGTERM'd, its
-  receipt landed with `exit=143`, and because that receipt was filtered out of the exit-0 set the
-  loop silently accepted an *unrelated* feature's receipt and reported `VERIFY OK` for a feature
-  backed by nothing. Three changes: a receipt tagged for this feature that did **not** exit 0 now
-  FAILS with its exit code named (a killed run is evidence of failure, not of absence); only
-  genuinely **untagged** legacy receipts may satisfy the soft path, never one tagged for a
-  *different* feature; and the miss case fails with "receipts for other features do not count".
-  Also deletes a dead `matched` binding.
-  ⚠️ **This is retroactively strict, and it immediately found three real hollow greens** in closed
-  FinDuck missions — every one a feature no worker was ever going to run, left at `bootstrap: false`
-  or with the field missing: `20260810-glossary-content-model` F010 (*"verified on
-  staging.finduck.app, not locally"* — the very instance `dispatch-worker`'s rule 5 is written
-  about), `20260804-path-a-prod` F004 (orchestrator-authored docs), and
-  `20260727-cross-category-compare` F009 (human GATE checklist). Per the existing rule, these are
-  **flagged, not retro-edited** — `bootstrap` must be right at authoring.
-- **`spawn-worker.sh`: every lane is now bounded by a portable watchdog.** A worker CLI that
-  finishes its work and then never exits is indistinguishable from one still running, because the
-  receipt is written only *after* the process ends — a real cursor `agent` dispatch sat at 0.0 % CPU
-  for **79 minutes** after it had already committed, while the mission showed no receipt at all and
-  looked "still working". macOS ships neither `timeout` nor `gtimeout`, so `watchdog_wait` polls the
-  child and, on expiry, sends TERM, then KILL after a 5 s grace, and returns **124** (GNU `timeout`
-  convention). Applied to all six invocation sites (codex, agent, agy ×2, claude ×2). Default
-  **2400 s**; override with `SPAWN_WORKER_TIMEOUT_SECS`, or `0` to disable.
-  **The two fixes compose:** a hang now yields `exit=124`, which the stricter `verify-mission`
-  reports as a hard failure instead of a hollow green.
+- **Fleet and dispatch truth:** Human Gate 0 freezes canonical approved mission
+  `fleet.json`. Model/effort/speed flags are equality assertions, never overrides.
+  Failed probes preserve per-provider last-good state as degraded, and fallback
+  guesses cannot appear observed. Workers require an in-progress mission, pending
+  feature, matching task identity, clean workspace, and an exclusive workspace lock.
+  Cross-repository execution is disabled in Phase 1.
+
+- **Execution evidence:** the shared runner writes one terminal ExecutionReceipt with
+  spec hash, requested/resolved/unknown-observed configuration, exact Git-visible
+  before/after state, commits, changed paths, scope result, and process outcome.
+  UUIDs prevent timestamp collisions; no-op and null evidence cannot qualify worker
+  implementation. Timeout/interruption cleans up and reaps the provider process tree.
+  Scope is explicitly limited to Git-visible changes in the declared workspace.
+
+- **Verification and acceptance:** `verify-mission.sh --run-id` uses checks authorized
+  by the task at the receipt's base commit, requires the same Git snapshot before and
+  after checks, and publishes an immutable VerificationRecord. The orchestrator then
+  uses `accept-feature.sh` to record the exact run/hash/time/identity in feature state.
+  Verification does not imply acceptance. Mission audit rejects unrelated receipts,
+  legacy/null substitutes, malformed metadata, and rehashed identity rebinding.
+
+- **Distribution truth:** `harness-manifest.json` owns distributable skills, payloads,
+  update paths, discovery targets, and the consumer AGENTS skeleton. Its validator
+  is mounted by release CI, install, update, and sync. Normal propagation requires
+  the exact clean annotated manifest tag; `--dev` is only for explicit local smoke.
+  Unsafe ownership and installed versions fail closed; project-owned instructions,
+  mission instances, and foreign discovery skills are preserved.
+
+- **Real end-to-end evidence:** an authenticated Codex/Luna consumer run changed and
+  committed one nonce file, passed its run-specific checks, and was separately
+  accepted. The archived fleet/spec/receipt/verification/acceptance/Git bundle and
+  sanitized log reconstruct all four truths in a fresh process. Raw hash tampering
+  and rehashed acceptance rebinding have mounted negative regressions.
+
+- **Release-readiness instructions:** canonical skills, protocol, and templates now
+  use frozen fleet authority, UUID artifacts, JSON argv checks, and separate feature
+  acceptance. The shipped worker template has a real-wrapper regression plus a
+  missing-verification-section negative. Guard verification requires red results at
+  the intended assertion. Release docs preserve published tags and follow automatic
+  tag-triggered packaging; consumer migration review remains explicit.
 
 ## 2.3.0 (2026-08-12)
 
