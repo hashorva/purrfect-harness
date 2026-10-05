@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-06 — Orchestrator — Approved guard-verification skill amendment
+
+- **Approval:** Zamir approved the full proposed PATCH with “yes, go on”. The existing `guard-verification` skill now distinguishes an intended guard rejection from an unrelated red result, requires a positive baseline and exact restoration, and mounts supported historical evidence when policy changes revalidate it.
+- **Evidence:** T-010-R1's hash mutations failed during unrelated record construction; T-010-R2 corrected all eight mutations to reach their intended assertions. T-018 repeated the mounted failure-signature and restoration procedure against historical evidence and current provider argv. This graduates a demonstrated correction into the existing skill's territory.
+- **Validation:** `PYTHONDONTWRITEBYTECODE=1 bash tests/run-tests.sh` reached `ALL TESTS PASSED`; ShellCheck, tracked JSON parsing, and `git diff --check` passed. The current mission audit returned `VERIFY OK`, and archived smoke negatives reached `RECONSTRUCTION TESTS PASSED`. The bundled skill validator could not import PyYAML in either Python runtime; Ruby's YAML parser independently validated the frontmatter keys, name, description length, and absence of unfinished scaffolding.
+- **Disposition:** Mission-end skill review is complete. This documentation amendment changes neither feature acceptance nor the archived execution evidence; all seven Phase 1 features remain accepted and the mission remains `done`.
+
 ## 2026-09-08 — Human GATE 2 — APPROVED / F007 accepted
 
 - **Verdict:** Zamir approved Human Gate 2 after the authenticated real-provider smoke and fresh-process reconstruction checkpoint. No waiver substitutes for the real Codex/Luna evidence.

@@ -1,18 +1,20 @@
 ---
 name: guard-verification
-description: Prove that a check actually checks. MUST be used when adding, reviewing or accepting any guard, gate, validator, constraint, assertion or safety test — and before flipping a feature to passing on the strength of one. Catches the two ways a guard silently does nothing: it is never called from the real entry point, or it is satisfiable by an empty value. Use whenever a test passes and you have not seen the guard fail.
+description: Prove that a check actually checks. MUST be used when adding, reviewing or accepting any guard, gate, validator, constraint, assertion or safety test — and before flipping a feature to passing on the strength of one. Catches guards that are not mounted, accept empty values, or appear red because an unrelated setup or construction failure happened first. Use whenever a test passes and you have not seen the intended guard reject the intended violation.
 ---
 
-# Guard verification — a check that cannot fail is not a check
+# Guard verification — a check that cannot fail correctly is not a check
 
 ## The failure this prevents
 
 A guard is written correctly, gets unit tests, the tests pass, review approves it — and it
-**never runs where it matters**, or it **runs but nothing can violate it**. The suite is green,
-the feature is marked done, and the protection does not exist. This is not a hypothetical: it has
-shipped three times in this studio, each time behind a fully green test run.
+never runs where it matters, accepts a vacuous value, or appears proven because a negative
+test failed for an unrelated reason.
 
-Two shapes, one lesson.
+A red result is not sufficient. The failure must reach the intended guard and exhibit the
+expected failure signature.
+
+Three shapes, one lesson.
 
 ### Shape 1 — the guard is never mounted
 
@@ -21,98 +23,150 @@ The validator is correct. The only code that ever calls it is the test.
 - A language switcher was built correctly and wired into one surface; a second surface rendered a
   hardcoded control. Component tests exercised the component; the app rendered something else.
 - A publication guard handled its flag correctly. The build wired that flag into four other places
-  and never into the validator — **the only caller passing the flag was a unit test.** Flipping the
-  flag published documents the guard existed to block.
+  and never into the validator — the only caller passing the flag was a unit test.
 
 ### Shape 2 — the constraint is trivially satisfiable
 
 The guard runs, but the failing case cannot occur.
 
-- `NOT NULL` on an explanatory text column: satisfied by `''`. The schema *looks* like it
-  guarantees an explanation exists.
-- An extraction that falls back to empty when its pattern does not match: `const body = m ? m[0] : ''`.
-  When the markup changes, zero items are found, **the loop over them passes**, and the gate reports
-  success having examined nothing.
+- `NOT NULL` on explanatory text is satisfied by `''`.
+- An extraction falls back to an empty list when its pattern does not match. The loop examines
+  nothing and reports success.
 
-**A trivially satisfiable constraint is worse than none**, because the code now looks like it
-guarantees something and reviewers stop asking.
+A trivially satisfiable constraint is worse than none because it looks like a guarantee.
+
+### Shape 3 — the negative fails for the wrong reason
+
+The regression is red, but execution never reaches the guard it claims to prove.
+
+- A mutation replaces fixture or record construction instead of the later validation expression.
+- A syntax, import, setup, timeout, or earlier validation error aborts the test first.
+- A bypass test treats a deliberately weakened verifier returning success as its success oracle,
+  rather than making a mounted negative regression fail.
+
+These results prove only that something broke.
 
 ## Procedure
 
 ### 1. Find the real callers
 
 ```bash
-# replace <guardName> with the exported function / flag / option
-grep -rn "<guardName>" --include="*.ts" --include="*.tsx" --include="*.js" . \
-  | grep -v -E "\.(test|spec)\.|__tests__|/tests?/"
+rg -n "<guardName>" \
+  --glob "*.{ts,tsx,js,py,sh}" \
+  --glob "!*.test.*" \
+  --glob "!*.spec.*" \
+  --glob "!tests/**" \
+  --glob "!**/__tests__/**"
 ```
 
-**If that returns nothing, the guard is not mounted.** If it returns only definitions and no call
-from a build script, request handler, CI step or migration, it is not mounted either.
+If that returns only tests or definitions, the guard is not mounted.
 
-### 2. Trace to the entry point
+### 2. Name the real entry point
 
-Name the exact thing that runs in production or CI — `npm run build`, the route handler, the
-workflow step. "It's exported and importable" is not mounted. **Write the entry point down**; you
-will run it in step 3.
+Write down the exact production or CI entry point that reaches the guard: a build command,
+request handler, worker wrapper, mission audit, release validator, migration, or equivalent.
 
-### 3. Break it and watch the real path fail
+“Exported and importable” is not mounted.
 
-The only proof. Temporarily disable the guard — comment the condition, invert it, or feed a
-deliberately violating fixture — then run **the entry point from step 2**, not the unit test.
+### 3. Establish the positive baseline
 
-- The entry point must **fail**. If it still succeeds, the guard is not protecting that path.
-- Restore the guard exactly. **`git diff <guard file>` must be empty** before you commit.
-- Put the observed failure output in the PR or progress entry. An assertion nobody has seen fail is
-  an assumption.
+Run the real entry point against known-good state before mutating anything. Record its successful
+exit status or final success assertion.
 
-### 4. Ask what happens when the fallback fires
+A mutation result is uninterpretable without a known-good baseline from the same entry point.
 
-For every `?? ''`, `|| []`, `? x : ''`, `.catch(() => null)`, optional match or default value inside
-a guard:
+### 4. Exercise one intended violation
 
-> If this fallback fires, does the check **pass**?
+Use one of these two valid proof shapes:
 
-If yes, it is a no-op wearing a guard's clothes. Make it throw, naming what it could not parse.
+1. Keep the guard enabled, provide a deliberately violating input, and observe the real entry
+   point reject it.
+2. Temporarily bypass exactly one guard, run a mounted negative regression, and observe that
+   regression fail because the real entry point admitted the violation.
 
-### 5. Ask what the weakest satisfying value is
+Target one unique production expression. Do not mutate fixture construction, setup code, or an
+earlier guard.
 
-For every constraint, construct the laziest input that satisfies it.
+The failure must identify the intended invariant. Reject the result if it is caused by:
 
-| Constraint | Weakest satisfying value | Fix |
+- syntax, import, name, or type errors outside the intended validation;
+- fixture, record, or environment construction failure;
+- missing tools, timeouts, or transport interruption;
+- an earlier unrelated guard;
+- a deliberately weakened implementation returning success when no mounted regression asserts
+  that this is wrong.
+
+Record the expected failure signature and confirm that it appeared.
+
+### 5. Restore exact bytes and rerun the positive path
+
+Restore the mutated file exactly and verify that no mutation remains:
+
+```bash
+git diff --exit-code -- <guard-file>
+```
+
+Then rerun the positive baseline from step 3. Both restoration and the final successful run are
+required.
+
+### 6. Test fallbacks and weakest values
+
+For every `?? ''`, `|| []`, optional match, swallowed exception, or default value inside a guard,
+ask:
+
+> If this fallback fires, does the check pass?
+
+If yes, fail loudly instead.
+
+For every constraint, construct its weakest satisfying value:
+
+| Constraint | Weakest satisfying value | Required protection |
 | --- | --- | --- |
-| `NOT NULL` on text | `''` | add `length(trim(x)) > 0` |
-| "list is present" | `[]` | require non-empty |
-| "field exists" | `null` / `undefined` | require a value and a shape |
-| regex extraction | no match → empty | fail loudly instead of returning empty |
+| `NOT NULL` text | `''` | require non-empty trimmed text |
+| list is present | `[]` | require a non-empty list |
+| field exists | `null` or wrong type | require value and shape |
+| regex extraction | no match | fail instead of returning empty |
+| identifier present | unrelated valid identifier | bind it to the authorized subject |
 
-If the weakest satisfying value is something you would reject in review, the constraint does not
-express your intent.
+If the weakest satisfying value would be rejected in review, the constraint does not express the
+intended policy.
 
-### 6. Write the regression test against the mount point
+### 7. Mount the regression at the real boundary
 
-Assert on **what the entry point produced** — emitted files, response body, database state — not on
-the validator's return value.
+Assert on what the entry point produced or rejected: emitted files, response state, database
+state, receipt, audit result, or process exit.
 
-**The test must fail if the wiring is removed**, not only if the logic is wrong. A test that calls
-the validator directly still passes when nobody calls the validator, which is exactly how shape 1
-survives review.
+The regression must fail if the wiring is removed, not merely if the validator’s internal logic
+changes.
+
+When a guard revalidates persisted or immutable historical evidence, run at least one supported
+historical artifact through the real audit entry point. A new isolated fixture does not prove that
+existing evidence remains valid under changed policy.
 
 ## Self-verification checklist
 
-- [ ] Non-test callers of the guard exist, and I named the entry point that reaches it
-- [ ] I disabled the guard, ran the **entry point**, and **saw it fail**
-- [ ] The guard is restored — `git diff` on its file is empty
-- [ ] Every fallback inside the guard fails loudly rather than passing
-- [ ] I constructed the weakest satisfying value and it is genuinely acceptable
-- [ ] A regression test asserts against the mount point and would fail if the wiring were removed
-- [ ] The observed failure output is recorded where a reviewer will read it
+- [ ] Non-test callers exist and the real entry point is named
+- [ ] The unmodified entry point passes before mutation
+- [ ] One mutation or violating input targets the intended guard
+- [ ] The expected guard-specific failure signature was observed
+- [ ] No syntax, setup, construction, timeout, or unrelated earlier failure caused the red result
+- [ ] Every fallback fails closed
+- [ ] The weakest satisfying values are genuinely acceptable
+- [ ] The regression asserts against the mounted boundary
+- [ ] Historical evidence was exercised when the changed policy revalidates it
+- [ ] The guard was restored byte-for-byte
+- [ ] The unmodified positive entry point passes again
+- [ ] The observed positive and negative evidence is recorded for review
 
 ## Never
 
-- Never accept a green suite as evidence a guard works. It is evidence the guard's *logic* works.
-- Never let a unit test that calls the validator directly stand in for proof of wiring.
-- Never leave a fallback that turns "could not check" into "passed".
-- Never mark a guard feature done without having seen it fail once.
-- Never "fix" a failing guard by changing the data it was built to reject — that is the guard
-  working. Removing the blocker is a separate, human decision.
+- Never accept a green suite as proof that a guard is mounted.
+- Never accept “the negative is red” without checking why it is red.
+- Never mutate fixture construction when claiming to test a validation guard.
+- Never let a unit test calling the validator directly stand in for mounted proof.
+- Never let “could not check” become “passed.”
+- Never leave mutation bytes behind.
+- Never mark a guard feature complete without seeing the intended violation reach the intended
+  guard.
+- Never fix a correctly failing guard by changing the data it was built to reject; overriding the
+  policy is a separate human decision.
