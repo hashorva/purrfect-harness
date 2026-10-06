@@ -1,365 +1,449 @@
 ---
-title: Agent Harness Kit
+title: Purrfect Harness
 version: 2.3.1
 updated: 2026-10-06
 ---
 
-# Agent Harness Kit
+# Purrfect Harness
 
-[![version](https://img.shields.io/github/v/release/hashorva/purrfect-harness?display_name=tag&label=version)](https://github.com/hashorva/purrfect-harness/releases)
+[![release](https://img.shields.io/github/v/release/hashorva/purrfect-harness?display_name=tag&label=published%20release)](https://github.com/hashorva/purrfect-harness/releases)
 [![license](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-lightgrey)](LICENSE)
-[![orchestrator](https://img.shields.io/badge/orchestrator-Opus-blue)](docs/missions/MODEL_ROUTING.md)
-[![workers](https://img.shields.io/badge/workers-Grok%20%2B%20Composer%20%2B%20fleet-green)](docs/missions/MODEL_ROUTING.md)
-[![loop](https://img.shields.io/badge/loop-docs%2Fmissions-purple)](docs/missions/README.md)
+[![protocol](https://img.shields.io/badge/protocol-Execution%20Truth-blue)](docs/missions/ORCHESTRATION.md)
 [![skills](https://img.shields.io/badge/skills-Agent%20Skills-orange)](https://agentskills.io)
 [![CI](https://img.shields.io/github/actions/workflow/status/hashorva/purrfect-harness/ci.yml?branch=main&label=CI)](https://github.com/hashorva/purrfect-harness/actions/workflows/ci.yml)
 
-A portable orchestrator/worker setup for AI-assisted development. Drop it into any
-repo (FinDuck, shyft.me, consulenza360, …), fill one project block in `AGENTS.md`,
-and every agent reads the same contract. **Opus** chairs missions by default;
-**Cursor Grok** (premium) and **Composer** (economy) implement via local CLIs —
-Codex and Antigravity (`agy`) are also in the fleet when you assign them. The loop
-lives under `docs/missions/` (not repo-root GOAL files).
+A portable mission protocol, reusable skills, and install/update tooling for
+AI-assisted development. This repository **distributes the harness**; it is not
+a consuming product. Each consumer keeps its own project instructions, domain
+knowledge, and mission instances.
+
+The operating loop is: human-approved intent → bounded local CLI execution →
+observed workspace changes → run-specific verification → separate orchestrator
+acceptance. Files and Git evidence carry the handoff, not chat memory.
+
+## Where we are now
+
+- **Phase 1 — Execution Truth is complete:** all seven features in the
+  [mission](docs/missions/20260821-execution-truth/GOAL.md) are accepted, Human
+  Gates 1 and 2 are registered, and a real authenticated consumer smoke has
+  [self-contained reconstruction evidence](docs/missions/20260821-execution-truth/evidence/f007/README.md).
+- **Release is a separate step:** `2.3.1` in this checkout is an untagged
+  development baseline, not a final release decision. The badge above reports
+  the published release, which may differ. Version selection, migration review,
+  tagging, publication, and real-consumer adoption remain separate work.
+- **Phase 2+ is not implemented here:** no full AWU model, learning system,
+  analytics, dashboard, LangGraph, ACP migration, or adaptive routing. These
+  require a new scoped proposal and approval, not an extension of Phase 1.
+
+## Mission workflow
+
+The chair is a role, not a required vendor. The default routing policy still
+names Opus; the completed Phase 1 mission explicitly used **GPT-5.6 Sol / high**
+at the human's request. Provider/model/effort/speed for an active mission come
+from its approved frozen fleet, not from the names in a diagram.
 
 ```mermaid
 flowchart TD
-  You["You + brief plan in Cursor"] --> Opus["Opus brain: mission-init"]
-  Opus --> Inv["fleet-inventory seat map"]
-  Inv --> Gate0{"GATE 0: approve features + binds?"}
-
-  Gate0 -->|no| Opus
-  Gate0 -->|yes| Dispatch["dispatch-worker"]
-
-  Dispatch --> Spawn["spawn-worker.sh --tier"]
-  Spawn --> Workers["Grok premium / Composer economy"]
-  Workers --> Files["edit + commit + PROGRESS.md"]
-  Files --> Receipt["UUID ExecutionReceipt: actual invocation + Git delta"]
-  Receipt --> Review["Brain reviews effects vs AGENTS.md"]
-
-  Review -->|fail| Rewrite["rewrite task max 2"]
-  Rewrite --> Dispatch
-
-  Review -->|pass| Verify["verify-mission.sh --run-id: VerificationRecord"]
-  Verify -->|pass| Flip["accept-feature.sh: orchestrator acceptance"]
-  Verify -->|fail| Rewrite
-
-  %% Invisible layout constraint:
-  %% keeps Flip below Rewrite without drawing a visible connection
-  Rewrite ~~~ Flip
-
-  Flip --> More{"features left?"}
-  More -->|yes| Dispatch
-  More -->|no| HumanGate["Human gates / status done"]
+  Brief["Human brief:<br/>outcome, boundaries, gates"] --> Init["mission-init:<br/>templates, inventory, committed draft"]
+  Init --> Brain["Real local brain run:<br/>spec and receipt"]
+  Brain --> G0{"Human Gate 0: approve features and bindings?"}
+  G0 -->|revise| Init
+  G0 -->|approve| Freeze["Freeze fleet.json; record verdict;<br/>commit approved"]
+  Freeze --> Start["Audit; explicitly commit<br/>status in-progress"]
+  Start --> Task["Commit one pending feature's<br/>bounded task"]
+  Task --> Gate["Dispatch preflight:<br/>status, identity, fleet, clean tree, lock"]
+  Gate --> Spec["Persist immutable UUID<br/>ExecutionSpec before launch"]
+  Spec --> Worker["Shared adapter and runner:<br/>local worker CLI"]
+  Worker --> Receipt["Terminal ExecutionReceipt:<br/>invocation, outcome, Git delta, scope"]
+  Receipt --> Review{"Review actual effects<br/>and final check results"}
+  Review -->|fail or unproven| Correct["Bounded correction or qualification task;<br/>retain old evidence"]
+  Correct --> Task
+  Review -->|pass| Verify["verify-mission.sh --run-id:<br/>same-snapshot VerificationRecord"]
+  Verify --> Verified{"Required checks passed?"}
+  Verified -->|no| Correct
+  Verified -->|yes| Accept["Orchestrator accepts exact UUID<br/>and verification hash"]
+  Accept --> Audit["Commit evidence; current mission audit<br/>before gates or status changes"]
+  Audit --> Next{"Next milestone?"}
+  Next -->|more features| Task
+  Next -->|human gate due| Human["Await human verdict;<br/>register it in PROGRESS.md"]
+  Human -->|approved; more work| Start
+  Human -->|rejected or paused| Hold["Stop dispatch;<br/>human decides revision or scope"]
+  Hold -->|revision authorized| Start
+  Human -->|final approval| Done["status done;<br/>retain mission and evidence"]
+  Done --> Learn["skillify review:<br/>evidence-based proposal, approval before edits"]
 ```
 
-## The four layers (the studio operating rule)
+A failed preflight stops before provider launch. The diagram's execution branch
+does not imply that every attempted dispatch produces a spec or receipt.
+Human gates occur at the milestones in `GOAL.md`, not only at mission end.
+Workers cannot run while status is `awaiting-gate`.
 
-1. **AGENTS.md** = always-loaded RULES (short; every session pays for it)
-2. **docs/** = on-demand KNOWLEDGE (architecture, domain, design — loaded when relevant)
-3. **.agents/skills/** = portable PROCEDURES (v2 universal skills; single source, cloned per repo)
-4. **docs/missions/** = the dormant LOOP (activates when a mission folder has status in-progress|awaiting-gate)
+### Mission files, status, and authority
 
-If content is in the wrong layer, move it — a fat AGENTS.md is context rot by design.
+Missions live in `docs/missions/<YYYYMMDD-slug>/`, never as root-level GOAL or
+feature files. Exactly one mission may be `in-progress` or `awaiting-gate`.
+Resolve it with `bash scripts/active-mission.sh`.
 
-## Design principles (why it's built this way)
+| File | Authority |
+| --- | --- |
+| `GOAL.md` | Outcome, non-goals, human gates, explicit lifecycle status; its Fleet table explains the proposal |
+| `fleet.json` | Immutable Gate 0-approved provider/model/effort/speed bindings; dispatch authority |
+| `features.json` | Approved feature descriptions/checks and orchestrator acceptance truth |
+| `tasks/T-XXX.md` | Committed, one-feature worker contract: scope, checks, attempt limit |
+| `PROGRESS.md` | Durable activity, review evidence, failures, and registered human verdicts |
 
-1. **Agent Skills open standard.** All reusable procedures live as `SKILL.md` folders under
-   `.agents/skills/`. The format is the agentskills.io standard originally from Anthropic,
-   now supported by Claude Code, Codex, Cursor, Gemini CLI and ~40 other tools. Write once,
-   every worker reads it. `scripts/sync-skills.sh` symlinks the canonical folder into each
-  tool's discovery path as an individual symlink.
-2. **Progressive disclosure.** Only skill name + description load at startup (~50 tokens
-   each). The body loads when triggered. Detail goes in `references/`. This is the anti-
-   context-rot mechanism: knowledge on disk, not in the window.
-3. **One universal root.** Each consuming repository has an `AGENTS.md` master
-   context file; `CLAUDE.md` and `GEMINI.md` are thin wrappers importing it. The
-   distributable consumer skeleton is `docs/templates/AGENTS.md.template`; this
-   harness's own `AGENTS.md` describes the harness, not a consuming project.
-4. **Goal file = JSON feature list, not prose.** Per Anthropic's long-running-agent
-   research: agents one-shot and declare victory early when goals are prose. A
-   `features.json` starts with `passes: false` items. Workers report evidence;
-   only the orchestrator accepts a passing VerificationRecord, recording the run
-   UUID and exact verification hash. `GOAL.md` holds the narrative; `features.json`
-   holds acceptance truth.
-5. **One feature per worker session, clean state at the end.** Session protocol: get
-   bearings → verify nothing is broken → one feature → test → commit → update PROGRESS.md.
-6. **MCP is a tool, not furniture.** Query MCP, write the result to a file, work from the
-   file. Don't keep servers hot in a worker's context. See the `mcp-hygiene` skill.
+The status path is `draft` → `approved` → `in-progress` → `awaiting-gate` →
+`in-progress` or `done`, according to the human verdict. Transitions are explicit;
+the launcher never promotes `approved` automatically. Draft brain actions
+`mission-init` and `gate0` permit proposed configuration; `review` runs only in
+`in-progress` or `awaiting-gate` and uses the frozen brain seat. Local brain and
+worker runs must leave actual CLI receipts; a current-chat chair is not a waiver.
 
-## Phase 1 execution truth
+Live `.tasks/fleet-inventory.json` is a **proposal**, not dispatch authority.
+Failed probes preserve last-good provider data as degraded; fallback guesses are
+labelled degraded, and unavailable providers cannot be bound. Later live probes
+cannot silently change an active mission. Task `invocation:` is descriptive;
+`--model`, `--effort`, and `--speed` are equality assertions against `fleet.json`,
+not overrides. An alternative already-approved seat can be selected explicitly;
+do not rewrite the frozen fleet to repair a dispatch.
 
-Each dispatch persists an immutable ExecutionSpec before launching a provider.
-The shared adapter constructs actual argv, and the runner produces a terminal
-ExecutionReceipt with Git-visible before/after state, changed paths, commits,
-scope, and outcome. Unknown provider observations remain `unknown`.
+### Worker contract and execution boundary
 
-Human Gate 0 approves bindings frozen in mission `fleet.json`. Workers require
-a clean `in-progress` workspace and a committed task for one pending feature.
-Task/model flags cannot override frozen bindings. Cross-repository execution is
-disabled; one workspace lock prevents concurrent dispatch writers.
+Dispatch from the repository root through `scripts/spawn-worker.sh`. The task
+must be a committed direct file in the mission's `tasks/` directory; filename
+stem, `task_id`, feature, and `--feature` must match one `passes: false` feature.
+Use the [worker template](docs/missions/templates/WORKER_TASK.template.md).
 
-`verify-mission.sh --run-id <uuid> <mission>` executes the committed task's JSON
-argv checks and creates an immutable VerificationRecord for that same snapshot.
-`accept-feature.sh` separately records the orchestrator's acceptance in feature
-state. The mission audit validates this chain before a gate/status advances.
-Scope verification covers Git-visible changes in the declared workspace; it is
-not general filesystem containment.
+- `Files you MAY touch` uses backtick-quoted repository-relative path/glob
+  bullets. Include `PROGRESS.md` if the worker must update it.
+- `Verification commands` uses consecutive code-span bullets containing
+  non-empty JSON argv arrays, as shown below. These are executable checks, not
+  prose or shell command strings.
+- The worker reads the task, instructions, named skills, mission state, and Git
+  history; establishes a green baseline; implements one feature; adds a negative
+  regression for every reproduced failure; runs checks; records progress; and
+  commits the scoped change and progress entry together, leaving a clean tree.
+- The worker never dispatches another worker, edits `features.json` or
+  `fleet.json`, accepts its own work, or advances mission gates/status.
 
-Phase 1's real authenticated consumer smoke and reconstruction evidence are at
-[`docs/missions/20260821-execution-truth/evidence/f007/`](docs/missions/20260821-execution-truth/evidence/f007/).
-The current `2.3.1` identifier is a development baseline; normal install/update
-requires a clean source at the manifest's annotated release tag. See
-[RELEASING.md](docs/RELEASING.md) for final numbering and migration review.
+Example task verification bullet:
 
-## Purrfect Install
-
-Installing and updating are different operations with different tools. **Install**
-(`scripts/install-harness.sh`) is the first contact: it must respect whatever the
-repo already contains, so its collision rule is *never overwrite — propose*.
-**Update** (`scripts/update-harness.sh`) runs on repos already under harness
-management: it may overwrite, but only kit-owned manifest paths. Both refuse
-dirty trees, both work on a branch, neither ever commits — the human owns history.
-
-### Install in a new repo
-
-```mermaid
-flowchart TD
-  H[("purrfect-harness clone")] -->|"bash scripts/install-harness.sh TARGET"| I["installer"]
-  I --> P1["Layer 3 skills<br/>.agents/skills/"]
-  I --> P2["Layer 2 knowledge<br/>docs/missions/ (protocol + templates)"]
-  I --> P3["Client permissions<br/>.claude/ settings + rules + agents"]
-  I --> P4["Layer 1 rules<br/>AGENTS.md with placeholders + thin CLAUDE.md / GEMINI.md"]
-  P1 --> SYM["per-skill symlinks<br/>inside discovery directories"]
-  P4 --> YOU["YOU: fill AGENTS.md placeholders,<br/>delete unused skills, adapt settings.json"]
-  SYM --> V["verify checklist"]
-  YOU --> V
-  V --> C["commit on chore/harness-install and merge"]
+```markdown
+- `["bash","tests/run-tests.sh"]`
 ```
 
-A "new" repo means: git-initialized with a baseline commit, but no AGENTS.md and
-no `.harness-version` yet (a brand-new shyft.me, one day). Everything copies in
-cleanly because nothing collides. What the script does by default:
+For a frozen Codex economy seat with **medium effort and unknown speed**, the
+orchestrator dispatches as follows (replace the task/feature placeholders):
 
 ```bash
-# From a clean published tagged harness source:
-bash scripts/install-harness.sh /absolute/path/to/consumer
-# Payload and ownership come from harness-manifest.json.
-# sync-skills.sh creates per-skill links and preserves foreign discovery entries.
+MISSION=$(bash scripts/active-mission.sh)
+bash scripts/spawn-worker.sh codex "$MISSION/tasks/T-XXX.md" \
+  --tier economy --feature F00X --attempt 1 --effort medium --speed unknown
 ```
 
-What remains manual, always — the script cannot know your project:
-1. **Fill `AGENTS.md`** — every `{{placeholder}}` (stack, repos, hard rules,
-   commands). Example: FinDuck's block forbids `getDB()` on personal-data routes;
-   consulenza360's forbids `supabase db push` (GitHub-integration apply path).
-   Under ~200 lines; overflow goes to `docs/`.
-2. **Prune skills** — no Supabase in this repo? `rm -rf .agents/skills/supabase-migration`.
-3. **Adapt `.claude/settings.json`** — allow this repo's real commands, deny its
-   real dangers.
-4. Run the verify checklist below, commit, merge.
+Use the actual approved seat values; this example cannot rebind a different
+fleet. The launcher prints the run UUID. Follow
+[mission-init](.agents/skills/mission-init/SKILL.md) for draft brain execution and
+Gate 0 freezing, and [dispatch-worker](.agents/skills/dispatch-worker/SKILL.md)
+for dispatch/review, correction tasks, and exact-run acceptance.
 
-### Install in an existing repo
+Phase 1 runs in **one repository**. External `--repo` targets are rejected.
+A clean starting tree and an exclusive workspace lock prevent concurrent
+launcher writers; the lock lasts through terminal receipt creation. Do not run
+a verifier or make review/progress edits alongside a worker. This is not a
+general scheduler or a filesystem sandbox: scope checks cover **Git-visible
+changes in the declared workspace**, not arbitrary outside or ignored files.
+
+The shared provider adapter and runner own argv construction, lifecycle, and
+receipt creation for `codex`, Cursor `agent`, `agy`, and `claude`. Receipts record
+`completed`, `failed`, `timed_out`, `interrupted`, or `launch_failed` outcomes.
+Timeout/interruption includes provider process-tree cleanup. Brain and worker
+timeouts default to 2400 seconds; their `SPAWN_BRAIN_TIMEOUT_SECS` and
+`SPAWN_WORKER_TIMEOUT_SECS` settings control this. Exit zero is not proof of a
+workspace change or a completed feature. Unobserved provider values stay
+`unknown`, rather than being inferred from requested settings.
+
+### Four distinct truths, one run
 
 ```mermaid
-flowchart TD
-  I["installer processes file X"] --> Q{"X already exists?"}
-  Q -- "no" --> CP["copy from kit"]
-  Q -- "yes" --> ID{"byte-identical to kit?"}
-  ID -- "yes" --> SK["skip silently"]
-  ID -- "no" --> NEW["write X.harness-new beside it<br/>NEVER overwrite yours"]
-  NEW --> D["you: diff X X.harness-new"]
-  D --> K1["keep yours"]
-  D --> K2["take the kit's"]
-  D --> K3["hand-merge both"]
-  CP --> R["git diff review on the branch"]
-  SK --> R
-  K1 --> R
-  K2 --> R
-  K3 --> R
-  R --> OK{"only harness paths changed?<br/>build and tests green?"}
-  OK -- "yes" --> M["commit, merge to dev, then main"]
-  OK -- "no" --> U["inspect the diff and resolve the specific conflict"]
+flowchart LR
+  S["ExecutionSpec:<br/>what was authorized?"] --> R["ExecutionReceipt:<br/>what actually happened?"]
+  R --> V["VerificationRecord:<br/>did required checks pass?"]
+  V --> A["features.json:<br/>did the orchestrator accept?"]
 ```
 
-An "existing" repo (a finduck) probably already has an AGENTS.md, its own docs/,
-maybe earlier skill versions. The installer's contract: **your files always win
-the first round.** Three cases per file — absent → copied; identical → skipped;
-different → the kit's version lands as `X.harness-new` and yours is untouched:
+| Artifact | Location and binding |
+| --- | --- |
+| Immutable ExecutionSpec | `.tasks/specs/<uuid>.json`, persisted before launch; binds mission, feature/work unit, attempt, workspace, configuration, and write scope |
+| Terminal ExecutionReceipt | `.tasks/receipts/<uuid>.json`, linked to exact spec bytes; records safe invocation evidence, outcome/exit, Git before/after, commits, changed paths, workspace-change and scope results |
+| Immutable VerificationRecord | `<mission>/verification/<uuid>.json`, linked to exact spec/receipt bytes and committed task checks for that snapshot |
+| Orchestrator acceptance | `features.json`: `accepted_run_id`, `accepted_verification_sha256`, `accepted_at`, `accepted_by`, and `passes: true` |
+
+There is no separate `acceptance.json`. Provider logs are under
+`.tasks/logs/<uuid>.log`; retain the launcher UUID, not “the latest successful
+receipt.” Current ExecutionSpec v3 uses provider contract 2; historical v1/v2
+evidence retains contract 1 semantics instead of being reinterpreted by new flags.
+
+After reviewing effects, **before any further Git-visible change**, verify and
+accept the exact worker run. Set `MISSION` and `RUN_ID` to the actual mission and
+UUID printed by the launcher:
 
 ```bash
-if [ ! -e "$dst" ]; then cp "$src" "$dst"                     # absent -> copy
-elif diff -q "$src" "$dst" >/dev/null; then :                  # identical -> skip
-else cp "$src" "$dst.harness-new"; fi                          # different -> propose
+bash scripts/verify-mission.sh --run-id "$RUN_ID" "$MISSION"
+VERIFICATION_SHA256=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' \
+  "$MISSION/verification/$RUN_ID.json")
+bash scripts/accept-feature.sh --run-id "$RUN_ID" \
+  --verification-sha256 "$VERIFICATION_SHA256" --accepted-by "orchestrator identity" "$MISSION"
+bash scripts/verify-mission.sh --require-workers "$MISSION"
 ```
 
-`AGENTS.md` gets stricter treatment: if one exists it is never even proposed
-against. The installer copies the consumer skeleton from
-`docs/templates/AGENTS.md.template` only when `AGENTS.md.template` is absent;
-an existing project-owned template remains untouched.
+Verification executes the JSON argv checks from the task at the receipt's base
+commit. The current Git snapshot must equal the receipt's after snapshot both
+before and after checks. Passing verification does **not** accept a feature.
+Only the orchestrator accepts after review and a passing record, then commits
+verification, acceptance, and progress. Run the current mission audit before
+any gate/status advance; register the human verdict in `PROGRESS.md`.
 
-What to check before merging — the ritual, in order:
-1. **`git diff --stat`** — every path should be a harness path or a `.harness-new`.
-   Anything else appearing = stop, investigate.
-2. **Resolve every `.harness-new`**: `diff -u file file.harness-new` (or the
-   editor's compare view). Typical outcome on a repo like finduck: your
-   project-customized skill is *older* than the kit's v2 — take the kit's, then
-   move any project-specific line it contained into `docs/` where it belongs.
-   Delete the `.harness-new` when done; none may survive the merge.
-3. **`ls -la .claude/skills`** — confirm the per-skill links resolve. Sync replaces
-   a legacy parent link such as `.claude/skills -> ../.agents/skills` with a real
-   discovery directory, then preserves foreign entries inside that directory.
-4. **Build + tests green** — the install must be inert for the running app; if a
-   markdown-only change broke the build, something is deeply wrong: revert.
-5. Merge to `dev` first if the repo has one; `main` only after a normal review.
-   Never install directly on `main` in a repo that auto-deploys (finduck does).
+If a brain review or later progress commit moved the snapshot before verification,
+use a bounded qualification task for the same pending feature and a new run.
+Never edit old specs, receipts, or records to fit later state. Failed, no-op,
+unrelated, null-evidence, or legacy runs cannot substitute for current acceptance.
+Declare `bootstrap: true` authoring-only exemptions before Gate 0; they are not
+a loophole for code whose worker failed.
 
-### Verify checklist (both flavors, before committing)
+### Real end-to-end proof
 
-- [ ] `claude` in the repo → "which skills do you see?" lists the kit skills
-- [ ] `cat .claude/skills/mission-init/SKILL.md` resolves through the symlink
-- [ ] AGENTS.md contains zero `{{` and is under ~200 lines
-- [ ] No `*.harness-new` files remain
-- [ ] `.harness-version` exists (updates depend on it)
-- [ ] Build/tests green
+Phase 1 did not finish at unit-test green. A disposable consumer installed the
+candidate in explicit development mode, froze an approved real economy seat,
+and used authenticated Codex/Luna to change and commit one nonce-bearing file.
+That run was verified and separately accepted. The
+[F007 archive](docs/missions/20260821-execution-truth/evidence/f007/README.md)
+contains the fleet, task, spec, receipt, VerificationRecord, feature acceptance,
+sanitized log, hash manifest, and full consumer Git bundle.
 
-## How the pieces trigger each other
+A fresh process can reconstruct authorization → invocation → actual Git change
+→ verification → acceptance without the original temporary repository or chat:
 
-### Anatomy — who reads what
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 docs/missions/20260821-execution-truth/evidence/f007/reconstruct.py
+PYTHONDONTWRITEBYTECODE=1 bash docs/missions/20260821-execution-truth/evidence/f007/test-reconstruct.sh
+```
+
+Expect reconstruction `"result": "PASS"` and `RECONSTRUCTION TESTS PASSED`;
+the regression checks include tampering and acceptance rebinding. Ordinary
+`.tasks/` evidence is machine-local; a local parent-mission audit needs those
+files. A fresh clone uses this curated archive. Do not indiscriminately commit
+provider transcripts, credentials, or unsanitized runtime evidence.
+
+## Portable layers and discovery
+
+| Layer | What belongs there |
+| --- | --- |
+| `AGENTS.md` | Short repository rules and pointers; project-specific consumer instructions |
+| `docs/` | On-demand architecture, domain, design, and other knowledge |
+| `.agents/skills/` | Canonical reusable procedures, loaded when their triggers match |
+| `docs/missions/` | Protocol/templates plus durable project-owned mission state |
+
+Runtime `.tasks/` evidence complements those layers; it is not a second mission
+state machine. Use `features.json` for acceptance, not an agent's self-report.
+
 ```mermaid
 flowchart TB
-  subgraph TOOLS["Agent CLIs"]
-    CC["Claude Code"]
-    CU["Cursor (agent)"]
-    AGY["Antigravity (agy)"]
-    CX["Codex"]
-  end
-  subgraph L1["Layer 1 — always-loaded RULES"]
-    AG["AGENTS.md<br/>project block + working protocol"]
-    CW["CLAUDE.md (thin)"] --> AG
-    GW["GEMINI.md (thin)"] --> AG
-  end
-  subgraph L2["Layer 2 — on-demand KNOWLEDGE: docs/"]
-    ORCH["missions/ORCHESTRATION.md<br/>+ MODEL_ROUTING + templates"]
-    KD["ARCHITECTURE / DATABASE /<br/>DESIGN / DOMAIN"]
-  end
-  subgraph L3["Layer 3 — portable PROCEDURES: .agents/skills/"]
-    MI["mission-init"]
-    DW["dispatch-worker"]
-    SKF["skillify"]
-    PS["supabase-migration · shadcn-luma ·<br/>react-conventions · mcp-hygiene · cloudflare-deploy"]
-  end
-  subgraph L4["Layer 4 — dormant LOOP: docs/missions/"]
-    TPL["ORCHESTRATION · MODEL_ROUTING · templates/<br/>+ YYYYMMDD-slug/ instances"]
-  end
-  subgraph ENF[".claude/ — advisory permissions (Claude Code only)"]
-    SET["settings.json<br/>allow / deny"]
-    RUL["rules/<br/>path-gated pointers"]
-    REV["agents/code-reviewer<br/>read-only"]
-  end
-  SYM[".claude/skills · .cursor/skills · .gemini/skills<br/>(symlinks → .agents/skills)"]
-  CC --> CW
-  AGY --> GW
-  CU --> AG
-  CX --> AG
-  TOOLS --> SYM --> L3
-  AG -. "points to, on demand" .-> L2
-  AG -. "match a task → read the skill" .-> L3
-  PS -. "project specifics live in" .-> KD
-  MI -- "copies, never freestyles" --> TPL
-  RUL -- "auto-load when paths match,<br/>then point to" --> PS
-  SET -- "requests tool restrictions<br/>(client enforcement varies)" --> CC
+  Clients["Local agent clients"] --> Rules["Consumer AGENTS.md;<br/>thin CLAUDE.md and GEMINI.md wrappers"]
+  Clients --> Discovery[".claude/skills, .cursor/skills,<br/>.gemini/skills, .codex/skills"]
+  Discovery -->|per-skill symlinks| Skills["Canonical .agents/skills"]
+  Rules -.-> Docs["Project docs and mission protocol"]
+  Skills --> Procedures["mission-init, dispatch-worker,<br/>guard-verification, skillify"]
+  Skills --> Project["Triggered stack procedures:<br/>React, UI, Supabase, Cloudflare, MCP hygiene"]
+  Procedures --> Missions["docs/missions/date-slug:<br/>goal, fleet, tasks, progress, features, verification"]
+  Missions --> Launchers["Shared execution and verification scripts"]
+  Launchers --> Runtime[".tasks: specs, receipts, logs;<br/>local inventory proposal"]
+  Settings[".claude: client permissions,<br/>path rules, reviewer configuration"] -.->|Claude-specific guidance| Clients
 ```
 
-### Mission lifecycle — what triggers what
+`scripts/sync-skills.sh` consumes the manifest to create individual symlinks in
+real discovery directories. It replaces a legacy parent link such as
+`.claude/skills -> ../.agents/skills` safely and preserves foreign discovery
+entries. New consumer skills belong outside the manifest-owned skill names.
+
+Reusable skills use the [Agent Skills format](https://agentskills.io). Keep
+procedure details out of always-loaded rules and domain knowledge out of shared
+skills. The `mcp-hygiene` procedure keeps external queries scoped and persists
+needed evidence instead of filling mission context with connector output.
+
+### Claude Code client permission configuration
+
+`.claude/settings.json` is a **client permission configuration**, not an absolute
+security boundary. Its requested allow/deny rules, credential-read restrictions,
+and any project-specific hooks depend on client behavior. Portable repository
+rules, task scope, review, and verification apply across all providers.
+
+`.claude/rules/` contains path-gated pointers to relevant skills/docs.
+`.claude/agents/code-reviewer.md` configures a reviewer with Read/Grep/Glob tools
+and PASS/FAIL findings; it is not proof of physical containment or mandatory
+delegation to that client. MCP connections, local settings, and personal memory
+are project/user concerns, not shared harness payload assumptions.
+
+## Installing and updating consumers
+
+Run these tools **from the harness clone**, targeting a clean Git repository
+with a baseline commit. Normal propagation requires a clean source at the
+manifest's exact **annotated release tag on HEAD**. `--dev` or
+`--allow-untagged` is only for explicit local development/smoke work, not normal
+consumer adoption. Neither installer nor updater commits or merges for you.
+
+```bash
+# First install, from a clean published tagged harness source:
+bash scripts/install-harness.sh /absolute/path/to/consumer
+# Later update of a managed consumer, from that kind of source:
+bash scripts/update-harness.sh /absolute/path/to/consumer
+# Explicit local development/smoke only; not a published release:
+bash scripts/install-harness.sh --dev /absolute/path/to/disposable-consumer
+```
+
 ```mermaid
 flowchart TD
-  U["You: 'Start a mission: … (fleet tier)'"] --> MI["mission-init skill"]
-  MI -->|"copies from docs/missions/templates/"| F["docs/missions/slug/<br/>GOAL + features + PROGRESS + tasks/T-001"]
-  F --> G0{"GATE 0<br/>you approve features + fleet?"}
-  G0 -- no --> MI
-  G0 -- yes --> DW["dispatch-worker skill"]
-  DW -->|"precedence: task > Fleet > spawn-worker.sh"| SPAWN["scripts/spawn-worker.sh<br/>codex|agent|agy|claude → .tasks/logs/"]
-  SPAWN --> W["Worker (codex/agent/agy/claude -p)<br/>reads AGENTS.md + T-00x + named skills"]
-  W -->|"edits, commits"| REPO[("git repo")]
-  REPO --> REV["code-reviewer subagent<br/>diff vs hard rules + deny-list"]
-  REV -- FAIL --> RW["rewrite task (max 2)<br/>or reassign / escalate tier"] --> DW
-  REV -- PASS --> FLIP["verify, then orchestrator<br/>accepts feature"]
-  FLIP --> MORE{"features left?"}
-  MORE -- yes --> DW
-  MORE -- no --> SKF["skillify skill<br/>evidence ≥2 → draft SKILL.md → you approve"]
-  SKF -->|"upstream commit + tag"| HARN[("purrfect-harness repo")]
-  HARN -->|"update-harness.sh"| OTHER[("finduck · consulenza360 ·<br/>shyft.me · aldoo.ai")]
+  Source["Harness source:<br/>manifest and release validation"] --> Pre["Consumer preflight:<br/>Git repository and clean tree"]
+  Pre --> Operation{"Install or update?"}
+  Operation -->|first install| Install["No .harness-version;<br/>refuse conflicting control files before writes"]
+  Install --> IB["Branch chore/harness-install"]
+  IB --> Payload["Manifest payload: absent copy; identical skip;<br/>different propose .harness-new"]
+  Payload --> Agents["AGENTS special case:<br/>preserve existing instructions and root template"]
+  Operation -->|managed update| Update["Require valid .harness-version"]
+  Update --> UB["Branch chore/harness-VERSION"]
+  UB --> Owned["Replace only manifest-owned skills and paths;<br/>preserve project-owned files"]
+  Owned --> Settings["Existing different settings.json:<br/>propose settings.json.new"]
+  Agents --> Sync["Sync per-skill discovery;<br/>record .harness-version"]
+  Settings --> Sync
+  Sync --> Human["Human: customize or port rules;<br/>resolve proposals; inspect full diff"]
+  Human --> Checks["Consumer checks and appropriate<br/>real-mission qualification"]
+  Checks --> Merge["Reviewed commit and merge<br/>under consumer deployment policy"]
 ```
 
-## What's in the box
+### First install: new or existing project
+
+`install-harness.sh` refuses an already-managed target. Existing consumer
+`harness-manifest.json`, `scripts/harness-manifest.py`, or
+`scripts/sync-skills.sh` (including symlinks) are hard conflicts: it refuses
+**before writes**, rather than installing around an untrusted control file.
+For other payload files, absent → copy, byte-identical → skip, different →
+`<path>.harness-new` proposal; the existing file stays intact.
+
+`AGENTS.md` is stricter: an existing file is neither overwritten nor proposed
+against. If it exists and root `AGENTS.md.template` is absent, the consumer
+skeleton is copied to that template for manual porting. If both exist, both
+remain untouched. If AGENTS is absent, the skeleton becomes `AGENTS.md`.
+The source is `docs/templates/AGENTS.md.template`, never this harness's own AGENTS.
+
+For a new project, fill the skeleton's stack, commands, boundaries, and mission
+rules. For an existing project, manually port applicable workflow changes while
+preserving its instructions. Keep shared skill changes upstream and consumer
+specifics in project docs or foreign skills. Removing an unused manifest-owned
+skill is not permanent pruning: an update restores it. Prefer leaving optional
+procedures dormant unless their trigger applies.
+
+### Update: ownership decides what may change
+
+`harness-manifest.json` is the single distribution ownership source; these groups
+explain the policy, not a second hand-maintained payload list:
+
+| Owner/treatment | Examples and behavior |
+| --- | --- |
+| Harness-owned, replaced on update | Manifest-named canonical skills, protocol/templates, helper scripts, schemas, manifest, Claude rule/reviewer stubs |
+| Project-owned, preserved | Root `AGENTS.md` and `AGENTS.md.template`, existing `CLAUDE.md`/`GEMINI.md`, product docs, dated mission instances, foreign skills |
+| Manual merge | Existing different `.claude/settings.json` produces `.claude/settings.json.new`; a missing file gets the baseline |
+| Management marker/discovery | `.harness-version` records the installed version; manifest-owned per-skill links are refreshed while foreign discovery entries survive |
+
+Harness-owned directories and named skills are replaced as units, not merged
+with consumer customizations. Put local additions in project-owned locations.
+The updater refuses a missing or invalid `.harness-version`. It preserves old
+mission evidence; it does not migrate it or invent missing UUID/acceptance fields.
+Legacy evidence may fail the current strict audit. Review project-owned mission
+rules manually and start new work from the current templates/frozen fleet.
+
+README, CHANGELOG, and release instructions stay in this distribution repository;
+they are not copied wholesale into the consuming product.
+
+### Consumer review checklist
+
+- [ ] Inspect full `git diff` and untracked additions, including proposed files;
+  every change is explained by the manifest, discovery, or deliberate customization.
+- [ ] Resolve all `.harness-new` and `settings.json.new` proposals before merging.
+- [ ] Fill new AGENTS placeholders or manually port workflow rules into existing
+  project instructions; keep those rules short and point to detailed docs.
+- [ ] Check per-skill links resolve in all four discovery directories, and confirm
+  the intended client actually discovers the procedures.
+- [ ] Preserve foreign skills, project instructions, and mission instances;
+  confirm `.harness-version` records the intended candidate/release.
+- [ ] Review client settings for this project's actual commands and risks.
+- [ ] Run project checks. For workflow adoption, qualify a small real mission;
+  file-copy success alone is not execution proof.
+- [ ] Commit and merge on the consumer's review/deployment path; do not bypass
+  its normal gates or assume this harness authorizes deployment.
+
+## Repository map and checks
 
 | Path | Role |
-|---|---|
-| `AGENTS.md` | Repository-specific instructions for this harness |
-| `docs/templates/AGENTS.md.template` | Consumer skeleton, customized and owned by the consumer |
-| `CLAUDE.md`, `GEMINI.md` | Thin wrappers → AGENTS.md |
-| `docs/missions/ORCHESTRATION.md` | The loop: orchestrator protocol, worker dispatch, review gates |
-| `docs/missions/MODEL_ROUTING.md` | GATE 0 / mission-advance model routing (mission-scoped only) |
-| `docs/missions/templates/` | GOAL / features / PROGRESS / WORKER_TASK templates |
-| `docs/missions/<slug>/` | Instance mission (project-owned; updater never deletes) |
-| `.agents/skills/` | Canonical skills (portable, agnostic core) |
-| `scripts/sync-skills.sh` | Symlinks skills into every tool's path |
-| `scripts/active-mission.sh` | Resolve the single active mission folder |
-| `scripts/spawn-worker.sh`, `scripts/spawn-brain.sh` | Authorized local CLI runs with immutable specs and terminal receipts |
-| `scripts/verify-mission.sh`, `scripts/accept-feature.sh` | Run-specific verification, separate acceptance, and mission audit |
-| `harness-manifest.json` | Distribution ownership and exact release/version policy |
+| --- | --- |
+| `harness-manifest.json`, `scripts/harness-manifest.py` | Distribution ownership, version/tag validation, install/update/sync inputs |
+| `docs/missions/README.md`, `ORCHESTRATION.md`, `MODEL_ROUTING.md` | Mission protocol, authority, routing preferences |
+| `docs/missions/templates/`, `docs/templates/AGENTS.md.template` | Worker/mission formats and consumer instruction skeleton |
+| `.agents/skills/`, `scripts/sync-skills.sh` | Canonical procedures and manifest-driven discovery |
+| `scripts/fleet-inventory.sh`, `scripts/fleet_state.py` | Live proposal/probe health, approved fleet freeze/validation/resolution |
+| `scripts/spawn-brain.sh`, `scripts/spawn-worker.sh` | Role-aware local CLI launchers |
+| `scripts/dispatch_policy.py`, `execution_spec.py`, `execute_provider.py`, `execution_runner.py`, `execution_receipt.py` | Preflight/lock, immutable authorization, shared adapter/lifecycle, terminal evidence |
+| `scripts/verify-mission.sh`, `verification_record.py`, `accept-feature.sh` | Exact-run verification, mission audit, separate orchestrator acceptance |
+| `schemas/`, `tests/` | Artifact contracts and mounted positive/negative regressions |
+| `docs/missions/20260821-execution-truth/` | Completed Phase 1 mission, reviews, acceptance, and smoke archive |
+| `docs/RELEASING.md`, `docs/PUBLISHING.md`, `.github/workflows/` | Release/adoption procedure and CI/publication entry points |
 
-## Claude Code client permission configuration (`.claude/`)
+From the harness root:
 
-The portable layers above are shared guidance and process. `.claude/settings.json`
-is a Claude Code client permission configuration; it can request allow/deny behavior
-from that client, but is not an absolute security boundary or a privileged,
-Claude-only enforcement mechanism. The repository rules, task allow-lists, review,
-and verification apply to every client.
+```bash
+shellcheck scripts/*.sh tests/*.sh
+git ls-files -z '*.json' | xargs -0 -n 1 sh -c 'python3 -m json.tool "$1" >/dev/null' sh
+PYTHONDONTWRITEBYTECODE=1 bash tests/run-tests.sh
+bash scripts/install-harness.sh --dev --validate-release
+git diff --check
+```
 
-- `.claude/settings.json` — requested permissions: destructive commands (`rm -rf`,
-  `db reset`, force-push) are denied where the Claude client honors them; routine verification commands
-  (typecheck, tests, git read-ops, migration dry-run) are pre-allowed so sessions
-  don't stall on prompts. Credential files are deny-listed from reads.
-  Extend per project; add hooks (e.g. PostToolUse formatters) as needed.
-- `.claude/rules/` — path-gated pointers: touching `supabase/**` or UI paths
-  auto-loads a 10-line rule pointing at the relevant skill + docs. Automatic
-  progressive disclosure; the canonical knowledge stays in the portable layers.
-- `.claude/agents/code-reviewer.md` — a read-only subagent (Read/Grep/Glob only)
-  for the REVIEW step of the loop: fresh context, physically cannot edit,
-  verdicts are PASS/FAIL with file:line findings and a flywheel note.
+Require the final `ALL TESTS PASSED` banner, not partial output. The suite uses
+isolated tagged/untagged fixtures and real entry points for dispatch, provider
+contracts, terminal receipts, scope, verification/acceptance, installation,
+ownership, and release validation. The guard-verification procedure additionally
+requires the intended violation to reach and fail the intended guard, rather than
+an unrelated setup error. Archived smoke reconstruction is a separate check.
 
-Deliberately NOT included (see docs: code.claude.com/docs/en/claude-directory):
-`commands/` (superseded by skills), `output-styles/` (personal/cosmetic),
-`workflows/` (save one from /workflows AFTER the loop is proven manually),
-`.mcp.json` (per-project, add when a repo needs a server), `settings.local.json`
-/ auto-memory / agent-memory (personal or Claude-written, never committed by you).
+## Mission completion is not automatic release
 
-## Updating consuming repos (ownership model)
+```mermaid
+flowchart TD
+  Done["Mission complete:<br/>accepted features and registered human gates"] --> Skills["skillify assessment:<br/>no change or human-approved skill proposal"]
+  Skills --> Candidate["Upstream changes, compatibility review,<br/>chosen version, checks"]
+  Candidate --> Approval{"Human authorizes tag and publication?"}
+  Approval -->|not yet| Wait["Remain development baseline"]
+  Approval -->|yes| Tag["Clean exact annotated manifest tag"]
+  Tag --> CI["Push authorized branch/tag;<br/>CI and tag Release workflow"]
+  CI --> Published["Validated notes and ZIP published"]
+  Published --> Adopt["Consumer updater branch;<br/>manual migration review"]
+  Adopt --> Proof["Consumer checks and real-mission<br/>qualification before merge"]
+```
 
-Every path has exactly one owner, and ownership decides what an update may touch:
-KIT-OWNED (overwritten by updates): the manifest skills in .agents/skills/,
-docs/missions/{ORCHESTRATION,MODEL_ROUTING,README,templates}, path stubs,
-.claude/rules/, .claude/agents/, kit scripts (sync/update/active-mission/spawn-worker).
-PROJECT-OWNED (never touched): AGENTS.md, CLAUDE.md/GEMINI.md, product docs/,
-docs/missions/<YYYYMMDD-*>/ instance folders, project-specific skills. MERGED:
-.claude/settings.json — updates write a .new file for manual diff, never overwrite.
+At mission end, `skillify` reviews repeated evidence, not speculative lessons.
+Graduation needs recurrence, deterministic steps, verifiable results, and no
+existing coverage. Prefer a patch to an existing procedure; present the full
+proposal and obtain human approval before changing skills. This is a reviewed
+improvement loop, **not an automatic learning system**.
 
-Two laws: (1) never edit a kit-owned file inside a consuming repo — project
-specifics go in docs/ or a project-only skill; (2) improvements flow UPSTREAM
-first (repo learns → skillify → commit here → tag → propagate), never sideways.
+For release, choose the version from actual consumer compatibility under
+[RELEASING.md](docs/RELEASING.md), then align README, CHANGELOG, and manifest.
+Cross-repository dispatch removal and stricter mission evidence require migration
+review; neither an automatic major bump nor the current development number is
+assumed. Tags, remote changes, publication, and consumer propagation need their
+own authorization. Never move/delete a published tag.
 
-Propagate with: `bash scripts/update-harness.sh /path/to/repo` — requires a
-clean target tree, works on a branch, records .harness-version, and leaves the
-commit decision to you.
-
-## Rules of ownership
-
-- **Orchestrator (Opus/Sol; Fable on escalation):** writes mission folder GOAL + features,
-  writes worker tasks, spawns local CLIs via spawn-worker.sh, reviews diffs, updates
-  AGENTS.md when decisions change. Never absorbs fleet work into one chat when CLIs exist.
-- **Workers (agent / Codex / agy / Claude Haiku):** implement exactly one task file at a
-  time via their CLI, follow skills, commit, and append to mission PROGRESS.md. Never
-  edit `features.json`; report verification evidence for the orchestrator to accept.
-- **You (human):** approve the feature list, review at gates, merge. Every correction
-  you make in code review is a missing line in AGENTS.md or a skill — add it there,
-  not just in the diff.
+The tag-triggered Release workflow validates the exact manifest tag, extracts
+the top changelog entry, builds the ZIP, and publishes the GitHub Release.
+Do not create a duplicate manual release. Inspect successful CI/release results,
+then update selected consumers from the published clean tagged source, review
+project-owned instructions, and qualify actual workflow behavior before merging.
