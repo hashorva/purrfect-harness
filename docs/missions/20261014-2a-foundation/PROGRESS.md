@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Front Desk (Sonnet 5.5) — T-001-R2 reviewed (mechanical) and verified; T-002 dispatch
+
+- **Mechanical review:** run `4c1da625-c67d-40df-ac5f-585cbf9f69e1` (claude haiku, effort medium), receipt `.tasks/receipts/4c1da625-c67d-40df-ac5f-585cbf9f69e1.json`: outcome `completed`, exit 0, scope pass, commit `a01eca8`, changed paths `tests/test-verification-record.py` and PROGRESS.md only. `verify-mission.sh --run-id 4c1da625-c67d-40df-ac5f-585cbf9f69e1` → `VERIFY PASS`, exit 0. Record `verification/4c1da625-c67d-40df-ac5f-585cbf9f69e1.json` is **slice evidence for F001 (T-001-R2), not F001 acceptance**.
+- **Correction to the worker's entry:** it says the clean-tree re-check result is "see below" and gives no run id. Result: the verifier ran all four task checks outside the worker (label-only guard run, full guard test, clean tree, full suite) and they passed. Run id is `4c1da625-c67d-40df-ac5f-585cbf9f69e1`.
+- **Review class:** guard test → Architect review, batched with T-002 and T-003 (Architect run 4 of 4). Not yet reviewed; F001 cannot be accepted before that PASS.
+- **Budget counters:** worker runs 4 of 12; Architect 3 of 4.
+- **Next:** dispatch T-002 on `codex.premium` (terra, medium).
+
 ## 2026-10-14 — Worker (claude.economy, haiku) — T-001-R2 guard mutation compiles
 
 - **Task:** T-001-R2 (F001), attempt 1 of 2. Run id not supplied in the task; no receipt written by this worker.
