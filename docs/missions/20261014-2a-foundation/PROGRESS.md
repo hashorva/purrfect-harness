@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Human — GATE 0 (chair option 2)
+
+- **Verdict:** option 2 approved: freeze now with the brain on `claude` / `opus`, effort high.
+- **Chair intent:** Opus via agy (Google AI Pro pool). Interim: Opus via claude, because the v3 brain seat cannot carry an agy model. Switch to agy Opus when F001 (registry lets agy carry an Opus seat) and F004 (logged mid-mission change) are both accepted; the switch is a logged drift event, not a fleet rewrite.
+- **Change:** F004 gets the step "the chair seat can resolve to agy claude-opus-5-5-high, and the change is logged as a drift event." (draft-stage edit, before freeze).
+- **Assumption (Front Desk):** worker seats frozen at effort `medium`, as in Phase 1; speed `standard` for cursor, `unknown` elsewhere. Say so if you want other values before dispatch beyond T-001.
+
 ## 2026-10-14 — Human — GATE 0
 
 - **Verdict:** approved with changes (recorded by Front Desk from the owner's message).

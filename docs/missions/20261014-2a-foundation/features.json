@@ -50,6 +50,7 @@
         "Cursor and agy effort is encoded in the model name from the registry; a test lists the encoding for each",
         "The unproven `model[effort=…,fast=…]` format is either proven by a recorded probe or removed; no unproven format ships",
         "The FALLBACKS constant is deleted from scripts/fleet_state.py (`grep -nE '^FALLBACKS *= *[({]' scripts/*.py` exits 1); an unavailable family stays `unavailable`, never a guessed model",
+        "the chair seat can resolve to agy claude-opus-5-5-high, and the change is logged as a drift event.",
         "shellcheck and bash tests/run-tests.sh exit 0"
       ],
       "passes": false
