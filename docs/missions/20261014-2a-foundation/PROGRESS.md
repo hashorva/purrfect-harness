@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Front Desk (Sonnet 5.5) — T-001-R1 reviewed and verified; Architect review requested
+
+- **Mechanical review (receipt, scope, exit codes, verifier only):** run `8d4ec44c-791c-45a5-b672-8e1454c89a32`, receipt `.tasks/receipts/8d4ec44c-791c-45a5-b672-8e1454c89a32.json`: outcome `completed`, exit 0, scope pass, commit `68942df`, changed paths all in the allow-list. `bash scripts/verify-mission.sh --run-id 8d4ec44c-791c-45a5-b672-8e1454c89a32 docs/missions/20261014-2a-foundation` → `VERIFY PASS`, exit 0.
+- **Record:** `verification/8d4ec44c-791c-45a5-b672-8e1454c89a32.json` is **slice evidence for F001 (T-001-R1), not F001 acceptance**. F001 is accepted only on the run that completes it, after a current `verify-mission.sh`. No `accept-feature.sh` was run.
+- **Roles for the rest of 2A (owner):** Front Desk review is mechanical only. Routine diffs go to the `code-reviewer` subagent. Guards, safety tests, verification/acceptance/dispatch code, or any diff the Front Desk is unsure about go to the Architect via `spawn-brain.sh ... review`.
+- **REVIEW REQUEST for the Architect (commit `68942df`, changes the guard-mutation test in `tests/test-verification-record.py`):** run `git show 68942df`. Confirm, with evidence: (1) every original mutation (labels in the `mutations` tuple) is still applied; (2) each mutation still makes the focused test fail (compare against the pre-change file at `15d9de6`); (3) nothing in the live tree is written by the test (check `git status --short` and file hashes of `scripts/` before and after a run). End your PROGRESS entry with the line `Verdict: PASS` or `Verdict: FAIL`, and list your evidence.
+
 ## 2026-10-14 — T-001-R1 worker — complete; awaiting orchestrator verification
 
 - **Checked:** every `tests/test-*.py` file and `tests/run-tests.sh` for filesystem writes, copies, deletes and permission changes. The integration tests' mutations target their temporary fixture repositories; `tests/test-verification-record.py` was the live-tree writer. Its guard mutation now runs against a temporary copy of `scripts/`, `tests/`, `schemas/` and `docs/missions/templates/`, removed by `TemporaryDirectory` even on failure. No other live-tree writes were found.
