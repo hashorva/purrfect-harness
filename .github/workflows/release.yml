@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # Publish an existing tag again after a failed run (never moves or creates a tag).
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing annotated release tag to publish, for example v3.0.0"
+        required: true
 
 permissions:
   contents: write
@@ -10,11 +16,20 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+
+      # actions/checkout writes refs/tags/<tag> as a lightweight ref to the commit.
+      # Fetch the real tag object so the guard can prove the tag is annotated.
+      - name: Fetch the annotated tag object
+        run: git fetch --force --no-tags --depth=1 origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
 
       - name: Guard — validate manifest, versions, clean source, and annotated tag
-        run: python3 scripts/harness-manifest.py --root . --require-release --trigger-tag "$GITHUB_REF_NAME" validate
+        run: python3 scripts/harness-manifest.py --root . --require-release --trigger-tag "$RELEASE_TAG" validate
 
       - name: Extract release notes from CHANGELOG
         run: |
@@ -23,7 +38,7 @@ jobs:
 
       - name: Build kit archive
         run: |
-          SLUG="purrfect-harness-${GITHUB_REF_NAME}"
+          SLUG="purrfect-harness-${RELEASE_TAG}"
           mkdir -p "/tmp/$SLUG"
           rsync -a --exclude '.git' --exclude '.github' ./ "/tmp/$SLUG/"
           (cd /tmp && zip -qr "$GITHUB_WORKSPACE/$SLUG.zip" "$SLUG")
@@ -32,7 +47,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "purrfect-harness $GITHUB_REF_NAME" \
+          gh release create "$RELEASE_TAG" \
+            --title "purrfect-harness $RELEASE_TAG" \
             --notes-file RELEASE_NOTES.md \
-            "purrfect-harness-${GITHUB_REF_NAME}.zip"
+            "purrfect-harness-${RELEASE_TAG}.zip"

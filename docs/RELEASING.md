@@ -74,6 +74,11 @@ top CHANGELOG entry, builds the ZIP, and creates the release automatically.
 Confirm both main CI and the tag release job succeed and inspect the published
 asset. Do not also create a duplicate release manually.
 
+If the release job fails and no GitHub Release exists for the tag, fix the cause
+on `main`, then run the Release workflow by hand (Actions → Release → Run
+workflow, input `tag`, for example `v3.0.0`). It publishes the existing tag with
+the fixed workflow. It never moves or creates a tag.
+
 Never move or delete a published tag. If it is wrong, preserve it and publish a
 corrected new version with an explanatory changelog entry.
 
