@@ -1,15 +1,16 @@
 ---
 title: Releasing purrfect-harness
-updated: 2026-10-06
+updated: 2026-10-14
 ---
 
 <!-- markdownlint-disable MD025 -->
 
 # Releasing (tag-driven)
 
-The current `2.3.1` version is an untagged development baseline after published
+The current `2.3.2` version is an untagged development baseline after published
 `v2.3.0`. Phase 1 implementation and its real-provider smoke mission are
-complete; the final release number and publication remain separate decisions.
+complete, and 2.3.2 adds portability and provider fixes on top. The final
+release number and publication remain separate decisions.
 
 Versioning is SemVer, interpreted for a harness:
 

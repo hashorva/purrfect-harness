@@ -58,7 +58,8 @@ bash scripts/spawn-worker.sh codex "$MISSION/tasks/T-XXX.md" \
 ```
 
 For Cursor, use the approved `agent` tier and its explicit `standard` or `fast`
-speed. Check the frozen seat before adapting the example.
+speed. The adapter calls the `cursor-agent` binary, because Grok Build also
+installs a bare `agent`. Check the frozen seat before adapting the example.
 
 The launcher prints `run_id` and the log path. Keep that UUID; never select a
 receipt by timestamp, task name, or “latest success.” One run writes:
@@ -139,9 +140,9 @@ artifact is needed. Commit verification and acceptance with the progress record.
 - Infrastructure failure (auth, quota, launch, transport): record what actually
   happened. It does not justify claiming success or changing an immutable record.
 - No-op execution: investigate the task and log; do not treat exit zero as evidence.
-- Missing final test output: report the check as unproven. An independent check
-  can qualify a candidate, but cannot manufacture a passing VerificationRecord
-  for an older snapshot.
+- Missing final test output: the exit code is the result. A check without an
+  exit code is unproven. An independent check can qualify a candidate, but
+  cannot manufacture a passing VerificationRecord for an older snapshot.
 - Before advancing a gate/status, run the current mission audit. Record the
   human verdict in PROGRESS.md and update status according to the approved gate.
 

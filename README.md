@@ -1,7 +1,7 @@
 ---
 title: Purrfect Harness
-version: 2.3.1
-updated: 2026-10-06
+version: 2.3.2
+updated: 2026-10-14
 ---
 
 # Purrfect Harness
@@ -27,8 +27,9 @@ acceptance. Files and Git evidence carry the handoff, not chat memory.
   [mission](docs/missions/20260821-execution-truth/GOAL.md) are accepted, Human
   Gates 1 and 2 are registered, and a real authenticated consumer smoke has
   [self-contained reconstruction evidence](docs/missions/20260821-execution-truth/evidence/f007/README.md).
-- **Release is a separate step:** `2.3.1` in this checkout is an untagged
-  development baseline, not a final release decision. The badge above reports
+- **Release is a separate step:** `2.3.2` in this checkout is an untagged
+  development baseline, not a final release decision. It adds the 2.3.2 fixes
+  (green CI, the `cursor-agent` lane, truthful model choice) to Phase 1. The badge above reports
   the published release, which may differ. Version selection, migration review,
   tagging, publication, and real-consumer adoption remain separate work.
 - **Phase 2+ is not implemented here:** no full AWU model, learning system,
@@ -155,7 +156,7 @@ general scheduler or a filesystem sandbox: scope checks cover **Git-visible
 changes in the declared workspace**, not arbitrary outside or ignored files.
 
 The shared provider adapter and runner own argv construction, lifecycle, and
-receipt creation for `codex`, Cursor `agent`, `agy`, and `claude`. Receipts record
+receipt creation for `codex`, Cursor (`cursor-agent`), `agy`, and `claude`. Receipts record
 `completed`, `failed`, `timed_out`, `interrupted`, or `launch_failed` outcomes.
 Timeout/interruption includes provider process-tree cleanup. Brain and worker
 timeouts default to 2400 seconds; their `SPAWN_BRAIN_TIMEOUT_SECS` and

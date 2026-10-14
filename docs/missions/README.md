@@ -1,6 +1,6 @@
 ---
 title: Missions
-version: 2.3.1
+version: 2.3.2
 ---
 
 # Missions
@@ -43,7 +43,7 @@ folder). Root-level `GOAL.md` / `features.json` are obsolete as of harness 2.0.0
 ## Starting a mission
 
 Follow `.agents/skills/mission-init/SKILL.md`. It creates the dated folder from
-templates, verifies local worker CLIs (`claude`, `codex`, `agent`, `agy`), and
+templates, verifies local worker CLIs (`claude`, `codex`, `cursor-agent`, `agy`), and
 stops at GATE 0.
 
 ## Fleet inventory (GATE 0)

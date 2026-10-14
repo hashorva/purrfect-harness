@@ -54,3 +54,7 @@ Complete only this feature and stay within the allow-list below.
 Max {{2}} attempts under this task. If exit criteria still fail, stop, record the
 exact failure in PROGRESS.md, and report back for a correction task. Never claim
 success when a required check's final result is unavailable.
+
+The result of a check is its exit code. Run the check and record the exit code.
+You do not need to see a summary line (for example a final banner). Do not stop
+only because the output is long or cut.

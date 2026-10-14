@@ -1,6 +1,6 @@
 ---
 title: Publishing & Releasing on GitHub
-updated: 2026-10-06
+updated: 2026-10-14
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -9,7 +9,7 @@ updated: 2026-10-06
 
 [RELEASING.md](RELEASING.md) is the versioning, preparation, tag, and consumer
 adoption procedure. This document covers GitHub publication. The current
-`2.3.1` version remains an untagged development baseline; it is not a release
+`2.3.2` version remains an untagged development baseline; it is not a release
 decision.
 
 Prerequisites: Git, GitHub CLI, and an authenticated account authorized for the
