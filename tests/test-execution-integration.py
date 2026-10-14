@@ -25,9 +25,11 @@ class WrapperIntegration(unittest.TestCase):
         (self.root / "scripts").mkdir()
         for name in ("execution_spec.py", "execution_receipt.py", "execution_runner.py",
                      "execute_provider.py", "fleet_state.py", "dispatch_policy.py",
+                     "harness_registry.py",
                      "spawn-worker.sh", "spawn-brain.sh", "verify-mission.sh", "verification_record.py",
                      "accept-feature.sh", "write-receipt.sh"):
             shutil.copy2(ROOT / "scripts" / name, self.root / "scripts" / name)
+        shutil.copy2(ROOT / "harness-registry.json", self.root / "harness-registry.json")
         self.task = self.root / "docs/missions/fixture/tasks/T-001.md"
         self.task.parent.mkdir(parents=True)
         self.mission = self.task.parent.parent

@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Worker (codex.premium, terra) — T-002 attempt 1 stopped: full-suite exit unavailable
+
+- **Changed (allow-list only):** `scripts/harness_registry.py` now validates legacy-name shape and exposes `legacy_view` plus `canonical_provider`; `scripts/fleet_state.py` loads providers, capabilities, seat specs and executables once from the registry's legacy view and fails closed with `ERROR: registry:` if it cannot load it. Added independent golden parity and negative-entry tests, fixture registry copies, and the registry test's `run-tests.sh` check.
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh`, manifest/features JSON validation, `python3 tests/test-fleet-state.py`, and `python3 tests/test-registry.py` all passed (exit 0).
+- **Focused verification:** `python3 tests/test-registry.py` (6 tests), `python3 tests/test-fleet-state.py`, live `fleet_state.py validate-fleet` against this mission's frozen fleet, both required literal-definition greps, and the `run-tests.sh` registry-test grep all passed (exit 0). The registry test includes the real CLI negative: a temporary repo with no `harness-registry.json` exits non-zero and prints `ERROR: registry:`.
+- **Blocking result:** the required single `bash tests/run-tests.sh` run was started once with output redirected to `/tmp/t002-20261014-suite.log`. The host terminated its background wrapper while it was in `VerificationRecord and acceptance real-entry contracts`; it wrote no `/tmp/t002-20261014-suite.exit` file and therefore no exit code is available. Per T-002's iteration policy, I did not start a second suite run and do not claim success.
+- **Not done:** no feature acceptance, feature/fleet/status edit, or gate change. A correction/retry task needs a terminal that can retain the one long suite process and capture its exit code.
+
 ## 2026-10-14 — Front Desk (Sonnet 5.5) — T-001-R2 reviewed (mechanical) and verified; T-002 dispatch
 
 - **Mechanical review:** run `4c1da625-c67d-40df-ac5f-585cbf9f69e1` (claude haiku, effort medium), receipt `.tasks/receipts/4c1da625-c67d-40df-ac5f-585cbf9f69e1.json`: outcome `completed`, exit 0, scope pass, commit `a01eca8`, changed paths `tests/test-verification-record.py` and PROGRESS.md only. `verify-mission.sh --run-id 4c1da625-c67d-40df-ac5f-585cbf9f69e1` → `VERIFY PASS`, exit 0. Record `verification/4c1da625-c67d-40df-ac5f-585cbf9f69e1.json` is **slice evidence for F001 (T-001-R2), not F001 acceptance**.

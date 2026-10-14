@@ -16,21 +16,19 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-PROVIDERS = ("claude", "codex", "agent", "agy")
-CAPABILITIES = {
-    "claude": {"efforts": ["low", "medium", "high", "xhigh", "max"], "speeds": ["unknown"]},
-    "codex": {"efforts": ["low", "medium", "high", "xhigh"], "speeds": ["unknown"]},
-    "agent": {"efforts": ["low", "medium", "high", "xhigh"], "speeds": ["standard", "fast"]},
-    "agy": {"efforts": ["low", "medium", "high"], "speeds": ["unknown"]},
-}
-SEAT_SPECS = {
-    "brain": ("claude", "opus"), "brain_fable": ("claude", "fable"),
-    "brain_codex": ("codex", "sol"), "cursor.premium": ("agent", "grok"),
-    "cursor.economy": ("agent", "composer"), "codex.premium": ("codex", "terra"),
-    "codex.economy": ("codex", "luna"), "agy.premium": ("agy", "pro"),
-    "agy.economy": ("agy", "flash"), "claude.premium": ("claude", "sonnet"),
-    "claude.economy": ("claude", "haiku"),
-}
+# This module is run directly, imported by sibling scripts, and loaded from a
+# file location by tests.  Make the sibling registry loader available in each.
+_SCRIPTS_DIR = str(Path(__file__).resolve().parent)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from harness_registry import RegistryError, legacy_view, load_registry
+
+try:
+    PROVIDERS, CAPABILITIES, SEAT_SPECS, EXECUTABLES = legacy_view(load_registry())
+except RegistryError as exc:
+    print(f"ERROR: registry: {exc}", file=sys.stderr)
+    raise SystemExit(1) from exc
+
 FALLBACKS = {"grok":"cursor-grok-4.5-high", "composer":"composer-2.5", "sol":"gpt-5.6-sol", "terra":"gpt-5.6-terra", "luna":"gpt-5.6-luna", "pro":"gemini-3.1-pro-high", "flash":"gemini-3.6-flash-high"}
 RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$")
 
@@ -92,8 +90,6 @@ def run(args):
         p=subprocess.run(args, text=True, capture_output=True, timeout=25, env={**os.environ,"TERM":"dumb"})
         return p.returncode, (p.stdout or "")+(p.stderr or "")
     except (OSError, subprocess.TimeoutExpired) as exc: return 1, str(exc)
-# Grok Build also installs a bare `agent`; the Cursor CLI's unambiguous name is `cursor-agent`.
-EXECUTABLES = {"agent": "cursor-agent"}
 def probe(provider):
     base={"probed_at":now(),"capabilities":CAPABILITIES[provider]}
     executable=EXECUTABLES.get(provider, provider)

@@ -290,6 +290,7 @@ class VerificationRecordIntegration(unittest.TestCase):
             temp_root = Path(temp_dir)
             for directory in ("scripts", "tests", "schemas", "docs/missions/templates"):
                 shutil.copytree(ROOT / directory, temp_root / directory)
+            shutil.copy2(ROOT / "harness-registry.json", temp_root / "harness-registry.json")
             self._assert_guard_mutations_break_focused_entries(temp_root)
 
     def _assert_guard_mutations_break_focused_entries(self, temp_root):

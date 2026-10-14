@@ -41,6 +41,13 @@ def validate_registry(data):
                 raise RegistryError(f"{label}.{field} must be a non-empty command array")
         if not isinstance(provider["legacy_names"], list):
             raise RegistryError(f"{label}.legacy_names must be an array")
+        if len(provider["legacy_names"]) > 1:
+            raise RegistryError(f"{label}.legacy_names must have at most one entry")
+        for legacy_name in provider["legacy_names"]:
+            if not isinstance(legacy_name, str) or not legacy_name.strip():
+                raise RegistryError(f"{label}.legacy_names entries must be non-empty text")
+            if legacy_name in providers:
+                raise RegistryError(f"{label}.legacy_names entry must not equal a provider key")
         if not isinstance(provider["capabilities"], dict):
             raise RegistryError(f"{label}.capabilities must be an object")
         _require_fields(provider["capabilities"], ("efforts", "speeds"), label + ".capabilities")
@@ -69,6 +76,40 @@ def load_registry(path=REGISTRY_PATH):
     except (OSError, json.JSONDecodeError) as exc:
         raise RegistryError(f"cannot load registry {path}: {exc}") from exc
     return validate_registry(data)
+
+
+def legacy_view(registry):
+    """Return the historical fleet-state names projected from the registry."""
+    validate_registry(registry)
+    names = {
+        key: provider["legacy_names"][0] if provider["legacy_names"] else key
+        for key, provider in registry["providers"].items()
+    }
+    providers = tuple(names[key] for key in registry["providers"])
+    capabilities = {
+        names[key]: provider["capabilities"]
+        for key, provider in registry["providers"].items()
+    }
+    seat_specs = {
+        seat: (names[provider], family)
+        for seat, (provider, family) in registry["seat_specs"].items()
+    }
+    executables = {
+        names[key]: provider["binary"]
+        for key, provider in registry["providers"].items()
+    }
+    return providers, capabilities, seat_specs, executables
+
+
+def canonical_provider(registry, name):
+    """Resolve a canonical key or its one supported persisted legacy name."""
+    validate_registry(registry)
+    if name in registry["providers"]:
+        return name
+    for key, provider in registry["providers"].items():
+        if name in provider["legacy_names"]:
+            return key
+    raise RegistryError(f"unknown provider: {name}")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 import copy
 import importlib.util
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -10,17 +13,41 @@ registry_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(registry_module)
 registry = registry_module.load_registry()
 
+# Golden copy of the fleet_state constants at commit 1345c67.  This must remain
+# independent from the registry so the parity proof is not self-referential.
+GOLDEN_PROVIDERS = ("claude", "codex", "agent", "agy")
+GOLDEN_CAPABILITIES = {
+    "claude": {"efforts": ["low", "medium", "high", "xhigh", "max"], "speeds": ["unknown"]},
+    "codex": {"efforts": ["low", "medium", "high", "xhigh"], "speeds": ["unknown"]},
+    "agent": {"efforts": ["low", "medium", "high", "xhigh"], "speeds": ["standard", "fast"]},
+    "agy": {"efforts": ["low", "medium", "high"], "speeds": ["unknown"]},
+}
+GOLDEN_SEAT_SPECS = {
+    "brain": ("claude", "opus"), "brain_fable": ("claude", "fable"),
+    "brain_codex": ("codex", "sol"), "cursor.premium": ("agent", "grok"),
+    "cursor.economy": ("agent", "composer"), "codex.premium": ("codex", "terra"),
+    "codex.economy": ("codex", "luna"), "agy.premium": ("agy", "pro"),
+    "agy.economy": ("agy", "flash"), "claude.premium": ("claude", "sonnet"),
+    "claude.economy": ("claude", "haiku"),
+}
+GOLDEN_FALLBACKS = {"grok":"cursor-grok-4.5-high", "composer":"composer-2.5", "sol":"gpt-5.6-sol", "terra":"gpt-5.6-terra", "luna":"gpt-5.6-luna", "pro":"gemini-3.1-pro-high", "flash":"gemini-3.6-flash-high"}
+
 
 class RegistryTests(unittest.TestCase):
     def test_parity_with_existing_constants(self):
         fleet_spec = importlib.util.spec_from_file_location("fleet_state", ROOT / "scripts/fleet_state.py")
         fleet = importlib.util.module_from_spec(fleet_spec)
         fleet_spec.loader.exec_module(fleet)
-        self.assertEqual(tuple(registry["providers"].keys()), tuple("cursor" if p == "agent" else p for p in fleet.PROVIDERS))
-        self.assertEqual({("agent" if p == "cursor" else p): v["capabilities"] for p, v in registry["providers"].items()}, fleet.CAPABILITIES)
-        expected_seats = {k: tuple("agent" if p == "cursor" else p for p in v) for k, v in registry["seat_specs"].items()}
-        self.assertEqual(expected_seats, fleet.SEAT_SPECS)
-        self.assertEqual(registry["fallbacks"], fleet.FALLBACKS)
+        providers, capabilities, seat_specs, executables = registry_module.legacy_view(registry)
+        self.assertEqual(providers, GOLDEN_PROVIDERS)
+        self.assertEqual(capabilities, GOLDEN_CAPABILITIES)
+        self.assertEqual(seat_specs, GOLDEN_SEAT_SPECS)
+        self.assertEqual(fleet.PROVIDERS, GOLDEN_PROVIDERS)
+        self.assertEqual(fleet.CAPABILITIES, GOLDEN_CAPABILITIES)
+        self.assertEqual(fleet.SEAT_SPECS, GOLDEN_SEAT_SPECS)
+        self.assertEqual(fleet.EXECUTABLES, executables)
+        self.assertEqual(registry["fallbacks"], GOLDEN_FALLBACKS)
+        self.assertEqual(fleet.FALLBACKS, GOLDEN_FALLBACKS)
 
     def test_each_required_field_is_checked(self):
         cases = [("root." + key, (key,)) for key in registry_module.ROOT_FIELDS]
@@ -44,6 +71,48 @@ class RegistryTests(unittest.TestCase):
         broken["providers"]["agent"] = copy.deepcopy(broken["providers"]["cursor"])
         with self.assertRaisesRegex(registry_module.RegistryError, "legacy name"):
             registry_module.validate_registry(broken)
+
+    def test_registry_type_and_legacy_name_guards(self):
+        cases = (
+            ("invalid billing class", ("doors", "claude", "billing_class"), "invalid"),
+            ("non-boolean no_zdr", ("doors", "claude", "no_zdr"), "false"),
+            ("boolean priority", ("doors", "claude", "priority"), True),
+            ("text priority", ("doors", "claude", "priority"), "1"),
+            ("two legacy names", ("providers", "cursor", "legacy_names"), ["agent", "old-agent"]),
+            ("legacy name equals provider key", ("providers", "cursor", "legacy_names"), ["codex"]),
+        )
+        for label, path, value in cases:
+            with self.subTest(label=label):
+                broken = copy.deepcopy(registry)
+                target = broken
+                for key in path[:-1]:
+                    target = target[key]
+                target[path[-1]] = value
+                with self.assertRaises(registry_module.RegistryError):
+                    registry_module.validate_registry(broken)
+
+    def test_canonical_provider_rejects_unknown_name(self):
+        self.assertEqual(registry_module.canonical_provider(registry, "cursor"), "cursor")
+        self.assertEqual(registry_module.canonical_provider(registry, "agent"), "cursor")
+        with self.assertRaisesRegex(registry_module.RegistryError, "unknown provider"):
+            registry_module.canonical_provider(registry, "missing")
+
+    def test_fleet_state_fails_closed_when_registry_is_missing(self):
+        with tempfile.TemporaryDirectory(prefix="fleet-state-no-registry-") as temp_dir:
+            temp_root = Path(temp_dir)
+            scripts = temp_root / "scripts"
+            scripts.mkdir()
+            for name in ("fleet_state.py", "harness_registry.py"):
+                shutil.copy2(ROOT / "scripts" / name, scripts / name)
+            fleet = temp_root / "fleet.json"
+            shutil.copy2(ROOT / "docs/missions/20261014-2a-foundation/fleet.json", fleet)
+            result = subprocess.run(
+                ["python3", "scripts/fleet_state.py", "validate-fleet", str(fleet)],
+                cwd=temp_root, text=True, capture_output=True,
+            )
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("ERROR: registry:", result.stderr)
+            self.assertIn("harness-registry.json", result.stderr)
 
 
 if __name__ == "__main__":

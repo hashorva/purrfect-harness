@@ -83,6 +83,7 @@ check "ExecutionSpec focused test leaves no scripts bytecode" test ! -e "$HARNES
 
 echo "== frozen fleet policy"
 check "fleet inventory retention and frozen resolution" python3 tests/test-fleet-state.py
+check "registry and fleet-state legacy parity" python3 tests/test-registry.py
 
 # F006 regressions must use the public propagation/release entry points. Tagged
 # and untagged source state is always isolated so this suite is independent of
