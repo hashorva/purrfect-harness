@@ -4,6 +4,74 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-009 (`865063c`, `d569a42`); T-039 agy plan
+
+- **Run:** `0b255653-faba-4606-a90a-e4a090fe1c97`; log `.tasks/logs/0b255653-faba-4606-a90a-e4a090fe1c97.log`; spec role `brain`, action `review`, base `216f0f8`, write scope this file only. The launcher writes the receipt `.tasks/receipts/0b255653-faba-4606-a90a-e4a090fe1c97.json` when this run ends; it did not exist while this entry was written. Worker evidence I read: receipt `695654ad-…` (completed, exit 0, scope pass, `9c00506` → `865063c`, 8 paths; its VerificationRecord is `fail`, kept) and receipt `fb836120-…` (completed, exit 0, scope pass, `8f85bd8` → `d569a42`, paths `tests/run-tests.sh` and PROGRESS.md; VerificationRecord `pass`).
+- **Method:** effects only. Old and new trees were `git archive` exports of `9c00506` and `d569a42`; launches and mutations ran in a scratch `git clone` (origin removed) in the session scratchpad.
+
+### Part 1 — T-009 review
+
+- **(1) Plain model ID, real message, PASS.** Contract 4 sets `resolved_model = model`. `tests/fixtures/cursor-model-rejection.txt` equals the fenced line in `evidence/F004-cursor-model-argument.md` section 1 byte for byte (6161 bytes), plus one final newline. `composer-2.5` and `grok-4.7-xhigh` are both in its Available models list.
+- **(2) Contracts 1-3 unchanged; old specs load, PASS.** I called `provider_contract` from the old and new trees on 1,764 synthetic specs (4 providers × marker absent/2/3 × 7 efforts × 3 speeds × 7 models, error cases included): 0 differences. New tree, contract 3 vs 4 for codex/claude/agy: 441 cases, 0 differences, so contract 4 changes only Cursor. All 55 specs under `.tasks/specs/` pass `load_persisted` (v1 ×6, v2 ×23, v3/c2 ×2, v3/c3 ×22, v3/c4 ×2), and each gives the same argv in both trees. That matters because receipts store an `argv_sha256` recomputed through this adapter. `test-execution-spec.py` (10 tests) and `test-execution-integration.py` (20 tests) exit 0 in the clone. The mission audit (`verify-mission.sh`) gives `VERIFY OK`, exit 0, before this entry.
+- **(3) Effort conflict refused; old specs cannot select contract 4, PASS.** `grok-4.7-xhigh`/medium, `composer-2.5-fast`/standard and `composer-2.5`/fast are refused before launch. v1/v2 specs carrying `provider_contract_version: 4` are rejected ("extra=provider_contract_version"); v1/v2 without the marker bind contract 1. On v3, `5`, `1`, `True` and `"4"` are rejected. Mutations, each compiled and run against `test-execution-spec.py` in the clone: removing the effort check, removing the fast/speed check, `>= 4` → `>= 3`, `>= 4` → `>= 99`, and contract 4 keeping the bracket form. All 5 were **killed** (failing subtests named in the run).
+- **(4) `tests/run-tests.sh` edit, PASS.** One line changed (expected argv `--model "$AGENT_MODEL"`). `cmp -s` still compares the whole argv including the intact final prompt, and the "bare agent (Grok Build) is never invoked" decoy check is unchanged.
+- **(5) No other dispatch gate changed, PASS.** `git diff --stat 9c00506 d569a42` over `spawn-worker.sh`, `spawn-brain.sh`, `dispatch_policy.py`, `execution_runner.py`, `execution_receipt.py`, `fleet_state.py`, `verification_record.py`, `accept-feature.sh`, `verify-mission.sh`, the registry files and `.agents/` is empty. `216f0f8` differs from `d569a42` only in mission docs.
+- **(6) Real launcher argv for both Cursor seats, PASS.** Real `spawn-worker.sh cursor … tasks/T-009.md --feature F004 --effort medium --speed standard` in the clone, with a fake `cursor-agent` first on PATH:
+  - `cursor.economy`: `cursor-agent -p --force --trust --workspace <clone> --model composer-2.5 <prompt>`. Spec contract 4; receipt completed, exit 0, scope pass.
+  - `cursor.premium`: exit 125, fake not invoked, stderr `ERROR: terminal execution evidence failed: cursor model name encodes effort xhigh; spec effort is medium`.
+  - These clone runs (`cc93dfc3-…`, `93764be5-…`, `16d1ae64-…`) are fake-provider probes, not routed tasks.
+- **Required follow-up, not blocking T-009 (folded into T-039 item 3):** `tests/test-execution-spec.py` stubs only `codex`, `claude`, `agent` and `agy`, not `cursor-agent`. If a contract 4 pre-launch guard regresses, its negative test launches the user's **real** `cursor-agent -p --force` from PATH. The test still fails, but only after a real provider call. `tests/test-execution-integration.py` does stub `cursor-agent`. In the unmutated suite no path reaches a provider: under the fake, only the mutated paths recorded launches.
+- **My process incident (for the budget record).** My first mutation run did not put a fake `cursor-agent` first on PATH, so the gap above launched the real CLI twice from a temp repo under `$TMPDIR`:
+  - Removed effort check: `cursor-agent … --model grok-4.7-xhigh "exact prompt"`, which ended within about 20 s. I could not tell whether it reached the model; its output was lost.
+  - Removed fast check: `cursor-agent … --model composer-2.5-fast "exact prompt"`. This is a **fast-mode model**, against the owner's "never fast modes" rule. I killed it after about 10 min.
+  - Neither run changed anything except the temp repo, which I deleted. The live tree stayed clean at `216f0f8`.
+  - **Count Cursor as 2 unplanned runs tonight, 1 of them fast-mode; the cost is unknown.** I re-ran all mutations with a fake `cursor-agent` and a 120 s cap.
+  - I also created `scripts/__pycache__` (`python3 -I` ignores `PYTHONDONTWRITEBYTECODE`) and removed it.
+  - Other CLI calls this run: `agy --version`, `agy --help`, `agy models` (non-billable; the same as the doctor's login check). No other real provider CLI ran.
+- **Non-blocking notes:**
+  - (a) The comment at `execute_provider.py:19-20` still says "contract 2 or 3" (fixed in T-039).
+  - (b) For `composer-2.5` (no effort token) the spec effort is recorded in the receipt's `resolved.effort` but never sent; F003/T-019 must not report it as applied.
+  - (c) The refusal comes after the spec is persisted, so it leaves a spec and log with no receipt. This is an existing pattern: 6 such specs are already in `.tasks/specs`, and the audit passes. The stderr prefix "terminal execution evidence failed" is misleading for a pre-launch refusal (optional backlog).
+  - (d) T-021 item 5 says "the adapter (contract 4) accepts every model `encode_model` produces". After T-039 it must say "the current contract": contract 4 accepts agy names, but real agy rejects that argv. T-013's "(5 if T-009 set 4)" becomes 6; its "current + 1" rule stands. The Front Desk should record both text changes at dispatch.
+  - (e) Input for P-2/T-020/F006: `agy --help` lists `--output-format text|json|stream-json` and `--json-schema`. These are help text only, not proven by a run.
+
+Verdict: PASS
+
+### Part 2 — T-039 plan (agy contract 5)
+
+- **Draft:** `.tasks/plans/0b255653-faba-4606-a90a-e4a090fe1c97/T-039.md` (gitignored, machine-local). Feature F004; category `adapter`; size M; review Architect; max 2 attempts. It parses with the real `dispatch_policy.worker_write_scope` (10 paths) and the verifier's bullet rules (10 JSON argv commands), and has no `{{`. Dry run of its fixture-line check: exit 0 on a correct fixture, exit 1 on a two-line one. **Front Desk:** copy it unchanged to `tasks/T-039.md` and commit it together with P-3's evidence before dispatch.
+- **Design:**
+  - Contract 5 = current + 1; contracts 1-4 stay byte for byte.
+  - agy at contract ≥ 5: the model must end in `-low|-medium|-high` and the token must equal the spec effort, else `SpecError` before launch. argv = contract 4 minus `--effort <e>`.
+  - A model with no effort token is refused, because the `--effort` form it would need is unproven (F004 step 7). Every model `agy models` lists here has a token: `gemini-3.8-flash-*`, `claude-opus-5-5-*`, `claude-sonnet-5-5-*`, `gpt-oss-120b-medium`.
+  - Exact argv (`<prompt>` last; agy has no workspace flag and runs in the repo cwd):
+    - low: `agy --dangerously-skip-permissions --print-timeout 30m --model gemini-3.8-flash-low -p <prompt>` (spec effort low)
+    - medium: `agy --dangerously-skip-permissions --print-timeout 30m --model gemini-3.8-flash-medium -p <prompt>` (spec effort medium)
+    - high: `agy --dangerously-skip-permissions --print-timeout 30m --model gemini-3.8-flash-high -p <prompt>` (spec effort high)
+  - The frozen `agy.economy` (`gemini-3.8-flash-high`, effort `medium`) **is refused** with `agy model name encodes effort high; spec effort is medium` unless the owner re-freezes.
+- **Precondition P-3 (Front Desk, before dispatch):** one included Flash request from `mktemp -d`: `agy --dangerously-skip-permissions --print-timeout 5m --model gemini-3.8-flash-medium -p "Reply with OK only."`. Record it verbatim as evidence section 2. The evidence file says the no-`--effort` form is untested, so it cannot ship unproven. If it fails, do not dispatch.
+- **Every file that asserts the old agy argv or would break (all in T-039's allow-list):**
+  - `scripts/execute_provider.py:38-44`.
+  - `tests/test-execution-spec.py:176`: contract 1 history, which stays; new cases are added.
+  - `tests/test-execution-integration.py`: `expected_argv` at :220-221, and the token-less agy fixture models at :263 and :932.
+  - `tests/run-tests.sh`: the fixture seat `agy.premium` model `agy-test-model` at :288 has no token, so the spawn in the agy block (:336-357) would be refused and its 3 checks would fail.
+  - `tests/test-seat-smoke.py:275-295`: it reads the **live frozen fleet**. `agy.economy` in `dirty` mode would be refused before launch, so `clone_reset` would be false and the test would fail. This is the consumer a T-009-style plan would miss.
+- **Checked and not consumers:**
+  - `.claude/settings.json:25`: the prefix `agy --dangerously-skip-permissions*` still matches.
+  - `CHANGELOG.md`, `docs/audits/`, `docs/missions/20260821-execution-truth/tasks/T-004.md`: history.
+  - `tests/test-fleet-state.py` (`agy models` stub), `tests/test-fleet-doctor.py` (version), `tests/test-registry.py` (capabilities).
+  - Skills and `MODEL_ROUTING.md` do not show the agy argv.
+- **Dependency order:** T-009 → (P-3) → T-039 → S2.
+  - T-039 must come before T-013 and T-020 (each adds "current + 1" to the same two files) and before T-021 (its adapter-acceptance test).
+  - It does **not** need to come before T-010: no shared files. I recommend dispatching it next anyway, so S2 can re-smoke `cursor.economy`, `cursor.premium` and `agy.economy` together. Review: Architect, alone or batched with T-010.
+  - Seat: not agy, not `cursor.premium`. `codex.economy` suggested (no `.agents/` edits).
+- **Owner decision — re-freeze `cursor.premium` and `agy.economy`?** Both seats are frozen with a model ID whose name encodes one effort and an effort field that says another: `grok-4.7-xhigh`/medium and `gemini-3.8-flash-high`/medium. Contracts 4 and 5 now refuse that contradiction instead of letting the CLI reject it or silently pick one. The model IDs came from the observed inventory the owner approved at GATE 0; the `medium` efforts were a Front Desk default ("Assumption (Front Desk): worker seats frozen at effort medium"). My recommendation:
+  - **Re-freeze both, changing only the effort to match the name:** `cursor.premium` effort `xhigh`, `agy.economy` effort `high`. This changes no model, so no new model probe is needed beyond S2.
+  - If the owner would rather save quota, swap to the `-medium` IDs instead. Both are listed: `grok-4.7-medium` in Cursor's list, `gemini-3.8-flash-medium` in `agy models`.
+  - Either way, the frozen-fleet amendment (GATE 0 decision 2) says the change cannot be silent. Fleet v1 has no drift log until T-024, so record it as a Human entry in this file and re-validate `fleet.json`.
+  - Until then, both seats stay unusable by design.
+- **Not done:** no acceptance, no `verify-mission.sh --run-id`, no features/fleet/GOAL/status change, no dispatch, no real agy model run. Scratch clones, archives, fakes and probe scripts stay in the session scratchpad only.
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-009 attempt 2 verified; Architect review + agy plan requested
 - **Mechanical review:** run `fb836120-3f92-48d3-932a-595cf2abbe23` (T-009 attempt 2, claude.economy, haiku, effort medium), receipt `.tasks/receipts/fb836120-3f92-48d3-932a-595cf2abbe23.json`: outcome `completed`, exit 0, scope pass, commit `d569a42`, changed paths `tests/run-tests.sh` and PROGRESS.md only. `verify-mission.sh --run-id fb836120-3f92-48d3-932a-595cf2abbe23` → `VERIFY PASS`, exit 0 (9 commands, including the full suite). Record `verification/fb836120-3f92-48d3-932a-595cf2abbe23.json` is slice evidence for F004, not acceptance. Routing line written (adapter, M, claude.economy, attempt 2, done).
 - **ARCHITECT REQUEST, round T-009 (two parts; separate entries are fine).**
