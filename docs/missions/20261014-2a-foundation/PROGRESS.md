@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — T-006 worker (claude.economy, Haiku 5.5, effort medium) — Codex sandbox limits recorded in template and dispatch-worker skill
+
+- **Changed:** `docs/missions/templates/WORKER_TASK.template.md` now lists both sandbox limits (login-state visibility; `.agents/` write denial) in the Iteration policy note; placeholders and headings unchanged. `.agents/skills/dispatch-worker/SKILL.md` gained a "Sandbox limits" section with a two-column table (Limit, Rule) holding the two rows from the task, plus the sentence on focused worker checks versus verification commands. Earlier wip patch `.tasks/wip/T-006-a2.patch` applied (excluding PROGRESS.md); it held only the template login-state note, which was completed here. The patch file is not committed.
+- **Baseline (before edits):** `harness-manifest.json` JSON valid; `python3 tests/test-registry.py` ran 8 tests, OK.
+- **Checks (after edits):** grep for both limit phrases in both files exit 0; `tests/test-verification-record.py ShippedWorkerTemplateIntegration` ran 2 tests, OK, exit 0; `git diff --check` exit 0. The full suite `bash tests/run-tests.sh` was not run by the worker, per the standing rule; its result is unavailable here and belongs to `verify-mission.sh`.
+- **Scope:** only the two allow-listed files and this PROGRESS entry changed. No scripts, tests, registry, manifest, features.json, or fleet.json touched.
+- **Result:** exit criteria met pending commit and the post-commit clean-tree check. No feature acceptance, verification record, or gate/status change made by this worker.
+
 ## 2026-10-14 — Front Desk (Sonnet 5.5) — T-006 attempt 2 blocked by a Codex seat limit; T-006 and T-005 move to claude.economy
 
 - **Run `60930f35-6836-49c5-b046-0e4c76f9ab4e`** (T-006 attempt 2, codex.economy, gpt-6-luna), receipt `.tasks/receipts/60930f35-6836-49c5-b046-0e4c76f9ab4e.json`: outcome `completed`, scope pass, no commit. **Classification (owner): seat limit: Codex sandbox, `.agents` read-only — not a Luna failure.** The worker added the template note, then `.agents/skills/dispatch-worker/SKILL.md` failed with `PermissionError: [Errno 1] Operation not permitted`; it tried no bypass. Not verified.

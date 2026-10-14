@@ -149,6 +149,17 @@ artifact is needed. Commit verification and acceptance with the progress record.
 Workers never accept features or change mission gates. Bootstrap exemptions must
 be declared at feature authoring; they do not convert worker code into exempt work.
 
+## Sandbox limits
+
+| Limit | Rule |
+| --- | --- |
+| Codex workspace-write cannot see Claude or agy login state; login checks are verification-only. | Do not run login checks (for example `scripts/fleet-doctor.sh`) as worker checks; put them in the task's verification commands. |
+| Codex workspace-write cannot write under `.agents/` (PermissionError); route skill edits to a seat that can, until the adapter is fixed. | Dispatch tasks that edit `.agents/` to a seat that can write there, not to Codex workspace-write. |
+
+Worker checks are focused and sandbox-safe commands only; the full suite and
+real-machine checks go in the task's verification commands. When a new limit is
+found, add a row here and in the template note.
+
 ## Never
 
 - Never use hand-written provider flags to bypass the shared adapter or frozen fleet.
