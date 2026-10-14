@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Front Desk (Sonnet 5.5) — T-006 reviewed and verified; T-005 dispatch (last run under the cap)
+
+- **Mechanical review:** run `e240fd2a-3f9a-4e52-9481-d8941656081f` (T-006 attempt 3, claude.economy, haiku, effort medium), receipt `.tasks/receipts/e240fd2a-3f9a-4e52-9481-d8941656081f.json`: outcome `completed`, exit 0, scope pass, commit `31754a6`, 3 changed paths all in the allow-list (template, `.agents/skills/dispatch-worker/SKILL.md`, PROGRESS.md). `verify-mission.sh --run-id e240fd2a-3f9a-4e52-9481-d8941656081f` → `VERIFY PASS`, exit 0. Record `verification/e240fd2a-3f9a-4e52-9481-d8941656081f.json` is **slice evidence for F001 (T-006), not F001 acceptance**.
+- **Code review (docs diff, `code-reviewer` subagent, read-only):** Verdict PASS. Both limit rows are in the template note and the skill's new "Sandbox limits" table (exact row text); every template placeholder and heading intact; skill sections intact.
+- **Proof:** the Claude seat could write under `.agents/`, which the Codex seat could not (limit row (b) confirmed from the other side).
+- **Budget counters:** worker runs 11 of 12 used; T-005 will be run 12 of 12. **No spare run: if T-005 fails, stop.** Architect 4 of 4 used tonight. No credits, no fast modes.
+- **Next:** dispatch T-005 on `claude.economy` (attempt 1); then mechanical review, `code-reviewer`, verify; then stop at F001 acceptance.
+
 ## 2026-10-14 — T-006 worker (claude.economy, Haiku 5.5, effort medium) — Codex sandbox limits recorded in template and dispatch-worker skill
 
 - **Changed:** `docs/missions/templates/WORKER_TASK.template.md` now lists both sandbox limits (login-state visibility; `.agents/` write denial) in the Iteration policy note; placeholders and headings unchanged. `.agents/skills/dispatch-worker/SKILL.md` gained a "Sandbox limits" section with a two-column table (Limit, Rule) holding the two rows from the task, plus the sentence on focused worker checks versus verification commands. Earlier wip patch `.tasks/wip/T-006-a2.patch` applied (excluding PROGRESS.md); it held only the template login-state note, which was completed here. The patch file is not committed.
