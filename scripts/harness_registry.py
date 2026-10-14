@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Load and validate the manifest-owned provider, door and seat registry."""
+import json
+from pathlib import Path
+
+REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
+PROVIDER_FIELDS = ("binary", "legacy_names", "probe_command", "list_parser", "identity_check", "effort_encoding", "fast_encoding", "discovery_directory", "capabilities")
+DOOR_FIELDS = ("billing_class", "pool", "no_zdr", "priority")
+ROOT_FIELDS = ("schema_version", "providers", "doors", "seat_specs", "fallbacks")
+
+
+class RegistryError(ValueError):
+    pass
+
+
+def _require_fields(value, fields, label):
+    if not isinstance(value, dict):
+        raise RegistryError(f"{label} must be an object")
+    for field in fields:
+        if field not in value:
+            raise RegistryError(f"{label} missing required field: {field}")
+
+
+def validate_registry(data):
+    _require_fields(data, ROOT_FIELDS, "registry")
+    if data["schema_version"] != 1:
+        raise RegistryError("registry.schema_version must be 1")
+    providers = data["providers"]
+    if not isinstance(providers, dict) or not providers:
+        raise RegistryError("registry.providers must be a non-empty object")
+    if "agent" in providers:
+        raise RegistryError("agent is a legacy name, not a provider key")
+    for name, provider in providers.items():
+        label = f"providers.{name}"
+        _require_fields(provider, PROVIDER_FIELDS, label)
+        for field in ("binary", "list_parser", "effort_encoding", "fast_encoding", "discovery_directory"):
+            if not isinstance(provider[field], str) or not provider[field].strip():
+                raise RegistryError(f"{label}.{field} must be non-empty text")
+        for field in ("probe_command", "identity_check"):
+            if not isinstance(provider[field], list) or not provider[field] or not all(isinstance(x, str) and x for x in provider[field]):
+                raise RegistryError(f"{label}.{field} must be a non-empty command array")
+        if not isinstance(provider["legacy_names"], list):
+            raise RegistryError(f"{label}.legacy_names must be an array")
+        if not isinstance(provider["capabilities"], dict):
+            raise RegistryError(f"{label}.capabilities must be an object")
+        _require_fields(provider["capabilities"], ("efforts", "speeds"), label + ".capabilities")
+    doors = data["doors"]
+    if not isinstance(doors, dict) or not doors:
+        raise RegistryError("registry.doors must be a non-empty object")
+    for name, door in doors.items():
+        label = f"doors.{name}"
+        _require_fields(door, DOOR_FIELDS, label)
+        if door["billing_class"] not in ("included", "credits", "api"):
+            raise RegistryError(f"{label}.billing_class invalid")
+        if not isinstance(door["pool"], str) or not door["pool"].strip():
+            raise RegistryError(f"{label}.pool must be non-empty text")
+        if not isinstance(door["no_zdr"], bool):
+            raise RegistryError(f"{label}.no_zdr must be boolean")
+        if not isinstance(door["priority"], int) or isinstance(door["priority"], bool):
+            raise RegistryError(f"{label}.priority must be an integer")
+    if not isinstance(data["seat_specs"], dict) or not isinstance(data["fallbacks"], dict):
+        raise RegistryError("registry.seat_specs and registry.fallbacks must be objects")
+    return data
+
+
+def load_registry(path=REGISTRY_PATH):
+    try:
+        data = json.loads(Path(path).read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RegistryError(f"cannot load registry {path}: {exc}") from exc
+    return validate_registry(data)
+
+
+if __name__ == "__main__":
+    try:
+        load_registry()
+    except RegistryError as exc:
+        raise SystemExit(f"registry error: {exc}") from exc

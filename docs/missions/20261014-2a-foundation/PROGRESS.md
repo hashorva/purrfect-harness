@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — T-001 attempt 2 worker — registry slice complete
+
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh`, manifest/features JSON validation, and `python3 tests/test-fleet-state.py` all exit 0.
+- **Changed:** added manifest-owned `harness-registry.json` with provider, door, seat and fallback data; added `scripts/harness_registry.py` loader with field-level validation and clear errors; added parity, missing-field and legacy-name tests in `tests/test-registry.py`. `cursor` is the provider key and `agent` is listed only as its legacy name. Added registry and loader paths to manifest install/update ownership lists.
+- **Checks:** registry/manifest JSON validation exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-registry.py` exit 0 (3 tests); shellcheck exit 0; `git diff --check` exit 0; `bash tests/run-tests.sh` exit 0 (`ALL TESTS PASSED`).
+- **Scope/state:** only task allow-listed files changed. `scripts/fleet_state.py` remains untouched; no feature acceptance or mission gate/status change made.
+- **Commit:** `feat(registry): add harness-registry.json, loader and parity test`.
+
 ## 2026-10-14 — Front Desk (Sonnet 5.5) — Architect review recorded; T-001 attempt 2 dispatch
 
 - **Architect review of `68942df`:** run `127dd9c6-faa4-4bb3-9a70-0897226ea49a`, receipt `.tasks/receipts/127dd9c6-faa4-4bb3-9a70-0897226ea49a.json` (outcome `completed`, exit 0, scope pass, commit `5dec815`). **Verdict: PASS** on all three points: all 8 mutations still applied, each still makes its focused test fail, nothing in the live tree is written. `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` exit 0.
