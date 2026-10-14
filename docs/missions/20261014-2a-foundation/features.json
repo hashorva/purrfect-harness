@@ -13,7 +13,7 @@
         "A parity test shows the registry yields the same providers, capabilities, seat specs and fallbacks as the old constants; after the switch `grep -nE '^(PROVIDERS|CAPABILITIES|SEAT_SPECS) *= *[({]' scripts/*.py` exits 1 (names may remain as loaded values; literal definitions may not; FALLBACKS stays until F004)",
         "The test fails when any provider lacks probe, list parser, identity check, effort/fast encoding or discovery directory, or any door lacks billing class, pool, no-ZDR flag or priority",
         "Provider `cursor` has binary `cursor-agent`; `agent` appears only as a legacy name; v3 evidence that names `agent` still validates",
-        "fleet-doctor.sh exits 0 on this Mac and prints WARN (not ERROR) for the duplicate PATH entries (local-only check: a task verification command, never part of tests/run-tests.sh or CI)",
+        "fleet-doctor.sh exits 0 on this Mac with no ERROR line (local-only check: a task verification command, never part of tests/run-tests.sh or CI); the WARN rules for duplicate PATH entries and symlinks are proven by the step 6 fixtures, not on the real machine",
         "fleet-doctor.sh fixtures exit non-zero with ERROR for: two different binaries sharing a name, a wrong --version identity, a logged-out probe",
         "`grep -l fleet-doctor.sh .agents/skills/mission-init/SKILL.md .agents/skills/dispatch-worker/SKILL.md` lists both files, and `grep -nE 'which -a|command -v agent' .agents/skills/mission-init/SKILL.md .agents/skills/dispatch-worker/SKILL.md` exits 1",
         "shellcheck scripts/*.sh tests/*.sh and bash tests/run-tests.sh exit 0"

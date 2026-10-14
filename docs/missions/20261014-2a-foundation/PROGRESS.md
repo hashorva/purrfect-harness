@@ -4,6 +4,18 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Front Desk (Sonnet 5.5) — T-004 attempt 1 preserved as a patch; standing rule; owner decisions
+
+- **T-004 attempt 1:** run `62c719f6-b531-4722-a7f8-381e7927947d` (codex.economy), receipt `.tasks/receipts/62c719f6-b531-4722-a7f8-381e7927947d.json`: outcome `completed`, scope pass, **no commit**. The worker stopped because its required `bash scripts/fleet-doctor.sh` exited 1 (`ERROR claude: not logged in`, `ERROR agy: not logged in`; codex and cursor OK). The same doctor run in the normal shell exits 0 with all four `OK`. Cause: Codex workspace-write cannot see Claude or agy login state.
+- **Patch (unverified):** all attempt 1 changes, new files included, are in `.tasks/wip/T-004-a1.patch` (9 files, sha256 `1d5870e75c752df0e782f2cb8bccb5b473382be5dec0091caddb726bfe4d3b84`; gitignored, machine-local). It is **unverified**: only the worker's own focused checks ran. The 9 changed paths were then restored; the tree was clean and `git apply --check` passed, both with and without the PROGRESS.md hunk. Attempt 2 applies it with `--exclude=docs/missions/20261014-2a-foundation/PROGRESS.md`. The worker's attempt 1 findings are the entry above (kept in the patch, not in this file).
+- **Standing rule for the rest of 2A (owner):** worker checks are focused, sandbox-safe commands only. The full suite and real-machine checks (logins, `fleet-doctor.sh` on this Mac) are verification commands only, which `verify-mission.sh` runs outside the sandbox. This only moves where a check runs; verification still runs every check, so it needs no Architect run. Applied to T-004 (edited), T-005 (edited) and T-006 (new).
+- **Sandbox-limit table (owner):** first row "Codex workspace-write cannot see Claude or agy login state; login checks are verification-only." goes into the WORKER_TASK template note and the dispatch-worker skill. T-005 edits the skill but not the template, so it is a separate small docs task: `T-006` (feature F001, cursor.economy), dispatched before T-005.
+- **Owner decision, approved by the owner: WARN.** F001 step 5 amended in `features.json` from "fleet-doctor.sh exits 0 on this Mac and prints WARN (not ERROR) for the duplicate PATH entries (local-only ...)" to "fleet-doctor.sh exits 0 on this Mac with no ERROR line (local-only ...); the WARN rules for duplicate PATH entries and symlinks are proven by the step 6 fixtures, not on the real machine". No other feature text changed.
+- **L-004 candidate:** CLI login state is invisible inside the Codex sandbox.
+- **Decomposition miss (task class: diagnostics):** a real-machine check was put in a worker's checks (T-004), and the full suite was in worker checks for T-002 and T-004 (killed by the host in T-002, not run in T-004). Fix: standing rule above.
+- **Review plan for T-004 (owner):** `code-reviewer` subagent on the full T-004 diff (patch + attempt 2); the doctor is not guard code. Then `verify-mission.sh --run-id`. Next night's Architect run reviews any guard-touching work before F001 acceptance.
+- **Budget counters:** worker runs 7 of 12 so far; attempt 2 of T-004 will be 8, T-006 9, T-005 10. Architect 4 of 4 used tonight.
+
 ## 2026-10-14 — Front Desk (Sonnet 5.5) — Architect review PASS recorded; T-004 dispatch
 
 - **Architect review (run 4 of 4):** run `5ad82e2d-592e-49eb-8cf0-c28c51157bb5`, receipt `.tasks/receipts/5ad82e2d-592e-49eb-8cf0-c28c51157bb5.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `53bcbb1`. **Verdict: PASS** on `a01eca8` (T-001-R2), `af102df` (T-002) and `879b108` (T-003). Non-blocking findings N1-N3 are in its entry above.
