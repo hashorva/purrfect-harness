@@ -115,6 +115,19 @@ check "manifest omission of guard-verification fails release entry point" sh -c 
 "
 git -C "$RELEASE_FIXTURE" checkout -q -- harness-manifest.json
 check "tagged annotated release source validates" sh -c "cd '$RELEASE_FIXTURE' && bash scripts/install-harness.sh --validate-release"
+# actions/checkout fetches a pushed tag as a lightweight ref to the commit. Reproduce that
+# shallow checkout, prove the guard rejects it, then run release.yml's own fetch step.
+CHECKOUT_SIM="$(mktemp -d)"
+git -C "$CHECKOUT_SIM" init -q
+git -C "$CHECKOUT_SIM" fetch -q --no-tags --depth=1 "file://$RELEASE_FIXTURE" "+$(git -C "$RELEASE_FIXTURE" rev-parse HEAD):refs/tags/$RELEASE_TAG"
+git -C "$CHECKOUT_SIM" checkout -q --detach "refs/tags/$RELEASE_TAG"
+check "release guard rejects the lightweight tag ref that actions/checkout writes" bash -c "cd '$CHECKOUT_SIM' && ! python3 scripts/harness-manifest.py --root . --require-release --trigger-tag '$RELEASE_TAG' validate"
+# shellcheck disable=SC2016  # the workflow step text: ${RELEASE_TAG} must stay literal
+RELEASE_FETCH_STEP='git fetch --force --no-tags --depth=1 origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"'
+check "release workflow fetches the annotated tag object before its guard" grep -Fq "run: $RELEASE_FETCH_STEP" "$HARNESS/.github/workflows/release.yml"
+git -C "$CHECKOUT_SIM" remote add origin "file://$RELEASE_FIXTURE"
+check "release guard accepts the checkout after the workflow's tag fetch" bash -c "cd '$CHECKOUT_SIM' && RELEASE_TAG='$RELEASE_TAG' bash -c \"\$1\" && python3 scripts/harness-manifest.py --root . --require-release --trigger-tag '$RELEASE_TAG' validate" _ "$RELEASE_FETCH_STEP"
+rm -rf "$CHECKOUT_SIM"
 check "wrong release trigger tag fails at shared release entry point" sh -c "cd '$RELEASE_FIXTURE' && ! python3 scripts/harness-manifest.py --root . --require-release --trigger-tag v9.9.9 validate"
 git -C "$RELEASE_FIXTURE" tag -a v9.9.9 -m wrong-trigger
 check "second tag at HEAD does not authorize wrong release trigger" sh -c "cd '$RELEASE_FIXTURE' && ! python3 scripts/harness-manifest.py --root . --require-release --trigger-tag v9.9.9 validate"
