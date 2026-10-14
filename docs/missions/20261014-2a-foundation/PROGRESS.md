@@ -4,6 +4,12 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — T-001 worker — blocked at baseline
+
+- **Did:** read the task, mission instructions, newest progress, features, fleet-state constants and manifest; inspected `git log --oneline -10`.
+- **Baseline:** `bash tests/run-tests.sh` exit 1 before any implementation edits. The failing check reported `VerificationRecord and acceptance real-entry contracts`; remaining output was truncated by the command tool, so no further failure detail is available.
+- **Result:** stopped as required by T-001's pre-code baseline rule. No registry files, manifest ownership, or acceptance/gate state changed. Retry requires baseline repair and redispatch.
+
 ## 2026-10-14 — Front Desk (Sonnet 5.5) — status in-progress
 
 - **Did:** moved `approved` → `in-progress`. `verify-mission.sh` exit 0 on the in-progress mission. Dispatching T-001 (F001, codex.economy, attempt 1) next.
