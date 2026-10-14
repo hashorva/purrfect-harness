@@ -2,10 +2,11 @@
 """Load and validate the manifest-owned provider, door and seat registry."""
 import json
 from pathlib import Path
+import re
 import sys
 
 REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
-PROVIDER_FIELDS = ("binary", "legacy_names", "probe_command", "list_parser", "identity_check", "effort_encoding", "fast_encoding", "discovery_directory", "capabilities")
+PROVIDER_FIELDS = ("binary", "legacy_names", "probe_command", "list_parser", "identity_check", "identity_pattern", "login_check", "effort_encoding", "fast_encoding", "discovery_directory", "capabilities")
 DOOR_FIELDS = ("billing_class", "pool", "no_zdr", "priority")
 ROOT_FIELDS = ("schema_version", "providers", "doors", "seat_specs", "fallbacks")
 
@@ -40,6 +41,14 @@ def validate_registry(data):
         for field in ("probe_command", "identity_check"):
             if not isinstance(provider[field], list) or not provider[field] or not all(isinstance(x, str) and x for x in provider[field]):
                 raise RegistryError(f"{label}.{field} must be a non-empty command array")
+        if not isinstance(provider["identity_pattern"], str):
+            raise RegistryError(f"{label}.identity_pattern must be text")
+        try:
+            re.compile(provider["identity_pattern"])
+        except re.error as exc:
+            raise RegistryError(f"{label}.identity_pattern must be a valid regex: {exc}") from exc
+        if not isinstance(provider["login_check"], list) or not provider["login_check"] or not all(isinstance(x, str) and x for x in provider["login_check"]):
+            raise RegistryError(f"{label}.login_check must be a non-empty command array")
         if not isinstance(provider["legacy_names"], list):
             raise RegistryError(f"{label}.legacy_names must be an array")
         if len(provider["legacy_names"]) > 1:

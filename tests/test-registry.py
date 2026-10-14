@@ -92,6 +92,14 @@ class RegistryTests(unittest.TestCase):
                 with self.assertRaises(registry_module.RegistryError):
                     registry_module.validate_registry(broken)
 
+    def test_identity_pattern_and_login_check_validation(self):
+        for field, value in (("identity_pattern", "["), ("login_check", [])):
+            with self.subTest(field=field):
+                broken = copy.deepcopy(registry)
+                broken["providers"]["claude"][field] = value
+                with self.assertRaises(registry_module.RegistryError):
+                    registry_module.validate_registry(broken)
+
     def test_canonical_provider_rejects_unknown_name(self):
         self.assertEqual(registry_module.canonical_provider(registry, "cursor"), "cursor")
         self.assertEqual(registry_module.canonical_provider(registry, "agent"), "cursor")

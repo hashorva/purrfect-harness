@@ -1,24 +1,225 @@
 {
   "schema_version": 1,
   "providers": {
-    "claude": {"binary": "claude", "legacy_names": [], "probe_command": ["claude", "--version"], "list_parser": "claude-model-aliases", "identity_check": ["claude", "--version"], "effort_encoding": "flag", "fast_encoding": "unsupported", "discovery_directory": "~/.claude", "capabilities": {"efforts": ["low", "medium", "high", "xhigh", "max"], "speeds": ["unknown"]}},
-    "codex": {"binary": "codex", "legacy_names": [], "probe_command": ["codex", "--version"], "list_parser": "codex-model-cache", "identity_check": ["codex", "--version"], "effort_encoding": "flag", "fast_encoding": "unsupported", "discovery_directory": "~/.codex", "capabilities": {"efforts": ["low", "medium", "high", "xhigh"], "speeds": ["unknown"]}},
-    "cursor": {"binary": "cursor-agent", "legacy_names": ["agent"], "probe_command": ["cursor-agent", "models"], "list_parser": "cursor-model-list", "identity_check": ["cursor-agent", "--version"], "effort_encoding": "model-name", "fast_encoding": "model-name", "discovery_directory": "~/.cursor", "capabilities": {"efforts": ["low", "medium", "high", "xhigh"], "speeds": ["standard", "fast"]}},
-    "agy": {"binary": "agy", "legacy_names": [], "probe_command": ["agy", "models"], "list_parser": "agy-model-list", "identity_check": ["agy", "--version"], "effort_encoding": "model-name", "fast_encoding": "unsupported", "discovery_directory": "~/.gemini", "capabilities": {"efforts": ["low", "medium", "high"], "speeds": ["unknown"]}}
+    "claude": {
+      "binary": "claude",
+      "legacy_names": [],
+      "probe_command": [
+        "claude",
+        "--version"
+      ],
+      "list_parser": "claude-model-aliases",
+      "identity_check": [
+        "claude",
+        "--version"
+      ],
+      "effort_encoding": "flag",
+      "fast_encoding": "unsupported",
+      "discovery_directory": "~/.claude",
+      "capabilities": {
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "speeds": [
+          "unknown"
+        ]
+      },
+      "identity_pattern": "^\\d+\\.\\d+\\.\\d+ \\(Claude Code\\)$",
+      "login_check": [
+        "claude",
+        "auth",
+        "status"
+      ]
+    },
+    "codex": {
+      "binary": "codex",
+      "legacy_names": [],
+      "probe_command": [
+        "codex",
+        "--version"
+      ],
+      "list_parser": "codex-model-cache",
+      "identity_check": [
+        "codex",
+        "--version"
+      ],
+      "effort_encoding": "flag",
+      "fast_encoding": "unsupported",
+      "discovery_directory": "~/.codex",
+      "capabilities": {
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
+        "speeds": [
+          "unknown"
+        ]
+      },
+      "identity_pattern": "^codex-cli \\d+\\.\\d+\\.\\d+$",
+      "login_check": [
+        "codex",
+        "login",
+        "status"
+      ]
+    },
+    "cursor": {
+      "binary": "cursor-agent",
+      "legacy_names": [
+        "agent"
+      ],
+      "probe_command": [
+        "cursor-agent",
+        "models"
+      ],
+      "list_parser": "cursor-model-list",
+      "identity_check": [
+        "cursor-agent",
+        "--version"
+      ],
+      "effort_encoding": "model-name",
+      "fast_encoding": "model-name",
+      "discovery_directory": "~/.cursor",
+      "capabilities": {
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
+        "speeds": [
+          "standard",
+          "fast"
+        ]
+      },
+      "identity_pattern": "^\\d{4}\\.\\d{2}\\.\\d{2}-[0-9a-f]{7,}$",
+      "login_check": [
+        "cursor-agent",
+        "status"
+      ]
+    },
+    "agy": {
+      "binary": "agy",
+      "legacy_names": [],
+      "probe_command": [
+        "agy",
+        "models"
+      ],
+      "list_parser": "agy-model-list",
+      "identity_check": [
+        "agy",
+        "--version"
+      ],
+      "effort_encoding": "model-name",
+      "fast_encoding": "unsupported",
+      "discovery_directory": "~/.gemini",
+      "capabilities": {
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "speeds": [
+          "unknown"
+        ]
+      },
+      "identity_pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "login_check": [
+        "agy",
+        "models"
+      ]
+    }
   },
   "doors": {
-    "claude": {"billing_class": "included", "pool": "anthropic", "no_zdr": false, "priority": 1},
-    "codex": {"billing_class": "included", "pool": "openai", "no_zdr": false, "priority": 1},
-    "cursor-composer": {"billing_class": "included", "pool": "cursor", "no_zdr": false, "priority": 1},
-    "cursor-grok": {"billing_class": "included", "pool": "cursor", "no_zdr": false, "priority": 2},
-    "agy": {"billing_class": "included", "pool": "google", "no_zdr": false, "priority": 1}
+    "claude": {
+      "billing_class": "included",
+      "pool": "anthropic",
+      "no_zdr": false,
+      "priority": 1
+    },
+    "codex": {
+      "billing_class": "included",
+      "pool": "openai",
+      "no_zdr": false,
+      "priority": 1
+    },
+    "cursor-composer": {
+      "billing_class": "included",
+      "pool": "cursor",
+      "no_zdr": false,
+      "priority": 1
+    },
+    "cursor-grok": {
+      "billing_class": "included",
+      "pool": "cursor",
+      "no_zdr": false,
+      "priority": 2
+    },
+    "agy": {
+      "billing_class": "included",
+      "pool": "google",
+      "no_zdr": false,
+      "priority": 1
+    }
   },
   "seat_specs": {
-    "brain": ["claude", "opus"], "brain_fable": ["claude", "fable"], "brain_codex": ["codex", "sol"],
-    "cursor.premium": ["cursor", "grok"], "cursor.economy": ["cursor", "composer"],
-    "codex.premium": ["codex", "terra"], "codex.economy": ["codex", "luna"],
-    "agy.premium": ["agy", "pro"], "agy.economy": ["agy", "flash"],
-    "claude.premium": ["claude", "sonnet"], "claude.economy": ["claude", "haiku"]
+    "brain": [
+      "claude",
+      "opus"
+    ],
+    "brain_fable": [
+      "claude",
+      "fable"
+    ],
+    "brain_codex": [
+      "codex",
+      "sol"
+    ],
+    "cursor.premium": [
+      "cursor",
+      "grok"
+    ],
+    "cursor.economy": [
+      "cursor",
+      "composer"
+    ],
+    "codex.premium": [
+      "codex",
+      "terra"
+    ],
+    "codex.economy": [
+      "codex",
+      "luna"
+    ],
+    "agy.premium": [
+      "agy",
+      "pro"
+    ],
+    "agy.economy": [
+      "agy",
+      "flash"
+    ],
+    "claude.premium": [
+      "claude",
+      "sonnet"
+    ],
+    "claude.economy": [
+      "claude",
+      "haiku"
+    ]
   },
-  "fallbacks": {"grok":"cursor-grok-4.5-high", "composer":"composer-2.5", "sol":"gpt-5.6-sol", "terra":"gpt-5.6-terra", "luna":"gpt-5.6-luna", "pro":"gemini-3.1-pro-high", "flash":"gemini-3.6-flash-high"}
+  "fallbacks": {
+    "grok": "cursor-grok-4.5-high",
+    "composer": "composer-2.5",
+    "sol": "gpt-5.6-sol",
+    "terra": "gpt-5.6-terra",
+    "luna": "gpt-5.6-luna",
+    "pro": "gemini-3.1-pro-high",
+    "flash": "gemini-3.6-flash-high"
+  }
 }

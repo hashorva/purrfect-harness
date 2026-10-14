@@ -16,7 +16,12 @@
       "skillify",
       "supabase-migration"
     ],
-    "discovery_targets": [".claude/skills", ".cursor/skills", ".gemini/skills", ".codex/skills"],
+    "discovery_targets": [
+      ".claude/skills",
+      ".cursor/skills",
+      ".gemini/skills",
+      ".codex/skills"
+    ],
     "install_payload_roots": [
       "docs/missions/templates",
       ".claude/rules",
@@ -33,6 +38,8 @@
       "scripts/sync-skills.sh",
       "scripts/harness-manifest.py",
       "scripts/harness_registry.py",
+      "scripts/fleet-doctor.sh",
+      "scripts/fleet_doctor.py",
       "scripts/execution_spec.py",
       "scripts/execution_receipt.py",
       "scripts/execution_runner.py",
@@ -70,6 +77,8 @@
       "scripts/sync-skills.sh",
       "scripts/harness-manifest.py",
       "scripts/harness_registry.py",
+      "scripts/fleet-doctor.sh",
+      "scripts/fleet_doctor.py",
       "scripts/execution_spec.py",
       "scripts/execution_receipt.py",
       "scripts/execution_runner.py",

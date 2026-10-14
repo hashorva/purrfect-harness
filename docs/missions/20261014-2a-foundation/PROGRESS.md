@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — T-004 worker — fleet doctor implemented
+
+- **Changed:** added registry identity patterns and login probes; validated both fields; added `fleet-doctor.sh`/`fleet_doctor.py`, fixture coverage, suite registration, and manifest ownership entries. Existing provider/capability/seat/fallback values remain unchanged.
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh`, manifest/features JSON validation, and `python3 tests/test-registry.py` all exit 0.
+- **Checks:** JSON validation, `shellcheck scripts/fleet-doctor.sh`, `tests/test-registry.py` (8 tests), `tests/test-fleet-doctor.py` (8 tests), manifest grep, and `git diff --check` all exit 0. Fixtures cover healthy providers, conflicting binaries, identity mismatch, login failure, duplicate paths, symlink duplicates, private login output, and pattern distinctness.
+- **Not run by worker per task:** real-machine `bash scripts/fleet-doctor.sh` and `bash tests/run-tests.sh`; both remain for `verify-mission.sh`. Their results are unavailable here.
+- **Result:** no feature acceptance or mission gate/status change. Scoped change and this entry committed as `feat(doctor): add fleet-doctor.sh with registry identity and login checks`.
+
 ## 2026-10-14 — Front Desk (Sonnet 5.5) — T-004 attempt 1 preserved as a patch; standing rule; owner decisions
 
 - **T-004 attempt 1:** run `62c719f6-b531-4722-a7f8-381e7927947d` (codex.economy), receipt `.tasks/receipts/62c719f6-b531-4722-a7f8-381e7927947d.json`: outcome `completed`, scope pass, **no commit**. The worker stopped because its required `bash scripts/fleet-doctor.sh` exited 1 (`ERROR claude: not logged in`, `ERROR agy: not logged in`; codex and cursor OK). The same doctor run in the normal shell exits 0 with all four `OK`. Cause: Codex workspace-write cannot see Claude or agy login state.
