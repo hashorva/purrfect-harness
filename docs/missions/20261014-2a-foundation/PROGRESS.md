@@ -4,6 +4,22 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — S1 REAL SEAT SMOKE RESULT; T-009 dispatch
+- **S1:** `bash scripts/fleet-doctor.sh --smoke --mission docs/missions/20261014-2a-foundation --seat claude.premium --seat claude.economy --seat codex.premium --seat codex.economy --seat agy.economy --timeout 300 --keep --dest <scratchpad>/smoke-s1` → exit 1 (expected: one seat unusable). Base commit `cb55e645`. Summary `.tasks/smoke/20261014T222833Z.json` (local); transcripts kept under the scratch destination (local, not committed). Live tree unchanged (clean, same HEAD), no stale bytecode, no leftover provider processes from the smoke.
+  | seat | status | model / effort | reason |
+  |---|---|---|---|
+  | claude.economy | **usable** | haiku / medium | both smoke files in HEAD |
+  | claude.premium | **usable** | sonnet / medium | both smoke files in HEAD |
+  | codex.economy | **usable-with-limit** | gpt-6-luna / medium | cannot write `.agents/` |
+  | codex.premium | **usable-with-limit** | gpt-5.6-terra / medium | cannot write `.agents/` |
+  | agy.economy | **unusable** | gemini-3.8-flash-high / medium | outcome failed, exit 1 |
+  | cursor.economy, cursor.premium | not run | | known unusable until T-009 (bracket model argument) |
+- **agy failure, classified harness (adapter bug), not a Gemini failure:** `error: invalid model selection (--model "gemini-3.8-flash-high" --effort "medium"): --model gemini-3.8-flash-high conflicts with --effort=medium`. The adapter sends the effort in the model name and as a flag. Verbatim in `evidence/agy-model-effort-conflict.md`. This is the owner-decision item 2 foreseen by the plan. T-009 covers only Cursor, so agy needs its own task (adapter contract: no `--effort` when the model name encodes effort), to be planned by the Architect in the T-009 review round.
+- **Sandbox-limit table:** codex `.agents/` row already exists. agy is an adapter bug, not a sandbox limit; it is tracked here and in the evidence file, and gets a table note when the fix lands.
+- **Usable seats tonight:** claude.economy, claude.premium; codex.economy and codex.premium for tasks that do not edit `.agents/` and do not need login state. Unusable: agy.economy (until the agy fix), cursor.* (until T-009 and S2).
+- **Rotation plan:** T-009 (adapter, M; avoids cursor) goes to **codex.economy**, the only other usable economy seat, which also gives the first Codex data point tonight. Then docs/skill tasks go to claude.
+- **Quota used so far tonight (estimates; the CLIs do not report it):** Claude: 1 Architect planning, 3 Architect reviews, 3 Haiku worker runs + 2 smoke runs (1 Sonnet, 1 Haiku). Codex: 2 smoke runs. agy: 1 failed launch. Cursor: 0. No pause needed yet.
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — Architect review of T-008 PASS; S1 real seat smoke starts
 - **Architect review of T-008 (alone):** run `acb74701-5d0b-4532-b4f1-b2e594488552`, receipt `.tasks/receipts/acb74701-5d0b-4532-b4f1-b2e594488552.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `77e7902`. **Verdict: PASS.** Both fixes it required for T-008 are in and tested (clone has no remote; refs in the live snapshot; tests for "live tree changed"). Live-tree fingerprint identical across 19 fake launches. It judged the real smoke **safe to run unattended** with these steps.
 - **Architect's steps for S1 and what I do:** (1) run from a plain shell, not inside a spawned run — my shell has no `PURRFECT_*` variables and `.tasks/locks` is empty; (2) `--timeout 300 --keep --dest <new dir outside the repo>` — `--keep` saves receipts and logs, which contain transcripts and stay local; (3) check pools have room and no paid fallback is on — **I cannot inspect account-level settings (Cursor on-demand usage, ChatGPT credits) from the CLIs**; the harness requests only non-fast included models and never switches to a paid path, so each run is one tiny included request; recorded as an assumption; (4) afterwards check `ps` for leftover provider processes; (5) leave the Cursor seats out until T-009 — **done**: S1 covers claude.premium, claude.economy, codex.premium, codex.economy, agy.economy (5 included runs). Cursor seats are known `unusable` (bracket model argument, evidence file) and are re-smoked at S2.
