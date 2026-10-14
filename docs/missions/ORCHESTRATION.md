@@ -143,9 +143,12 @@ bash scripts/verify-mission.sh --run-id "$RUN_ID" "$MISSION"
 ```
 
 The verifier reads JSON argv bullets from the task at the receipt's base commit,
-requires the current snapshot to equal the receipt's after snapshot before and
-after checks, and atomically creates an immutable VerificationRecord. It does not
-change feature acceptance. Only the orchestrator then runs:
+requires a clean receipt `git_after`, then checks out that commit in a temporary
+detached worktree and requires its snapshot to match before and after checks. A
+check that needs machine-local state (for example `.tasks/`) reads it through
+`$PURRFECT_LIVE_ROOT`. The verifier atomically creates an immutable
+VerificationRecord in the live mission. It does not change feature acceptance.
+Only the orchestrator then runs:
 
 ```bash
 VERIFICATION_SHA256=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' \

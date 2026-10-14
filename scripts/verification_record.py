@@ -174,24 +174,63 @@ def verify(root, mission, run_id):
     destination = mission / "verification" / f"{run_id}.json"
     if destination.exists(): fail("VerificationRecord already exists for this run")
     receipt, receipt_path, spec_path, spec_raw, task, task_raw, commands = bind(root, mission, run_id)
-    before = snapshot(root)
-    if before != receipt["git_after"]: fail("current Git snapshot does not equal receipt git_after before checks")
+    if receipt["git_after"]["status_entry_count"] != 0 or receipt["git_after"]["dirty_paths"]:
+        fail("worktree verification needs a clean receipt git_after")
+
+    subprocess.run(["git", "-C", str(root), "worktree", "prune"], check=True,
+                   stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    temporary_root = Path(tempfile.mkdtemp(prefix="purrfect-verify-"))
+    worktree = temporary_root / "wt"
+    added = False
     outcomes = []
     passed = True
-    for argv in commands:
-        started = now()
+    before = after = None
+    try:
+        subprocess.run(["git", "-C", str(root), "worktree", "add", "--detach", "--quiet",
+                        str(worktree), receipt["git_after"]["head"]], check=True,
+                       stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        added = True
+        before = snapshot(worktree)
+        if before != receipt["git_after"]:
+            fail("verification worktree snapshot does not equal receipt git_after before checks")
+        command_env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1",
+                       "PURRFECT_LIVE_ROOT": str(root)}
+        for argv in commands:
+            started = now()
+            try:
+                completed = subprocess.run(argv, cwd=worktree, stdin=subprocess.DEVNULL,
+                                           capture_output=True, env=command_env)
+                exit_code, stdout, stderr = completed.returncode, completed.stdout, completed.stderr
+            except OSError as exc:
+                exit_code, stdout, stderr = 127, b"", str(exc).encode("utf-8", "replace")
+            finished = now()
+            outcomes.append({"argv": argv, "started_at": started, "finished_at": finished,
+                             "exit_code": exit_code, "stdout_sha256": digest(stdout),
+                             "stderr_sha256": digest(stderr)})
+            passed = passed and exit_code == 0
+        after = snapshot(worktree)
+        if after != receipt["git_after"]: passed = False
+    finally:
+        cleanup_failed = False
+        if added:
+            try:
+                subprocess.run(["git", "-C", str(root), "worktree", "remove", "--force", str(worktree)],
+                               check=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE)
+            except (OSError, subprocess.CalledProcessError):
+                cleanup_failed = True
         try:
-            completed = subprocess.run(argv, cwd=root, stdin=subprocess.DEVNULL, capture_output=True)
-            exit_code, stdout, stderr = completed.returncode, completed.stdout, completed.stderr
-        except OSError as exc:
-            exit_code, stdout, stderr = 127, b"", str(exc).encode("utf-8", "replace")
-        finished = now()
-        outcomes.append({"argv": argv, "started_at": started, "finished_at": finished,
-                         "exit_code": exit_code, "stdout_sha256": digest(stdout),
-                         "stderr_sha256": digest(stderr)})
-        passed = passed and exit_code == 0
-    after = snapshot(root)
-    if after != receipt["git_after"]: passed = False
+            subprocess.run(["git", "-C", str(root), "worktree", "prune"], check=True,
+                           stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except (OSError, subprocess.CalledProcessError):
+            cleanup_failed = True
+        try:
+            import shutil
+            shutil.rmtree(temporary_root)
+        except OSError:
+            cleanup_failed = True
+        if cleanup_failed:
+            print(f"WARN: verification worktree cleanup failed: {worktree}", file=sys.stderr)
     record = {"schema_version": 1, "run_id": run_id, "mission": receipt["mission"], "feature": receipt["feature"],
               "work_unit": receipt["work_unit"], "attempt": receipt["attempt"],
               "execution_spec": {"path": str(spec_path), "sha256": digest(spec_raw)},
