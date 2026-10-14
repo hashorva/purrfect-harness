@@ -4,6 +4,16 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Front Desk (Sonnet 5.5) — T-003 verified; batched Architect review requested
+
+- **Mechanical review:** run `dce7cf44-b4fa-4eb0-b316-1d7bbfa3a9b8` (codex.economy, gpt-6-luna, effort medium), receipt `.tasks/receipts/dce7cf44-b4fa-4eb0-b316-1d7bbfa3a9b8.json`: outcome `completed`, exit 0, scope pass, commit `879b108`, 6 changed paths all in the allow-list. `verify-mission.sh --run-id dce7cf44-b4fa-4eb0-b316-1d7bbfa3a9b8` → `VERIFY PASS`, exit 0. Record `verification/dce7cf44-b4fa-4eb0-b316-1d7bbfa3a9b8.json` is **slice evidence for F001 (T-003), not F001 acceptance**.
+- **Budget counters:** worker runs 6 of 12; this request is Architect run 4 of 4 (the last tonight).
+- **REVIEW REQUEST for the Architect (one run, three commits: `a01eca8` T-001-R2, `af102df` T-002, `879b108` T-003).** Run `git show` on each. Give a verdict per commit, with evidence you produced (hashes, logged sub-runs, exit codes), then an overall line.
+  - `a01eca8`: (1) the `snapshot-pre-post` replacement now compiles (`python3 -m py_compile` on the mutated text) and its focused test fails with an `AssertionError`, not a load error; (2) the oracle rejects `IndentationError` and `TabError` and still rejects the old names; (3) the other 7 mutations are byte-identical to `68942df`; (4) nothing in the live tree is written.
+  - `af102df`: (1) `fleet_state.py` loads `PROVIDERS`, `CAPABILITIES`, `SEAT_SPECS` from `harness-registry.json` and the values equal the old constants (the golden test is independent of the registry: confirm it is not vacuous); (2) it fails closed when the registry is missing or invalid, with no silent default; (3) this mission's frozen `fleet.json` and the inventory still validate; `FALLBACKS` is untouched; (4) `execution_spec.PROVIDERS` and `dispatch_policy.py` are unchanged; (5) no assertion or guard was weakened or removed from any test (diff the removed lines); (6) `test-registry.py` is wired into `tests/run-tests.sh` and actually runs there.
+  - `879b108`: (1) `cursor` is accepted by both launchers and converted once to `agent`, so the ExecutionSpec for a cursor run is byte-identical to the one for `agent`; (2) an unknown provider name is rejected with exit 2 before any lock, log or spec is created; (3) no dispatch gate (clean tree, lock, fleet equality assertions on model/effort/speed, frozen seat) is bypassed or reordered.
+  - Also tell me: any blocking problem for T-004/T-005, and anything F001 acceptance would need beyond them. End with `Verdict: PASS` or `Verdict: FAIL` (list failing commits).
+
 ## 2026-10-14 — Worker (codex.economy, luna) — T-003 complete
 
 - **Changed (allow-list only):** `harness_registry.py` exposes `persisted-name NAME`, preserving no-argument registry validation and returning exit 2 with `ERROR:` for unknown names. Both launchers now convert provider input to the persisted legacy name before policy, seat, speed, or spec handling; worker usage/errors document `cursor`. Added CLI coverage for every provider key and `agent`, plus real-wrapper coverage for positional and flag `cursor`, legacy `agent`, brain `--provider cursor`, equal persisted specs/argv, and an unknown provider rejected before any spec, log, or receipt.
