@@ -6,21 +6,39 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  SHELLCHECK_VERSION: "0.11.0"
+  PYTHONDONTWRITEBYTECODE: "1"
+
 jobs:
   lint-and-test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
+      # Pin ShellCheck so CI and local runs report the same codes.
+      - name: Install ShellCheck (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
+            | tar -xJ -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/shellcheck-v${SHELLCHECK_VERSION}" >> "$GITHUB_PATH"
+
+      - name: Install ShellCheck (macOS)
+        if: runner.os == 'macOS'
+        run: brew install shellcheck
+
       - name: Shellcheck all scripts
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck --version
           shellcheck scripts/*.sh tests/*.sh
 
-      - name: Validate JSON templates
-        run: |
-          python3 -c "import json; json.load(open('docs/missions/templates/features.template.json'))"
-          python3 -c "import json; json.load(open('.claude/settings.json'))"
+      - name: Validate every tracked JSON file
+        run: git ls-files -z '*.json' | xargs -0 -n 1 sh -c 'python3 -m json.tool "$1" >/dev/null' sh
 
       - name: Version consistency (README vs CHANGELOG)
         run: |
