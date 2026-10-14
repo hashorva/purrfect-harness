@@ -5,7 +5,7 @@
 #
 # Usage (from consuming repo root):
 #   bash scripts/spawn-brain.sh <mission-dir|slug> <mission-init|gate0|review>
-#       [--provider codex|claude|agent|agy] [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N]
+#       [--provider codex|claude|cursor|agent|agy] [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N]
 set -euo pipefail
 
 LOCK_PATH=""
@@ -69,6 +69,10 @@ while [ $# -gt 0 ]; do
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+if [ -n "$PROVIDER" ]; then
+  ROOT="$(pwd -P)"
+  PROVIDER="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/harness_registry.py" persisted-name "$PROVIDER")" || exit $?
+fi
 case "$ATTEMPT" in *[!0-9]*|'') echo "ERROR: --attempt must be positive" >&2; exit 2 ;; esac
 [ "$ATTEMPT" -gt 0 ] || { echo "ERROR: --attempt must be positive" >&2; exit 2; }
 
@@ -124,7 +128,7 @@ else
   [ -n "$SPEED" ] || { [ "$PROVIDER" = agent ] && SPEED="standard" || SPEED="unknown"; }
 fi
 
-case "$PROVIDER" in codex|claude|agent|agy) ;; *) echo "ERROR: --provider must be codex, claude, agent, or agy" >&2; exit 2 ;; esac
+case "$PROVIDER" in codex|claude|agent|agy) ;; *) echo "ERROR: --provider must be codex, claude, cursor, agent, or agy" >&2; exit 2 ;; esac
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-capability \
   --provider "$PROVIDER" --effort "$EFFORT" --speed "$SPEED"
 

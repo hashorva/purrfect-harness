@@ -279,6 +279,54 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                         self.assertEqual(invoked["argv"][-2:], ["-p", spec["prompt"]])
                     self.clean_runs()
 
+    def test_cursor_alias_persists_agent_contract_through_wrappers(self):
+        model, speed = "cursor-model", "fast"
+        self.write_fleet("agent", model, "high", speed)
+        outcomes = []
+        runs = (
+            ["cursor", "docs/missions/fixture/tasks/T-001.md"],
+            ["docs/missions/fixture/tasks/T-001.md", "--provider", "cursor"],
+            ["agent", "docs/missions/fixture/tasks/T-001.md"],
+        )
+        for provider_args in runs:
+            result = self.invoke([
+                "bash", "scripts/spawn-worker.sh", *provider_args,
+                "--model", model, "--effort", "high", "--speed", speed, "--feature", "F001",
+            ])
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            spec, _, _, invoked = self.linked(
+                role="worker", provider="agent", model=model, effort="high", speed=speed,
+                work_unit="T-001", feature="F001",
+            )
+            self.assertEqual(invoked["argv"], self.expected_argv("agent", model, "high", speed, spec["prompt"]))
+            outcomes.append((spec["provider"], invoked["provider"], invoked["argv"]))
+            self.clean_runs()
+        self.assertEqual(outcomes[0], outcomes[1])
+
+        self.write_fleet("agent", model, "high", speed, seat_name="brain", include_brain=True)
+        result = self.invoke([
+            "bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review",
+            "--provider", "cursor", "--model", model, "--effort", "high", "--speed", speed,
+        ])
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        spec, _, _, invoked = self.linked(
+            role="brain", provider="agent", model=model, effort="high", speed=speed,
+            work_unit="review", feature=None,
+        )
+        self.assertEqual(invoked["argv"], self.expected_argv("agent", model, "high", speed, spec["prompt"]))
+
+    def test_unknown_provider_stops_before_persisting_run_artifacts(self):
+        result = self.invoke([
+            "bash", "scripts/spawn-worker.sh", "docs/missions/fixture/tasks/T-001.md",
+            "--provider", "grok",
+        ])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ERROR:", result.stderr)
+        tasks = self.root / ".tasks"
+        self.assertFalse(list(tasks.glob("specs/*.json")) if tasks.exists() else [])
+        self.assertFalse(list(tasks.glob("logs/*.log")) if tasks.exists() else [])
+        self.assertFalse(list(tasks.glob("receipts/*.json")) if tasks.exists() else [])
+
     def test_historical_contract_one_evidence_survives_contract_two_and_mutation_is_mounted(self):
         """A v2 receipt remains auditable by the real mission entry point after v3 exists."""
         self.write_fleet("codex", "legacy-model", "medium", "unknown", include_brain=True)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # spawn-worker.sh — run a WORKER_TASK via a real local CLI agent (Mac Mini / studio).
 # Usage (from the consuming repo root):
-#   bash scripts/spawn-worker.sh [<codex|agent|agy|claude>] <path-to-task.md> \
+#   bash scripts/spawn-worker.sh [<codex|cursor|agent|agy|claude>] <path-to-task.md> \
 #        [--provider NAME] [--tier economy|premium] [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N] [--feature F00X] [--repo PATH] \
 #        [extra prompt...]
 #
@@ -71,13 +71,13 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 usage() {
-  echo "Usage: spawn-worker.sh [provider] <task.md> --provider NAME [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N]" >&2
+  echo "Usage: spawn-worker.sh [codex|cursor|agent|agy|claude] <task.md> --provider NAME [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N]" >&2
   exit 2
 }
 
 [ $# -ge 1 ] || usage
 WORKER=""
-if [[ "$1" == codex || "$1" == agent || "$1" == agy || "$1" == claude ]]; then
+if [[ "$1" == codex || "$1" == cursor || "$1" == agent || "$1" == agy || "$1" == claude ]]; then
   WORKER="$1"
   shift
 fi
@@ -112,7 +112,8 @@ EXTRA="${EXTRA_ARGS[*]:-}"
   WORKER="$PROVIDER_FLAG"
 }
 [ -n "$WORKER" ] || usage
-case "$WORKER" in codex|claude|agent|agy) ;; *) usage ;; esac
+WORKER="$(PYTHONDONTWRITEBYTECODE=1 python3 "$(pwd -P)/scripts/harness_registry.py" persisted-name "$WORKER")" || exit $?
+case "$WORKER" in codex|claude|agent|agy) ;; *) echo "ERROR: provider must be codex, cursor, agent, agy, or claude" >&2; exit 2 ;; esac
 case "$ATTEMPT" in *[!0-9]*|'') echo "ERROR: --attempt must be positive" >&2; exit 2 ;; esac
 [ "$ATTEMPT" -gt 0 ] || { echo "ERROR: --attempt must be positive" >&2; exit 2; }
 

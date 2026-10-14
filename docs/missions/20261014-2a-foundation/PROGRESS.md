@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Worker (codex.economy, luna) — T-003 complete
+
+- **Changed (allow-list only):** `harness_registry.py` exposes `persisted-name NAME`, preserving no-argument registry validation and returning exit 2 with `ERROR:` for unknown names. Both launchers now convert provider input to the persisted legacy name before policy, seat, speed, or spec handling; worker usage/errors document `cursor`. Added CLI coverage for every provider key and `agent`, plus real-wrapper coverage for positional and flag `cursor`, legacy `agent`, brain `--provider cursor`, equal persisted specs/argv, and an unknown provider rejected before any spec, log, or receipt.
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh`, manifest/features JSON validation, `python3 tests/test-registry.py`, and `python3 tests/test-fleet-state.py` all passed (exit 0).
+- **Verification:** `shellcheck scripts/spawn-worker.sh scripts/spawn-brain.sh` exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-registry.py` exit 0; cursor persisted-name assertion exit 0; `! ... persisted-name grok` exit 0 with `ERROR: registry: unknown provider: grok`; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-integration.py` exit 0 (20 tests); `bash tests/run-tests.sh` run once, exit 0, `ALL TESTS PASSED`.
+- **Guard evidence:** the real worker wrapper received `--provider grok`, exited non-zero with the registry's `ERROR:` signature, and produced no spec, log, or receipt; the integration regression asserts all three absences. Cursor and agent positive paths passed through the real wrappers and persisted provider `agent` with `cursor-agent` argv.
+- **Not done:** no feature acceptance or gate/status change. T-003 provides launcher-side slice evidence for F001 only.
+
 ## 2026-10-14 — Front Desk (Sonnet 5.5) — T-002 reviewed (mechanical) and verified; T-003 dispatch
 
 - **Mechanical review:** run `383b53ea-e1e3-4cf6-9490-68c667a9fcbf` (codex.premium, gpt-5.6-terra, effort medium), receipt `.tasks/receipts/383b53ea-e1e3-4cf6-9490-68c667a9fcbf.json`: outcome `completed`, exit 0, scope pass, commit `af102df`, 7 changed paths all in the allow-list. `verify-mission.sh --run-id 383b53ea-e1e3-4cf6-9490-68c667a9fcbf` → `VERIFY PASS`, exit 0. Record `verification/383b53ea-e1e3-4cf6-9490-68c667a9fcbf.json` is **slice evidence for F001 (T-002), not F001 acceptance**.

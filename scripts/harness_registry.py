@@ -2,6 +2,7 @@
 """Load and validate the manifest-owned provider, door and seat registry."""
 import json
 from pathlib import Path
+import sys
 
 REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
 PROVIDER_FIELDS = ("binary", "legacy_names", "probe_command", "list_parser", "identity_check", "effort_encoding", "fast_encoding", "discovery_directory", "capabilities")
@@ -114,6 +115,19 @@ def canonical_provider(registry, name):
 
 if __name__ == "__main__":
     try:
-        load_registry()
+        if len(sys.argv) == 1:
+            load_registry()
+        elif len(sys.argv) == 3 and sys.argv[1] == "persisted-name":
+            data = load_registry()
+            key = canonical_provider(data, sys.argv[2])
+            names = {provider_key: provider["legacy_names"][0] if provider["legacy_names"] else provider_key
+                     for provider_key, provider in data["providers"].items()}
+            print(names[key])
+        else:
+            raise RegistryError("usage: harness_registry.py [persisted-name NAME]")
     except RegistryError as exc:
+        message = f"ERROR: registry: {exc}"
+        if len(sys.argv) > 1:
+            print(message, file=sys.stderr)
+            raise SystemExit(2) from exc
         raise SystemExit(f"registry error: {exc}") from exc

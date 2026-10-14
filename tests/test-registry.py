@@ -3,6 +3,7 @@ import copy
 import importlib.util
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -96,6 +97,22 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(registry_module.canonical_provider(registry, "agent"), "cursor")
         with self.assertRaisesRegex(registry_module.RegistryError, "unknown provider"):
             registry_module.canonical_provider(registry, "missing")
+
+    def test_persisted_name_cli(self):
+        for name in (*registry["providers"], "agent"):
+            with self.subTest(name=name):
+                result = subprocess.run(
+                    [sys.executable, str(ROOT / "scripts/harness_registry.py"), "persisted-name", name],
+                    text=True, capture_output=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), "agent" if name in ("cursor", "agent") else name)
+        unknown = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/harness_registry.py"), "persisted-name", "grok"],
+            text=True, capture_output=True,
+        )
+        self.assertEqual(unknown.returncode, 2)
+        self.assertIn("ERROR:", unknown.stderr)
 
     def test_fleet_state_fails_closed_when_registry_is_missing(self):
         with tempfile.TemporaryDirectory(prefix="fleet-state-no-registry-") as temp_dir:
