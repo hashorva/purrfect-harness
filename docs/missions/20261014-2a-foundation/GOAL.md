@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 owner: Zamir
 orchestrator: opus
 created: 2026-10-14
@@ -63,7 +63,7 @@ Proposal only. Gate 0 decides. Source: `bash scripts/fleet-inventory.sh` at
 Tier chosen at GATE 0: mixed (economy first)
 Orchestrator (brain): Opus 5.5, effort high. Owner chose it via Antigravity (`agy`,
 `claude-opus-5-5-high`) to keep the Claude Pro pool for the Front Desk, with fallback
-`claude` / `opus` if the first agy run fails to launch. **Not yet frozen: see PROGRESS.md.**
+`claude` / `opus` if the first agy run fails to launch. **Frozen interim: `claude` / `opus`, effort high** (chair intent and switch rule in PROGRESS.md).
 
 Verified local CLIs: claude, codex, cursor-agent, agy, grok. `which -a` shows
 duplicate PATH entries only; all hits resolve to one binary per CLI (owner

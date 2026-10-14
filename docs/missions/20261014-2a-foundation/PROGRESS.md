@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Front Desk (Sonnet 5.5) — fleet frozen, status approved
+
+- **Fleet:** `fleet.json` frozen from the inventory probed 2026-10-14T15:00:44Z, approved by Zamir at 2026-10-14T15:25:56Z. `validate-fleet` exit 0. No re-probe between approval and freeze.
+- **Seats:** brain = claude / opus (alias), effort high. cursor.premium = grok-4.7-xhigh; cursor.economy = composer-2.5 (effort medium, speed standard). codex.premium = gpt-5.6-terra; codex.economy = gpt-6-luna. agy.economy = gemini-3.8-flash-high. claude.premium = sonnet; claude.economy = haiku (alias, effort medium). Not bound: agy.premium (unavailable), brain_codex, brain_fable.
+- **Brain evidence:** run `ec402a2f-6830-425a-b932-88332b044933`, receipt `.tasks/receipts/ec402a2f-6830-425a-b932-88332b044933.json`; `verify-mission.sh` exit 0 before this entry.
+- **Status:** `approved`.
+
 ## 2026-10-14 — Human — GATE 0 (chair option 2)
 
 - **Verdict:** option 2 approved: freeze now with the brain on `claude` / `opus`, effort high.
