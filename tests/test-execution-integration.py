@@ -219,7 +219,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             return ["-p", prompt, "--model", model, "--effort", effort, "--allowedTools", "Read,Write,Edit,Bash"]
         if provider == "agy":
             return ["--dangerously-skip-permissions", "--print-timeout", "30m", "--model", model, "--effort", effort, "-p", prompt]
-        return ["-p", "--force", "--trust", "--workspace", repo, "--model", f"{model}[effort={effort},fast={'true' if speed == 'fast' else 'false'}]", prompt]
+        return ["-p", "--force", "--trust", "--workspace", repo, "--model", model, prompt]
 
     def linked(self, *, role, provider, model, effort, speed, work_unit, feature):
         specs = list((self.root / ".tasks/specs").glob("*.json"))
@@ -246,7 +246,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertFalse(receipt["workspace_changed"])
         self.assertEqual(receipt["scope"]["result"], "pass")
         self.assertEqual(spec["schema_version"], 3)
-        self.assertEqual(spec["provider_contract_version"], 3)
+        self.assertEqual(spec["provider_contract_version"], 4)
         self.assertEqual(receipt["log_path"], f".tasks/logs/{spec['run_id']}.log")
         self.assertNotIn(spec["prompt"], json.dumps(receipt))
         invoked = json.loads((self.root / ".tasks/invoked.json").read_text())
@@ -259,8 +259,8 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         for role in ("worker", "brain"):
             for provider in PROVIDERS:
                 with self.subTest(role=role, provider=provider):
-                    model = f"{provider}-model"
                     speed = "fast" if provider == "agent" else "unknown"
+                    model = f"{provider}-model-fast" if provider == "agent" else f"{provider}-model"
                     self.write_fleet(provider, model, "high", speed,
                                      seat_name="brain" if role == "brain" else None)
                     args = (["bash", "scripts/spawn-worker.sh", provider, "docs/missions/fixture/tasks/T-001.md", "--provider", provider,
@@ -280,7 +280,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                     self.clean_runs()
 
     def test_cursor_alias_persists_agent_contract_through_wrappers(self):
-        model, speed = "cursor-model", "fast"
+        model, speed = "cursor-model-fast", "fast"
         self.write_fleet("agent", model, "high", speed)
         outcomes = []
         runs = (
@@ -928,8 +928,8 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         for provider in PROVIDERS:
             for tier in ("economy", "premium"):
                 with self.subTest(provider=provider, tier=tier):
-                    model = f"{provider}-{tier}-frozen"
                     speed = "fast" if provider == "agent" else "unknown"
+                    model = f"{provider}-{tier}-frozen-fast" if provider == "agent" else f"{provider}-{tier}-frozen"
                     self.write_fleet(provider, model, "high", speed, tier=tier)
                     result = self.invoke(["bash", "scripts/spawn-worker.sh", provider, "docs/missions/fixture/tasks/T-002.md",
                                           "--tier", tier, "--model", model, "--effort", "high", "--speed", speed, "--feature", "F002"])

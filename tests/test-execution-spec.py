@@ -151,7 +151,7 @@ class ExecutionSpecContract(unittest.TestCase):
         self.assertEqual(self.persist(self.spec_v3()).returncode, 0)
         self.assertEqual(self.persist(self.spec_v3(provider_contract_version=3)).returncode, 0)
         self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=1), check=False).returncode, 0)
-        self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=4), check=False).returncode, 0)
+        self.assertEqual(self.persist(self.spec_v3(provider_contract_version=4), check=False).returncode, 0)
         self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=True), check=False).returncode, 0)
 
     def test_persistence_is_canonical_hashed_and_no_clobber(self):
@@ -200,14 +200,58 @@ class ExecutionSpecContract(unittest.TestCase):
         fast, fast_digest = self.persisted(self.spec_v3(provider="agent", speed="fast"))
         self.assertEqual(json.loads(self.adapter(fast, fast_digest).stdout)["argv"][-2], "test-model[effort=medium,fast=true]")
 
-    def test_construct_emits_v3_contract_3(self):
+    def test_cursor_contract_four_plain_models_and_prelaunch_rejections(self):
+        cases = [
+            ("composer-2.5", "medium", "standard", "composer-2.5"),
+            ("grok-4.7-medium", "medium", "standard", "grok-4.7-medium"),
+        ]
+        for model, effort, speed, expected_model in cases:
+            path, digest = self.persisted(self.spec_v3(provider="agent", model=model, effort=effort, speed=speed,
+                                                       provider_contract_version=4))
+            argv = json.loads(self.adapter(path, digest).stdout)["argv"]
+            self.assertEqual(argv[argv.index("--model") + 1], expected_model)
+        env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", EXECUTION_SENTINEL=str(self.sentinel))
+        rejected = [
+            ("grok-4.7-xhigh", "medium", "standard"),
+            ("composer-2.5-fast", "medium", "standard"),
+            ("composer-2.5", "medium", "fast"),
+        ]
+        for model, effort, speed in rejected:
+            with self.subTest(model=model, effort=effort, speed=speed):
+                path, digest = self.persisted(self.spec_v3(provider="agent", model=model, effort=effort, speed=speed,
+                                                           provider_contract_version=4))
+                result = self.adapter(path, digest, dry=False, env=env, check=False)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.sentinel.exists())
+
+    def test_cursor_real_rejection_fixture_contract_three_fails_contract_four_succeeds(self):
+        fixture = ROOT / "tests/fixtures/cursor-model-rejection.txt"
+        message = fixture.read_text().strip()
+        available = message.split("Available models: ", 1)[1]
+        fake_bin = self.tmp / "cursor-bin"
+        fake_bin.mkdir()
+        fake = fake_bin / "cursor-agent"
+        fake.write_text("#!/usr/bin/env python3\nimport sys\nmodel = sys.argv[sys.argv.index('--model') + 1]\navailable = " + repr(available) + "\nif model not in available.split(', '):\n    print(" + repr(message.split('. Available models:', 1)[0] + '. Available models: ') + " + available)\n    raise SystemExit(1)\nprint('OK')\n")
+        fake.chmod(0o755)
+        env = dict(os.environ, PATH=f"{fake_bin}:{os.environ['PATH']}")
+        for contract, expected in ((3, 1), (4, 0)):
+            path, digest = self.persisted(self.spec_v3(provider="agent", model="composer-2.5", effort="medium", speed="standard",
+                                                       provider_contract_version=contract))
+            result = self.adapter(path, digest, dry=False, env=env, check=False)
+            self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+            if contract == 3:
+                self.assertTrue(result.stdout.startswith(message.split('. Available models:', 1)[0] + '. Available models:'))
+            else:
+                self.assertEqual(result.stdout.strip(), "OK")
+
+    def test_construct_emits_contract_4(self):
         spec, path, _ = execution_spec.construct(
             role="worker", mission="docs/missions/fixture", feature="F001", work_unit="T-001", attempt=1,
             provider="codex", model="test-model", effort="medium", speed="unknown", repo=str(self.repo),
             prompt="exact prompt", write_scope=["allowed.txt"],
         )
         self.assertEqual(spec["schema_version"], 3)
-        self.assertEqual(spec["provider_contract_version"], 3)
+        self.assertEqual(spec["provider_contract_version"], 4)
         self.assertEqual(json.loads(path.read_text()), spec)
 
     def test_negative_adapter_paths_do_not_invoke_provider_sentinel(self):

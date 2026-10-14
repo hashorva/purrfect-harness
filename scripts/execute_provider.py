@@ -47,9 +47,18 @@ def provider_contract(spec):
             raise SpecError("agent requires a supported explicit effort and speed")
         if "[" in model or "]" in model:
             raise SpecError("agent model must not already contain parameters")
-        resolved_model = f"{model}[effort={effort},fast={'true' if speed == 'fast' else 'false'}]"
-        # Contract 3: Grok Build also installs a bare `agent`, so the Cursor CLI
-        # is called by its unambiguous name. Contracts 1/2 keep their history.
+        # Contract 4 sends only the model ID; models without name-encoded effort receive no effort argument.
+        if contract_version >= 4:
+            fast_model = model.endswith("-fast")
+            if fast_model != (speed == "fast"):
+                raise SpecError("cursor model -fast suffix and spec speed must agree")
+            effort_match = re.search(r"-(none|minimal|low|medium|high|xhigh|max)(?:-fast)?$", model)
+            if effort_match and effort_match.group(1) != effort:
+                raise SpecError(f"cursor model name encodes effort {effort_match.group(1)}; spec effort is {effort}")
+            resolved_model = model
+        else:
+            resolved_model = f"{model}[effort={effort},fast={'true' if speed == 'fast' else 'false'}]"
+        # Contract 3+: Grok Build also installs a bare `agent`, so use Cursor's unambiguous CLI.
         cursor_cli = "cursor-agent" if contract_version >= 3 else "agent"
         argv = [cursor_cli, "-p", "--force", "--trust", "--workspace", repo, "--model", resolved_model, prompt]
     return argv, {}

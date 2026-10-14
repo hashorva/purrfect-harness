@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 — T-009 worker — Cursor contract 4 implemented; suite blocked by out-of-scope assertion
+
+- **Changed:** introduced provider contract 4. Cursor contracts 1–3 retain their recorded bracketed argv; contract 4 sends the model ID verbatim and rejects mismatched effort-name or `-fast` speed before launch. Added fixture-backed real-adapter regression coverage, updated fresh-wrapper contract expectations, and appended the model-family encoding table to F004 evidence.
+- **Focused checks:** baseline `shellcheck scripts/*.sh tests/*.sh`, `tests/test-execution-spec.py` and persisted-spec loading passed. Final `tests/test-execution-spec.py` (10 tests), `tests/test-execution-integration.py` (20 tests), fixture grep, evidence heading grep, persisted-spec loading, shellcheck and no-`__pycache__` checks passed. `git diff --check` passed.
+- **Required full-suite check:** `bash tests/run-tests.sh` failed at `tests/run-tests.sh:458`, “cursor-agent receives the exact invocation with intact final prompt”. That assertion still expects the contract-3 bracketed model argument for a fresh wrapper launch; T-009 explicitly allows editing `tests/test-execution-integration.py` but does not allow editing `tests/run-tests.sh`. Full log: `/tmp/t009-run-tests.log`. No out-of-scope file was changed.
+- **Result:** no feature acceptance or mission gate/status change. This scoped change is committed for correction/review; T-009 exit criteria remain incomplete because the required full suite is red.
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — S1 REAL SEAT SMOKE RESULT; T-009 dispatch
 - **S1:** `bash scripts/fleet-doctor.sh --smoke --mission docs/missions/20261014-2a-foundation --seat claude.premium --seat claude.economy --seat codex.premium --seat codex.economy --seat agy.economy --timeout 300 --keep --dest <scratchpad>/smoke-s1` → exit 1 (expected: one seat unusable). Base commit `cb55e645`. Summary `.tasks/smoke/20261014T222833Z.json` (local); transcripts kept under the scratch destination (local, not committed). Live tree unchanged (clean, same HEAD), no stale bytecode, no leftover provider processes from the smoke.
   | seat | status | model / effort | reason |

@@ -29,3 +29,21 @@ The bracket form `[effort=…,fast=…]` is rejected by this `cursor-agent` for 
 model ID `composer-2.5` is accepted. Effort and fast state go in the model name for other Cursor models
 (for example `grok-4.7-high-fast`, `gemini-3.8-flash-high`); `composer-2.5` and `composer-2.5-fast` are
 the only Composer IDs listed, with no effort variants. Not tested: the bracket form with a Grok model.
+
+## 4. Name encoding by family
+
+Patterns below are read from the Available models list in section 1; a token is listed only when that family has at least one model name ending in it.
+
+| family | effort tokens in the name | `-fast` variant |
+|---|---|---|
+| composer-2.5 | none | yes |
+| grok-4.7 | low, medium, high, xhigh | yes |
+| cursor-grok-4.6 | low, medium, high, xhigh | yes |
+| gemini-3.8-flash | low, medium, high | no |
+| claude-opus-5-5 | low, medium, high, xhigh, max | yes |
+| claude-sonnet-5-5 | low, medium, high, xhigh, max | no |
+| claude-haiku-5-5 | low, medium, high, xhigh, max | no |
+| gpt-5.6-terra | none, low, medium, high, xhigh, max | yes |
+| gpt-5.6-luna | none, low, medium, high, xhigh, max | yes |
+
+The frozen `cursor.premium` seat (`grok-4.7-xhigh`, effort `medium`) is refused under contract 4 until the owner decides.
