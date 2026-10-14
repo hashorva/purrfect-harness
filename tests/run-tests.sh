@@ -451,7 +451,7 @@ printf '#!/usr/bin/env bash\ntouch "%s"\nexit 0\n' "$GROK_DECOY" > "$STUBBIN/age
 chmod +x "$STUBBIN/agent"
 AGENT_MODEL="agent-test-model"
 AGENT_EXPECTED="$TARGET/.agent-expected"
-printf '%s\n' cursor-agent -p --force --trust --workspace "$TARGET_CANONICAL" --model "${AGENT_MODEL}[effort=xhigh,fast=false]" "$CODEX_PROMPT" > "$AGENT_EXPECTED"
+printf '%s\n' cursor-agent -p --force --trust --workspace "$TARGET_CANONICAL" --model "$AGENT_MODEL" "$CODEX_PROMPT" > "$AGENT_EXPECTED"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
     bash scripts/spawn-worker.sh agent docs/missions/20990101-fixture/tasks/T-001.md \
       --tier economy --model "$AGENT_MODEL" --effort xhigh --feature F001 ) >/dev/null 2>&1 || true
