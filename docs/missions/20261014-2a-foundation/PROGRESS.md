@@ -4,6 +4,17 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 (night 2) — Front Desk (Sonnet 5.5) — Architect plan received; 32 tasks committed
+
+- **Plan receipt:** run `7c022e62-340c-47e5-9e56-243f0ec06cff`, receipt `.tasks/receipts/7c022e62-340c-47e5-9e56-243f0ec06cff.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `835e853`. `Plan: READY`. Architect run 5 (no cap tonight).
+- **Done:** copied `T-007` to `T-038` unchanged into `tasks/` and the plan README to `plan-night2.md`. Mechanical check: ids match filenames, features exist and are pending, no `{{`, each has a `## Why each check exists` and the long-command rule. No tag, no gate.
+- **Review policy tonight (owner):** every guard, safety-test, verification/acceptance/dispatch change gets its own Architect review; the plan's batches B1-B10 are not used. Routine diffs: `code-reviewer`. Mechanical review is mine.
+- **Carrier features (Architect decision 7, noted):** T-007, T-008, T-010, T-011, T-012 are filed under F007; they are slice evidence only, F007 is accepted only on T-038. T-009 and T-013 to T-017 are filed under F004.
+- **Owner decisions found by the plan (do not block; for the morning):** (1) `cursor.premium` is frozen as `grok-4.7-xhigh` with effort `medium`; under the Cursor fix it is refused before launch, so only `cursor.economy` is usable on Cursor tonight. Options: re-freeze `grok-4.7-medium`/`medium` or `grok-4.7-xhigh`/`xhigh`, or leave it until fleet v2. (2) `agy.economy` has the same pattern (`gemini-3.8-flash-high` with `--effort medium`); the smoke will show whether agy accepts it.
+- **Routing plan:** T-007 and T-008 (diagnostics, build the smoke; avoid codex because the clones contain `.agents/`) go to claude.economy, proven in this mission. Cursor and agy seats are not used until the smoke passes them. After S1 (the real smoke) I rotate economy tasks across the seats that pass.
+- **Helper:** `.tasks/route.py` (local, not committed) appends one line per run to `routing-data.jsonl`.
+- **Next:** dispatch T-007 on claude.economy.
+
 ## 2026-10-14 (night 2) — Brain / Architect (claude/opus, effort high) — night 2 plan: 32 task drafts
 
 - **Run:** `7c022e62-340c-47e5-9e56-243f0ec06cff`; log `.tasks/logs/7c022e62-340c-47e5-9e56-243f0ec06cff.log`; spec role `brain`, action `review` (planning request), base `46a1bc3`, write scope this file only. The launcher writes the receipt `.tasks/receipts/7c022e62-340c-47e5-9e56-243f0ec06cff.json` when this run ends; it did not exist while this entry was written. No worker or CLI was launched by this run.
