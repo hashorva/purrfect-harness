@@ -4,6 +4,17 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Front Desk (Sonnet 5.5) — T-004 attempt 2: VERIFY FAIL classified as environment; plan change
+
+- **Run:** `ad1e4e18-15a6-4fd5-abad-615e6be07411` (codex.economy, gpt-6-luna, effort medium), receipt `.tasks/receipts/ad1e4e18-15a6-4fd5-abad-615e6be07411.json`: outcome `completed`, exit 0, scope pass, commit `1997031`, 9 changed paths all in the allow-list. `code-reviewer` (full diff = attempt 1 patch + attempt 2): **Verdict: PASS**, no blocking issues.
+- **Verification:** `VERIFY FAIL`, exit 1; record `verification/ad1e4e18-15a6-4fd5-abad-615e6be07411.json` (kept as history, immutable). Six of seven checks passed, including `bash scripts/fleet-doctor.sh` (exit 0, outside the sandbox). The seventh, `bash tests/run-tests.sh`, failed only at `ExecutionSpec focused test leaves no scripts bytecode`.
+- **Classification (owner):** **environment: stale bytecode from Architect run 5ad82e2d; checks run in the live tree.** `scripts/__pycache__` (`fleet_state` and `harness_registry` `.pyc`, 19:03:25 local) was created inside Architect run `5ad82e2d-592e-49eb-8cf0-c28c51157bb5` (receipt 19:06:34), before T-004 attempt 2 started. It does not count against codex.economy. The folder was gitignored, so no clean-tree check saw it. Deleted (`rm -r scripts/__pycache__`, two `.pyc` files, nothing else); the suite check passes again once it is gone.
+- **Owner decision (option 2, no T-004-Q1):** the FAIL record is committed as history and not re-verified (the verifier refuses a second record for the same run). F001 is accepted only on T-005's run. T-005's verification commands run `tests/test-registry.py`, `tests/test-fleet-doctor.py`, the manifest grep for the two doctor files, `fleet-doctor.sh`, shellcheck and the full suite, so T-005's passing record also covers T-004's code. I added the manifest grep to T-005 (the rest were already there). T-004's attempt budget is used (2 of 2); mission audit exit 0 with the FAIL record present.
+- **ARCHITECT BACKLOG (owner, for the next Architect run): 2A task "verification runs in a clean worktree".** (1) `verify-mission.sh` runs the checks in a temporary git worktree at the receipt's commit, then removes it. (2) A new numbered VerificationRecord is allowed for the same run; old records stay immutable and acceptance cites the record hash. (3) `PYTHONDONTWRITEBYTECODE=1` is exported in `spawn-worker.sh` and `spawn-brain.sh`. The Architect writes the task and reviews the diff. Guard/verification code, so Architect review is required. Not scheduled before the next night's budget.
+- **L-007 candidate:** verification must not depend on the live working tree. (With L-003: no test mutates it; no review run should leave files in it.)
+- **Budget counters:** worker runs 8 of 12 used (T-004 attempt 2 counted); T-006 will be 9, T-005 10. Architect 4 of 4 used tonight.
+- **Next:** dispatch T-006 (cursor.economy), then T-005, then stop at F001 acceptance.
+
 ## 2026-10-14 — T-004 worker — fleet doctor implemented
 
 - **Changed:** added registry identity patterns and login probes; validated both fields; added `fleet-doctor.sh`/`fleet_doctor.py`, fixture coverage, suite registration, and manifest ownership entries. Existing provider/capability/seat/fallback values remain unchanged.
