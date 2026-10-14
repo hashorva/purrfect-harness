@@ -18,7 +18,11 @@
         "`grep -l fleet-doctor.sh .agents/skills/mission-init/SKILL.md .agents/skills/dispatch-worker/SKILL.md` lists both files, and `grep -nE 'which -a|command -v agent' .agents/skills/mission-init/SKILL.md .agents/skills/dispatch-worker/SKILL.md` exits 1",
         "shellcheck scripts/*.sh tests/*.sh and bash tests/run-tests.sh exit 0"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "f1824d4b-2683-4410-974c-383c5f13012e",
+      "accepted_verification_sha256": "b308b13426612cc65837d7f9f564ba1dbfd0e65eeb9e881d0620d4f0f31a7ab5",
+      "accepted_at": "2026-10-14T21:01:09.150747Z",
+      "accepted_by": "Front Desk (claude-sonnet-5-5), owner-approved by Zamir"
     },
     {
       "id": "F003",
