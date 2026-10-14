@@ -4,6 +4,16 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — S2 CURSOR RE-SMOKE RESULT; T-010 dispatch
+- **S2:** `bash scripts/fleet-doctor.sh --smoke --mission docs/missions/20261014-2a-foundation --seat cursor.economy --seat cursor.premium --timeout 300 --keep --dest <scratchpad>/smoke-s2` → exit 1 (expected: one seat unusable). Summary `.tasks/smoke/20261014T232111Z.json` (local). Live tree clean, no bytecode.
+  | seat | status | model / effort / speed | reason |
+  |---|---|---|---|
+  | cursor.economy | **usable** | composer-2.5 / medium / standard | both smoke files in HEAD (Cursor can write `.agents/`) |
+  | cursor.premium | **unusable** | grok-4.7-xhigh / medium / standard | refused before launch: `cursor model name encodes effort xhigh; spec effort is medium` (frozen-seat inconsistency; owner decision to re-freeze) |
+- **Classification:** cursor.premium is a frozen-fleet inconsistency, not a Cursor or Grok failure; it used no quota (refused before the CLI). cursor.economy's first use tonight is covered by this passing smoke.
+- **Usable seats now:** claude.economy, claude.premium, cursor.economy, codex.economy and codex.premium (not for `.agents/` edits, not for login-state checks). Unusable: agy.economy (hang, T-039 blocked), cursor.premium (frozen inconsistency).
+- **Rotation:** T-010 (launcher, S; Architect review) goes to cursor.economy: first Cursor data point tonight.
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — Architect PASS on T-009; Architect process incident; T-039 BLOCKED on probe P-3
 - **Architect review of T-009 (alone):** run `0b255653-faba-4606-a90a-e4a090fe1c97`, receipt `.tasks/receipts/0b255653-faba-4606-a90a-e4a090fe1c97.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `960d194`. **Verdict: PASS** on `865063c` + `d569a42`: contract 4 sends the plain ID and its test is built from the real rejection message; contracts 1-3 unchanged over 1,764 synthetic specs and all 55 persisted specs; 5 mutations all killed; only the Cursor argv line in `tests/run-tests.sh` changed; no other dispatch gate changed; `cursor.economy` launches with `--model composer-2.5`, `cursor.premium` is refused before launch (exit 125, "cursor model name encodes effort xhigh; spec effort is medium").
 - **INCIDENT (Architect process, disclosed by it; recorded here for the budget and the morning report):** its first mutation run had no fake `cursor-agent` on PATH, so the missing stub in `tests/test-execution-spec.py` launched the **real** `cursor-agent` twice from a temp repo: once with `grok-4.7-xhigh` (ended in ~20 s, output lost) and once with `composer-2.5-fast` (**a fast-mode model, against the owner's rule**; killed after ~10 min). Nothing was changed except a deleted temp folder; the live tree stayed clean. **Count Cursor as 2 unplanned runs tonight, 1 of them fast-mode; the cost is unknown.** It also left `scripts/__pycache__` (removed; `python3 -I` ignores `PYTHONDONTWRITEBYTECODE`). No credits path was used. My action: no further Architect request may run a test suite or mutation without a fake `cursor-agent` first on PATH; I will say so in every later review request. The missing stub is folded into T-039 (item 3).
