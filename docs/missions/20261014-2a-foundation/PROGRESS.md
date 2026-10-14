@@ -4,6 +4,35 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-007 (`19f188d`, `db928dc`)
+
+- **Run:** `6e149e88-5ef6-496b-913c-9c53caf58a85`; log `.tasks/logs/6e149e88-5ef6-496b-913c-9c53caf58a85.log`; spec role `brain`, action `review`, base `a5f220d`, write scope this file only. The launcher writes the receipt `.tasks/receipts/6e149e88-5ef6-496b-913c-9c53caf58a85.json` when this run ends; it did not exist while this entry was written. This run launched no worker, brain or provider CLI. The only worker evidence is receipt `5cb043b4-…` (claude/haiku, completed, exit 0, scope pass, changed paths = the 6 allow-listed files, `git_after.head` `db928dc`).
+- **Method:** I judged the effects only. All probes ran with `PYTHONDONTWRITEBYTECODE=1`. Mutations ran in scratch `git clone`s in the session scratchpad, never in the live tree.
+- **(1) Live tree untouched, PASS.** I took a fingerprint (sha256 of every file under `scripts/`, `tests/`, `.agents/`, `docs/missions`, plus `HEAD`, `git status --porcelain --untracked-files=all`, `git for-each-ref`, `.tasks/smoke` listing) before and after these live runs: a plain `--smoke --dry-run`, `--seat no.such.seat` (exit 2), `--seat brain` (exit 2), no `--dry-run` (exit 2, `launch is implemented in T-008`), `--dest docs/zz-smoke` (exit 2; dir not created), `--dest .` (exit 2), a non-empty `--dest` (exit 2), a kept clone in the scratchpad, and plain `fleet-doctor.sh` (exit 0, 0 ERROR lines). Both fingerprints were `184dcfa2…e0ea74`. No `scripts/__pycache__` or `tests/__pycache__`.
+- **(2) Guards unchanged, PASS.** `git diff --stat 5dc543a HEAD` on `spawn-worker.sh`, `spawn-brain.sh`, `dispatch_policy.py`, `execute_provider.py`, `execution_*.py`, `verification_record.py`, `fleet_state.py`, `harness-registry.json`, `.agents/`, and the mission `features.json`/`fleet.json`/`GOAL.md` is empty. `fleet_doctor.py` only adds `--smoke` routing when it is the first argument; the plain path is unchanged.
+- **(3) Refusals, no launch, included quota only, PASS.** I made a dirty tree in a scratch clone of this repo and ran that clone's `fleet-doctor.sh`. Result: exit 1, `ERROR smoke: live tree must be clean`, no `--dest` created and no `purrfect-smoke.*` left in `$TMPDIR`. `--dry-run` runs only `git` and `active-mission.sh`. Without `--dry-run` it exits 2 before the clone. Each argv carries the frozen seat's own effort/speed (cursor `standard`, others `unknown`), so fast or credits cannot enter here, and `spawn-worker.sh` still asserts equality with the frozen seat.
+- **(4) No login/account output, PASS (for this slice).** The summary keys are `base_commit, clone, kept, mission, seats{task,argv}, skipped`, all built from Git and the fleet. No provider CLI is called.
+- **(5) Clone removal, PASS.** After a plain dry run, both the clone and its `mkdtemp` parent are gone. With `--keep`, the clone stays. Removal is in `finally`, so it also runs on refusals after the clone step.
+- **(7) Fleet copy, PASS.** In a kept clone, the smoke `fleet.json` equals `canonical()` of the frozen fleet with only `mission.path` and `approval.approved_by` replaced. The task requires both. `approved_by` names the source file and its sha256 (`42822213…4310a`, which matches the live file). `validate-fleet` exits 0. The clone has exactly one active mission (`active-mission.sh` → `docs/missions/00000000-seat-smoke`), one fixture commit by `seat smoke <smoke@localhost.invalid>`, and a clean tree.
+- **(6) Tests not vacuous, PASS with one gap.** The unmutated baseline in a clone passed 10 tests, exit 0. I ran 9 single-expression mutations of `scripts/seat_smoke.py`; each one compiled before the run:
+  - `clean-tree` failed `test_dirty_source_tree_is_refused` (0≠1).
+  - `discard` failed `test_clone_is_removed_without_keep`.
+  - `dest-inside-live` failed `test_dest_inside…` (1≠2).
+  - `one-active-mission` failed `test_kept_clone…` (`multiple active missions`).
+  - `canonical-provider` failed `test_dry_run…` (`'agent' != 'cursor'`).
+  - `dry-run-required` failed `test_launch_is_refused…` (0≠2).
+  - `unknown-seat` failed `test_unknown_seat_exits_2` (1≠2; the code crashes with `KeyError`, and the asserted exit code still catches it).
+  - `brain-filter` failed through an `IndexError` crash in `smoke_argv`. The test catches it, but the crash happens before the seat-set assertion runs.
+  - **`live-snapshot` (`if after != before` → `if False`) SURVIVED: exit 0.** No test proves the `ERROR smoke: live tree changed` guard. A dry run cannot write to the live tree by itself, so this does not block T-007. It is the main live-tree guard once T-008 launches workers.
+- **Required in T-008 (not blocking T-007):**
+  - (a) A mounted negative for `live tree changed`. For example, a stub launch writes into the source fixture; assert exit 1 and that exact message.
+  - (b) Neutralise the clone's `origin`. Today it fetches from and pushes to the live repo, and `execution_receipt.snapshot` compares only `HEAD` and status, so a smoke worker's `git push origin <new-branch>` would add a live ref that nobody sees. Either `git remote remove origin` in the fixture step, or add a `for-each-ref` hash to the before/after check. Add a test either way.
+  - (c) The summary carries only receipt and Git fields, never log text, so no login or account output can reach it.
+  - (d) No action needed: the fixture `features.json` has no `mission`/`rules` keys, but `dispatch_policy` only requires a `features` list.
+- **Not done:** no acceptance, no `verify-mission.sh` record, no features/fleet/GOAL/status change, no dispatch. The scratch clones are in the session scratchpad only.
+
+Verdict: PASS
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-007 verified; Architect review requested
 - **Mechanical review:** run `5cb043b4-99c7-404f-ae9f-337d0b32d922` (T-007, seat claude.economy, haiku, effort medium, attempt 1), receipt `.tasks/receipts/5cb043b4-99c7-404f-ae9f-337d0b32d922.json`: outcome `completed`, exit 0, scope pass, commits `19f188d` and `db928dc`, 6 changed paths (PROGRESS.md, harness-manifest.json, scripts/fleet_doctor.py, scripts/seat_smoke.py, tests/run-tests.sh, tests/test-seat-smoke.py). `verify-mission.sh --run-id 5cb043b4-99c7-404f-ae9f-337d0b32d922` → `VERIFY PASS`, exit 0 (8 commands all exit 0, including the full suite). Record `verification/5cb043b4-99c7-404f-ae9f-337d0b32d922.json` is slice evidence for F007 (carrier), not acceptance. Routing line written (diagnostics, M, claude.economy, done, failure none).
 - **Worker narrative note (L-009):** it says it launched no worker through `spawn-worker.sh`; the receipt above is the evidence. Its dry run was refused once for an uncommitted tree (the clean-tree guard working).
