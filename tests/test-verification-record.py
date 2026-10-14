@@ -6,8 +6,10 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -282,7 +284,16 @@ class VerificationRecordIntegration(unittest.TestCase):
 
     def test_required_guard_mutations_break_the_real_focused_entry_and_restore(self):
         """Every named authority guard is mounted: removing it breaks a real test entry."""
-        policy = ROOT / "scripts/verification_record.py"
+        # The focused test below loads its policy from its own repository root.
+        # Give it a private copy so guard mutations can never affect this checkout.
+        with tempfile.TemporaryDirectory(prefix="verification-guard-mutation-") as temp_dir:
+            temp_root = Path(temp_dir)
+            for directory in ("scripts", "tests", "schemas", "docs/missions/templates"):
+                shutil.copytree(ROOT / directory, temp_root / directory)
+            self._assert_guard_mutations_break_focused_entries(temp_root)
+
+    def _assert_guard_mutations_break_focused_entries(self, temp_root):
+        policy = temp_root / "scripts/verification_record.py"
         original = policy.read_text()
         mutations = (
             ("task-at-base", 'if not line.startswith("- `") or not line.endswith("`") or line.count("`") != 2:\n            fail("verification command must be one Markdown JSON code span bullet")\n        try: argv = json.loads(line[3:-1])',
@@ -322,7 +333,8 @@ class VerificationRecordIntegration(unittest.TestCase):
                 policy.write_text(source)
                 try:
                     result = subprocess.run([sys.executable, "tests/test-verification-record.py",
-                                             f"VerificationRecordIntegration.{target}"], cwd=ROOT,
+                                             f"VerificationRecordIntegration.{target}"], cwd=temp_root,
+                                            # Run from the temporary copy containing the mutated guard.
                                             env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
                                             text=True, capture_output=True)
                     output = result.stdout + result.stderr

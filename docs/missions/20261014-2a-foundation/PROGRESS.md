@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — T-001-R1 worker — complete; awaiting orchestrator verification
+
+- **Checked:** every `tests/test-*.py` file and `tests/run-tests.sh` for filesystem writes, copies, deletes and permission changes. The integration tests' mutations target their temporary fixture repositories; `tests/test-verification-record.py` was the live-tree writer. Its guard mutation now runs against a temporary copy of `scripts/`, `tests/`, `schemas/` and `docs/missions/templates/`, removed by `TemporaryDirectory` even on failure. No other live-tree writes were found.
+- **Changed:** `tests/test-verification-record.py` to isolate the guard mutation while preserving the real focused test entry-point assertion; `docs/missions/templates/WORKER_TASK.template.md` to include the required long-command rule in Iteration policy.
+- **Baseline:** shellcheck, manifest/features JSON validation and `python3 tests/test-fleet-state.py` all exit 0.
+- **Checks:** `python3 tests/test-verification-record.py` exit 0 (12 tests); two concurrent copies of each `tests/test-*.py` completed without failure; `bash tests/run-tests.sh` exit 0 (`ALL TESTS PASSED`). The shipped template rendered and verified through the full suite. `git diff --check` exit 0. The test runs left no changes beyond the two intended files before this progress entry.
+- **Result:** no feature acceptance or mission gate/status change. Scoped change and this entry committed as `test: mutate a temporary copy, never the live tree`.
+
 ## 2026-10-14 — T-001 worker — blocked at baseline
 
 - **Did:** read the task, mission instructions, newest progress, features, fleet-state constants and manifest; inspected `git log --oneline -10`.
