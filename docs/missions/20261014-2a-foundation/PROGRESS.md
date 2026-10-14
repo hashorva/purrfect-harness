@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — Architect review of T-007 PASS; T-008 text changed; T-008 dispatch
+- **Architect review of T-007 (alone):** run `6e149e88-5ef6-496b-913c-9c53caf58a85`, receipt `.tasks/receipts/6e149e88-5ef6-496b-913c-9c53caf58a85.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `e542251`. **Verdict: PASS.** It checked a before/after fingerprint of the live tree over nine runs (identical), the unchanged dispatch guards, the refusals, no login text in the summary, clone removal, and mutated 9 checks in scratch copies (8 of 9 broke a test).
+- **Two fixes the review requires before the first real smoke (both go into T-008):** (a) no test covers the "live tree changed" check; (b) the clone's `origin` still points at the live repo and the snapshot compares only the current commit and file status, so a smoke worker could push a branch into the live repo unnoticed. Fix: remove the clone's remote and add the ref list to the snapshot, with tests.
+- **Task-text change (recorded):** `tasks/T-008.md` gets objective items 9 and 10 for the two fixes above, and the plan tag changes from "batched with T-007" to "Architect (alone)". No other change.
+- **Routing exception (recorded):** T-008 avoids codex (`.agents/` limit may apply in clones), and cursor and agy seats have no passing smoke yet, so T-008 goes to claude.economy again. This is the only usable seat for this task.
+- **Next:** dispatch T-008 on claude.economy (attempt 1).
+
 ## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-007 (`19f188d`, `db928dc`)
 
 - **Run:** `6e149e88-5ef6-496b-913c-9c53caf58a85`; log `.tasks/logs/6e149e88-5ef6-496b-913c-9c53caf58a85.log`; spec role `brain`, action `review`, base `a5f220d`, write scope this file only. The launcher writes the receipt `.tasks/receipts/6e149e88-5ef6-496b-913c-9c53caf58a85.json` when this run ends; it did not exist while this entry was written. This run launched no worker, brain or provider CLI. The only worker evidence is receipt `5cb043b4-…` (claude/haiku, completed, exit 0, scope pass, changed paths = the 6 allow-listed files, `git_after.head` `db928dc`).
