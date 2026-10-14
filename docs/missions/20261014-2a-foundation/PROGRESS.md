@@ -4,6 +4,22 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Brain / Architect (claude/opus, effort high) — review of T-001-R1 (`68942df`)
+
+- **Run:** `127dd9c6-faa4-4bb3-9a70-0897226ea49a`; log `.tasks/logs/127dd9c6-faa4-4bb3-9a70-0897226ea49a.log`; spec role `brain`, `claude`/`opus`, effort `high`. The launcher writes the receipt `.tasks/receipts/127dd9c6-faa4-4bb3-9a70-0897226ea49a.json` when this run ends; it did not exist while this entry was written.
+- **Receipt `8d4ec44c…` (re-checked):** outcome `completed`, exit 0, `workspace_changed: true`, scope `pass`, no violations; base `15d9de6` → commit `68942df`; changed paths = the three allow-listed files. VerificationRecord `8d4ec44c….json` result `pass` at `68942df`.
+- **(1) Every original mutation is still applied — confirmed.** The `mutations` tuple at `68942df` is byte-identical to `15d9de6` (`diff` of the tuple block: no output). Same 8 labels: task-at-base, spec-hash, receipt-hash, identity-rebind, snapshot-rebind, snapshot-pre-post, lock, acceptance-hash. The loop, `GUARD_MUTATION_LABEL` filter and oracle (`AssertionError` required; `NameError`/`SyntaxError`/`\nERROR` rejected) are unchanged; only the mutated file's root and the sub-run `cwd` moved to the temp copy.
+- **(2) Each mutation still breaks its focused test — confirmed, same as before.** I ran the guard test from `git archive` exports of `15d9de6` and `68942df` (scratch only, live tree untouched) with a wrapper that logged each focused sub-run. Both: test OK, 8/8 sub-runs exit 1, same target, same failing subtest labels, and the same `AssertionError` once run UUIDs and temp paths are normalized. New sub-runs ran in `…/T/verification-guard-mutation-*`. Non-vacuity baseline: the 5 unmutated focused targets pass from a temp copy of the same 4 directories (exit 0, 5 tests), so the copy is complete.
+- **(3) The test writes nothing in the live tree — confirmed.** Ran the whole `tests/test-verification-record.py` (12 tests, exit 0) in this checkout while a watcher hashed `git status` and every file under `scripts/ tests/ schemas/ docs/missions/templates` every 50 ms: zero changes; before/after snapshots equal; `git status --short` empty; no `verification-guard-mutation-*` temp directory left. The rest of `tests/` grep-checked for live-tree writes: one hit (`tests/test-fleet-state.py:128`), which is a false positive (writes a temp-dir `fleet`).
+- **Template:** the long-command rule is in the Iteration policy; `ShippedWorkerTemplateIntegration` passed in the 12-test run.
+- **Finding (pre-existing at `15d9de6`, not caused by R1; does not block it):** the `snapshot-pre-post` mutation replaces a guard line with a bare `if False:\n`, so the mutated `verification_record.py` does not compile (`IndentationError`, line 179). The focused test fails because the script will not load, not because the guard is removed. The oracle misses this: it rejects `SyntaxError`, but the printed name is `IndentationError`. Probe with a compiling mutation (`if False: pass\n`): the focused test fails correctly (`AssertionError: 0 == 0 : VERIFY PASS`), so the guard *is* mounted; only this label's proof is vacuous. Proposed bounded fix (separate task, `tests/test-verification-record.py` only): use `'if False: pass\n'` as that replacement, and make the oracle also reject `IndentationError`/`TabError` (or reject any traceback from the mutated script).
+- **Audit:** `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` → `VERIFY OK`, exit 0, before this entry.
+- **Not done:** no `accept-feature.sh` (R1 is F001 slice evidence, not F001 completion); no features.json, fleet, gate or status change; no worker dispatched.
+- **Next:** dispatch T-001 attempt 2 per the Front Desk plan. The snapshot-pre-post fix can be a small `claude.economy` / `codex.economy` task before or after it.
+- **L-004 candidate:** a guard-mutation oracle must reject every compile error (`SyntaxError` and its subclasses), not only one name.
+
+Verdict: PASS
+
 ## 2026-10-14 — Front Desk (Sonnet 5.5) — T-001-R1 reviewed and verified; Architect review requested
 
 - **Mechanical review (receipt, scope, exit codes, verifier only):** run `8d4ec44c-791c-45a5-b672-8e1454c89a32`, receipt `.tasks/receipts/8d4ec44c-791c-45a5-b672-8e1454c89a32.json`: outcome `completed`, exit 0, scope pass, commit `68942df`, changed paths all in the allow-list. `bash scripts/verify-mission.sh --run-id 8d4ec44c-791c-45a5-b672-8e1454c89a32 docs/missions/20261014-2a-foundation` → `VERIFY PASS`, exit 0.
