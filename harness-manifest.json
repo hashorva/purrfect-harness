@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "release": {
-    "version": "2.3.2",
-    "required_tag": "v2.3.2"
+    "version": "3.0.0",
+    "required_tag": "v3.0.0"
   },
   "ownership": {
     "canonical_skills": [

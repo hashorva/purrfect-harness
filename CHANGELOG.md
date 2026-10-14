@@ -1,5 +1,66 @@
 # Changelog — agent-harness kit
 
+## 3.0.0 (2026-10-14)
+
+First release since `v2.3.0`. It publishes Phase 1 (Execution Truth) and the
+2.3.2 fixes. The untagged development baselines `2.3.1` and `2.3.2` below were
+never published; their entries stay as history.
+
+Every run is now provable: one UUID links the authorization, what actually ran,
+the verification, and the orchestrator's acceptance. A fresh process can rebuild
+that chain from the repository alone (see the F007 evidence archive).
+
+### Migration: read this before you update a consumer
+
+This is a major release. The updater alone is not enough.
+
+1. Update from the clean `v3.0.0` tag: `bash scripts/update-harness.sh /path/to/consumer`.
+   It works on a branch and never commits.
+2. Review the consumer's own `AGENTS.md` against `docs/templates/AGENTS.md.template`
+   by hand. Port the new mission rules; keep the project's own rules.
+3. Resolve `.claude/settings.json.new`. The new baseline allows the harness's
+   launch, verify and test commands.
+4. Old mission evidence stays, but it can fail the new strict audit. Do not invent
+   UUIDs or acceptance fields for old runs. Start new missions from the current
+   templates.
+5. New missions freeze their fleet at Gate 0 (`scripts/fleet_state.py freeze`).
+   Workers dispatch only from that `fleet.json`.
+6. Cross-repository dispatch (`--repo` to another repository) is disabled.
+7. Cursor workers now run as `cursor-agent`. Run `cursor-agent login` with the
+   account your Cursor app uses. Grok Build also installs a bare `agent`.
+8. Qualify one small real mission in the consumer before you rely on it.
+
+### What changes
+
+- **Authorization:** each brain or worker run writes an immutable, UUID-keyed
+  ExecutionSpec before the provider starts. One shared adapter builds the exact
+  command for Codex, Cursor, Antigravity and Claude.
+- **Frozen fleet:** Gate 0 freezes the approved models in the mission's
+  `fleet.json`. A later probe cannot change an active mission. Model, effort and
+  speed flags must match the frozen seat; they never override it.
+- **Dispatch gate:** a worker starts only for an in-progress mission, a committed
+  task for one pending feature, a clean tree, and an exclusive workspace lock.
+- **Terminal receipts:** every run ends with a receipt: outcome, exit code, Git
+  state before and after, commits, changed paths and a scope check. Timeouts and
+  interrupts stop the whole provider process tree.
+- **Verification and acceptance are separate:** `verify-mission.sh --run-id`
+  runs the task's checks on the exact snapshot and writes a VerificationRecord.
+  Only the orchestrator accepts a feature, with `accept-feature.sh`.
+- **Distribution:** `harness-manifest.json` owns what install, update and sync
+  copy. A normal install or update needs a clean, annotated release tag.
+- **CI on Linux and macOS**, with ShellCheck pinned to 0.11.0.
+- **Truthful inventory:** it reads the real Cursor, Antigravity and Grok model
+  lists, ranks by version (then date, then effort), never picks a `-fast` model
+  automatically, and marks a missing family as unavailable instead of guessing.
+
+### Known limits
+
+- Scope checks cover Git-visible changes in the declared workspace only.
+- Cursor effort and speed are still passed as `model[effort=…,fast=…]`. A real
+  Cursor run through the harness has not proved this format yet.
+- One worker at a time per repository. Parallel lanes, a loop driver, Grok Build
+  as its own provider and usage records are Phase 2 work.
+
 ## 2.3.2 (2026-10-14)
 
 - **Development baseline; not yet released:** `2.3.2` is an untagged development

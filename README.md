@@ -1,6 +1,6 @@
 ---
 title: Purrfect Harness
-version: 2.3.2
+version: 3.0.0
 updated: 2026-10-14
 ---
 
@@ -27,11 +27,11 @@ acceptance. Files and Git evidence carry the handoff, not chat memory.
   [mission](docs/missions/20260821-execution-truth/GOAL.md) are accepted, Human
   Gates 1 and 2 are registered, and a real authenticated consumer smoke has
   [self-contained reconstruction evidence](docs/missions/20260821-execution-truth/evidence/f007/README.md).
-- **Release is a separate step:** `2.3.2` in this checkout is an untagged
-  development baseline, not a final release decision. It adds the 2.3.2 fixes
-  (green CI, the `cursor-agent` lane, truthful model choice) to Phase 1. The badge above reports
-  the published release, which may differ. Version selection, migration review,
-  tagging, publication, and real-consumer adoption remain separate work.
+- **Released as 3.0.0:** Phase 1 plus the 2.3.2 fixes (green CI on Linux and
+  macOS, the `cursor-agent` lane, truthful model choice). It is a major release:
+  consumers must review their `AGENTS.md`, and old mission evidence can fail the
+  new strict audit. Read the migration notes in [CHANGELOG.md](CHANGELOG.md)
+  before you update a consumer.
 - **Phase 2+ is not implemented here:** no full AWU model, learning system,
   analytics, dashboard, LangGraph, ACP migration, or adaptive routing. These
   require a new scoped proposal and approval, not an extension of Phase 1.
