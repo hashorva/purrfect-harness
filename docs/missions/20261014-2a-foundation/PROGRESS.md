@@ -4,6 +4,72 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 (night 2) — Brain / Architect (claude/opus, effort high) — night 2 plan: 32 task drafts
+
+- **Run:** `7c022e62-340c-47e5-9e56-243f0ec06cff`; log `.tasks/logs/7c022e62-340c-47e5-9e56-243f0ec06cff.log`; spec role `brain`, action `review` (planning request), base `46a1bc3`, write scope this file only. The launcher writes the receipt `.tasks/receipts/7c022e62-340c-47e5-9e56-243f0ec06cff.json` when this run ends; it did not exist while this entry was written. No worker or CLI was launched by this run.
+- **Drafts:** `.tasks/plans/7c022e62-340c-47e5-9e56-243f0ec06cff/` (gitignored): `README.md` (ordered table, dependencies, orchestrator steps with exact commands, review batches, design decisions, owner decisions) and `T-007.md` … `T-038.md`. Copy them unchanged to `tasks/`. Each draft was checked with the real parsers: `dispatch_policy.front_matter`, `dispatch_policy.worker_write_scope`, and the `task_at_base` verification-section rules (32/32 parse). Every draft: all template sections, a `## Why each check exists`, the long-command rule, `max_attempts: 2`, `worker:`/`invocation:` = `any usable economy seat (the Front Desk rotates)`, and `## Seat limits` where a seat must be avoided.
+- **Ordered list** (id — title — category — size — review — seats to avoid):
+  1. T-007 — seat smoke slice 1: clone, smoke mission, `--smoke --dry-run` — diagnostics — M — Architect B1 — codex
+  2. T-008 — seat smoke slice 2: launch, classify, summary — diagnostics — M — Architect B1 — codex
+  - S1 (Front Desk): `bash scripts/fleet-doctor.sh --smoke`, after B1 PASS
+  3. T-009 — Cursor contract 4, plain model ID (F004) — adapter — M — Architect B2 — cursor.*
+  - S2 (Front Desk): `fleet-doctor.sh --smoke --seat cursor.economy --seat cursor.premium`
+  4. T-010 — export `PYTHONDONTWRITEBYTECODE=1` in both launchers — launcher — S — Architect B2 — none
+  5. T-011 — verification in a clean temporary worktree — verification — L — Architect B3 (alone) — none; premium seat for attempt 2
+  6. T-012 — numbered VerificationRecords — verification — M — Architect B4 — none
+  - P-1 (Front Desk probe): Codex `--add-dir .agents`, two tiny Luna calls (command in README)
+  7. T-013 — Codex `--add-dir .agents`, only if P-1 passed (F004) — adapter — S — Architect B4 — none
+  8. T-016 — N1, compare provider names after conversion (F004) — launcher — S — Architect B4 — none
+  9. T-014 — registry `sandbox_limits` (F004) — registry — S — Architect B5 — none
+  10. T-015 — `dispatch_policy` refuses allow-lists that hit a write limit (F004) — dispatch-policy — M — Architect B5 — codex
+  11. T-017 — registry validator gaps, N3 pinned (F004) — registry — S — Architect B5 — none
+  - A-2 (Architect run): parallel worktree dispatch proposal, document only
+  - P-2 (Front Desk probe): JSON output and `--json-schema` per CLI, one tiny call each
+  12. T-018 — observation parser (F003) — parser — M — code-reviewer — none
+  13. T-019 — receipt v2 `observation` block (F003) — receipts — M — Architect B6 — none
+  14. T-020 — adapters request JSON, runner fills observation; **F003 acceptance run** — adapter — M — Architect B6 — none
+  - S3 (Front Desk): full re-smoke (argv changed)
+  15. T-021 — registry model-name encoding, door providers (F004) — registry — S — Architect B7 — none
+  16. T-022 — fleet v2 validation (F004) — fleet — M — Architect B7 — none
+  17. T-023 — fleet v2 resolver (F004) — fleet — M — Architect B7 — none
+  18. T-024 — per-spawn resolution and drift log (F004) — launcher — M — Architect B8 — none
+  19. T-025 — delete FALLBACKS (F004) — registry — S — Architect B8 — none
+  20. T-026 — chair seat to agy `claude-opus-5-5-high` with drift; **F004 acceptance run** — fleet — S — Architect B8 — none
+  - A-1 (Architect run): brain-seat move plan, document only, not applied
+  21. T-027 — ledger row schema and validator (F005) — ledger — M — code-reviewer — none
+  22. T-028 — ledger privacy rule (F005) — ledger — S — Architect B9 — none
+  23. T-029 — runner writes a ledger row per run (F005) — ledger — M — Architect B9 — none
+  24. T-030 — fold rows and drift events once (F005) — ledger — M — Architect B9 — none
+  25. T-031 — derived view helper (F005) — ledger — S — code-reviewer — none
+  26. T-032 — docs: ledger in the loop; **F005 acceptance run** — docs — S — code-reviewer — codex
+  27. T-033 — verdict schemas and dependency-free validator (F006) — schema — M — code-reviewer — none
+  28. T-034 — registry `structured_output`, post-run validation (F006) — registry — S — Architect B10 — none
+  29. T-035 — skills name the schemas; **F006 acceptance run** — docs — S — code-reviewer — codex
+  - GATE 1 (human) after F001, F003-F006 accepted
+  30. T-036 — reconstruct command (F007) — diagnostics — S — code-reviewer — none
+  31. T-037 — F007 smoke mode (F007) — diagnostics — M — Architect B10 — codex
+  - H-1 (Front Desk on the Mac): `fleet-doctor.sh --smoke --f007 --keep --dest .tasks/smoke/f007` (5 worker runs + 1 brain run; needs logins)
+  32. T-038 — F007 evidence; **F007 acceptance run**, Gate 2 input — docs — S — code-reviewer, then the human — none
+- **Dependencies:** T-007→T-008→B1→S1. T-009→B2→S2. T-010→T-011→T-012 (serial: same verification path). P-1→T-013→T-014; T-016→T-015 (same launcher); T-014→T-015, T-014→T-017. P-2→T-018→T-019→T-020→S3. T-009, T-017→T-021→…→T-026→A-1. T-019→T-027→T-028; T-020+T-028→T-029; T-029+T-024→T-030; T-027→T-031; T-028+T-030+T-031→T-032. T-033→T-034 (also T-021, P-2)→T-035. T-012+T-029→T-036; T-008+T-020+T-026+T-029+T-036→T-037→H-1→T-038→Gate 2.
+- **Design questions resolved (alternative rejected):**
+  1. Smoke environment: a scratch `git clone` of HEAD; each seat runs `spawn-worker.sh` inside the clone, so the clone is the workspace root and the Phase 1 `--repo` guard is unchanged. Rejected: a linked worktree (its `.git` is a file, so Codex's `--add-dir <repo>/.git` would not cover the object store and Codex would fail for a reason the live tree never has); lifting `--repo` (not allowed in Phase 1). The clone's smoke fleet is a byte copy of the frozen fleet except `mission.path`, with an `approved_by` that names the source file and hash; the live snapshot is compared before and after.
+  2. Smoke result has three states (`usable`, `usable-with-limit`, `unusable`), decided from receipts and Git only, so a Codex seat with the `.agents/` limit stays usable for other work. Brain seats are not smoked; the latest completed brain receipt proves them (F007 mode launches one brain run, because its audit needs it). The real smoke is an orchestrator step, never a verification command (it spends quota).
+  3. Cursor fix: new provider contract 4 (plain model ID); contracts 1-3 unchanged, so v1-v3 evidence stays byte for byte. Contract 4 refuses a model name whose effort token contradicts the spec effort. Rejected: sending `grok-4.7-xhigh` under a spec that records `medium` (false evidence).
+  4. Clean-worktree verifier keeps record schema v1 and exports `PURRFECT_LIVE_ROOT` for checks that need `.tasks/` state (F007's evidence). Numbered records are a separate task, so each guard change has its own review.
+  5. Seat limits: only allow-list write limits are decidable by `dispatch_policy.py`; login-state limits stay a routing rule. Rejected: parsing worker-check prose.
+  6. Codex `.agents/`: answered by a direct probe (P-1, with a control run) before any code; T-013 only on PASS.
+  7. Carrier feature: backlog tasks T-007, T-008, T-010, T-011, T-012 are filed under F007 (dispatch needs a pending feature; F001 is accepted). They are slice evidence only; F007 is accepted only on T-038. T-009 and T-013 to T-017 are filed under F004.
+  8. Request item 6 correction: the billing-class, `no_zdr` and `priority` negatives already exist (`test_registry_type_and_legacy_name_guards`). The real gaps are fields the validator never checks (effort/fast encodings, capabilities, seat specs, fallbacks); T-017 covers them. N3 is pinned by a test and a docstring, not changed.
+  9. A ledger write failure never changes a run's outcome (WARN only); drift events are folded with the ledger so they reach Git ("never silently"). F006's validator is dependency-free (`jsonschema` is not installed) and refuses schema keywords it does not implement.
+- **Owner decisions found while planning (do not block the plan):**
+  1. `cursor.premium` is internally inconsistent: frozen model `grok-4.7-xhigh` (effort in the name) with frozen effort `medium`. Under contract 4 it is refused before launch; S2 will show `unusable`. Options: re-freeze as `grok-4.7-medium`/`medium`, or `grok-4.7-xhigh`/`xhigh`, or leave it unusable until fleet v2. Until then only `cursor.economy` is usable on Cursor.
+  2. `agy.economy` has the same pattern (`gemini-3.8-flash-high` with `--effort medium` also sent). S1 shows whether agy accepts it.
+  3. The carrier-feature mapping (decision 7).
+- **Audit:** `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` → `VERIFY OK`, exit 0, before this entry. Tree clean at `46a1bc3` before this entry; no `scripts/__pycache__`.
+- **Not done:** no `features.json`, `fleet.json`, `GOAL.md` or status change; no task copied into `tasks/`; no dispatch; no acceptance. Drafting helpers ran only in the session scratchpad.
+
+Plan: READY
+
 ## 2026-10-14 (night 2) — Front Desk (Sonnet 5.5) — ARCHITECT PLANNING REQUEST (night 2)
 
 **To the Architect (action `review`, planning).** Read the NIGHT 2 RULES entry directly below this one's neighbour (it is the entry after this one in the file, dated "night 2") and the "next night" entry of 2026-10-14 ("F001 ACCEPTED"). Your write scope is this file only, so put each task as a complete draft file in `.tasks/plans/<your-run-id>/` (gitignored) and the Front Desk will copy them unchanged to `tasks/` and commit them, as for the first plan. Numbering continues at `T-007`. Draft only; do not change `features.json`, `fleet.json`, status, or dispatch anything.
