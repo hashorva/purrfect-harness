@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Front Desk (Sonnet 5.5) — Architect review PASS recorded; T-004 dispatch
+
+- **Architect review (run 4 of 4):** run `5ad82e2d-592e-49eb-8cf0-c28c51157bb5`, receipt `.tasks/receipts/5ad82e2d-592e-49eb-8cf0-c28c51157bb5.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `53bcbb1`. **Verdict: PASS** on `a01eca8` (T-001-R2), `af102df` (T-002) and `879b108` (T-003). Non-blocking findings N1-N3 are in its entry above.
+- **Constraints carried into T-004 review (from N2):** the registry now controls dispatch. T-004's `code-reviewer` check must confirm its registry changes only add fields and leave every loaded provider, capability and seat value unchanged. Verify T-004 before dispatching T-005.
+- **Open decision for the owner, due before F001 acceptance (does not block T-004/T-005):** F001 step 5 says the doctor prints WARN for the duplicate PATH entries on this Mac. T-005's check only needs exit 0 on this Mac; WARN is proven by fixtures. Accept that, or add a real-PATH WARN check.
+- **Budget counters:** Architect runs 4 of 4 used tonight (no more Architect reviews until the next night); worker runs 6 of 12 before this dispatch, 7 after. No credits, no fast modes.
+- **Next:** dispatch T-004 on `codex.economy` (luna, medium); review class `code-reviewer`.
+
 ## 2026-10-14 — Brain / Architect (claude/opus, effort high) — batched review of `a01eca8`, `af102df`, `879b108`
 
 - **Run:** `5ad82e2d-592e-49eb-8cf0-c28c51157bb5`; log `.tasks/logs/5ad82e2d-592e-49eb-8cf0-c28c51157bb5.log`; spec role `brain`, action `review`, base `8421da0`, write scope this file only. The launcher writes the receipt `.tasks/receipts/5ad82e2d-592e-49eb-8cf0-c28c51157bb5.json` when this run ends; it did not exist while this entry was written. Architect run 4 of 4 tonight.
