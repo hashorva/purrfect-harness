@@ -9,8 +9,8 @@ updated: 2026-10-14
 
 [RELEASING.md](RELEASING.md) is the versioning, preparation, tag, and consumer
 adoption procedure. This document covers GitHub publication. The current
-`2.3.2` version remains an untagged development baseline; it is not a release
-decision.
+release is `3.0.0`. The `2.3.1` and `2.3.2` numbers were untagged development
+baselines and were never published.
 
 Prerequisites: Git, GitHub CLI, and an authenticated account authorized for the
 target repository. Run `gh auth status` before publication.

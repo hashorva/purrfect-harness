@@ -1,6 +1,6 @@
 ---
 title: Orchestration Protocol
-version: 2.3.2
+version: 3.0.0
 ---
 
 <!-- markdownlint-disable MD025 -->

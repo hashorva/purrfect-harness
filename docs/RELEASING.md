@@ -7,10 +7,9 @@ updated: 2026-10-14
 
 # Releasing (tag-driven)
 
-The current `2.3.2` version is an untagged development baseline after published
-`v2.3.0`. Phase 1 implementation and its real-provider smoke mission are
-complete, and 2.3.2 adds portability and provider fixes on top. The final
-release number and publication remain separate decisions.
+The current release is `3.0.0`: Phase 1 (Execution Truth) plus the 2.3.2 fixes.
+Before it, `2.3.1` and `2.3.2` were untagged development baselines; they were
+never published. Choose each new version with the rules below.
 
 Versioning is SemVer, interpreted for a harness:
 

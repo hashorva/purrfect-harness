@@ -1,6 +1,6 @@
 ---
 title: Model Routing Policy
-version: 2.3.2
+version: 3.0.0
 updated: 2026-10-14
 ---
 
