@@ -4,6 +4,17 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Brain (claude/opus, effort high) — mission-init
+
+- **Run:** `ec402a2f-6830-425a-b932-88332b044933`; log `.tasks/logs/ec402a2f-6830-425a-b932-88332b044933.log`. The launcher writes the receipt `.tasks/receipts/ec402a2f-6830-425a-b932-88332b044933.json` when this run ends; it did not exist while this entry was written.
+- **Checked:** GOAL.md, features.json, PROGRESS.md and tasks/T-001.md exist, match the templates, and have no `{{` placeholders. GOAL status stays `draft`. `active-mission.sh` reports no active mission (exit 1, expected for a draft).
+- **Baseline (base `cef58cc`):** `shellcheck scripts/*.sh tests/*.sh` exit 0; JSON validation of the manifest and features.json exit 0; `bash tests/run-tests.sh` exit 0.
+- **Inventory:** no re-probe. `.tasks/fleet-inventory.json` (probed 2026-10-14T15:00:44Z) matches the GOAL Fleet table seat for seat. `grok` is on PATH but not in the inventory (F002).
+- **Architect edits (features.json, ids and scope unchanged, all `passes:false`/`bootstrap:false`):** made these steps checkable by a command: F001 step 2 (grep for literal definitions, not names that `dispatch_policy.py` still imports), F001 step 5 (marked local-only, kept out of CI), F001 step 7 (exact greps), F002 step 5, F004 step 3 (drift write failure must fail the spawn), F007 step 5 (reconstruct command replaces "a human can rebuild"). Added an F005 step: a committed `ledger.jsonl` row must not break the clean-tree or snapshot-equality checks.
+- **Open for Gate 0 (beyond the four proposal decisions):** (a) F005: where and when the ledger row is committed, because appending after a run dirties the tree that the next launch and `verify-mission.sh` require clean; (b) `codex.premium` binds `gpt-5.6-terra` while `codex.economy` binds the newer `gpt-6-luna`, so confirm or swap; (c) the `FALLBACKS` constant (`gpt-5.6-sol`, `cursor-grok-4.5-high`) is older than the observed models; T-001 copies it as-is for parity.
+- **First task:** T-001 (F001 slice 1), proposed `codex.economy` (luna). T-001 was committed in `cef58cc`.
+- **Not done:** no worker dispatched, no fleet.json frozen, no feature accepted, no status change.
+
 ## 2026-10-14 — Front Desk (Sonnet 5.5) — mission-init setup
 
 - **Did:** Created branch `mission/2a-foundation`, committed the Phase 2 proposal (`8cf00ee`), checked the CLIs, ran `fleet-inventory.sh`, scaffolded this draft mission.
