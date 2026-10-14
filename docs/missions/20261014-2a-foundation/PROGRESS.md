@@ -10,6 +10,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 - **Baseline:** `bash tests/run-tests.sh` exit 1 before any implementation edits. The failing check reported `VerificationRecord and acceptance real-entry contracts`; remaining output was truncated by the command tool, so no further failure detail is available.
 - **Result:** stopped as required by T-001's pre-code baseline rule. No registry files, manifest ownership, or acceptance/gate state changed. Retry requires baseline repair and redispatch.
 
+## 2026-10-14 — Front Desk (Sonnet 5.5) — T-001 attempt 1 diagnosed; T-001-R1 written
+
+- **Diagnosis (proven):** not a sandbox limit. The suite passes under `codex sandbox -P :workspace` (test file 12/12 in 68s, full suite 149s). The worker started a second copy of the suite while the first was still running; `tests/test-verification-record.py` (line 285) edits the live `scripts/verification_record.py` to mutate guards, so the concurrent copy saw a broken guard. Reproduced: two concurrent copies, one fails with 3 failures, first at `test_required_guard_mutations_break_the_real_focused_entry_and_restore`, `AssertionError ... not found` at line 320. Tree clean afterwards.
+- **Owner-approved fix:** T-001-R1 (feature F001, `codex.economy`): grep all tests for live-tree writes, make mutations happen in a temporary copy, add the long-command rule to the worker template's Iteration policy. Checks: two concurrent copies of every `tests/test-*.py` exit 0; `git status --short` empty; `bash tests/run-tests.sh` exit 0 (once).
+- **T-001 attempt 2:** only after R1 is accepted. Its baseline becomes shellcheck, JSON validation and `python3 tests/test-fleet-state.py`; `python3 tests/test-registry.py` is a T-001 check, not a baseline; the full suite stays in its verification commands. T-001 text is updated then.
+- **L-002 candidate:** run a long check once; never launch a duplicate while it runs. (Replaces the earlier sandbox guess; no L-002 text was ever written to this file.)
+- **L-003 candidate:** tests must never mutate the live tree; mutate a temp copy.
+
 ## 2026-10-14 — Front Desk (Sonnet 5.5) — status in-progress
 
 - **Did:** moved `approved` → `in-progress`. `verify-mission.sh` exit 0 on the in-progress mission. Dispatching T-001 (F001, codex.economy, attempt 1) next.
