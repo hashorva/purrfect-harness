@@ -3,6 +3,7 @@
 import re
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from harness_registry import load_registry
@@ -69,7 +70,11 @@ def diagnose(registry, path_value):
     return findings, has_error
 
 
-def main():
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["--smoke"]:
+        from seat_smoke import main as smoke_main
+        return smoke_main(argv[1:])
     try:
         findings, has_error = diagnose(load_registry(), os.environ.get("PATH", ""))
     except Exception as exc:

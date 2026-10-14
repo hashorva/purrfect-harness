@@ -85,6 +85,7 @@ echo "== frozen fleet policy"
 check "fleet inventory retention and frozen resolution" python3 tests/test-fleet-state.py
 check "registry and fleet-state legacy parity" python3 tests/test-registry.py
 check "fleet doctor identity and login checks" python3 tests/test-fleet-doctor.py
+check "seat smoke scratch clone and dry-run plan" python3 tests/test-seat-smoke.py
 
 # F006 regressions must use the public propagation/release entry points. Tagged
 # and untagged source state is always isolated so this suite is independent of
