@@ -1,0 +1,119 @@
+{
+  "mission": "2A Foundation",
+  "rules": "Workers never edit this file. Only the orchestrator accepts a non-bootstrap feature using accept-feature.sh after a matching passing VerificationRecord exists, recording accepted_run_id, accepted_verification_sha256, accepted_at, and accepted_by with passes:true. Editing or removing approved descriptions/steps is unacceptable. Keep bootstrap on every feature: false (default) requires verified worker execution and separate acceptance; true exempts work no worker will ever run, such as mission scaffolding or orchestrator decisions. Set it when authoring; never add it after GATE 0 to excuse missing evidence.",
+  "features": [
+    {
+      "id": "F001",
+      "category": "functional",
+      "priority": 1,
+      "bootstrap": false,
+      "description": "Provider, door and pool registry as manifest-owned data (harness-registry.json), replacing PROVIDERS, CAPABILITIES, SEAT_SPECS and FALLBACKS. Per provider: probe command, list parser, identity check (--version), effort and fast encoding (flag or model name), discovery directory. Per door: billing class, pool, no-ZDR flag, priority. Naming rule: the provider name is `cursor` (binary `cursor-agent`); `agent` stays only as a legacy name so v3 evidence still validates. Also scripts/fleet-doctor.sh: for each provider it resolves every PATH hit to its real binary, checks identity with --version, and checks login with a tiny probe. ERROR only for two different binaries with one name, wrong identity, or logged out. Duplicate PATH entries and symlinks are WARN. mission-init and dispatch run the doctor instead of ad-hoc `which -a` checks.",
+      "steps": [
+        "harness-registry.json is valid JSON and is listed in harness-manifest.json ownership",
+        "A parity test shows the registry yields the same providers, capabilities, seat specs and fallbacks as the old constants; after the switch no PROVIDERS, CAPABILITIES, SEAT_SPECS or FALLBACKS literal remains under scripts/ (grep exits 1)",
+        "The test fails when any provider lacks probe, list parser, identity check, effort/fast encoding or discovery directory, or any door lacks billing class, pool, no-ZDR flag or priority",
+        "Provider `cursor` has binary `cursor-agent`; `agent` appears only as a legacy name; v3 evidence that names `agent` still validates",
+        "fleet-doctor.sh exits 0 on this Mac and prints WARN (not ERROR) for the duplicate PATH entries and the grok symlinks",
+        "fleet-doctor.sh fixtures exit non-zero with ERROR for: two different binaries sharing a name, a wrong --version identity, a logged-out probe",
+        "mission-init and dispatch-worker skills call fleet-doctor.sh; grep finds no `which -a` or `command -v agent` in them",
+        "shellcheck scripts/*.sh tests/*.sh and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F002",
+      "category": "functional",
+      "priority": 2,
+      "bootstrap": false,
+      "description": "Grok Build (`grok`) as a provider: argv contract, JSON observation, session id.",
+      "steps": [
+        "The registry has a `grok` provider with binary `grok` and a pool shared with Grok-in-Cursor",
+        "A fixture test builds the grok argv from a spec and equals the documented contract",
+        "A fixture test parses `grok -p --output-format json` output into model, tokens and session id",
+        "Unknown fields in the output become `unknown`, not an error",
+        "Calling a bare `agent` binary fails a test; only `grok` and `cursor-agent` are used",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F003",
+      "category": "functional",
+      "priority": 3,
+      "bootstrap": false,
+      "description": "Observed model, usage and fast state in receipts, from each CLI's JSON output. Unknown stays `unknown`.",
+      "steps": [
+        "A receipt schema test requires observed_model, usage (input, output, cache, reasoning) and fast_state, each with a source flag observed|estimated|unknown",
+        "Fixture outputs for claude, codex, cursor and grok fill the fields; a CLI that reports nothing gives `unknown`",
+        "An old receipt without the new fields still validates",
+        "No code path writes a guessed value as `observed`",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F004",
+      "category": "functional",
+      "priority": 4,
+      "bootstrap": false,
+      "description": "Fleet v2: policy seats, per-spawn resolution recorded in the spec, drift events, door priority, fast and credits opt-in. Cursor and Antigravity effort through the model name. Resolves the unproven `model[effort=…,fast=…]` format. Needs Gate 0 decision 2 (frozen-fleet amendment).",
+      "steps": [
+        "A fleet v2 seat names a family and a policy; a v1 fleet.json still validates",
+        "Each spawn records the resolved model in the spec and the observed model in the receipt",
+        "A model change between two runs writes a drift event to a log; no drift event is ever silent",
+        "Door priority picks the first included, healthy door; a credits or api door is skipped unless the mission approves it",
+        "A `-fast` model is never chosen unless the mission enables fast",
+        "Cursor and agy effort is encoded in the model name from the registry; a test lists the encoding for each",
+        "The unproven `model[effort=…,fast=…]` format is either proven by a recorded probe or removed; no unproven format ships",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F005",
+      "category": "functional",
+      "priority": 5,
+      "bootstrap": false,
+      "description": "Ledger v1: schema, writer in the runner, privacy rule, derived-view helper.",
+      "steps": [
+        "A schema file defines every row field named in proposal section 8, with a source flag on every number",
+        "The runner appends one valid row to docs/missions/ledger.jsonl per run, including failed runs",
+        "A test fails if a row contains transcript text, prompt text or a secret-like string",
+        "The derived-view helper prints first-try rate and tokens per accepted feature from fixture rows; it stores nothing",
+        ".tasks/logs/ is gitignored and a test shows no log file is staged",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F006",
+      "category": "functional",
+      "priority": 6,
+      "bootstrap": false,
+      "description": "Structured verdicts: JSON schemas for the Architect's task plan and review, validated for any provider (`--json-schema` where the CLI has it).",
+      "steps": [
+        "A task-plan schema and a review schema exist and are valid JSON Schema",
+        "A validator script exits 0 on a good fixture and non-zero on each bad fixture (missing field, wrong type, empty steps)",
+        "The registry records per provider whether the CLI supports --json-schema; where it does not, the validator checks the output after the run",
+        "mission-init and the review action name the schemas",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F007",
+      "category": "functional",
+      "priority": 7,
+      "bootstrap": false,
+      "description": "Real smoke on the Mac: one small mission through at least 4 doors (`claude`, `codex`, `cursor-agent`, `grok`), with ledger rows and reconstructable evidence.",
+      "steps": [
+        "A smoke mission exists with one tiny task per door",
+        "Four receipts exist under .tasks/receipts/, one each for claude, codex, cursor-agent and grok, each with a non-unknown observed model",
+        "Four ledger rows exist, one per receipt, and each validates against the ledger schema",
+        "bash scripts/verify-mission.sh exits 0 for the smoke mission",
+        "A human can rebuild the run from spec, receipt, verification record and ledger row alone (checked at Gate 2)"
+      ],
+      "passes": false
+    }
+  ]
+}
