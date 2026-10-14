@@ -11,8 +11,7 @@ intake: docs/proposals/20261014-phase-2.md (sections 13 and 14)
 ## Mission (2–4 sentences, outcome not tasks)
 
 Mission 2A "Foundation" builds the data layer for Phase 2 ("yield per token").
-It moves provider, door and pool facts into one registry, adds Grok Build as a
-provider, records the observed model and usage in every receipt, adds fleet v2
+It moves provider, door and pool facts into one registry, records the observed model and usage in every receipt, adds fleet v2
 (policy seats and visible drift), adds the ledger and structured verdicts, and
 proves it with a real smoke run through four doors on the owner's Mac.
 
@@ -23,7 +22,9 @@ needs this data layer first. Harness version stays 3.0.0 until a release task.
 
 ## In scope
 
-- Features F001–F007 as listed in `features.json`.
+- Features F001, F003–F007 as listed in `features.json`.
+- **F002 is removed** (owner Gate 0 verdict, 2026-10-14): Grok Build is not a provider
+  in 2A. Grok runs through `cursor-agent`. Ids are not renumbered.
 - Proposal sections 4–8 and 13 are the design input.
 
 ## Explicitly OUT of scope (workers: do not touch)
@@ -31,7 +32,9 @@ needs this data layer first. Harness version stays 3.0.0 until a release task.
 - Everything in mission 2B: Front Desk and Architect skills, `mission-run.sh`,
   repair rounds, anti-gaming checks, worktree lanes, board, benchmark, lessons,
   STE rewrite (X-003).
-- Fast modes, usage credits and API billing (off unless the mission approves them).
+- Fast modes, usage credits and API billing (never in 2A).
+- A `grok` provider (removed F002). Deferred experiment X-GROK: Grok via `grok` against
+  Grok via `cursor-agent`, measured in the ledger on spare quota.
 - Git tags, remotes and releases.
 
 ## Constraints
@@ -44,7 +47,7 @@ needs this data layer first. Harness version stays 3.0.0 until a release task.
 
 ## Architect instructions (read before you change features.json)
 
-- Keep ids F001–F007. You may tighten steps and cut work for economy workers.
+- Keep ids F001, F003–F007 (F002 is removed; do not renumber). You may tighten steps and cut work for economy workers.
   Do not drop the fleet-doctor requirement in F001 or the naming rule.
 - F001 is the largest feature. Plan it as several small tasks, each with its own
   allow-list and verification commands. T-001 is a first slice, not the whole feature.
@@ -58,17 +61,19 @@ Proposal only. Gate 0 decides. Source: `bash scripts/fleet-inventory.sh` at
 2026-10-14T15:00:44Z.
 
 Tier chosen at GATE 0: mixed (economy first)
-Orchestrator (brain): opus (Opus 5.5, effort high) — proposed; owner decides at Gate 0
+Orchestrator (brain): Opus 5.5, effort high. Owner chose it via Antigravity (`agy`,
+`claude-opus-5-5-high`) to keep the Claude Pro pool for the Front Desk, with fallback
+`claude` / `opus` if the first agy run fails to launch. **Not yet frozen: see PROGRESS.md.**
 
 Verified local CLIs: claude, codex, cursor-agent, agy, grok. `which -a` shows
 duplicate PATH entries only; all hits resolve to one binary per CLI (owner
-accepted). `grok` is not in the inventory yet (feature F002).
+accepted). `grok` is installed but is not a 2A provider; Grok runs through `cursor-agent`.
 
 ### Proposed seat binds (from inventory — edit only with human GATE 0 approval)
 
 | Seat | CLI | Model | Family | Health | Source |
 |---|---|---|---|---|---|
-| brain | claude | opus | opus | healthy | alias |
+| brain | claude | opus | opus | healthy | alias (owner wants agy/claude-opus-5-5-high; no such inventory seat yet) |
 | brain_codex | codex | gpt-6.1-sol | sol | healthy | observed |
 | brain_fable | claude | fable | fable | healthy | alias (named only) |
 | cursor.premium | cursor-agent | grok-4.7-xhigh | grok | healthy | observed |
@@ -83,6 +88,10 @@ accepted). `grok` is not in the inventory yet (feature F002).
 Degraded or unavailable: `agy.premium` is unavailable (no Pro model on this plan).
 The three `claude` seats and `brain_fable` are alias-sourced: the Claude probe
 listed 0 models, so the exact model is not observed until a receipt records it.
+
+Ledger rule (owner answer): each run writes `.tasks/ledger/<run_id>.json`
+(gitignored). The orchestrator folds rows into `docs/missions/ledger.jsonl` in each
+acceptance commit and at gates.
 
 Spawn helpers (prefer these so logs land in `.tasks/logs/`):
 
@@ -105,12 +114,14 @@ and commit before the first launch. Cross-repository execution is disabled.
 
 - GATE 0: feature list + **fleet inventory map** + **brain receipt** approved
   before any dispatch. Four owner decisions (proposal section 14):
-  1. chair for 2A (proposed: Opus 5.5, effort high);
+  1. chair for 2A: Opus 5.5, effort high, via `agy` (fallback `claude` / `opus`) — approved;
   2. amend the Phase 1 rule "a live probe cannot change an active mission" to
-     "it can change it, but never silently";
+     "it can change it, but never silently" — approved;
   3. lift the Phase 1 non-goals for Phase 2: worktrees, parallel scheduling,
-     adaptive routing, analytics, dashboard;
-  4. budgets for unattended runs: per spawn, per night, per pool.
+     adaptive routing, analytics, dashboard — approved, and 2A uses none of them;
+  4. budgets (approved): per spawn 40 min; per night max 12 worker + 4 Architect runs;
+     per pool stop at an estimated 80% of a 5-hour window or 70% of the weekly cap;
+     never credits, never fast modes.
 - GATE 1: after F001–F006, deterministic suite green.
 - GATE 2: after F007, real smoke on the Mac.
 

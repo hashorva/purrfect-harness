@@ -7,32 +7,16 @@
       "category": "functional",
       "priority": 1,
       "bootstrap": false,
-      "description": "Provider, door and pool registry as manifest-owned data (harness-registry.json), replacing PROVIDERS, CAPABILITIES, SEAT_SPECS and FALLBACKS. Per provider: probe command, list parser, identity check (--version), effort and fast encoding (flag or model name), discovery directory. Per door: billing class, pool, no-ZDR flag, priority. Naming rule: the provider name is `cursor` (binary `cursor-agent`); `agent` stays only as a legacy name so v3 evidence still validates. Also scripts/fleet-doctor.sh: for each provider it resolves every PATH hit to its real binary, checks identity with --version, and checks login with a tiny probe. ERROR only for two different binaries with one name, wrong identity, or logged out. Duplicate PATH entries and symlinks are WARN. mission-init and dispatch run the doctor instead of ad-hoc `which -a` checks.",
+      "description": "Provider, door and pool registry as manifest-owned data (harness-registry.json), replacing PROVIDERS, CAPABILITIES and SEAT_SPECS. FALLBACKS is copied into the registry unchanged for parity and deleted in F004. Per provider: probe command, list parser, identity check (--version), effort and fast encoding (flag or model name), discovery directory. Per door: billing class, pool, no-ZDR flag, priority. Naming rule: the provider name is `cursor` (binary `cursor-agent`); `agent` stays only as a legacy name so v3 evidence still validates. Also scripts/fleet-doctor.sh: for each provider it resolves every PATH hit to its real binary, checks identity with --version, and checks login with a tiny probe. ERROR only for two different binaries with one name, wrong identity, or logged out. Duplicate PATH entries and symlinks are WARN. mission-init and dispatch run the doctor instead of ad-hoc `which -a` checks.",
       "steps": [
         "harness-registry.json is valid JSON and is listed in harness-manifest.json ownership",
-        "A parity test shows the registry yields the same providers, capabilities, seat specs and fallbacks as the old constants; after the switch `grep -nE '^(PROVIDERS|CAPABILITIES|SEAT_SPECS|FALLBACKS) *= *[({]' scripts/*.py` exits 1 (names may remain as loaded values; literal definitions may not)",
+        "A parity test shows the registry yields the same providers, capabilities, seat specs and fallbacks as the old constants; after the switch `grep -nE '^(PROVIDERS|CAPABILITIES|SEAT_SPECS) *= *[({]' scripts/*.py` exits 1 (names may remain as loaded values; literal definitions may not; FALLBACKS stays until F004)",
         "The test fails when any provider lacks probe, list parser, identity check, effort/fast encoding or discovery directory, or any door lacks billing class, pool, no-ZDR flag or priority",
         "Provider `cursor` has binary `cursor-agent`; `agent` appears only as a legacy name; v3 evidence that names `agent` still validates",
-        "fleet-doctor.sh exits 0 on this Mac and prints WARN (not ERROR) for the duplicate PATH entries and the grok symlinks (local-only check: a task verification command, never part of tests/run-tests.sh or CI)",
+        "fleet-doctor.sh exits 0 on this Mac and prints WARN (not ERROR) for the duplicate PATH entries (local-only check: a task verification command, never part of tests/run-tests.sh or CI)",
         "fleet-doctor.sh fixtures exit non-zero with ERROR for: two different binaries sharing a name, a wrong --version identity, a logged-out probe",
         "`grep -l fleet-doctor.sh .agents/skills/mission-init/SKILL.md .agents/skills/dispatch-worker/SKILL.md` lists both files, and `grep -nE 'which -a|command -v agent' .agents/skills/mission-init/SKILL.md .agents/skills/dispatch-worker/SKILL.md` exits 1",
         "shellcheck scripts/*.sh tests/*.sh and bash tests/run-tests.sh exit 0"
-      ],
-      "passes": false
-    },
-    {
-      "id": "F002",
-      "category": "functional",
-      "priority": 2,
-      "bootstrap": false,
-      "description": "Grok Build (`grok`) as a provider: argv contract, JSON observation, session id.",
-      "steps": [
-        "The registry has a `grok` provider with binary `grok` and a pool shared with Grok-in-Cursor",
-        "A fixture test builds the grok argv from a spec and equals the documented contract",
-        "A fixture test parses `grok -p --output-format json` output into model, tokens and session id",
-        "Unknown fields in the output become `unknown`, not an error",
-        "A test fails if any provider argv built from the registry starts with a bare `agent`; the only Grok-family binaries used are `grok` and `cursor-agent`",
-        "shellcheck and bash tests/run-tests.sh exit 0"
       ],
       "passes": false
     },
@@ -44,7 +28,7 @@
       "description": "Observed model, usage and fast state in receipts, from each CLI's JSON output. Unknown stays `unknown`.",
       "steps": [
         "A receipt schema test requires observed_model, usage (input, output, cache, reasoning) and fast_state, each with a source flag observed|estimated|unknown",
-        "Fixture outputs for claude, codex, cursor and grok fill the fields; a CLI that reports nothing gives `unknown`",
+        "Fixture outputs for claude, codex, cursor-agent and agy fill the fields; a CLI that reports nothing gives `unknown`; the cursor-agent fixture (usage and session_id, no model) gives observed_model `unknown` unless the stream-json init event reports the model",
         "An old receipt without the new fields still validates",
         "No code path writes a guessed value as `observed`",
         "shellcheck and bash tests/run-tests.sh exit 0"
@@ -65,6 +49,7 @@
         "A `-fast` model is never chosen unless the mission enables fast",
         "Cursor and agy effort is encoded in the model name from the registry; a test lists the encoding for each",
         "The unproven `model[effort=…,fast=…]` format is either proven by a recorded probe or removed; no unproven format ships",
+        "The FALLBACKS constant is deleted from scripts/fleet_state.py (`grep -nE '^FALLBACKS *= *[({]' scripts/*.py` exits 1); an unavailable family stays `unavailable`, never a guessed model",
         "shellcheck and bash tests/run-tests.sh exit 0"
       ],
       "passes": false
@@ -77,11 +62,11 @@
       "description": "Ledger v1: schema, writer in the runner, privacy rule, derived-view helper.",
       "steps": [
         "A schema file defines every row field named in proposal section 8, with a source flag on every number",
-        "The runner appends one valid row to docs/missions/ledger.jsonl per run, including failed runs",
+        "The runner writes one valid row per run, including failed runs, to `.tasks/ledger/<run_id>.json` (gitignored); a test shows this write never dirties the Git tree",
         "A test fails if a row contains transcript text, prompt text or a secret-like string",
         "The derived-view helper prints first-try rate and tokens per accepted feature from fixture rows; it stores nothing",
         ".tasks/logs/ is gitignored and a test shows no log file is staged",
-        "An integration test appends a ledger row through the real runner, then shows the next launch's clean-tree check and verify-mission.sh snapshot check still pass (the committed ledger must not break Phase 1 clean-tree and snapshot rules)",
+        "A fold command appends the rows from `.tasks/ledger/` to docs/missions/ledger.jsonl exactly once per run id (a second run of the command adds nothing); an integration test shows the runner write keeps the next launch's clean-tree check and verify-mission.sh snapshot check passing, and the fold lands in the orchestrator's acceptance commit",
         "shellcheck and bash tests/run-tests.sh exit 0"
       ],
       "passes": false
@@ -106,11 +91,11 @@
       "category": "functional",
       "priority": 7,
       "bootstrap": false,
-      "description": "Real smoke on the Mac: one small mission through at least 4 doors (`claude`, `codex`, `cursor-agent`, `grok`), with ledger rows and reconstructable evidence.",
+      "description": "Real smoke on the Mac: one small mission through 4 doors and 5 runs: `claude`, `codex`, `cursor-agent` (Composer and Grok) and `agy`, with ledger rows and reconstructable evidence.",
       "steps": [
-        "A smoke mission exists with one tiny task per door",
-        "Four receipts exist under .tasks/receipts/, one each for claude, codex, cursor-agent and grok, each with a non-unknown observed model",
-        "Four ledger rows exist, one per receipt, and each validates against the ledger schema",
+        "A smoke mission exists with one tiny task per run: claude, codex, cursor-agent with Composer, cursor-agent with Grok, and agy",
+        "Five receipts exist under .tasks/receipts/, one per run; each has a non-unknown observed model, except cursor-agent runs may stay `unknown` when the CLI does not report the model",
+        "Five ledger rows exist, one per receipt, and each validates against the ledger schema",
         "bash scripts/verify-mission.sh exits 0 for the smoke mission",
         "A reconstruct command prints, per smoke run id, its spec, receipt, VerificationRecord and ledger row, and exits non-zero if any of the four is missing; the human reads that output at Gate 2"
       ],

@@ -4,6 +4,16 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Human — GATE 0
+
+- **Verdict:** approved with changes (recorded by Front Desk from the owner's message).
+- **Scope:** F002 (Grok Build provider) removed; ids not renumbered. Grok runs through `cursor-agent`. F007 smoke uses claude, codex, cursor-agent (Composer and Grok) and agy. Dependent steps in F001, F003, F004, F005, F007 were aligned in the same draft-stage edit.
+- **Findings recorded:** `cursor-agent` JSON gives usage and `session_id` but no model, so observed model is `unknown` unless stream-json init reports it. Grok Build headless: `acceptEdits` cancelled both file and shell tool calls. Deferred experiment X-GROK: Grok via `grok` against via `cursor-agent`, measured in the ledger on spare quota.
+- **Decisions:** (1) chair Opus 5.5, effort high, via `agy` model `claude-opus-5-5-high`; fall back to `claude` / `opus` only if the first agy brain run fails to launch, and record why. (2) Frozen-fleet amendment approved: a probe may change an active mission, never silently. (3) Phase 1 non-goals lifted for Phase 2; 2A uses none. (4) Budgets: per spawn 40 min; per night max 12 worker + 4 Architect runs; per pool stop at an estimated 80% of a 5-hour window or 70% of the weekly cap; never credits, never fast modes.
+- **Architect questions:** (1) each run writes `.tasks/ledger/<run_id>.json` (gitignored); the orchestrator folds rows into `docs/missions/ledger.jsonl` in each acceptance commit and at gates. (2) Terra premium, Luna economy; tier follows family, not version. (3) FALLBACKS copied unchanged in T-001, deleted in F004.
+- **Approved:** T-001 on codex.economy (Luna).
+- **Next:** blocked before freeze. The `brain` seat is fixed to `claude`/`opus` in `scripts/fleet_state.py` (`SEAT_SPECS`); `freeze` accepts only `brain`, `brain_codex` or `brain_fable` and checks provider/family match. An `agy` Opus brain cannot be frozen with the current code. Status stays `draft` until the owner decides.
+
 ## 2026-10-14 — Brain (claude/opus, effort high) — mission-init
 
 - **Run:** `ec402a2f-6830-425a-b932-88332b044933`; log `.tasks/logs/ec402a2f-6830-425a-b932-88332b044933.log`. The launcher writes the receipt `.tasks/receipts/ec402a2f-6830-425a-b932-88332b044933.json` when this run ends; it did not exist while this entry was written.
