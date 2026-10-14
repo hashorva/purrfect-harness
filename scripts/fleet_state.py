@@ -75,10 +75,16 @@ def atomic_write_new(path, raw, no_clobber=False, read_only=False):
     finally:
         if os.path.exists(tmp): os.unlink(tmp)
 
+# One model id per line, in the three real CLI shapes:
+#   Cursor  "composer-2.5 - Composer 2.5"
+#   agy     "gemini-3.8-flash-high     Gemini 3.8 Flash (High)"
+#   Grok    "  * grok-4.7 (default)" / "  - grok-4.6"
+# Ids start with a letter and contain "-"; headers, tips and errors do not match.
+MODEL_LINE = re.compile(r"^\s*(?:[*-]\s+)?([A-Za-z][A-Za-z0-9._:+/-]*)(?=\s|$)")
 def models_from_text(text):
     out=[]
     for line in text.splitlines():
-        m=re.match(r"^\s*([A-Za-z0-9._:+/-]+)(?:\s+-|\s*$)", line)
+        m=MODEL_LINE.match(line)
         if m and "-" in m.group(1): out.append(m.group(1))
     return list(dict.fromkeys(out))
 def run(args):
@@ -86,9 +92,12 @@ def run(args):
         p=subprocess.run(args, text=True, capture_output=True, timeout=25, env={**os.environ,"TERM":"dumb"})
         return p.returncode, (p.stdout or "")+(p.stderr or "")
     except (OSError, subprocess.TimeoutExpired) as exc: return 1, str(exc)
+# Grok Build also installs a bare `agent`; the Cursor CLI's unambiguous name is `cursor-agent`.
+EXECUTABLES = {"agent": "cursor-agent"}
 def probe(provider):
     base={"probed_at":now(),"capabilities":CAPABILITIES[provider]}
-    path=shutil.which(provider)
+    executable=EXECUTABLES.get(provider, provider)
+    path=shutil.which(executable)
     if not path: return {**base,"status":"unavailable","error":"not on PATH"}
     if provider == "claude": return {**base,"status":"success","path":path,"aliases":["opus","sonnet","haiku","fable"],"observed_models":[]}
     if provider == "codex":
@@ -99,7 +108,7 @@ def probe(provider):
             if vals: return {**base,"status":"success","path":path,"observed_models":vals,"aliases":[]}
             raise ValueError("empty model cache")
         except (OSError,json.JSONDecodeError,ValueError) as exc: return {**base,"status":"failure","path":path,"error":str(exc)}
-    code, output=run([provider, "--list-models"] if provider=="agent" else [provider,"models"])
+    code, output=run([executable,"models"])
     vals=models_from_text(output)
     if code == 0 and vals: return {**base,"status":"success","path":path,"observed_models":vals,"aliases":[]}
     return {**base,"status":"failure","path":path,"error":output[:200] or "empty model list"}
@@ -161,23 +170,25 @@ def validate_inventory(doc):
         text(value["model"],"inventory.seats."+seat+".model")
         seat_source_is_truthful(value, doc["providers"][SEAT_SPECS[seat][0]], doc["last_good"].get(SEAT_SPECS[seat][0]), seat, "inventory.seats."+seat)
     return doc
+EFFORT_RANK = {"xhigh": 50, "max": 45, "high": 40, "medium": 20, "low": 10, "none": 0}
+UNSTABLE = {"preview", "exp", "experimental", "lite"}
+def model_tokens(model): return [t for t in re.split(r"[-_.]", model.lower()) if t]
+def is_fast(model): return "fast" in model_tokens(model)
+def model_rank(model):
+    """Stable before preview, then version, then release date, then effort."""
+    tokens=model_tokens(model)
+    date=int(tokens.pop()) if tokens and re.fullmatch(r"\d{8}", tokens[-1]) else 0
+    version=[]
+    for token in tokens:
+        if token.isdigit(): version.append(int(token))
+        elif version: break
+    effort=next((EFFORT_RANK[t] for t in tokens if t in EFFORT_RANK), 0)
+    return (not UNSTABLE.intersection(tokens), tuple(version), date, effort)
 def choose(values, family):
-    choices=[x for x in values if family in x.lower()]
-    def score(model):
-        score = 0
-        lower = model.lower()
-        if lower.endswith("-fast") or "-fast-" in lower:
-            score -= 100
-        for token, weight in (
-            ("xhigh", 50), ("high", 40), ("max", 45),
-            ("medium", 20), ("low", 10), ("none", 0),
-        ):
-            if re.search(rf"(^|[-_]){token}($|[-_])", lower):
-                score += weight
-                break
-        score += sum(int(part) for part in re.findall(r"\d+", model)[:4])
-        return score
-    return sorted(choices, key=score, reverse=True)[0] if choices else None
+    # Fast modes cost more and are opt-in only: never chosen automatically.
+    choices=[x for x in values if family in x.lower() and not is_fast(x)]
+    # sorted() is stable, so equal ranks keep the provider's own order.
+    return sorted(choices, key=model_rank, reverse=True)[0] if choices else None
 def make_seats(providers,last_good):
     result={}
     for seat,(provider,family) in SEAT_SPECS.items():
@@ -194,8 +205,8 @@ def make_seats(providers,last_good):
         values=record.get("aliases",[]) if provider=="claude" else record.get("observed_models",[])
         model=choose(values,family)
         if not model:
-            # successful but no matching family does not become a fabricated healthy seat
-            model=FALLBACKS.get(family,"unavailable"); health="degraded"; source="fallback"
+            # A real model list without this family is a fact, not a reason to guess an id.
+            result[seat]={"provider":provider,"model":"unavailable","family":family,"health":"unknown","source":"unavailable","capabilities":CAPABILITIES[provider]}; continue
         result[seat]={"provider":provider,"model":model,"family":family,"health":health,"source":source,"capabilities":record["capabilities"]}
     return result
 def inventory(out, json_only):
