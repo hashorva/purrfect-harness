@@ -4,6 +4,15 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Front Desk (Sonnet 5.5) — Architect plan received; tasks committed
+
+- **Plan receipt:** run `b031098e-63f8-42da-ac88-ad4286429cb4`, receipt `.tasks/receipts/b031098e-63f8-42da-ac88-ad4286429cb4.json`: outcome `completed`, exit 0, scope pass, commit `380eab2` (PROGRESS.md only, as its write scope allows). `Plan: READY`.
+- **Done:** copied the Architect's five drafts unchanged from `.tasks/plans/b031098e-63f8-42da-ac88-ad4286429cb4/` to `tasks/` (T-001-R2, T-002, T-003, T-004, T-005). Mechanical checks only: frontmatter task_id/feature/worker present, no `{{` left, none lists `features.json` or `fleet.json` in its allow-list.
+- **Design decisions (a)-(e) in the Architect's entry:** treated as Architect decisions inside the owner's brief; none needs a file outside a task's allow-list. The owner may still overrule them; flagged in the next report.
+- **Dispatch order:** T-001-R2 (claude.economy, haiku), T-002 (codex.premium), T-003 (codex.economy), T-004 (codex.economy), T-005 (cursor.economy; dispatch as `cursor` only after T-003 is accepted-by-review). Then one Architect review of T-001-R2, T-002 and T-003 together (Architect run 4 of 4).
+- **Budget counters:** worker runs 3 of 12 so far; Architect 3 of 4 (this plan). The 5 planned tasks bring workers to 8 of 12.
+- **L-005 candidate:** a task that adds a test file also adds it to `tests/run-tests.sh`; "suite passed" proves nothing about a test the suite does not run.
+
 ## 2026-10-14 — Brain / Architect (claude/opus, effort high) — F001 task plan
 
 - **Run:** `b031098e-63f8-42da-ac88-ad4286429cb4`; log `.tasks/logs/b031098e-63f8-42da-ac88-ad4286429cb4.log`; spec role `brain`, action `review`, base `7898d88`. The launcher writes the receipt `.tasks/receipts/b031098e-63f8-42da-ac88-ad4286429cb4.json` when this run ends; it did not exist while this entry was written. This is Architect run 3 of 4 tonight.
