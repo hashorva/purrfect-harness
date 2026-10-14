@@ -4,6 +4,16 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — T-007 worker (Haiku 5.5) — seat smoke scaffold and `--smoke --dry-run` (slice evidence for F007, not acceptance)
+
+- **Result:** complete. Scoped change committed as `19f188d` (`feat(doctor): add seat smoke scaffold and --smoke --dry-run`): new `scripts/seat_smoke.py`, `scripts/fleet_doctor.py` routes `--smoke` to it (plain run unchanged), new `tests/test-seat-smoke.py`, suite line in `tests/run-tests.sh`, `scripts/seat_smoke.py` added to both manifest ownership lists. No launch code; `--dry-run` is required and anything else exits 2 `launch is implemented in T-008`.
+- **Design followed:** scratch `git clone --no-hardlinks` of live HEAD, one fixture commit inside it (author `seat smoke`), exactly one active mission (`00000000-seat-smoke`) with a copy of the frozen fleet that says it is a scratch copy, one `T-SMOKE-<seat>` task per non-brain seat. Live tree is refused unless clean and snapshotted before and after (`ERROR smoke: live tree changed` on drift).
+- **Choices made where the task was silent:** `--seat brain` exits 2 (brain is never smoked; it appears under `skipped` as `brain: not launched; proven by the latest completed in-scope brain receipt`). Refusals exit 1, usage errors (unknown seat, bad `--dest`, no `--dry-run`) exit 2. `--dest` must be outside the live tree, or under `.tasks/smoke/`. Provider names map through `harness_registry.canonical_provider`, so `agent` becomes `cursor` in argv.
+- **Live dry run (`python3 scripts/fleet_doctor.py --smoke --dry-run --mission docs/missions/20261014-2a-foundation`, same entry point `fleet-doctor.sh` execs):** exit 0; seats = `agy.economy claude.economy claude.premium codex.economy codex.premium cursor.economy cursor.premium`; `kept: false`; argv starts `bash scripts/spawn-worker.sh`; temporary clone removed; live tree still clean. `--seat no.such.seat` exit 2.
+- **Checks run by me (tree at `19f188d`, exit codes):** `shellcheck scripts/*.sh tests/*.sh` 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-seat-smoke.py` 0 (10 tests); `tests/test-fleet-doctor.py` 0; both suite and manifest greps 0; no `__pycache__` 0. Baseline before edits: shellcheck 0, `test-fleet-doctor.py` 0 (8 tests), `test-registry.py` 0 (8 tests).
+- **Not run by me (standing rule: verifier runs these):** `bash scripts/fleet-doctor.sh --smoke --dry-run ...` through the shell wrapper (the Python entry above is the same code path), and `bash tests/run-tests.sh`. Missing evidence until the verifier runs them: full-suite exit code. Note: my live dry run was refused once while my edits were uncommitted; that is the clean-tree guard working, not a defect.
+- **Feature status:** F007 untouched (`features.json`, `fleet.json`, `GOAL.md` unchanged). Carrier only; no acceptance, no gate change.
+
 ## 2026-10-14 (night 2) — Front Desk (Sonnet 5.5) — Architect plan received; 32 tasks committed
 
 - **Plan receipt:** run `7c022e62-340c-47e5-9e56-243f0ec06cff`, receipt `.tasks/receipts/7c022e62-340c-47e5-9e56-243f0ec06cff.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `835e853`. `Plan: READY`. Architect run 5 (no cap tonight).
