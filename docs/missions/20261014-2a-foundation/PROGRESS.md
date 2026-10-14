@@ -4,6 +4,15 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Front Desk (Sonnet 5.5) — T-002 reviewed (mechanical) and verified; T-003 dispatch
+
+- **Mechanical review:** run `383b53ea-e1e3-4cf6-9490-68c667a9fcbf` (codex.premium, gpt-5.6-terra, effort medium), receipt `.tasks/receipts/383b53ea-e1e3-4cf6-9490-68c667a9fcbf.json`: outcome `completed`, exit 0, scope pass, commit `af102df`, 7 changed paths all in the allow-list. `verify-mission.sh --run-id 383b53ea-e1e3-4cf6-9490-68c667a9fcbf` → `VERIFY PASS`, exit 0. Record `verification/383b53ea-e1e3-4cf6-9490-68c667a9fcbf.json` is **slice evidence for F001 (T-002), not F001 acceptance**.
+- **Worker gap, closed by the verifier:** the worker stopped because its one full-suite run (started in the background with output to a log) was killed by the host before it wrote an exit code; it correctly did not start a second copy. The verifier ran the full suite once outside the worker and it passed, so the task's exit criterion is met by verified evidence. This counts as one attempt used (attempt 1 of 2), not a failed task.
+- **L-006 candidate:** a worker's tool session cannot keep a background process alive after the command returns. A long check must be run in the foreground with a long enough timeout, or left to the verifier; "log file + exit file" in the background loses the result.
+- **Review class:** `fleet_state.py` is guard/dispatch-adjacent → Architect review, batched with T-001-R2 and T-003 (Architect run 4 of 4). Not yet reviewed.
+- **Budget counters:** worker runs 5 of 12; Architect 3 of 4.
+- **Next:** dispatch T-003 on `codex.economy` (luna, medium).
+
 ## 2026-10-14 — Worker (codex.premium, terra) — T-002 attempt 1 stopped: full-suite exit unavailable
 
 - **Changed (allow-list only):** `scripts/harness_registry.py` now validates legacy-name shape and exposes `legacy_view` plus `canonical_provider`; `scripts/fleet_state.py` loads providers, capabilities, seat specs and executables once from the registry's legacy view and fails closed with `ERROR: registry:` if it cannot load it. Added independent golden parity and negative-entry tests, fixture registry copies, and the registry test's `run-tests.sh` check.
