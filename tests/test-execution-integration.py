@@ -63,6 +63,7 @@ pathlib.Path('.tasks/invoked.json').write_text(json.dumps({
     'argv': sys.argv[1:], 'spec_existed': True,
     'lock_existed': pathlib.Path(os.environ.get('PURRFECT_DISPATCH_LOCK_PATH', '')).is_dir(),
     'pid': os.getpid(),
+    'python_dont_write_bytecode': os.environ.get('PYTHONDONTWRITEBYTECODE'),
 }))
 child_path = os.environ.get('PROVIDER_CHILD_PID_PATH')
 if child_path:
@@ -97,11 +98,15 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.root, check=True, capture_output=True, text=True)
 
-    def invoke(self, args, *, env=None):
+    def invoke(self, args, *, env=None, inherit_pydontwritebytecode=True):
         launch_env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
-                          PYTHONDONTWRITEBYTECODE="1", SPAWN_WORKER_TIMEOUT_SECS="0",
+                          SPAWN_WORKER_TIMEOUT_SECS="0",
                           SPAWN_BRAIN_TIMEOUT_SECS="0",
                           EMPTY_OVERRIDE_SENTINEL="retained")
+        if inherit_pydontwritebytecode:
+            launch_env["PYTHONDONTWRITEBYTECODE"] = "1"
+        else:
+            launch_env.pop("PYTHONDONTWRITEBYTECODE", None)
         if env:
             launch_env.update(env)
         return subprocess.run(args, cwd=self.root, env=launch_env, text=True, capture_output=True)
@@ -254,6 +259,29 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertTrue(invoked["lock_existed"])
         self.assertEqual(invoked["provider"], {"agent": "cursor-agent"}.get(provider, provider))
         return spec, specs[0], receipt, invoked
+
+    def test_launchers_export_python_dont_write_bytecode_to_provider(self):
+        """Provider inherits PYTHONDONTWRITEBYTECODE=1 from the wrapper, not the test harness."""
+        self.write_fleet("codex", "bytecode-model", "medium", "unknown")
+        worker = self.invoke(
+            ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+             "--model", "bytecode-model", "--feature", "F001"],
+            inherit_pydontwritebytecode=False,
+        )
+        self.assertEqual(worker.returncode, 0, worker.stderr + worker.stdout)
+        invoked = json.loads((self.root / ".tasks/invoked.json").read_text())
+        self.assertEqual(invoked["python_dont_write_bytecode"], "1")
+        self.clean_runs()
+
+        self.write_fleet("codex", "bytecode-brain", "high", "unknown", seat_name="brain")
+        brain = self.invoke(
+            ["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"],
+            inherit_pydontwritebytecode=False,
+        )
+        self.assertEqual(brain.returncode, 0, brain.stderr + brain.stdout)
+        invoked = json.loads((self.root / ".tasks/invoked.json").read_text())
+        self.assertEqual(invoked["python_dont_write_bytecode"], "1")
+        self.clean_runs()
 
     def test_exact_provider_contracts_through_both_wrappers(self):
         for role in ("worker", "brain"):

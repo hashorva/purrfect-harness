@@ -26,6 +26,7 @@ if [ -z "${SPAWN_WORKER_SNAPSHOT:-}" ]; then
   exec bash "$_snap" "$@"
 fi
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
 # Delete only the snapshot copy — never the real scripts/spawn-worker.sh. The
 # same EXIT cleanup also owns the workspace lock after it is acquired.

@@ -7,6 +7,7 @@
 #   bash scripts/spawn-brain.sh <mission-dir|slug> <mission-init|gate0|review>
 #       [--provider codex|claude|cursor|agent|agy] [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N]
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
 LOCK_PATH=""
 LOCK_TOKEN=""

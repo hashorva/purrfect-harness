@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — T-010 worker — export PYTHONDONTWRITEBYTECODE in launchers
+
+- **Slice evidence for F007 carrier only; not F007 acceptance.**
+- **Changed:** `export PYTHONDONTWRITEBYTECODE=1` once after `set -euo pipefail` in `scripts/spawn-worker.sh` (post snapshot re-exec) and `scripts/spawn-brain.sh`; provider stub in `tests/test-execution-integration.py` records `python_dont_write_bytecode`; new test `test_launchers_export_python_dont_write_bytecode_to_provider` launches worker and brain with `PYTHONDONTWRITEBYTECODE` unset in the harness env and asserts the provider sees `"1"`.
+- **Baseline (pre-edit):** `shellcheck scripts/*.sh tests/*.sh` exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-integration.py` exit 0 (20 tests).
+- **Checks:** grep export in both launchers exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-integration.py` exit 0 (21 tests); shellcheck exit 0; `bash tests/run-tests.sh` exit 0 (`ALL TESTS PASSED`); no `scripts/__pycache__` or `tests/__pycache__`. Only allow-listed files changed.
+- **Result:** no feature acceptance or gate/status change.
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — S2 CURSOR RE-SMOKE RESULT; T-010 dispatch
 - **S2:** `bash scripts/fleet-doctor.sh --smoke --mission docs/missions/20261014-2a-foundation --seat cursor.economy --seat cursor.premium --timeout 300 --keep --dest <scratchpad>/smoke-s2` → exit 1 (expected: one seat unusable). Summary `.tasks/smoke/20261014T232111Z.json` (local). Live tree clean, no bytecode.
   | seat | status | model / effort / speed | reason |
