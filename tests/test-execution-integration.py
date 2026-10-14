@@ -84,7 +84,7 @@ if action == 'mixed':
     pathlib.Path('allowed.txt').write_text(f'dirty after commit {time.time_ns()}\\n')
 raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
 '''
-        for provider in PROVIDERS:
+        for provider in PROVIDERS + ("cursor-agent",):
             path = self.bin / provider
             path.write_text(stub)
             path.chmod(0o755)
@@ -244,13 +244,13 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertFalse(receipt["workspace_changed"])
         self.assertEqual(receipt["scope"]["result"], "pass")
         self.assertEqual(spec["schema_version"], 3)
-        self.assertEqual(spec["provider_contract_version"], 2)
+        self.assertEqual(spec["provider_contract_version"], 3)
         self.assertEqual(receipt["log_path"], f".tasks/logs/{spec['run_id']}.log")
         self.assertNotIn(spec["prompt"], json.dumps(receipt))
         invoked = json.loads((self.root / ".tasks/invoked.json").read_text())
         self.assertTrue(invoked["spec_existed"])
         self.assertTrue(invoked["lock_existed"])
-        self.assertEqual(invoked["provider"], provider)
+        self.assertEqual(invoked["provider"], {"agent": "cursor-agent"}.get(provider, provider))
         return spec, specs[0], receipt, invoked
 
     def test_exact_provider_contracts_through_both_wrappers(self):
@@ -333,7 +333,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.write_fleet("codex", "new-model", "medium", "unknown")
         adapter = self.root / "scripts/execute_provider.py"
         original = adapter.read_text()
-        old = 'codex_git_dir = (["--add-dir", str(Path(repo) / ".git")]\n                         if contract_version == 2 else [])'
+        old = 'codex_git_dir = (["--add-dir", str(Path(repo) / ".git")]\n                         if contract_version >= 2 else [])'
         self.assertIn(old, original)
         adapter.write_text(original.replace(old, "codex_git_dir = []", 1))
         self.commit_fixture("remove contract two Git mount")

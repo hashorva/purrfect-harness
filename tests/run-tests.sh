@@ -4,6 +4,8 @@
 # collision rules, then exercises the update path. Run from the kit root.
 
 set -euo pipefail
+# Python helpers must never leave bytecode in the tree: a dirty tree blocks dispatch.
+export PYTHONDONTWRITEBYTECODE=1
 
 HARNESS="$(pwd)"
 [ -f "$HARNESS/CHANGELOG.md" ] || { echo "Run from the kit root."; exit 1; }
@@ -100,7 +102,8 @@ rm -rf "$RELEASE_FIXTURE/.git"
 git -C "$RELEASE_FIXTURE" init -q
 git -C "$RELEASE_FIXTURE" config user.email ci@test && git -C "$RELEASE_FIXTURE" config user.name CI
 git -C "$RELEASE_FIXTURE" add -A && git -C "$RELEASE_FIXTURE" commit -qm fixture
-git -C "$RELEASE_FIXTURE" tag -a v2.3.1 -m fixture
+RELEASE_TAG="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["release"]["required_tag"])' "$HARNESS/harness-manifest.json")"
+git -C "$RELEASE_FIXTURE" tag -a "$RELEASE_TAG" -m fixture
 cp -R "$RELEASE_FIXTURE/." "$UNTAGGED_FIXTURE"
 rm -rf "$UNTAGGED_FIXTURE/.git"
 git -C "$UNTAGGED_FIXTURE" init -q
@@ -436,17 +439,22 @@ check "codex stdin is closed so EOF-reading stub returns" test "$CODEX_STDIN_EOF
 # value-taking option, so a simplified smoke test cannot pass a swallowed prompt.
 echo "== agent prompt and argument order"
 AGENT_OUT="$TARGET/.agent-args"
+# Contract 3 calls Cursor as `cursor-agent`: Grok Build also installs a bare `agent`.
 # shellcheck disable=SC2016  # printf template: $ must stay literal
-printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$(basename "$0")" "$@" > "%s"\nexit 0\n' "$AGENT_OUT" > "$STUBBIN/agent"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$(basename "$0")" "$@" > "%s"\nexit 0\n' "$AGENT_OUT" > "$STUBBIN/cursor-agent"
+chmod +x "$STUBBIN/cursor-agent"
+GROK_DECOY="$TARGET/.grok-agent-invoked"
+printf '#!/usr/bin/env bash\ntouch "%s"\nexit 0\n' "$GROK_DECOY" > "$STUBBIN/agent"
 chmod +x "$STUBBIN/agent"
 AGENT_MODEL="agent-test-model"
 AGENT_EXPECTED="$TARGET/.agent-expected"
-printf '%s\n' agent -p --force --trust --workspace "$TARGET_CANONICAL" --model "${AGENT_MODEL}[effort=xhigh,fast=false]" "$CODEX_PROMPT" > "$AGENT_EXPECTED"
+printf '%s\n' cursor-agent -p --force --trust --workspace "$TARGET_CANONICAL" --model "${AGENT_MODEL}[effort=xhigh,fast=false]" "$CODEX_PROMPT" > "$AGENT_EXPECTED"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
     bash scripts/spawn-worker.sh agent docs/missions/20990101-fixture/tasks/T-001.md \
       --tier economy --model "$AGENT_MODEL" --effort xhigh --feature F001 ) >/dev/null 2>&1 || true
-check "agent receives the exact invocation with intact final prompt" \
+check "cursor-agent receives the exact invocation with intact final prompt" \
   cmp -s "$AGENT_EXPECTED" "$AGENT_OUT"
+check "a bare agent (Grok Build) is never invoked for the Cursor lane" test ! -e "$GROK_DECOY"
 
 # ---- legacy parent-symlink must be migrated safely ----
 echo "== sync-skills parent-symlink migration"
@@ -487,7 +495,7 @@ DIRTY_UPDATE_BRANCH="$(git -C "$TARGET" branch --show-current)"
 DIRTY_UPDATE_STATUS="$(git -C "$TARGET" status --porcelain)"
 DIRTY_UPDATE_VERSION="$(<"$TARGET/.harness-version")"
 printf '%s\n' 'deliberately dirty tagged update source' >> "$RELEASE_FIXTURE/README.md"
-check "dirty tagged update source is rejected by real updater" sh -c "cd '$RELEASE_FIXTURE' && ! bash scripts/update-harness.sh '$TARGET' && test \"\$(git -C '$TARGET' branch --show-current)\" = '$DIRTY_UPDATE_BRANCH' && test \"\$(git -C '$TARGET' status --porcelain)\" = '$DIRTY_UPDATE_STATUS' && test \"\$(< '$TARGET/.harness-version')\" = '$DIRTY_UPDATE_VERSION'"
+check "dirty tagged update source is rejected by real updater" bash -c "cd '$RELEASE_FIXTURE' && ! bash scripts/update-harness.sh '$TARGET' && test \"\$(git -C '$TARGET' branch --show-current)\" = '$DIRTY_UPDATE_BRANCH' && test \"\$(git -C '$TARGET' status --porcelain)\" = '$DIRTY_UPDATE_STATUS' && test \"\$(< '$TARGET/.harness-version')\" = '$DIRTY_UPDATE_VERSION'"
 git -C "$RELEASE_FIXTURE" checkout -q -- README.md
 bash scripts/update-harness.sh --dev "$TARGET"
 check "update stayed on version branch" sh -c "git -C '$TARGET' branch --show-current | grep -q 'chore/harness-'"

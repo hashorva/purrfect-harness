@@ -16,16 +16,16 @@ def provider_contract(spec):
     provider, model, effort, speed, repo, prompt = (
         spec["provider"], spec["model"], spec["effort"], spec["speed"], spec["repo"], spec["prompt"]
     )
+    # v1/v2 predate the marker and therefore bind the historical contract 1.
+    # Only a v3 authorization can select contract 2 or 3.
+    contract_version = spec.get("provider_contract_version", 1)
     if provider == "codex":
         if effort not in {"low", "medium", "high", "xhigh"}:
             raise SpecError("codex does not support requested effort")
         if speed != "unknown":
             raise SpecError("codex speed must be unknown")
-        # v1/v2 predate the marker and therefore bind the historical contract 1.
-        # Only a v3 authorization can select contract 2.
-        contract_version = spec.get("provider_contract_version", 1)
         codex_git_dir = (["--add-dir", str(Path(repo) / ".git")]
-                         if contract_version == 2 else [])
+                         if contract_version >= 2 else [])
         argv = ["codex", "exec", "-C", repo, "-s", "workspace-write", *codex_git_dir, "-m", model,
                 "-c", f'model_reasoning_effort="{effort}"', prompt]
     elif provider == "claude":
@@ -48,7 +48,10 @@ def provider_contract(spec):
         if "[" in model or "]" in model:
             raise SpecError("agent model must not already contain parameters")
         resolved_model = f"{model}[effort={effort},fast={'true' if speed == 'fast' else 'false'}]"
-        argv = ["agent", "-p", "--force", "--trust", "--workspace", repo, "--model", resolved_model, prompt]
+        # Contract 3: Grok Build also installs a bare `agent`, so the Cursor CLI
+        # is called by its unambiguous name. Contracts 1/2 keep their history.
+        cursor_cli = "cursor-agent" if contract_version >= 3 else "agent"
+        argv = [cursor_cli, "-p", "--force", "--trust", "--workspace", repo, "--model", resolved_model, prompt]
     return argv, {}
 
 
