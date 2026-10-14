@@ -29,6 +29,54 @@ ENV = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
 GIT_ID = ["-c", "user.name=t", "-c", "user.email=t@example.invalid"]
 
 
+FAKE_CLI = r'''#!/usr/bin/env python3
+"""Fake provider CLI: behaviour per seat comes from SMOKE_MODES, probes go to SMOKE_PROBE."""
+import json, os, pathlib, re, subprocess, sys
+name = pathlib.Path(sys.argv[0]).name
+prompt = " ".join(sys.argv[1:])
+seat = re.search(r"T-SMOKE-([a-z]+-[a-z]+)", prompt).group(1).replace("-", ".", 1)
+probe = pathlib.Path(os.environ["SMOKE_PROBE"])
+(probe / f"launched.{seat}").write_text(name)
+mode = json.loads(os.environ.get("SMOKE_MODES", "{}")).get(seat, "both")
+docs = pathlib.Path("docs/smoke") / f"{seat}.txt"
+agents = pathlib.Path(".agents/smoke") / f"{seat}.txt"
+GIT = ["git", "-c", "user.name=fake", "-c", "user.email=fake@invalid"]
+
+
+def write(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"seat smoke {seat}\n")
+
+
+if mode == "push":
+    pushed = subprocess.run(["git", "push", "origin", "HEAD:refs/heads/escape"], capture_output=True, text=True)
+    (probe / f"push.{seat}").write_text(str(pushed.returncode))
+    mode = "both"
+if mode == "fail-model":
+    print("ERROR: Cannot use this model: x")
+    raise SystemExit(1)
+if mode == "dirty":
+    write(docs)
+    write(agents)
+    raise SystemExit(0)
+write(docs)
+if mode == "docs-only":
+    try:
+        raise PermissionError(13, "Permission denied", str(agents))
+    except OSError as exc:
+        print(f"ERROR: Cannot write {exc.filename}: {exc.strerror}")
+else:
+    write(agents)
+if mode == "live-touch":
+    pathlib.Path(os.environ["SMOKE_LIVE"], "TRACKED.txt").write_text("live touched\n")
+if mode == "live-branch":
+    subprocess.run(["git", "-C", os.environ["SMOKE_LIVE"], "branch", "x"], check=True)
+subprocess.run([*GIT, "add", str(docs), *([] if mode == "docs-only" else [str(agents)])], check=True)
+subprocess.run([*GIT, "commit", "-q", "-m", f"smoke: {seat}"], check=True)
+raise SystemExit(0)
+'''
+
+
 class SeatSmoke(unittest.TestCase):
     def setUp(self):
         self.parent = Path(tempfile.mkdtemp(prefix="seat-smoke-test-"))
@@ -50,6 +98,7 @@ class SeatSmoke(unittest.TestCase):
         ]}) + "\n")
         (mission / "fleet.json").write_text(canonical(live))
         (self.source / ".gitignore").write_text(".tasks/\n__pycache__/\n")
+        (self.source / "TRACKED.txt").write_text("live\n")
         self.git("init", "-q")
         self.git("add", ".")
         self.git("commit", "-qm", "fixture")
@@ -66,6 +115,36 @@ class SeatSmoke(unittest.TestCase):
             ["bash", str(self.source / "scripts/fleet-doctor.sh"), "--smoke", *args],
             cwd=self.source, text=True, capture_output=True, env=ENV,
         )
+
+    def launch(self, *args, modes=None):
+        return subprocess.run(
+            ["bash", str(self.source / "scripts/fleet-doctor.sh"), "--smoke", "--mission", FIXTURE, *args],
+            cwd=self.source, text=True, capture_output=True, env=self.launch_env(modes),
+        )
+
+    def launch_env(self, modes):
+        bin_dir = self.parent / "bin"
+        if not bin_dir.exists():
+            bin_dir.mkdir()
+            for name in ("claude", "codex", "cursor-agent", "agy"):
+                path = bin_dir / name
+                path.write_text(FAKE_CLI)
+                path.chmod(0o755)
+        probe = self.parent / "probe"
+        probe.mkdir(exist_ok=True)
+        return {**ENV, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "SMOKE_PROBE": str(probe),
+                "SMOKE_LIVE": str(self.source), "SMOKE_MODES": json.dumps(modes or {})}
+
+    def latest_summary(self):
+        files = sorted((self.source / ".tasks/smoke").glob("*.json"))
+        self.assertTrue(files, "no summary file written")
+        return json.loads(files[-1].read_text())
+
+    def set_seat(self, seat, **fields):
+        fleet = json.loads((self.source / FIXTURE / "fleet.json").read_text())
+        fleet["seats"][seat].update(fields)
+        (self.source / FIXTURE / "fleet.json").write_text(canonical(fleet))
+        self.git("commit", "-qam", f"seat {seat} {fields}")
 
     def non_brain_seats(self):
         return sorted(name for name in self.fleet["seats"] if not name.startswith("brain"))
@@ -162,10 +241,106 @@ class SeatSmoke(unittest.TestCase):
         self.assertFalse(Path(data["clone"]).exists())
         self.assertFalse(dest.exists())
 
-    def test_launch_is_refused_without_dry_run(self):
-        result = self.doctor("--mission", FIXTURE, "--dest", str(self.parent / "dest"))
+    def test_clone_has_no_remote_after_cloning(self):
+        data = self.launch("--seat", "claude.economy", "--dest", str(self.parent / "dest"), "--keep",
+                           modes={"claude.economy": "both"})
+        self.assertIn(data.returncode, (0, 1), data.stdout + data.stderr)
+        clone = Path(json.loads(data.stdout)["clone"])
+        self.assertEqual(self.git("remote", cwd=clone), "")
+
+    def test_fake_seat_cannot_push_out_of_the_clone(self):
+        result = self.launch("--seat", "claude.economy", "--dest", str(self.parent / "dest"), "--keep",
+                             modes={"claude.economy": "push"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        probe = (self.parent / "probe/push.claude.economy").read_text()
+        self.assertNotEqual(probe, "0", "git push inside the clone must fail")
+        self.assertEqual(self.git("branch", "--list", "escape").strip(), "")
+        self.assertEqual(self.git("status", "--porcelain").strip(), "")
+
+    def test_live_branch_change_fails_the_smoke(self):
+        result = self.launch("--seat", "claude.economy", "--dest", str(self.parent / "dest"),
+                             modes={"claude.economy": "live-branch"})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("ERROR smoke: live tree changed", result.stderr)
+        self.assertEqual(self.git("branch", "--list", "x").strip(), "x")
+
+    def test_live_tracked_file_change_fails_the_smoke(self):
+        result = self.launch("--seat", "claude.economy", "--dest", str(self.parent / "dest"),
+                             modes={"claude.economy": "live-touch"})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("ERROR smoke: live tree changed", result.stderr)
+        self.assertEqual((self.source / "TRACKED.txt").read_text(), "live touched\n")
+
+    def test_seat_classifications_from_receipt_and_head(self):
+        modes = {"agy.economy": "dirty", "claude.economy": "both", "codex.economy": "docs-only",
+                 "cursor.economy": "fail-model"}
+        dest = self.parent / "dest"
+        result = self.launch("--dest", str(dest), modes=modes)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertFalse(dest.exists(), "clone and transcripts are removed without --keep")
+        summary = json.loads(result.stdout)
+        self.assertEqual(summary, self.latest_summary())
+        self.assertEqual(sorted(summary), sorted(["base_commit", "clone", "finished_at", "kept", "mission",
+                                                  "seats", "skipped", "started_at"]))
+        seats = summary["seats"]
+        self.assertEqual(sorted(seats), self.non_brain_seats())
+        self.assertEqual(seats["claude.economy"]["status"], "usable")
+        self.assertEqual(seats["claude.economy"]["outcome"], "completed")
+        self.assertEqual(seats["claude.economy"]["exit_code"], 0)
+        self.assertFalse(seats["claude.economy"]["clone_reset"])
+        self.assertEqual(len(seats["claude.economy"]["commit"]), 40)
+        self.assertEqual(seats["codex.economy"]["status"], "usable-with-limit")
+        self.assertEqual(seats["codex.economy"]["reason"], "cannot write .agents/")
+        self.assertEqual(seats["agy.economy"]["status"], "unusable")
+        self.assertTrue(seats["agy.economy"]["clone_reset"])
+        self.assertEqual(seats["cursor.economy"]["status"], "unusable")
+        self.assertEqual(seats["cursor.economy"]["exit_code"], 1)
+        self.assertIn("Cannot use this model: x", seats["cursor.economy"]["reason"])
+        self.assertLessEqual(len(seats["cursor.economy"]["reason"]), 300)
+        for seat, entry in seats.items():
+            self.assertEqual(entry["provider"], self.fleet["seats"][seat]["provider"])
+            self.assertEqual(entry["model"], self.fleet["seats"][seat]["model"])
+        self.assertEqual(self.git("status", "--porcelain").strip(), "")
+
+    def test_fast_seat_never_launches(self):
+        self.set_seat("cursor.economy", speed="fast")
+        result = self.launch("--seat", "cursor.economy", "--dest", str(self.parent / "dest"),
+                             modes={"cursor.economy": "both"})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertFalse((self.parent / "probe/launched.cursor.economy").exists())
+        entry = self.latest_summary()["seats"]["cursor.economy"]
+        self.assertEqual((entry["status"], entry["reason"], entry["run_id"]),
+                         ("unusable", "fast mode is never smoked", None))
+
+    def test_fast_model_suffix_never_launches(self):
+        self.set_seat("claude.economy", model="haiku-fast")
+        result = self.launch("--seat", "claude.economy", "--dest", str(self.parent / "dest"),
+                             modes={"claude.economy": "both"})
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertFalse((self.parent / "probe/launched.claude.economy").exists())
+        self.assertEqual(self.latest_summary()["seats"]["claude.economy"]["reason"],
+                         "fast mode is never smoked")
+
+    def test_fast_seat_is_skipped_while_others_launch(self):
+        self.set_seat("cursor.economy", speed="fast")
+        result = self.launch("--seat", "cursor.economy", "--seat", "claude.economy",
+                             "--dest", str(self.parent / "dest"), modes={"claude.economy": "both"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.parent / "probe/launched.cursor.economy").exists())
+        self.assertTrue((self.parent / "probe/launched.claude.economy").exists())
+
+    def test_launch_keeps_live_snapshot_and_summary_in_live_root(self):
+        before = snapshot(self.source)
+        result = self.launch("--seat", "claude.economy", "--dest", str(self.parent / "dest"), "--keep",
+                             modes={"claude.economy": "both"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(snapshot(self.source), before)
+        self.assertTrue(Path(json.loads(result.stdout)["clone"]).is_dir())
+        self.assertEqual(json.loads(result.stdout)["kept"], True)
+
+    def test_timeout_must_be_positive(self):
+        result = self.launch("--seat", "claude.economy", "--timeout", "0", "--dest", str(self.parent / "dest"))
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-        self.assertIn("ERROR smoke: launch is implemented in T-008", result.stderr)
 
 
 if __name__ == "__main__":

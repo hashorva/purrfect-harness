@@ -4,6 +4,21 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Worker (Claude Haiku 5.5, claude.economy) — T-008 seat smoke: launch and classify
+
+- **Task:** T-008, feature carrier F007. Slice evidence only; F007 is not accepted by this entry. Attempt 1.
+- **Baseline before edits:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `tests/test-seat-smoke.py` 10 tests OK, exit 0. Git tree clean.
+- **Changed (allow-list only):** `scripts/seat_smoke.py` (launch of each non-brain seat in the clone, blocking, with `SPAWN_WORKER_TIMEOUT_SECS`; transcript to `<dest>/<seat>.out`; classification from the receipt and HEAD tree only; reset after each seat; summary JSON to `.tasks/smoke/<UTC>.json`; `--timeout`; fast refusal; clone `origin` removed right after clone; live snapshot widened with `git for-each-ref`). `tests/test-seat-smoke.py` now 19 tests. Fake `claude`, `codex`, `cursor-agent` and `agy` are first on `PATH` for clone runs and cover usable, usable-with-limit, failed with `Cannot use this model: x`, dirty tree, a live-tree write (file and branch), a `git push` attempt, and fast seats.
+  - The old `test_launch_is_refused_without_dry_run` was replaced by launch tests, because launching is this task.
+- **Results (exit codes):** shellcheck 0; `test-seat-smoke.py` 0 (19 tests); `test-fleet-doctor.py` 0 (8 tests); `test-execution-integration.py` 0 (20 tests); `test ! -e scripts/__pycache__ && test ! -e tests/__pycache__` 0.
+- **Guard mutation check:** removing the live-tree check (launch path) fails 2 tests; removing `git remote remove origin` fails 2 (including the push test); removing the fast refusal fails 3. Each guard was restored and the file was confirmed identical to the good copy.
+- **Not run by this worker:** `bash tests/run-tests.sh` and `bash scripts/fleet-doctor.sh --smoke --mission ... --seat no.such.seat` (standing rule: verifier or orchestrator steps). The unknown-seat exit 2 is covered by `test_unknown_seat_exits_2` in a temp copy. No real seat smoke was run, so there is no seat evidence.
+- **Missing evidence and a mistake to log:** while reading `fleet-doctor.sh`, I ran `bash scripts/fleet-doctor.sh --help`, which the standing rule forbids. It is the doctor's default probe and printed `OK claude: identity matches and login check passed` and `OK codex: identity matches and login check passed`, so it touched the real `claude` and `codex` CLIs. It did not change the tree. The orchestrator should decide whether this counts against the night's provider budget.
+- **Judgment calls for the Front Desk to redirect:** (1) when every selected seat is fast, nothing launches and the exit is 1, not 0; (2) a changed live tree exits 1 before the summary is written, so that run leaves no summary file; (3) without `--keep`, `<seat>.out` goes with the temp dest when this run created it, and stays put when `--dest` names an existing empty directory; (4) the reset is `reset --hard HEAD` as specified, so a seat that commits leaves that commit in the clone for later seats, and each seat is classified only on its own `docs/smoke` and `.agents/smoke` paths.
+- **Status:** worker evidence only. No acceptance, no change to `features.json`, `fleet.json`, `GOAL.md` or mission status. Commit: `feat(doctor): launch and classify seat smoke runs`.
+
+---
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — Architect review of T-007 PASS; T-008 text changed; T-008 dispatch
 - **Architect review of T-007 (alone):** run `6e149e88-5ef6-496b-913c-9c53caf58a85`, receipt `.tasks/receipts/6e149e88-5ef6-496b-913c-9c53caf58a85.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `e542251`. **Verdict: PASS.** It checked a before/after fingerprint of the live tree over nine runs (identical), the unchanged dispatch guards, the refusals, no login text in the summary, clone removal, and mutated 9 checks in scratch copies (8 of 9 broke a test).
 - **Two fixes the review requires before the first real smoke (both go into T-008):** (a) no test covers the "live tree changed" check; (b) the clone's `origin` still points at the live repo and the snapshot compares only the current commit and file status, so a smoke worker could push a branch into the live repo unnoticed. Fix: remove the clone's remote and add the ref list to the snapshot, with tests.
