@@ -149,7 +149,9 @@ class ExecutionSpecContract(unittest.TestCase):
                 self.assertNotEqual(self.persist(self.spec_v2(write_scope=candidate), check=False).returncode, 0)
         self.assertEqual(self.persist(self.spec_v2()).returncode, 0)
         self.assertEqual(self.persist(self.spec_v3()).returncode, 0)
+        self.assertEqual(self.persist(self.spec_v3(provider_contract_version=3)).returncode, 0)
         self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=1), check=False).returncode, 0)
+        self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=4), check=False).returncode, 0)
         self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=True), check=False).returncode, 0)
 
     def test_persistence_is_canonical_hashed_and_no_clobber(self):
@@ -184,23 +186,28 @@ class ExecutionSpecContract(unittest.TestCase):
                         self.assertEqual(result["argv"], contract_one[provider](None))
                         self.assertEqual(result["env_overrides"], {})
                         self.assertEqual(result["observed"], {"model": "unknown", "effort": "unknown", "speed": "unknown"})
-                    path, digest = self.persisted(self.spec_v3(provider=provider, role=role, **changes))
-                    result = json.loads(self.adapter(path, digest).stdout)
-                    expected = contract_one[provider](None)
-                    if provider == "codex":
-                        expected = expected[:6] + ["--add-dir", str(self.repo / ".git")] + expected[6:]
-                    self.assertEqual(result["argv"], expected)
+                    for contract in (2, 3):
+                        path, digest = self.persisted(self.spec_v3(provider=provider, role=role,
+                                                                   provider_contract_version=contract, **changes))
+                        result = json.loads(self.adapter(path, digest).stdout)
+                        expected = contract_one[provider](None)
+                        if provider == "codex":
+                            expected = expected[:6] + ["--add-dir", str(self.repo / ".git")] + expected[6:]
+                        if provider == "agent" and contract == 3:
+                            # Grok Build also installs a bare `agent`; contract 3 names Cursor's CLI.
+                            expected = ["cursor-agent"] + expected[1:]
+                        self.assertEqual(result["argv"], expected)
         fast, fast_digest = self.persisted(self.spec_v3(provider="agent", speed="fast"))
         self.assertEqual(json.loads(self.adapter(fast, fast_digest).stdout)["argv"][-2], "test-model[effort=medium,fast=true]")
 
-    def test_construct_emits_v3_contract_2(self):
+    def test_construct_emits_v3_contract_3(self):
         spec, path, _ = execution_spec.construct(
             role="worker", mission="docs/missions/fixture", feature="F001", work_unit="T-001", attempt=1,
             provider="codex", model="test-model", effort="medium", speed="unknown", repo=str(self.repo),
             prompt="exact prompt", write_scope=["allowed.txt"],
         )
         self.assertEqual(spec["schema_version"], 3)
-        self.assertEqual(spec["provider_contract_version"], 2)
+        self.assertEqual(spec["provider_contract_version"], 3)
         self.assertEqual(json.loads(path.read_text()), spec)
 
     def test_negative_adapter_paths_do_not_invoke_provider_sentinel(self):

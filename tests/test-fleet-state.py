@@ -57,6 +57,35 @@ def main():
       write(home/'.codex/models_cache.json',{'models':models+['gpt-sol-1','gpt-luna-1']})
       selected=d/'selected.json'; run('/bin/bash',str(public),'--json','--out',str(selected),env=env)
       assert json.loads(selected.read_text())['seats']['codex.premium']['model']==expected
+    # 2.3.2: version beats digit sums and effort; dates only break ties; fast is never automatic.
+    for models, expected in (
+      (['gpt-terra-4.5-high','gpt-terra-5-high'],'gpt-terra-5-high'),
+      (['gpt-terra-5.10','gpt-terra-5.6'],'gpt-terra-5.10'),
+      (['gpt-terra-4-1-20250805','gpt-terra-5-5'],'gpt-terra-5-5'),
+      (['gpt-terra-3.1-high','gpt-terra-3.6-low'],'gpt-terra-3.6-low'),
+      (['gpt-terra-5-preview','gpt-terra-4'],'gpt-terra-4'),
+      (['gpt-terra-5-high-fast','gpt-terra-4-low'],'gpt-terra-4-low'),
+    ):
+      write(home/'.codex/models_cache.json',{'models':models+['gpt-sol-1','gpt-luna-1']})
+      selected=d/'selected.json'; run('/bin/bash',str(public),'--json','--out',str(selected),env=env)
+      assert json.loads(selected.read_text())['seats']['codex.premium']['model']==expected, (models, expected)
+    # A successful list with only fast variants (or no family member) is an honest
+    # unavailable seat; the inventory itself must still validate and write.
+    write(home/'.codex/models_cache.json',{'models':['gpt-terra-9-fast','gpt-sol-1','gpt-luna-1']})
+    selected=d/'selected.json'; run('/bin/bash',str(public),'--json','--out',str(selected),env=env)
+    seat=json.loads(selected.read_text())['seats']['codex.premium']
+    assert (seat['model'],seat['source'],seat['health'])==('unavailable','unavailable','unknown'), seat
+    # Real CLI output shapes. Grok Build owns a bare `agent`; Cursor must be probed as `cursor-agent`.
+    clis=d/'clis'; clis.mkdir()
+    stub(clis,'agent',"printf '%s\\n' 'Available models:' '  * grok-4.7 (default)' '  - grok-4.7-build-fast'")
+    stub(clis,'cursor-agent',"[ \"$1\" = models ] || exit 2\nprintf '%s\\n' 'Available models' '' 'auto - Auto (default)' 'composer-2.5 - Composer 2.5' 'composer-2.5-fast - Composer 2.5 Fast' 'grok-4.7-xhigh - Grok 4.7  Extra High' 'grok-4.7-xhigh-fast - Grok 4.7  Extra High Fast' 'cursor-grok-4.5-high - Grok 4.5'")
+    stub(clis,'agy',"[ \"$1\" = models ] || exit 2\nprintf '%s\\n' 'gemini-3.8-flash-high     Gemini 3.8 Flash (High)' 'gemini-3.8-flash-low      Gemini 3.8 Flash (Low)' 'claude-opus-5-5-high      Claude Opus 5.5 (High)'")
+    cli_env={**env,'PATH':str(clis)+os.pathsep+env['PATH']}; real=d/'real-clis.json'
+    run('/bin/bash',str(public),'--json','--out',str(real),env=cli_env); doc=json.loads(real.read_text())
+    assert doc['providers']['agent']['status']=='success' and doc['providers']['agent']['path'].endswith('/cursor-agent')
+    assert doc['seats']['cursor.economy']['model']=='composer-2.5' and doc['seats']['cursor.premium']['model']=='grok-4.7-xhigh'
+    assert doc['seats']['agy.economy']['model']=='gemini-3.8-flash-high' and doc['seats']['agy.economy']['source']=='observed'
+    assert doc['seats']['agy.premium']['source']=='unavailable', 'no Gemini Pro listed: never guess one'
     write(home/'.codex/models_cache.json',{'models':['gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna']})
     # A bad cache is a current failure and retains the old record byte-for-byte semantically.
     (home/'.codex/models_cache.json').write_text('{bad')

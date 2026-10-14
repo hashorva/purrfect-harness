@@ -1,7 +1,7 @@
 ---
 title: Model Routing Policy
-version: 2.3.1
-updated: 2026-10-06
+version: 2.3.2
+updated: 2026-10-14
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -64,7 +64,11 @@ Rule of thumb: **judgment up, volume down.**
 
 ## Worker families (Gate 0 preferences; frozen fleet authorizes dispatch)
 
-### Cursor (`agent` CLI)
+### Cursor (`cursor-agent` CLI)
+
+The provider name stays `agent`. The harness calls the `cursor-agent` binary:
+Grok Build also installs a bare `agent`, and on a machine with both, `agent`
+can start Grok Build. Run `cursor-agent login` with the account the Cursor app uses.
 
 | Seat    | Family                                      | Fallback                                       |
 | ------- | ------------------------------------------- | ---------------------------------------------- |
@@ -123,8 +127,13 @@ bash scripts/fleet-inventory.sh          # print map + write .tasks/fleet-invent
 bash scripts/fleet-inventory.sh --json   # JSON only
 ```
 
-- Probe each CLI on PATH (`claude`, `codex`, `agent`, `agy`).
+- Probe each CLI on PATH (`claude`, `codex`, `cursor-agent`, `agy`).
 - Classify into seats by **family regex**, not hard-pinned version strings.
+  Rank by version, then release date, then effort. A preview is below a stable
+  release. A `-fast` model is never chosen automatically: fast modes cost more
+  and run only when the human asks for them.
+- A successful list without a family member gives an `unavailable` seat. The
+  probe never guesses an id that the CLI did not list.
 - **Always show** the map at GATE 0; human may interchange economy/premium (or
   brain) binds before approval.
 - Log the approved binds in PROGRESS.md + the mission GOAL Fleet table, and

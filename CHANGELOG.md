@@ -1,5 +1,49 @@
 # Changelog — agent-harness kit
 
+## 2.3.2 (2026-10-14)
+
+- **Development baseline; not yet released:** `2.3.2` is an untagged development
+  baseline. It adds fixes to the untagged 2.3.1 Phase 1 baseline. Tagging and
+  publication remain separate human decisions (see docs/RELEASING.md).
+
+- **CI is green again, on Linux and macOS.** CI pins ShellCheck 0.11.0, so CI and
+  local runs report the same codes. The trap cleanup functions disable both
+  SC2317 (old ShellCheck) and SC2329 (new ShellCheck). CI runs on `ubuntu-latest`
+  and `macos-latest` and validates every tracked JSON file.
+
+- **Tests run the same on every shell.** One check used `$(< file)` inside
+  `sh -c`; on Linux `sh` is dash, which reads it as empty. It now uses `bash -c`.
+  `run-tests.sh` sets `PYTHONDONTWRITEBYTECODE=1`, and `.gitignore` ignores
+  `__pycache__/` and `*.pyc`: bytecode left in the tree made the next dispatch
+  fail with "workspace must be clean". The release fixture tag now comes from
+  `harness-manifest.json`.
+
+- **The Cursor lane calls `cursor-agent`.** Grok Build also installs a bare
+  `agent`. On a machine with both, `agent` can start Grok Build. Provider
+  contract 3 calls Cursor's CLI by its unambiguous name, and the inventory
+  probes `cursor-agent models`. New ExecutionSpec v3 files carry contract 3.
+  Contract 1 and 2 evidence keeps its historical argv, so old receipts still
+  verify. The provider name in fleets stays `agent`.
+
+- **The inventory reads real model lists.** The parser read nothing from
+  Antigravity output (`id   Display Name`) or Grok output (`* id (default)`).
+  That is why Phase 1 marked those seats degraded and guessed ids. It now reads
+  the Cursor, Antigravity and Grok formats.
+
+- **"Newest model" means newest.** The chooser summed digits, so `grok-4.5`
+  ranked above `grok-5`, and a dated old Claude id ranked above a new one. It
+  now ranks stable before preview, then version, then release date, then effort.
+  A `-fast` model is never chosen automatically: fast modes cost more and are
+  opt-in only. A successful list without a family member gives an honest
+  `unavailable` seat. Before, it produced a guessed seat that made the whole
+  inventory command fail.
+
+- **Client permissions and worker guidance.** `.claude/settings.json` allows the
+  harness's own launch, verify and test commands, and `cursor-agent -p` instead
+  of `agent -p`. Feature acceptance still asks the human. The worker template
+  states that a check's result is its exit code; a missing summary line is not a
+  reason to stop.
+
 ## 2.3.1 (2026-08-13)
 
 - **Development baseline; not yet released:** `2.3.1` remains an untagged development

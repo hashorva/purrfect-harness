@@ -37,7 +37,7 @@ LOCK_PATH=""
 LOCK_TOKEN=""
 RUNNER_PID=""
 
-# shellcheck disable=SC2329  # invoked indirectly by the EXIT trap
+# shellcheck disable=SC2317,SC2329  # invoked indirectly by the EXIT trap (old and new code)
 cleanup() {
   local exit_code=$? cleanup_failed=0
   trap - EXIT

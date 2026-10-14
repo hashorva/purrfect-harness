@@ -1,6 +1,6 @@
 ---
 title: Orchestration Protocol
-version: 2.3.1
+version: 2.3.2
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -11,7 +11,7 @@ One orchestrator plans, decomposes, dispatches, and reviews — **Opus by
 default** per [`MODEL_ROUTING.md`](MODEL_ROUTING.md). Cursor (often Grok) may
 intake a brief plan; Opus weighs it and runs the mission loop. Human may name
 Fable or Codex/Sol as chair, or declare “no orchestration.” Cheap workers
-(Cursor `agent`: Grok premium / Composer economy; Codex Terra/Luna-class;
+(Cursor `cursor-agent`: Grok premium / Composer economy; Codex Terra/Luna-class;
 `agy`; Claude Haiku/Sonnet) implement on **local machine CLIs**.
 
 The loop runs on three files **inside the mission folder**: `features.json`
@@ -48,7 +48,7 @@ Cursor chat without spawns is a failed dispatch — PROGRESS prose is not proof.
 | Agent                                                                                                                                                   | Role                                                                                                                  | Send it                                        |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
 | **Orchestrator / brain** (Opus default; Fable or Sol only when human names them or when it starts from a chat with Sol or Fable — see MODEL_ROUTING.md) | Weigh intake plan → features.json, WORKER_TASK files, review diffs, arbitrate, update AGENTS.md when decisions change | The GOAL, review requests, "what next"         |
-| **Cursor Agent** (`agent`)                                                                                                                              | Multi-file work: **Grok** = premium, **Composer** = economy (Grok falls back to Composer)                             | WORKER_TASK files; small safe tasks → Composer |
+| **Cursor Agent** (`cursor-agent`)                                                                                                                       | Multi-file work: **Grok** = premium, **Composer** = economy (Grok falls back to Composer)                             | WORKER_TASK files; small safe tasks → Composer |
 | **Codex** (`codex`)                                                                                                                                     | Inventory seats: Sol = brain when named; Terra ≈ premium; Luna ≈ economy                                              | Tight allow-lists / verifiable tasks           |
 | **Antigravity** (`agy`)                                                                                                                                 | **UI lane** (shadcn/Luma/appearance) + opt-in workers; Flash economy / Pro premium                                    | UI WORKER_TASKs; or when human says use agy    |
 | **Claude** (`claude -p`)                                                                                                                                | Haiku economy / Sonnet premium workers (not the default chair)                                                        | Tight allow-list tasks                         |
