@@ -4,6 +4,19 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Worker (claude.economy, haiku) — T-001-R2 guard mutation compiles
+
+- **Task:** T-001-R2 (F001), attempt 1 of 2. Run id not supplied in the task; no receipt written by this worker.
+- **Changed (tests/test-verification-record.py only):** `snapshot-pre-post` replacement is now `'if False: pass\n'`; the mutation oracle also rejects `IndentationError` and `TabError` with the same message style as `SyntaxError`.
+- **Baseline (before edit):** `shellcheck scripts/*.sh tests/*.sh` exit 0; `harness-manifest.json` JSON exit 0; `features.json` JSON exit 0; `python3 tests/test-fleet-state.py` exit 0.
+- **Checks after edit:**
+  - `GUARD_MUTATION_LABEL=snapshot-pre-post python3 tests/test-verification-record.py` (PYTHONDONTWRITEBYTECODE=1): exit 0, 12 tests OK. The label filter limits only the mutation loop; the file's other tests also ran.
+  - `python3 tests/test-verification-record.py` (PYTHONDONTWRITEBYTECODE=1): exit 0, 12 tests OK; all 8 mutations pass their oracle.
+  - `bash tests/run-tests.sh` (run once): exit 0, "ALL TESTS PASSED".
+  - `test -z "$(git status --short)"`: exit 1 before commit, because the scoped test change was still uncommitted. Re-checked after the commit (see below).
+- **Not reproduced:** I did not re-run the pre-fix tree to watch `snapshot-pre-post` fail with `IndentationError`; the diagnosis comes from T-001-R2. The new oracle would reject that output, and the passing full guard run shows the repaired mutation fails with `AssertionError`.
+- **Not done:** no feature accepted, no `features.json` or `fleet.json` edit, no gate or status change, no other worker or brain launched.
+
 ## 2026-10-14 — Front Desk (Sonnet 5.5) — Architect plan received; tasks committed
 
 - **Plan receipt:** run `b031098e-63f8-42da-ac88-ad4286429cb4`, receipt `.tasks/receipts/b031098e-63f8-42da-ac88-ad4286429cb4.json`: outcome `completed`, exit 0, scope pass, commit `380eab2` (PROGRESS.md only, as its write scope allows). `Plan: READY`.

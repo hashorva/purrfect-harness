@@ -306,7 +306,7 @@ class VerificationRecordIntegration(unittest.TestCase):
             ("snapshot-rebind", 'if record["verification_git_before"] != receipt["git_after"] or record["verification_git_after"] != receipt["git_after"]:',
              'if False:', "test_revalidation_rejects_every_bound_identity_state_and_hash"),
             ("snapshot-pre-post", 'if before != receipt["git_after"]: fail("current Git snapshot does not equal receipt git_after before checks")\n',
-             'if False:\n', "test_unrelated_git_visible_change_fails_real_snapshot_guard_without_record"),
+             'if False: pass\n', "test_unrelated_git_visible_change_fails_real_snapshot_guard_without_record"),
             ("lock", 'if os.environ.get("PURRFECT_DISPATCH_LOCK_PATH") or (lock_dir.is_dir() and list(lock_dir.glob("*.lock"))):',
              'if False:', "test_real_run_verification_is_immutable_and_acceptance_is_separate"),
             ("acceptance-hash", 'if digest(raw) != expected_hash or record["result"] != "pass":',
@@ -342,6 +342,8 @@ class VerificationRecordIntegration(unittest.TestCase):
                     self.assertIn("AssertionError", output, label + ": mutation failed before its test assertion\n" + output)
                     self.assertNotIn("NameError", output, label + ": mutation produced a construction error\n" + output)
                     self.assertNotIn("SyntaxError", output, label + ": mutation produced a syntax error\n" + output)
+                    self.assertNotIn("IndentationError", output, label + ": mutation produced an indentation error\n" + output)
+                    self.assertNotIn("TabError", output, label + ": mutation produced a tab error\n" + output)
                     self.assertNotIn("\nERROR", output, label + ": mutation produced a test setup error\n" + output)
                 finally:
                     policy.write_text(original)
