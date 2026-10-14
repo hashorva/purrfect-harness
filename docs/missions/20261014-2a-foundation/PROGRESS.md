@@ -4,6 +4,20 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — T-005 worker (claude.economy, Haiku 5.5, effort medium) — skills run fleet-doctor.sh; provider cursor, agent legacy
+
+- **Task:** T-005 (F001 steps 1-8, docs only), attempt 1 of 2. Run id not supplied in the task; no receipt written by this worker.
+- **Changed (allow-list only):**
+  - `.agents/skills/mission-init/SKILL.md` section 2: the four `command -v` lines are replaced by `bash scripts/fleet-doctor.sh` (then `fleet-inventory.sh`), with two sentences on `ERROR` (fix before Gate 0) and `WARN` (listed in the Gate 0 report).
+  - `.agents/skills/dispatch-worker/SKILL.md`: section 1 gained a bullet to run the doctor before dispatch, where any `ERROR` blocks dispatch; the Cursor paragraph now says the provider is `cursor` (binary `cursor-agent`), `spawn-worker.sh cursor ...` is the normal form, `agent` is legacy (frozen v1 fleets and v3 specs, converted by the launcher), and bare `agent` is not used because Grok Build installs it too.
+  - `docs/missions/MODEL_ROUTING.md`, Cursor section: "The provider name stays `agent`" is replaced by the same facts.
+  - This entry only in `PROGRESS.md`.
+- **Baseline (before edits):** `shellcheck scripts/*.sh tests/*.sh` exit 0; `harness-manifest.json` and `features.json` JSON valid; `python3 tests/test-registry.py` exit 0; `python3 tests/test-fleet-doctor.py` exit 0.
+- **Focused checks (after edits, exit codes):** registry JSON plus manifest ownership 0; `tests/test-registry.py` 0; constant-definition grep (negated) 0; `persisted-name cursor` = `agent` 0; `validate-fleet` on this mission's frozen `fleet.json` 0; manifest grep for `fleet-doctor.sh` and `fleet_doctor.py` 0; grep count of `fleet-doctor.sh` in the two skills = 2, 0; negated `which -a|command -v agent` grep over the two skills 0; `shellcheck scripts/*.sh tests/*.sh` 0; `tests/test-fleet-doctor.py` 0; `git diff --check` 0.
+- **Not run by the worker (standing rule, verification commands only):** `bash tests/run-tests.sh` and `bash scripts/fleet-doctor.sh`. Their results are unavailable here and belong to `verify-mission.sh`.
+- **Scope:** only the three allow-listed files and this entry changed. No scripts, tests, registry, manifest, features.json, fleet.json, specs, receipts or VerificationRecords touched.
+- **Result:** exit criteria met pending commit and the post-commit clean-tree check, with the two verification-only commands left to the verifier. No feature acceptance, verification record, or gate/status change made by this worker.
+
 ## 2026-10-14 — Front Desk (Sonnet 5.5) — T-006 reviewed and verified; T-005 dispatch (last run under the cap)
 
 - **Mechanical review:** run `e240fd2a-3f9a-4e52-9481-d8941656081f` (T-006 attempt 3, claude.economy, haiku, effort medium), receipt `.tasks/receipts/e240fd2a-3f9a-4e52-9481-d8941656081f.json`: outcome `completed`, exit 0, scope pass, commit `31754a6`, 3 changed paths all in the allow-list (template, `.agents/skills/dispatch-worker/SKILL.md`, PROGRESS.md). `verify-mission.sh --run-id e240fd2a-3f9a-4e52-9481-d8941656081f` → `VERIFY PASS`, exit 0. Record `verification/e240fd2a-3f9a-4e52-9481-d8941656081f.json` is **slice evidence for F001 (T-006), not F001 acceptance**.

@@ -42,6 +42,7 @@ provider launch. There is no cross-repository dispatch or parallel scheduling.
   contains consecutive Markdown code-span bullets, each a non-empty JSON argv.
 - The tree is clean, the task baseline passes, the target CLI is available, and
   no worker or verifier is concurrently changing this workspace.
+- Run `bash scripts/fleet-doctor.sh` before dispatch; any `ERROR` blocks dispatch.
 
 The wrapper validates authorization before persisting a spec or launching the
 provider. Its exclusive workspace lock lasts through terminal receipt creation.
@@ -57,9 +58,11 @@ bash scripts/spawn-worker.sh codex "$MISSION/tasks/T-XXX.md" \
   --tier economy --feature F00X --attempt 1 --effort medium --speed unknown
 ```
 
-For Cursor, use the approved `agent` tier and its explicit `standard` or `fast`
-speed. The adapter calls the `cursor-agent` binary, because Grok Build also
-installs a bare `agent`. Check the frozen seat before adapting the example.
+For Cursor, the provider is `cursor` (binary `cursor-agent`), so
+`spawn-worker.sh cursor ...` is the normal form, with the approved `standard` or
+`fast` speed. `agent` is a legacy name: frozen v1 fleets and v3 specs record it,
+and the launcher converts `cursor` to it. Do not dispatch as bare `agent`, because
+Grok Build also installs a bare `agent`. Check the frozen seat before adapting the example.
 
 The launcher prints `run_id` and the log path. Keep that UUID; never select a
 receipt by timestamp, task name, or “latest success.” One run writes:

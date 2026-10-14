@@ -66,9 +66,10 @@ Rule of thumb: **judgment up, volume down.**
 
 ### Cursor (`cursor-agent` CLI)
 
-The provider name stays `agent`. The harness calls the `cursor-agent` binary:
-Grok Build also installs a bare `agent`, and on a machine with both, `agent`
-can start Grok Build. Run `cursor-agent login` with the account the Cursor app uses.
+The provider name is `cursor`, and the harness calls the `cursor-agent` binary;
+`agent` is a legacy name kept for frozen fleets and v3 evidence, and the launcher
+converts `cursor` to it. Grok Build also installs a bare `agent`, and on a machine
+with both, `agent` can start Grok Build. Run `cursor-agent login` with the account the Cursor app uses.
 
 | Seat    | Family                                      | Fallback                                       |
 | ------- | ------------------------------------------- | ---------------------------------------------- |

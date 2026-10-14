@@ -25,12 +25,13 @@ Fable is named only, never an automatic escalation.
 ## 2. Inventory the local fleet
 
 ```bash
-command -v claude
-command -v codex
-command -v agent
-command -v agy
+bash scripts/fleet-doctor.sh
 bash scripts/fleet-inventory.sh
 ```
+
+Any `ERROR` from the doctor (two different programs under one name, wrong
+identity, logged out) must be fixed before Gate 0. `WARN` lines (duplicate PATH
+entries, symlinks to the same binary, a missing CLI) are listed in the Gate 0 report.
 
 Present the actual seat/provider/model/family/health/source map at Gate 0.
 Unavailable providers cannot be bound. Failed probes preserve per-provider
