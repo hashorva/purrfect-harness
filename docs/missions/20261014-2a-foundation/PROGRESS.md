@@ -4,6 +4,16 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Front Desk (Sonnet 5.5) — T-006 launch failed (harness adapter bug); seat change; F004 evidence
+
+- **Run `fa4bb81a-ae84-4e2f-9ae6-03f1ad5bcc1c`** (T-006, `cursor` / composer-2.5, effort medium, speed standard), receipt `.tasks/receipts/fa4bb81a-ae84-4e2f-9ae6-03f1ad5bcc1c.json`: outcome `failed`, exit 1, no changed paths, no commits, scope pass. **Classification (owner): harness adapter bug (Cursor model format), not a Cursor/Composer failure.** The v3 adapter passed `composer-2.5[effort=medium,fast=false]`; `cursor-agent` rejected it before any work. It does not count against the cursor lane. It counts as worker run 9 of 12 for the nightly cap.
+- **F004 evidence (recorded in `evidence/F004-cursor-model-argument.md`):** command `cd "$(mktemp -d)" && cursor-agent -p --trust --model composer-2.5 "Reply with OK only."` → exit 0, stdout `OK`, stderr empty. So: the bracket form `[effort=…,fast=…]` is **rejected** for composer-2.5 (full verbatim message in the evidence file) and the plain ID `composer-2.5` is **accepted**. Not tested: the bracket form with a Grok model.
+- **Seat change (approved by the owner, option 1):** T-006 and T-005 move from `cursor.economy` to `codex.economy` (gpt-6-luna, effort medium, speed unknown). Frozen `fleet.json` is unchanged (the seat is already in it). Only the `worker:` and `invocation:` lines of the two tasks changed. T-006 runs as attempt 2 (the failed launch was attempt 1 and is classified as harness, not worker); T-005 as attempt 1.
+- **Decomposition miss:** tasks were routed to a seat whose launch was unproven.
+- **Rule from now on:** before a seat's first use in a mission, a one-line smoke call must pass. `codex.economy` has already run in this mission (T-001 attempt 2, T-001-R1, T-003, T-004 attempt 2), so it is proven; the Cursor seats are not, until the F004 fix.
+- **ARCHITECT BACKLOG (owner, next to the clean-worktree task):** fix the Cursor model argument in `scripts/execute_provider.py` (F004), using tonight's evidence (`evidence/F004-cursor-model-argument.md`), with a test built from the real rejection message. Guard/dispatch code, so Architect review is required.
+- **Budget counters:** worker runs 9 of 12 used; T-006 will be 10, T-005 11. If a re-attempt would exceed 12, stop and report. Architect 4 of 4 used tonight. No credits, no fast modes. The evidence call used one included Composer request.
+
 ## 2026-10-14 — Front Desk (Sonnet 5.5) — T-004 attempt 2: VERIFY FAIL classified as environment; plan change
 
 - **Run:** `ad1e4e18-15a6-4fd5-abad-615e6be07411` (codex.economy, gpt-6-luna, effort medium), receipt `.tasks/receipts/ad1e4e18-15a6-4fd5-abad-615e6be07411.json`: outcome `completed`, exit 0, scope pass, commit `1997031`, 9 changed paths all in the allow-list. `code-reviewer` (full diff = attempt 1 patch + attempt 2): **Verdict: PASS**, no blocking issues.
