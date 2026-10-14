@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Front Desk (Sonnet 5.5) — Architect review recorded; T-001 attempt 2 dispatch
+
+- **Architect review of `68942df`:** run `127dd9c6-faa4-4bb3-9a70-0897226ea49a`, receipt `.tasks/receipts/127dd9c6-faa4-4bb3-9a70-0897226ea49a.json` (outcome `completed`, exit 0, scope pass, commit `5dec815`). **Verdict: PASS** on all three points: all 8 mutations still applied, each still makes its focused test fail, nothing in the live tree is written. `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` exit 0.
+- **Finding queued (pre-existing, not R1, not blocking):** the `snapshot-pre-post` mutation leaves `verification_record.py` uncompilable (`IndentationError`), so its proof is vacuous; the oracle rejects `SyntaxError` but not `IndentationError`. Proposed small repair, `tests/test-verification-record.py` only: replacement `'if False: pass\n'` and an oracle that rejects `IndentationError`/`TabError`. Guard test, so it needs Architect review. Not dispatched yet; queued as `T-001-R2` after T-001.
+- **T-001 updated for attempt 2 (owner-approved):** baseline = shellcheck, JSON validation, `python3 tests/test-fleet-state.py`; `python3 tests/test-registry.py` is a task check (verification commands); the full suite stays in the verification commands; the long-command rule is in the Iteration policy.
+- **Next:** dispatch T-001 attempt 2 on `codex.economy`.
+
 ## 2026-10-14 — Brain / Architect (claude/opus, effort high) — review of T-001-R1 (`68942df`)
 
 - **Run:** `127dd9c6-faa4-4bb3-9a70-0897226ea49a`; log `.tasks/logs/127dd9c6-faa4-4bb3-9a70-0897226ea49a.log`; spec role `brain`, `claude`/`opus`, effort `high`. The launcher writes the receipt `.tasks/receipts/127dd9c6-faa4-4bb3-9a70-0897226ea49a.json` when this run ends; it did not exist while this entry was written.
