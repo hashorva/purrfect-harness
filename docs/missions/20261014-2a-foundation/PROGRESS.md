@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-14 — Front Desk (Sonnet 5.5) — status in-progress
+
+- **Did:** moved `approved` → `in-progress`. `verify-mission.sh` exit 0 on the in-progress mission. Dispatching T-001 (F001, codex.economy, attempt 1) next.
+
 ## 2026-10-14 — Front Desk (Sonnet 5.5) — fleet frozen, status approved
 
 - **Fleet:** `fleet.json` frozen from the inventory probed 2026-10-14T15:00:44Z, approved by Zamir at 2026-10-14T15:25:56Z. `validate-fleet` exit 0. No re-probe between approval and freeze.
