@@ -55,6 +55,24 @@ class RegistryTests(unittest.TestCase):
         del invalid["providers"]["agy"]["model_name_encoding"]
         with self.assertRaisesRegex(registry_module.RegistryError, "model_name_encoding"):
             registry_module.validate_registry(invalid)
+
+    def test_structured_output_is_required_and_validated(self):
+        cases = (
+            ("missing field", lambda broken: broken["providers"]["claude"].pop("structured_output")),
+            ("missing flag", lambda broken: broken["providers"]["claude"]["structured_output"].pop("json_schema_flag")),
+            ("invalid flag", lambda broken: broken["providers"]["claude"]["structured_output"].update(json_schema_flag="json-schema")),
+            ("missing evidence", lambda broken: broken["providers"]["claude"]["structured_output"].update(evidence="  ")),
+        )
+        for label, mutate in cases:
+            with self.subTest(label=label):
+                broken = copy.deepcopy(registry)
+                mutate(broken)
+                with self.assertRaises(registry_module.RegistryError):
+                    registry_module.validate_registry(broken)
+        self.assertEqual({name: item["structured_output"]["json_schema_flag"]
+                          for name, item in registry["providers"].items()},
+                         {"claude": "--json-schema", "codex": "--output-schema",
+                          "cursor": None, "agy": "--json-schema"})
         invalid = copy.deepcopy(registry)
         invalid["providers"]["claude"]["model_name_encoding"] = {}
         with self.assertRaisesRegex(registry_module.RegistryError, "must be null"):

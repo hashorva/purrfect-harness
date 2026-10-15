@@ -4,6 +4,12 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — T-034 worker — provider structured-output metadata and after-run verdict validation
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-registry.py` exit 0 (26 tests); `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verdict.py` exit 0 (9 tests).
+- **Change:** Added required provider `structured_output` metadata with P-2 flag values and evidence (claude `--json-schema`, codex `--output-schema`, cursor null, agy `--json-schema`); registry validation rejects missing or malformed values. Added `validate_verdict.py --after-run <provider> <schema> <output-file>`; flag providers validate JSON directly and report `mode=flag`, while cursor extracts the embedded final result object and reports `mode=after-run`. Added valid and invalid cursor result-envelope fixtures and negative registry cases.
+- **Checks:** `tests/test-registry.py` exit 0 (27 tests); `tests/test-verdict.py` exit 0 (11 tests); `scripts/harness_registry.py` exit 0; `fleet_state.py validate-fleet docs/missions/20261014-2a-foundation/fleet.json` exit 0; shellcheck exit 0; no `__pycache__` folders exit 0.
+- **Not run by this worker:** `bash tests/run-tests.sh`; standing 2A worker policy reserves it for the verifier outside the sandbox. No feature acceptance or gate/status change made. Scoped change committed as `feat(verdicts): record json-schema support and validate after runs`.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — P-2 recorded; T-034 task text changed (values named); T-034 dispatch
 - **Probe P-2 (help text only):** claude `--json-schema`; codex `exec --output-schema <FILE>`; cursor none; agy `--json-schema` (unproven, agy hangs). Evidence: `evidence/P-2-json-schema-flags.md`.
 - **Task-text change (recorded):** T-034 item 1 now names those values and points to the evidence file (the task depended on "P-2 recorded"). T-034 edits the registry and `validate_verdict.py`; Architect review after. Seat: codex.economy.

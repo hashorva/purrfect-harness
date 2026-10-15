@@ -6,7 +6,7 @@ import re
 import sys
 
 REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
-PROVIDER_FIELDS = ("binary", "legacy_names", "probe_command", "list_parser", "identity_check", "identity_pattern", "login_check", "effort_encoding", "fast_encoding", "model_name_encoding", "discovery_directory", "capabilities", "sandbox_limits")
+PROVIDER_FIELDS = ("binary", "legacy_names", "probe_command", "list_parser", "identity_check", "identity_pattern", "login_check", "effort_encoding", "fast_encoding", "model_name_encoding", "discovery_directory", "capabilities", "sandbox_limits", "structured_output")
 DOOR_FIELDS = ("provider", "billing_class", "pool", "no_zdr", "priority")
 ROOT_FIELDS = ("schema_version", "providers", "doors", "seat_specs")
 
@@ -110,6 +110,13 @@ def validate_registry(data):
                     or len(values) != len(set(values))):
                 raise RegistryError(f"{label}.capabilities.{field} must be a non-empty list of distinct supported values")
         _validate_sandbox_limits(provider["sandbox_limits"], label + ".sandbox_limits")
+        structured_output = provider["structured_output"]
+        _require_fields(structured_output, ("json_schema_flag", "evidence"), label + ".structured_output")
+        flag = structured_output["json_schema_flag"]
+        if flag is not None and (not isinstance(flag, str) or not flag.startswith("--") or not flag.strip()):
+            raise RegistryError(f"{label}.structured_output.json_schema_flag must be a flag or null")
+        if not isinstance(structured_output["evidence"], str) or not structured_output["evidence"].strip():
+            raise RegistryError(f"{label}.structured_output.evidence must be non-empty text")
     doors = data["doors"]
     if not isinstance(doors, dict) or not doors:
         raise RegistryError("registry.doors must be a non-empty object")

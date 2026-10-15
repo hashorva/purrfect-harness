@@ -33,6 +33,25 @@ class VerdictValidatorTests(unittest.TestCase):
             check=False,
         )
 
+    def run_after_run(self, provider, schema, fixture):
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), "--after-run", provider,
+             str(ROOT / schema), str(FIXTURES / fixture)],
+            cwd=ROOT, capture_output=True, text=True, check=False,
+        )
+
+    def test_after_run_extracts_and_validates_envelope_for_provider_without_flag(self):
+        result = self.run_after_run("cursor", "schemas/task-plan.schema.json", "cursor-envelope.json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("mode=after-run", result.stdout)
+        bad = self.run_after_run("cursor", "schemas/task-plan.schema.json", "cursor-envelope-bad.json")
+        self.assert_refused(bad, "at least 1 item")
+
+    def test_after_run_with_flag_uses_plain_validation(self):
+        result = self.run_after_run("claude", "schemas/task-plan.schema.json", "good-task-plan.json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("mode=flag", result.stdout)
+
     def assert_refused(self, result, reason_substring=None):
         self.assertEqual(result.returncode, 1)
         self.assertIn("ERROR: verdict:", result.stderr)

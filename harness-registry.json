@@ -39,7 +39,8 @@
         "write_denied_prefixes": [],
         "login_state_visible": true,
         "evidence": "T-006 attempt 3 (claude.economy) wrote .agents/skills/dispatch-worker/SKILL.md under the claude seat; T-005 (claude.economy) wrote .agents/skills/mission-init/SKILL.md and dispatch-worker SKILL.md. T-008 (claude.economy) login check passed. No write limit observed for claude."
-      }
+      },
+      "structured_output": {"json_schema_flag": "--json-schema", "evidence": "Probe P-2: claude --help lists --json-schema <schema>."}
     },
     "codex": {
       "binary": "codex",
@@ -78,7 +79,8 @@
         "write_denied_prefixes": [],
         "login_state_visible": false,
         "evidence": "T-004 attempt 1 and T-006 attempt 2 (codex.economy): workspace-write got PermissionError (Operation not permitted) on .agents/ writes, so .agents/ was denied. Probe P-1 (docs/missions/20261014-2a-foundation/evidence/codex-add-dir-agents.md) passed with --add-dir <clone>/.agents, and T-013 is verified (the adapter sends the flag for allow-listed .agents/ paths), so the prefix list is empty. Codex workspace-write cannot see Claude or agy login state (.agents/skills/dispatch-worker/SKILL.md, Sandbox limits)."
-      }
+      },
+      "structured_output": {"json_schema_flag": "--output-schema", "evidence": "Probe P-2: codex exec --help lists --output-schema <FILE>."}
     },
     "cursor": {
       "binary": "cursor-agent",
@@ -123,7 +125,8 @@
         "write_denied_prefixes": [],
         "login_state_visible": "unknown",
         "evidence": "Smoke .tasks/smoke/20261014T232111Z.json (S2): cursor.economy usable and Cursor can write .agents/ (no write limit observed). Login-state visibility not yet observed."
-      }
+      },
+      "structured_output": {"json_schema_flag": null, "evidence": "Probe P-2: cursor-agent --help lists output formats but no JSON Schema flag."}
     },
     "agy": {
       "binary": "agy",
@@ -164,7 +167,8 @@
         "write_denied_prefixes": [],
         "login_state_visible": "unknown",
         "evidence": "not yet observed: smoke .tasks/smoke/20261014T222833Z.json (S1) did not pass agy.economy, so there is no write or login-visibility observation."
-      }
+      },
+      "structured_output": {"json_schema_flag": "--json-schema", "evidence": "Probe P-2: agy --help lists --json-schema; behavior remains unproven because turns hang."}
     }
   },
   "doors": {
