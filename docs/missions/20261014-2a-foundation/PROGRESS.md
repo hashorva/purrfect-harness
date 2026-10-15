@@ -4,6 +4,54 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-015 (`18507d9`)
+
+- **Run:** `08258116-c8cd-431e-82bc-ec031012320c`; log `.tasks/logs/08258116-c8cd-431e-82bc-ec031012320c.log`; spec role `brain`, action `review`, base `3aa9ea0`, write scope this file only. The launcher writes the receipt `.tasks/receipts/08258116-c8cd-431e-82bc-ec031012320c.json` when this run ends; it did not exist while this entry was written.
+- **Worker evidence I read:**
+  - Receipt `7ee9f3e4-…`: cursor.economy, outcome `completed`, exit 0, scope pass, `20e19fe` → `18507d9`, 6 allow-listed paths, clean `git_after`.
+  - Its VerificationRecord: `fail`, 5 of 6 commands exit 0; `bash tests/run-tests.sh` exit 1.
+- **Method:** effects only.
+  - Three scratch `git clone`s in the session scratchpad, origin removed: `old` at `20e19fe`, `new` and `mut` at `18507d9`. `git diff 18507d9 3aa9ea0 -- scripts tests schemas harness-registry.json` is empty, so `18507d9` is the code under review.
+  - Fake `claude`, `codex`, `cursor-agent`, `agy`, `agent` and `grok` were first on PATH (each logs and exits 97); `PYTHONDONTWRITEBYTECODE=1`.
+  - **No real provider CLI ran.** The fake log holds only 34 `agy models` and 34 `cursor-agent models` calls, from the suite's inventory probe. No `-fast` model was launched.
+- **Part 1 — why seat smoke fails: proven, single cause.**
+  - `18507d9` changed `dispatch_policy.worker_write_scope(task)` to return a tuple `(raw_patterns, validated_scope)`; before, it returned the list. `tests/test-seat-smoke.py:21` imports the function, and line 196 compares its result with a list.
+  - Actual value at `18507d9`: `(['docs/smoke/agy.economy.txt', '.agents/smoke/agy.economy.txt', 'docs/missions/SMOKE/PROGRESS.md'], [<the same three>])`. At `20e19fe` it is the plain list. The "182 more characters" is the second copy of the list.
+  - `test-seat-smoke.py` gives 19 OK in `old` and 1 failure in `new`.
+  - Full suite: `new` exit 1, and the only failure is "seat smoke scratch clone and dry-run plan". In `mut`, with one diagnostic line changed (`_, scope = worker_write_scope(task)`; not a fix, then reverted), the suite exits 0 (`ALL TESTS PASSED`).
+  - `git grep worker_write_scope` at `18507d9` finds exactly two users: `validate_worker` and that test. The return-type change was not asked for, and a fix that keeps the return type was possible inside the allow-list.
+- **Part 2 — the gate change.** I drove the real `spawn-worker.sh` of each tree through its own test fixture (`WrapperIntegration.setUp`, stub providers, frozen fleet).
+  - Grid: provider ∈ {codex, claude}; registry ∈ {live, codex `[".agents/"]`, codex `["./.agents/"]`, codex `["./"]`}; 19 allow-list patterns, plus one mixed list. 153 cases per tree.
+  - Compared per case: exit code, last stderr line, persisted spec `write_scope`, and any spec, log, receipt, lock or provider call left behind.
+  - **(1) `--provider`: PASS.** It is required (argparse). `spawn-worker.sh:192` passes `$WORKER` after the T-016 persisted-name conversion. The only other caller is the gate string at `tests/test-execution-integration.py:947`, which was updated. `spawn-brain.sh` calls `validate-brain`, not `validate-worker`, and has 0 diff lines.
+  - **(2) Refusal before any artifact: PASS.** On a refusal, 0 cases left a spec, log, receipt, lock or provider call. The message matches the task text and names the canonical provider.
+  - **(2) Live registry: refuses nothing new, but now ACCEPTS something new (FAIL against "previous gates unchanged").** On the live registry, for codex and claude alike, `./docs/x.md`, `./.agents/skills/x/SKILL.md` and `././.agents/x.md` were refused at `20e19fe` (`write_scope entries must not contain empty, dot, or parent segments`). At `18507d9` they pass, and the persisted scope is the normalised path.
+    - Cause: `worker_write_scope` now strips `./` before `validate_write_scope`, which loosens the allow-list grammar for every provider.
+    - The task's item 6 test (`./docs/x.md` passes) required this. Before the change, `./` patterns never reached the seat check, and the T-014 note (b) was about the registry prefix only. So this is a plan-text defect, not worker improvisation.
+    - The effect is semantically equal (`./docs/x.md` = `docs/x.md`), and the persisted scope is the normalised form. It is still an existing gate changed without a decision.
+    - Two refusals now print a different message (`./`, `.//docs/x.md` → `trimmed repo-relative POSIX globs`); both still exit 1.
+  - **(3) Gate order: PASS.** The new check sits inside `validate_worker` after the feature checks and before `clean_workspace`, and `validate-worker` still runs before `acquire-lock` (`spawn-worker.sh:207`). Snapshot re-exec, the `--repo` guard, provider conversion, `fleet_state.py resolve` (frozen-seat equality) and lock release are unchanged.
+  - **(4) Item 6: PASS as written.** Prefix `./.agents/` behaves like `.agents/`. A prefix of `./` normalises to `""` and refuses every codex task (fail-closed, but the message says `cannot write ./`).
+  - **Gap in the rule (plan defect; not live, because every live prefix list is empty).** With codex `[".agents/"]`, the gate accepts five patterns that can write under `.agents/` (oracle: `glob_regex` against sample `.agents/…` paths): `*/skills/x/SKILL.md`, `**/SKILL.md`, `?agents/x.md`, `.age*/x.md`, `.*/skills/**`. The task's "startswith or matches `<prefix>__probe__`" rule cannot see a wildcard in the first segment that crosses the prefix. The worker implemented the rule as specified.
+  - **(5) Mutations: 9 of 12 killed.** Clone `mut`, one exact-string change each; focused tests `test_worker_refuses_allow_lists_that_hit_provider_write_limits` and `test_cursor_alias_persists_agent_contract_through_wrappers`; restore checked byte-exact with `git diff --quiet`.
+    - Killed: call removed; `startswith` dropped; probe dropped; no `./` normalisation; pattern not normalised; always codex limits; persist raw scope; wrapper passes a constant provider; wrapper drops the flag.
+    - Survived, test gaps: (a) prefix not normalised (no `./`-prefix fixture); (b) raw provider in the message (only codex is tested, where raw and canonical names are the same).
+    - Survived, equivalent: the check moved after `clean_workspace` (both run before the lock).
+  - **(6) Docs: accurate, with one stale line.** The new skill and template sentences match the mechanism. Both still carry row/item (b), "Codex workspace-write cannot write under `.agents/` … until the adapter is fixed", which is stale after T-013. This is pre-existing and already in the sandbox-limit docs queue (T-014 follow-up c). "Refuses a task whose allow-list hits one" over-claims until the glob gap is closed.
+- **Part 3 — classification.** `Failure class: task`.
+  - The verify failure comes only from the worker's unrequested return-type change to `worker_write_scope`. One `git grep` finds the consumer, and a fix that keeps the contract fits the allow-list.
+  - Two plan defects ride along and do not cause the failure: (i) item 6 required loosening the grammar; (ii) the probe rule has a glob gap. The attempt-2 draft fixes both.
+  - Draft attempt-2 text: `.tasks/plans/08258116-c8cd-431e-82bc-ec031012320c/T-015.md`. It restores the list return through a separate raw-pattern helper, keeps the pre-`18507d9` grammar (`./` normalised on the registry prefix only, and an empty normalised prefix refused explicitly), and replaces startswith/probe with a segment-wise rule (checked in scratch against all 13 listed patterns).
+  - It lists every consumer, adds `tests/test-seat-smoke.py` as a verification command, and puts that file on the deny-list as the regression oracle. Tests cover the 5 gap patterns and the 2 test-gap survivors.
+- **Audit:** `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` → `VERIFY OK`, exit 0, before this entry. Live tree clean at `3aa9ea0`, 1 worktree, no `__pycache__`.
+- **Not done:**
+  - no acceptance (T-015 is failed attempt 1 of 2 for an F004 slice);
+  - no change to features, fleet, GOAL, status or `tasks/T-015.md` (the draft is for the Front Desk to commit);
+  - no dispatch.
+  - Scratch clones, fakes, the grid, mutation and comparison scripts stay in the session scratchpad.
+
+Verdict: FAIL
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-015 attempt 1: VERIFY FAIL (cause undetermined); my T-017 edit correction; Architect classification requested
 - **Run `7ee9f3e4-fe9d-465e-9f23-75d32ec8928a`** (T-015, cursor.economy composer-2.5, effort medium, speed standard, attempt 1), receipt `.tasks/receipts/7ee9f3e4-fe9d-465e-9f23-75d32ec8928a.json`: outcome `completed`, exit 0, scope pass, commit `18507d9`, 6 changed paths in the allow-list (`scripts/dispatch_policy.py`, `scripts/spawn-worker.sh`, `tests/test-execution-integration.py`, `.agents/skills/dispatch-worker/SKILL.md`, `docs/missions/templates/WORKER_TASK.template.md`, PROGRESS.md). `verify-mission.sh --run-id 7ee9f3e4-fe9d-465e-9f23-75d32ec8928a` → **VERIFY FAIL**; record `verification/7ee9f3e4-fe9d-465e-9f23-75d32ec8928a.json` kept as history. 5 of 6 commands pass (integration tests, verification-record tests, the doc grep, shellcheck, no-bytecode). The full suite fails at **"seat smoke scratch clone and dry-run plan"** (`tests/test-seat-smoke.py`, test `test_kept_clone_has_one_mission_valid_fleet_and_scoped_tasks`, line 197): the smoke task's write scope is expected to be exactly `[docs/smoke/<seat>.txt, .agents/smoke/<seat>.txt, <smoke mission>/PROGRESS.md]` but now has about 182 more characters (extra entries). That test passed under T-013 and T-016, so something in `18507d9` changed the scope list. `tests/test-seat-smoke.py` is not in T-015's allow-list or verification list.
 - **Classification: not decided by me.** It is either a regression in the T-015 code (a `task` failure, attributable to cursor.economy) or a stale expectation in a file the plan did not list (a plan defect, not attributable). The Architect decides (request below). Routing line is written after that.
