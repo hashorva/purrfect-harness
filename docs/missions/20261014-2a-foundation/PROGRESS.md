@@ -4,6 +4,25 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — T-036-R2 worker — close reconstruct-run test gaps
+
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` exit 0 (67 tests).
+- **Changed:** `tests/test-reconstruct.py` now asserts each complete VerificationRecord output line after loading both numbered records, the full resolved ledger VALID line, malformed receipt IDs selected by `--all`, symlinked receipts skipped by `--all`, and a directory ledger row rejected as non-regular. Existing tests for the other requested invariants were retained.
+- **Focused check:** `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-reconstruct.py` exit 0 (13 tests).
+- **Mutation evidence:** Each mutation was applied only to a temporary copy of `scripts/`, `tests/`, `schemas/`, and `harness-registry.json`; each focused test failed by its named assertion (exit 1). The source locations below are the exact lines printed by `grep -nF` against the unchanged live `scripts/reconstruct_run.py`.
+  - (a) `scripts/reconstruct_run.py:152:        if canonical_run_id(run_id) is None:` -> `        if False:`; `test_hostile_run_ids_exit_two_without_echoing_id` failed.
+  - (b) `scripts/reconstruct_run.py:152:        if canonical_run_id(run_id) is None:` -> `        if not args.all_runs and canonical_run_id(run_id) is None:`; `test_all_rejects_invalid_id_without_echoing_it` failed.
+  - (c) `scripts/reconstruct_run.py:45:                  if path.is_file() and not path.is_symlink()` -> `                  if path.is_file()`; `test_all_skips_symlinked_receipt` failed.
+  - (d) `scripts/reconstruct_run.py:115:    if ledger_path.is_symlink() or (ledger_path.exists() and not ledger_path.is_file()):` and `scripts/reconstruct_run.py:118:    elif not ledger_path.is_file():` -> both conditions changed to `if False:` / `elif False:`; `test_symlinked_ledger_row_exits_one` failed.
+  - (e) `scripts/reconstruct_run.py:102:            for number, path in sorted(paths.items()):` -> `            for number, path in sorted(paths.items())[:1]:`; `test_two_verification_records_are_listed` failed.
+  - (f) `scripts/reconstruct_run.py:107:                    print(f"  VerificationRecord {path.name}: {record['result']} sha256={sha256(raw)}")` -> `                    print(f"  VerificationRecord {path.name}: {record['result']}")`; `test_complete_fixture_exits_zero_and_prints_evidence` failed.
+  - (g) `scripts/reconstruct_run.py:46:                  and receipt_mission(path) == mission.relative_to(root).as_posix())` -> `                  )`; `test_all_enumerates_mission_receipts_and_skips_other_missions` failed.
+  - (h) `scripts/reconstruct_run.py:56:def reconstruct(root, mission, run_id):` -> added `(root / "mutation.txt").write_text("changed")` at function entry; `test_read_only_fixture_tree` failed.
+  - (i) `scripts/reconstruct_run.py:160:        print(f"MISSING {run_id}: {item}")` -> `        pass`; `test_each_missing_artifact_exits_one_and_names_it` failed.
+  - (j) `scripts/reconstruct_run.py:161:    return 1 if failures else 0` -> `    return 0`; `test_each_missing_artifact_exits_one_and_names_it` failed.
+- **Verification:** suite/manifest greps exit 0; `shellcheck scripts/*.sh tests/*.sh` exit 0; final `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-reconstruct.py` exit 0 (13 tests); both `__pycache__` checks and `git diff --check` exit 0. Per the standing 2A worker rule, `bash tests/run-tests.sh` is reserved for the verifier and was not run here. No feature acceptance or gate/status change.
+- **Result:** only the two allow-listed files changed. Commit: `test(evidence): close the reconstruct-run test gaps`.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-036-R1 verified; code-reviewer FAIL on test gaps; T-036-R2 written
 - **Mechanical review:** run `1ed3c51e-184b-4481-87e6-29657ce14087` (T-036-R1, cursor.economy composer-2.5, attempt 1): completed, exit 0, scope pass, commit `ff98f71`, 3 paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS`. I checked the entry point myself: `../x`, `X` and an empty id each exit 2.
 - **code-reviewer FAIL, tests only** (the code was judged correct): only the first of two VerificationRecords is asserted for result/sha256; the ledger line is barely asserted; no test for `--all` with an invalid id or with a symlinked receipt; mutation evidence covers 2 groups of ~10. Routing line `verify-passed-review-failed`, class `task` (cursor.economy). The first failure (T-036) was not attributable (my brief), so a tests-only R2 is allowed under the two-failure rule.

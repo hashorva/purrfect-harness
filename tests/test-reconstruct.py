@@ -107,9 +107,13 @@ class ReconstructFixture(unittest.TestCase):
         self.assertIn(f"observed model: {observed['value']} (source={observed['source']})", output)
         record_path = self.root / MISSION / "verification" / f"{self.run_id}.json"
         record, record_raw = verification_record.load_record(record_path)
-        self.assertIn(f"VerificationRecord {record_path.name}: {record['result']} sha256={hashlib.sha256(record_raw).hexdigest()}", output)
-        self.assertIn("ledger:", output)
-        self.assertIn("VALID", output)
+        expected_record = (
+            f"  VerificationRecord {record_path.name}: {record['result']} "
+            f"sha256={hashlib.sha256(record_raw).hexdigest()}"
+        )
+        self.assertIn(expected_record, output.splitlines())
+        ledger_path = self.root / ".tasks/ledger" / f"{self.run_id}.json"
+        self.assertIn(f"  ledger: {ledger_path.resolve()} VALID", output.splitlines())
 
     def test_each_missing_artifact_exits_one_and_names_it(self):
         cases = (
@@ -152,8 +156,18 @@ class ReconstructFixture(unittest.TestCase):
         self.assertEqual(second.returncode, 0, second.stderr + second.stdout)
         code, output = self.invoke(MISSION, self.run_id)
         self.assertEqual(code, 0, output)
+        expected = {}
+        for name in (f"{self.run_id}.json", f"{self.run_id}.2.json"):
+            path = self.root / MISSION / "verification" / name
+            record, raw = verification_record.load_record(path)
+            expected[name] = (
+                f"  VerificationRecord {name}: {record['result']} "
+                f"sha256={hashlib.sha256(raw).hexdigest()}"
+            )
         self.assertIn(f"VerificationRecord {self.run_id}.json:", output)
         self.assertIn(f"VerificationRecord {self.run_id}.2.json:", output)
+        for line in expected.values():
+            self.assertIn(line, output.splitlines())
 
     def test_hostile_run_ids_exit_two_without_echoing_id(self):
         hostile = ("../x", "x/y", RUN.upper(), "", "a" * 300)
@@ -174,6 +188,14 @@ class ReconstructFixture(unittest.TestCase):
         target = self.root / ".tasks/ledger" / "real-row.json"
         target.write_bytes(real)
         path.symlink_to(target.name)
+        code, output = self.invoke(MISSION, self.run_id)
+        self.assertEqual(code, 1, output)
+        self.assertIn(f"MISSING {self.run_id}: ledger row (not a regular file)", output)
+
+    def test_directory_ledger_row_exits_one(self):
+        path = self.root / ".tasks/ledger" / f"{self.run_id}.json"
+        path.unlink()
+        path.mkdir()
         code, output = self.invoke(MISSION, self.run_id)
         self.assertEqual(code, 1, output)
         self.assertIn(f"MISSING {self.run_id}: ledger row (not a regular file)", output)
@@ -224,6 +246,30 @@ class ReconstructFixture(unittest.TestCase):
         code, output = self.invoke(MISSION, "--all")
         self.assertEqual(code, 1, output)
         self.assertIn(f"MISSING {self.run_id}: ledger row", output)
+
+    def test_all_rejects_invalid_id_without_echoing_it(self):
+        invalid_id = "not-a-canonical-uuid"
+        receipt = {
+            "mission": MISSION,
+            "run_id": RUN,
+        }
+        (self.root / ".tasks/receipts" / f"{invalid_id}.json").write_text(
+            json.dumps(receipt) + "\n"
+        )
+        code, _out, err = self.invoke(MISSION, "--all", stderr=True)
+        self.assertEqual(code, 2, err)
+        self.assertEqual(err.strip(), "ERROR: reconstruct: invalid run id")
+        self.assertNotIn(invalid_id, err)
+
+    def test_all_skips_symlinked_receipt(self):
+        link_id = "89abcdef-0123-4567-89ab-cdef01234567"
+        target = self.root / "outside-receipt.json"
+        target.write_text(json.dumps({"mission": MISSION, "run_id": link_id}) + "\n")
+        link = self.root / ".tasks/receipts" / f"{link_id}.json"
+        link.symlink_to(target)
+        code, output = self.invoke(MISSION, "--all")
+        self.assertEqual(code, 0, output)
+        self.assertNotIn(f"RUN {link_id}", output)
 
 
 if __name__ == "__main__":
