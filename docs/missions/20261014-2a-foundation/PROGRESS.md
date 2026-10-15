@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-027 verified; code-reviewer requested
+- **Mechanical review:** run `ac3a28a0-bb63-4d5f-a31e-67e365f5652c` (T-027, claude.economy haiku, effort medium, attempt 1), receipt `.tasks/receipts/ac3a28a0-bb63-4d5f-a31e-67e365f5652c.json`: outcome `completed`, exit 0, scope pass, `git_after` clean, commit `6b6b2b7`, 12 changed paths (`schemas/ledger-row.schema.json`, `scripts/ledger.py`, `tests/test-ledger.py`, 6 fixtures under `tests/fixtures/ledger/`, `tests/run-tests.sh`, `harness-manifest.json`, PROGRESS.md), all in the allow-list. `verify-mission.sh --run-id ac3a28a0-bb63-4d5f-a31e-67e365f5652c` → `VERIFY PASS`, exit 0 (6 commands incl. the full suite). Routing line written (ledger, M, claude.economy, done). Slice evidence for F005, not acceptance. Claude worker tally: 11 task attempts, 1 task failure (T-023 a1 scope).
+- **Review:** `code-reviewer` (routine schema + validator, per the plan). Next: T-028 (ledger privacy rule; Architect alone).
+
 ## 2026-10-15 (night 2) — T-027 worker (Haiku 5.5) — ledger row schema and validator; awaiting orchestrator verification
 - **Task:** T-027 (F005 step 1 slice: every section-8 field with a source flag; no run, fold or derived view). Attempt 1 of 2. No launcher run id: invoked directly as the dispatched worker, so no `.tasks/receipts/` entry exists for this session. Seat per dispatch note: claude.economy (not confirmed by a receipt).
 - **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0 before edits. `run-tests.sh` was not run as a baseline (standing rule).
