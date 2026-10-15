@@ -116,6 +116,36 @@ class VerdictValidatorTests(unittest.TestCase):
                 result = self.run_after_run_text(self.envelope(prefix + self.plan_text()))
                 self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_semantic_rows_a5_through_a10(self):
+        plan = self.plan_text()
+        cases = (
+            ("A5", self.envelope("Note: {" + plan)),
+            ("A6", "{{" + plan),
+            ("A7", "[{" + plan),
+            ("A8", '{"note": ' + plan),
+            (
+                "A10",
+                '{ \n\t"x":1} '
+                + plan.replace('{"plan_id"', '{ \r\n "plan_id"', 1),
+            ),
+        )
+        for row_id, output in cases:
+            with self.subTest(row=row_id):
+                result = self.run_after_run_text(output)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("mode=after-run", result.stdout)
+
+    def test_semantic_rows_r3_r6_r7(self):
+        plan = self.plan_text()
+        cases = (
+            ("R3", plan + " and {}", "$.plan_id: required property is missing"),
+            ("R6", "prose " + plan[:-1], "$.plan_id: required property is missing"),
+            ("R7", '{"draft": ' + plan + "}", "$.plan_id: required property is missing"),
+        )
+        for row_id, output, reason in cases:
+            with self.subTest(row=row_id):
+                self.assert_refused(self.run_after_run_text(output), reason)
+
     def test_deep_nesting_refused_cleanly_in_flag_and_data_modes(self):
         with tempfile.TemporaryDirectory() as directory:
             deep_path = Path(directory) / "deep.json"

@@ -29,51 +29,46 @@ def read_bounded_text(path):
     return data.decode("utf-8")
 
 
-def _top_level_spans(text):
-    """Return decoded top-level object spans, skipping over complete values."""
-    decoder = json.JSONDecoder()
-    spans = []
+SCAN_BUDGET = 16 * MAX_OUTPUT_BYTES
+ATTEMPT_COST = 64
+# A JSON object can begin only at "{", JSON whitespace, then '"' or '}' (RFC 8259; json.decoder.WHITESPACE).
+OBJECT_START = re.compile(r'\{[ \t\n\r]*["}]')
+_DECODER = json.JSONDecoder()
+
+
+def top_level_objects(text):
+    """Return every top-level JSON object in text, left to right, or raise ValueError."""
+    objects = []
     pos = 0
+    spent = 0
     while True:
-        start = text.find("{", pos)
-        if start < 0:
-            return spans
+        match = OBJECT_START.search(text, pos)
+        if match is None:
+            return objects
+        start = match.start()
         try:
-            value, end = decoder.raw_decode(text, start)
-        except (json.JSONDecodeError, ValueError):
-            if start + 1 < len(text) and text[start + 1] == "{":
-                run_end = start + 2
-                while run_end < len(text) and text[run_end] == "{":
-                    run_end += 1
-                pos = text.find("{", run_end)
-                if pos < 0:
-                    return spans
-            else:
-                pos = start + 1
+            value, end = _DECODER.raw_decode(text, start)
         except RecursionError:
-            # Deep malformed runs make each opener expensive to retry. None of
-            # the intervening characters can begin a useful candidate object.
-            next_start = text.find("{", start + 1)
-            if next_start == start + 1:
-                run_end = next_start + 1
-                while run_end < len(text) and text[run_end] == "{":
-                    run_end += 1
-                pos = text.find("{", run_end)
-                if pos < 0:
-                    return spans
+            raise ValueError("JSON nests too deeply to read") from None
+        except json.JSONDecodeError as exc:
+            if exc.msg.startswith("Unterminated string"):
+                scanned = len(text) - start
             else:
-                raise ValueError("JSON nests too deeply to read") from None
+                scanned = exc.pos - start
+            spent += ATTEMPT_COST + scanned + exc.pos // 16
+            pos = start + 1
         else:
-            spans.append((start, end, value))
+            spent += ATTEMPT_COST + (end - start)
+            objects.append(value)
             pos = end
+        if spent > SCAN_BUDGET:
+            raise ValueError("output is too costly to scan for a JSON object")
 
 
 def _last_object(text, accept=lambda value: True):
     """Return the last top-level JSON object in text that accept() takes, or None."""
-    for start, end, value in reversed(_top_level_spans(text)):
-        if text[start] != "{":
-            continue
-        if isinstance(value, dict) and accept(value):
+    for value in reversed(top_level_objects(text)):
+        if accept(value):
             return value
     return None
 

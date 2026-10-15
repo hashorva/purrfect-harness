@@ -4,6 +4,19 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — T-034-R3 worker (cursor.economy) — budgeted greedy scan for the after-run extractor
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `python3 -c 'import jsonschema'` failed (module absent; no third-party module added).
+- **Change:** `scripts/validate_verdict.py`: replaced `_top_level_spans` with the Architect's verbatim `top_level_objects` (`OBJECT_START`, `SCAN_BUDGET`, `ATTEMPT_COST`) and simplified `_last_object` to walk `reversed(top_level_objects(text))`. `final_answer_text`, `extract_last_json_object`, `read_bounded_text`, and `main` unchanged aside from calling the new scan. `tests/test-verdict.py`: semantic rows A5–A8, A10, R3, R6, R7 (temp-dir fixtures); R1/R2 remain `test_first_valid_last_invalid_is_refused` and `test_first_invalid_last_valid_is_accepted`.
+- **Checks (run by me):** `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verdict.py` exit 0 (26 tests, ~2.1 s); both `--check-schema` exit 0; suite/manifest greps exit 0; `shellcheck scripts/*.sh tests/*.sh` exit 0; no `__pycache__` in `scripts/` or `tests/`.
+- **Mutation evidence** (temporary copies only; grep on live tree):
+  - `scripts/validate_verdict.py:63` — `pos = end` → `pos = start + 1`: A1 and R2 fail (exit 1).
+  - `scripts/validate_verdict.py:59` — `pos = start + 1` → `pos = max(start + 1, exc.pos)`: A8 fails (exit 1).
+  - `scripts/validate_verdict.py:35` — `r'\{[ \t\n\r]*["}]'` → `r'\{[ \t\n\r]*"'`: R3 fails (exit 1).
+  - `scripts/validate_verdict.py:35` — `r'\{[ \t\n\r]*["}]'` → `r'\{"'`: A10 fails (exit 1).
+  - `scripts/validate_verdict.py:82` — `return output if envelope is None else envelope["result"]` → `return output`: A3 fails (exit 1).
+- **Not run by this worker:** `bash tests/run-tests.sh` (verifier command per standing 2A rule).
+- **Result:** no feature acceptance or gate/status change; allow-list only. Commit: `fix(verdicts): budgeted greedy scan for the after-run extractor`.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — Architect redesign of the extractor received; T-034-R3 and T-034-R4 written; T-034-R3 dispatch
 - **Architect redesign** (run `99addddc-0d02-4375-8c27-431fc999c287`, commit `592257d`): root cause of all four rounds: two unbounded costs (error-object construction is O(position) per failed `raw_decode`; deep chains re-scanned per start), so each worker added a skip-ahead guess that lost a valid start. Design: `OBJECT_START` regex (grammar-exact start positions), `pos` moves only to `end` or `start + 1`, and a counted work budget that refuses cleanly. Pass/fail table of 14 hostile and ~15 semantic rows; prototype timings measured by the Architect.
 - **T-034-R3** (code + semantic rows) and **T-034-R4** (tests only, no `scripts/` change) written verbatim from the Architect's design, including the five and four mutation lines as `grep -nF` instructions so the worker cannot misreport line numbers. R3 dispatching on cursor.economy; R4 after R3 is verified and reviewed.
