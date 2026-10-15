@@ -4,6 +4,12 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## MORNING REPORT — DAY 3 CORRECTION (acceptance commands, exact)
+- The F005 line in the day-3 report above contains a broken placeholder text (a mistake of mine); these are the exact commands. **Neither has been run; you decide.**
+- **F005** (ledger, record = T-032-R1, run `bbb4eb9d-1d01-4638-9916-58aa64dae309`): `bash scripts/accept-feature.sh --run-id bbb4eb9d-1d01-4638-9916-58aa64dae309 --verification-sha256 a9513b3545e6e853cc09cbfcdd6d7f5fa8f4cdc3ddde6766b171600c8fc42099 --accepted-by "<identity>" docs/missions/20261014-2a-foundation`. Fold in the same acceptance commit only after you settle the two ledger questions: `python3 scripts/ledger.py fold docs/missions/20261014-2a-foundation`, then stage `docs/missions/ledger.jsonl` and `docs/missions/20261014-2a-foundation/drift.jsonl`.
+- **F006** (verdict schemas, record = T-035, run `db01ac53-00de-4d30-9230-05894b952ebe`): `bash scripts/accept-feature.sh --run-id db01ac53-00de-4d30-9230-05894b952ebe --verification-sha256 d652eeeadeb8f0b0adf7596f944300ecf85b49e3b994356ade4a06b4257ba46b --accepted-by "<identity>" docs/missions/20261014-2a-foundation`.
+- After either: `bash scripts/verify-mission.sh --require-workers docs/missions/20261014-2a-foundation`.
+
 ## MORNING REPORT — DAY 3 (2026-10-15) — STOPPED: NOTHING INDEPENDENT LEFT — Front Desk (Sonnet 5.5)
 - **Why I stopped:** every remaining item needs a working `agy` (T-026, T-039, T-037, T-038) or an owner decision. No worker or reviewer is running; the tree is clean; `origin/mission/2a-foundation` equals local HEAD after every run (no tags, no PRs, main untouched, no credits, no fast modes).
 - **Your decisions from the day-3 message, and what happened:**
