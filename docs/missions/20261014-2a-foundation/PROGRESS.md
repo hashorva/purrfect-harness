@@ -4,6 +4,11 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — Architect verdict on T-030: FAIL (3 blocking); T-030-R1 written; open owner decision before T-032
+- **Architect review** (commit `c61949e`): T-030 (`451aa2c`) FAIL: (1) exactly-once is keyed on the file name, not `run_id` (duplicates and renamed rows get appended); (2) drift events reach the committed file unvalidated (a secret-shaped value was folded in its replay); (3) no test catches a fold that truncates committed history. Routing line for T-030 amended to `verify-passed-review-failed`, class `task` (cursor.economy).
+- **T-030-R1** written from the Architect's follow-up (ledger.py + test-ledger.py + PROGRESS only). Dispatching on codex.economy.
+- **Decision needed before T-032 folds any real row:** the T-029 review's (3) source labels for spec-supplied fields (`requested_model`, `resolved_model`, `effort` are marked `observed` but come from the spec) and (3b) the meaning of `door` (currently the tier). `ledger.jsonl` is append-only, so the first real fold makes the values permanent. My recommendation, as the Architect's: take `resolved_model`/`effort` from the receipt's `resolved_configuration`, and document that "observed" for requested/resolved fields means "recorded by the harness"; `door` stays the tier until 2B. I will NOT run a real fold; T-032 will be prepared up to that point.
+
 ## 2026-10-15 (day 3) — Brain / Architect (claude/opus, effort high) — review of T-030 (`451aa2c`)
 
 - **Run:** `2527c77e-e9d5-45ce-946d-680ccbd30477`; log `.tasks/logs/2527c77e-e9d5-45ce-946d-680ccbd30477.log`; spec role `brain`, action `review`, base `a45a6a6`, write scope this file only. The launcher writes `.tasks/receipts/2527c77e-….json` when this run ends; it did not exist while this entry was written.
