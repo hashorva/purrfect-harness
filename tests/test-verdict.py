@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/validate_verdict.py"
 FIXTURES = ROOT / "tests/fixtures/verdicts"
+CAP_BYTES = 4 * 1024 * 1024  # the validator's MAX_OUTPUT_BYTES
 
 
 class VerdictValidatorTests(unittest.TestCase):
@@ -175,6 +176,100 @@ class VerdictValidatorTests(unittest.TestCase):
     def test_oversize_output_is_refused_before_decoding(self):
         oversize = " " * (4 * 1024 * 1024 + 1) + self.plan_text()
         self.assert_refused(self.run_after_run_text(oversize), "exceeds 4194304 bytes")
+
+    def run_after_run_timed(self, output):
+        """Run --after-run on cursor output with a 30 s hard limit; return (result, seconds)."""
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = Path(directory) / "output.txt"
+            if isinstance(output, bytes):
+                output_path.write_bytes(output)
+            else:
+                output_path.write_text(output, encoding="utf-8")
+            start = time.monotonic()
+            try:
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPT), "--after-run", "cursor",
+                     str(ROOT / "schemas/task-plan.schema.json"), str(output_path)],
+                    cwd=ROOT, capture_output=True, text=True, check=False, timeout=30,
+                )
+            except subprocess.TimeoutExpired:
+                self.fail("validator did not finish within 30 s")
+            return result, time.monotonic() - start
+
+    def assert_hostile_refused(self, output, reasons=None):
+        """Refuse cleanly and quickly; reasons, if given, must appear in stderr (any one of them)."""
+        result, elapsed = self.run_after_run_timed(output)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("ERROR: verdict:", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        if reasons is not None:
+            self.assertTrue(any(reason in result.stderr for reason in reasons), result.stderr)
+        self.assertLess(elapsed, 5.0)
+
+    def test_hostile_h1_one_mebibyte_of_open_braces(self):
+        self.assert_hostile_refused("{" * (1 << 20), ("no JSON object",))
+
+    def test_hostile_h2_open_braces_to_cap(self):
+        self.assert_hostile_refused("{" * (CAP_BYTES - 64), ("no JSON object",))
+
+    def test_hostile_h3_quote_after_each_brace_exhausts_budget(self):
+        self.assert_hostile_refused('{"' * ((CAP_BYTES - 64) // 2), ("too costly to scan",))
+
+    def test_hostile_h4_spaced_quote_after_each_brace_exhausts_budget(self):
+        self.assert_hostile_refused('{ "' * ((CAP_BYTES - 64) // 3), ("too costly to scan",))
+
+    def test_hostile_h5_repeated_500_deep_chains_exhaust_budget(self):
+        unit = '{"a":' * 500 + "x"
+        self.assert_hostile_refused((unit * (CAP_BYTES // len(unit)))[:CAP_BYTES - 64],
+                                    ("too costly to scan",))
+
+    def test_hostile_h6_unterminated_string_tail_exhausts_budget(self):
+        head = '{"a":' * 5000 + '"'
+        self.assert_hostile_refused(head + "x" * (CAP_BYTES - 64 - len(head)),
+                                    ("too costly to scan",))
+
+    def test_hostile_h7_string_phase_shift_exhausts_budget(self):
+        unit = '"k":"{",'
+        self.assert_hostile_refused("{" + unit * ((CAP_BYTES - 64) // len(unit)),
+                                    ("too costly to scan",))
+
+    def test_hostile_h8_deep_chain_refused_by_depth_or_budget(self):
+        self.assert_hostile_refused('{"a":' * 800_000 + "x", ("nests too deeply", "too costly to scan"))
+
+    def test_hostile_h9_valid_depth_200000_refused_without_traceback(self):
+        self.assert_hostile_refused('{"a":' * 200_000 + "1" + "}" * 200_000)
+
+    def test_hostile_h10_oversized_integer_refused_with_limit_message(self):
+        output = '{"n": ' + "1" * 5000 + "} " + self.plan_text()
+        self.assert_hostile_refused(output, ("Exceeds the limit",))
+
+    def test_hostile_h11_many_assistant_lines_then_valid_final_answer(self):
+        line = '{"type":"assistant","text":"' + "x{" * 90 + '"}\n'
+        output = line * 17000 + self.envelope("ok " + self.plan_text())
+        self.assertLess(len(output.encode("utf-8")), CAP_BYTES)
+        result, elapsed = self.run_after_run_timed(output)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("mode=after-run", result.stdout)
+        self.assertLess(elapsed, 5.0)
+
+    def test_hostile_h12_many_brace_words_then_valid_verdict(self):
+        output = ("word { " + "w" * 1000 + "\n") * 4000 + self.plan_text()
+        self.assertLess(len(output.encode("utf-8")), CAP_BYTES)
+        result, elapsed = self.run_after_run_timed(output)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("mode=after-run", result.stdout)
+        self.assertLess(elapsed, 5.0)
+
+    def test_hostile_h13_many_key_fragments_then_valid_verdict(self):
+        output = ('see {"key" here ' + "w" * 13000 + "\n") * 300 + self.plan_text()
+        self.assertLess(len(output.encode("utf-8")), CAP_BYTES)
+        result, elapsed = self.run_after_run_timed(output)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("mode=after-run", result.stdout)
+        self.assertLess(elapsed, 5.0)
+
+    def test_hostile_h14_non_utf8_bytes_refused_without_traceback(self):
+        self.assert_hostile_refused(b"\xff\xfe" + self.plan_text().encode("utf-8"))
 
     def assert_refused(self, result, reason_substring=None):
         self.assertEqual(result.returncode, 1)

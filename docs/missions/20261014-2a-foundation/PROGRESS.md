@@ -4,6 +4,21 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — T-034-R4 worker (Claude Haiku 5.5, invoked directly) — hostile-input and budget tests for the extractor
+
+- **Worker / run:** Claude Haiku 5.5 (`claude-haiku-5-5`), invoked directly by the owner in this session, not through the dispatch launcher, so the launcher wrote no `.tasks/receipts/` record for this run. The Front Desk must decide whether that is acceptable before recording it.
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `python3 -c 'import jsonschema'` absent (exit 1, expected; no third-party module added). `bash tests/run-tests.sh` not run as a baseline.
+- **Changed:** `tests/test-verdict.py` only. Added `CAP_BYTES` (4 MiB), helpers `run_after_run_timed` (30 s `timeout=`, a `TimeoutExpired` fails the test) and `assert_hostile_refused`, and 14 tests `test_hostile_h1_…` through `test_hostile_h14_…` for rows H1–H14. Inputs are built in memory or in temp dirs; no fixture is written into the tree. H15 and every existing test are unchanged. No `scripts/` change. H8 accepts either reason (`nests too deeply` or `too costly to scan`); on this Python the live run gives `JSON nests too deeply to read`.
+- **Checks (run by me):** `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verdict.py` exit 0 (40 tests, 5.3 s); `validate_verdict.py --check-schema` on `task-plan` and `review-verdict` exit 0; suite/manifest grep exit 0; `shellcheck scripts/*.sh tests/*.sh` exit 0; `git diff --check` exit 0; `scripts/__pycache__` and `tests/__pycache__` absent.
+- **Not run:** `bash tests/run-tests.sh` (verifier command, run outside the worker sandbox per the standing 2A rule).
+- **Mutations** (each on a scratch copy of `scripts/`, `tests/`, `schemas/`, `harness-registry.json`; the live tree was not touched; line numbers from `grep -nF` on the live file):
+  - M6 `scripts/validate_verdict.py:64: if spent > SCAN_BUDGET:` -> `if False:` — 5 failures: H3, H4, H5, H6, H7, each by the 30 s limit. H5 fails as required.
+  - M7 `scripts/validate_verdict.py:55: scanned = len(text) - start` -> `scanned = exc.pos - start` — 1 failure: H6, as required.
+  - M8 `scripts/validate_verdict.py:58: spent += ATTEMPT_COST + scanned + exc.pos // 16` -> `spent += ATTEMPT_COST + scanned` — 3 failures: H3 as required, plus H4 and H7, each by the 30 s limit.
+  - M9 `scripts/validate_verdict.py:51: except RecursionError:` and its `raise ValueError(...)` line removed — 2 failures: H8 and the existing `test_recursion_error_while_decoding_is_refused_cleanly`. **Deviation from the task's expectation:** the mutant does not produce a traceback. `main` also catches `RecursionError` and refuses cleanly (`ERROR: verdict: Stack overflow (used 16352 kB) while decoding a JSON array…`). The tests catch it only because they assert the reason text.
+- **Result:** every required check passes and every mutation was caught. No feature acceptance or gate/status change; `features.json` untouched. Scoped change and this entry committed as `test(verdicts): hostile-input and budget tests for the extractor` (the task's exit-criteria line still names an older `feat(verdicts): task-plan and review schemas` message; step 4 was followed).
+- **Routing:** `code-reviewer` on the test-only diff; Front Desk re-runs the M6–M9 greps and decides on the missing receipt.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-034-R3 verified and reviewed; T-034-R4 dispatch
 - **Mechanical review:** run `c9ae25a7-48d8-4a8c-8e9a-fb9b4edb7eb2` (T-034-R3, cursor.economy composer-2.5, effort medium, speed standard, attempt 1): completed, exit 0, scope pass, commit `4958a42`, 3 paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (7 commands). I re-ran the mutation greps (`grep -nF`): lines 63, 59, 35 and 82 match the worker's entry (the `pos = max(...)` mutated text is, as designed, not in the live file). I replayed the three R2 holes (`Note: {<plan>`, `{{<plan>`, `[{<plan>`) → all accepted (`mode=after-run`); the earlier stray-bracket and deep-nesting cases still refuse cleanly. **code-reviewer: PASS**: lines 32–73 match the Architect's binding code line for line; rows A5–A8, A10, R1–R3, R6, R7 covered; no test removed. Routing line written.
 
