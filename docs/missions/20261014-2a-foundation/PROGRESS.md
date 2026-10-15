@@ -4,6 +4,12 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — T-030 worker (cursor.economy) — complete; awaiting orchestrator verification
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` exit 0 (43 tests); `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-integration.py` exit 0 (44 tests).
+- **Change:** `scripts/ledger.py` adds `fold <mission>`: validates and appends matching `.tasks/ledger/*.json` rows to `docs/missions/ledger.jsonl` once per `run_id` (sorted), then drift events from `.tasks/drift/<slug>.jsonl` to `<mission>/drift.jsonl` keyed by sha256 of the canonical drift line; prints `folded rows=<n> drift=<m>`. `tests/test-ledger.py` adds four fold unit tests (idempotency, ordering, validation refusal, drift dedup, mission filter). `tests/test-execution-integration.py` adds end-to-end fold after a worker run with clean-tree preflight, `verify-mission.sh --run-id`, acceptance commit, and second fold no-op.
+- **Final worker checks:** `test-ledger.py` exit 0 (47 tests); `test-execution-integration.py` exit 0 (45 tests); shellcheck exit 0; `bash tests/run-tests.sh` exit 0 (`ALL TESTS PASSED`); no `__pycache__`; git tree clean before commit.
+- **Result:** attempt 1 of 2. Scoped change committed as `feat(ledger): fold rows and drift events exactly once`. No feature acceptance or gate/status change. Architect review requested for T-030.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-029-R3 verified and reviewed; T-029 chain closed; T-030 dispatch
 - **Mechanical review:** run `c3dcfb5b-2bdf-41a9-a825-718cd20359f0` (T-029-R3, codex.economy, effort medium, attempt 1): completed, exit 0, scope pass, commit `01ce737`, tests-only paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (6 commands). **code-reviewer: PASS** (probe uses a validating row; `check()` runs on correct code and fails under the `os.replace` mutant). Routing line written (done).
 - **T-029 chain closed** (T-029, R1, R2, R3). Next: T-030 (fold rows and drift events; Architect review) on cursor.economy.

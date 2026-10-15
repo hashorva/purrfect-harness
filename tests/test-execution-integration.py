@@ -1806,6 +1806,35 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         valid = self.invoke([sys.executable, "scripts/ledger.py", "validate", str(probe)])
         self.assertEqual(valid.returncode, 0, valid.stderr + valid.stdout)
 
+    def test_ledger_fold_lands_in_acceptance_commit_exactly_once(self):
+        self.set_status("in-progress")
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        first = self.invoke(self.ledger_worker_base(), env={"PROVIDER_ACTION": "commit"})
+        self.assertEqual(first.returncode, 0, first.stderr + first.stdout)
+        run_id = self.latest_receipt()["run_id"]
+        self.assert_ledger_row_hygiene(run_id)
+        self.assertEqual(self.git("status", "--porcelain").stdout.strip(), "")
+        preflight = self.invoke([
+            sys.executable, "-c",
+            "import sys; from pathlib import Path; sys.path.insert(0, 'scripts'); "
+            "from dispatch_policy import clean_workspace; clean_workspace(Path('.').resolve()); print('ok')",
+        ])
+        self.assertEqual(preflight.returncode, 0, preflight.stderr + preflight.stdout)
+
+        verified = self.invoke(["bash", "scripts/verify-mission.sh", "--run-id", run_id, "docs/missions/fixture"])
+        self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+
+        folded = self.invoke([sys.executable, "scripts/ledger.py", "fold", "docs/missions/fixture"])
+        self.assertEqual(folded.returncode, 0, folded.stderr + folded.stdout)
+        self.assertIn("folded rows=1", folded.stdout)
+        self.git("add", "docs/missions")
+        self.git("commit", "-qm", "acceptance")
+
+        again = self.invoke([sys.executable, "scripts/ledger.py", "fold", "docs/missions/fixture"])
+        self.assertEqual(again.returncode, 0, again.stderr + again.stdout)
+        self.assertEqual(again.stdout.strip(), "folded rows=0 drift=0")
+        self.assertEqual(self.git("status", "--porcelain").stdout.strip(), "")
+
     def test_all_worker_provider_tier_mappings_use_frozen_values(self):
         for provider in PROVIDERS:
             for tier in ("economy", "premium"):

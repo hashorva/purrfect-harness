@@ -5,12 +5,17 @@ One row summarises one run, failed runs included. Every number carries a source 
 observed (measured), estimated, or unknown (value null). A value is never copied from
 the spec or guessed. Unknown keys are rejected, so a new field needs a schema change.
 
-Usage: ledger.py validate <file>   (exit 0 valid, 1 invalid, 2 usage)
+Usage:
+  ledger.py validate <file>   (exit 0 valid, 1 invalid, 2 usage)
+  ledger.py fold <mission>    (append new rows and drift events; exit 0 ok, 1 invalid, 2 usage)
 """
+import hashlib
 import json
 import math
 import re
+import subprocess
 import sys
+from pathlib import Path
 
 SCHEMA_VERSION = 1
 SOURCES = ("observed", "estimated", "unknown")
@@ -258,12 +263,121 @@ def validate_row(row):
         CHECKS[name](name, row[name])
 
 
-def main(argv):
-    if len(argv) != 2 or argv[0] != "validate":
-        print("usage: ledger.py validate <file>", file=sys.stderr)
-        return 2
+def canonical_row_line(row):
+    return json.dumps(row, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
+
+
+def canonical_drift_line(event):
+    return json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"
+
+
+def drift_line_id(line):
+    if not line.endswith("\n"):
+        line = f"{line}\n"
+    return hashlib.sha256(line.encode("utf-8")).hexdigest()
+
+
+def repo_root():
+    result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise OSError("not inside a Git repository")
+    return Path(result.stdout.strip())
+
+
+def normalize_mission_path(mission):
+    mission = mission.replace("\\", "/").strip("/")
+    if not mission or mission.startswith("/") or ".." in mission.split("/"):
+        raise ValueError("mission must be a relative repository path")
+    return mission
+
+
+def existing_run_ids(ledger_jsonl):
+    ids = set()
+    if not ledger_jsonl.is_file():
+        return ids
+    for line in ledger_jsonl.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        ids.add(json.loads(line)["run_id"])
+    return ids
+
+
+def existing_drift_ids(drift_jsonl):
+    ids = set()
+    if not drift_jsonl.is_file():
+        return ids
+    for line in drift_jsonl.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        ids.add(drift_line_id(line))
+    return ids
+
+
+def fold_mission(root, mission_path):
+    slug = Path(mission_path).name
+    ledger_jsonl = root / "docs/missions/ledger.jsonl"
+    drift_jsonl = root / mission_path / "drift.jsonl"
+    ledger_dir = root / ".tasks/ledger"
+    drift_source = root / ".tasks/drift" / f"{slug}.jsonl"
+
+    known_run_ids = existing_run_ids(ledger_jsonl)
+    known_drift_ids = existing_drift_ids(drift_jsonl)
+
+    pending_rows = []
+    if ledger_dir.is_dir():
+        for path in ledger_dir.glob("*.json"):
+            run_id = path.stem
+            if run_id in known_run_ids:
+                continue
+            try:
+                row = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as error:
+                raise LedgerError("row", f"document not readable as JSON: {error}") from error
+            if row.get("mission") != slug:
+                continue
+            validate_row(row)
+            pending_rows.append((run_id, row))
+    pending_rows.sort(key=lambda item: item[0])
+
+    pending_drift = []
+    if drift_source.is_file():
+        for line in drift_source.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise LedgerError("drift", f"document not readable as JSON: {error}") from error
+            if event.get("mission") != mission_path:
+                continue
+            canonical = canonical_drift_line(event)
+            event_id = drift_line_id(canonical)
+            if event_id in known_drift_ids:
+                continue
+            pending_drift.append(canonical)
+
+    if pending_rows:
+        ledger_jsonl.parent.mkdir(parents=True, exist_ok=True)
+        with ledger_jsonl.open("a", encoding="utf-8") as handle:
+            for _, row in pending_rows:
+                handle.write(canonical_row_line(row))
+    if pending_drift:
+        drift_jsonl.parent.mkdir(parents=True, exist_ok=True)
+        with drift_jsonl.open("a", encoding="utf-8") as handle:
+            for line in pending_drift:
+                handle.write(line)
+
+    return len(pending_rows), len(pending_drift)
+
+
+def cmd_validate(path):
     try:
-        with open(argv[1], encoding="utf-8") as handle:
+        with open(path, encoding="utf-8") as handle:
             row = json.load(handle)
     except (OSError, ValueError) as error:
         print(f"ERROR: ledger: document: not readable as JSON: {error}", file=sys.stderr)
@@ -275,6 +389,33 @@ def main(argv):
         return 1
     print("OK: ledger row valid")
     return 0
+
+
+def cmd_fold(mission):
+    try:
+        mission_path = normalize_mission_path(mission)
+        root = repo_root()
+        rows, drift = fold_mission(root, mission_path)
+    except ValueError as error:
+        print(f"ERROR: ledger: {error}", file=sys.stderr)
+        return 1
+    except OSError as error:
+        print(f"ERROR: ledger: {error}", file=sys.stderr)
+        return 1
+    except LedgerError as error:
+        print(f"ERROR: ledger: {error}", file=sys.stderr)
+        return 1
+    print(f"folded rows={rows} drift={drift}")
+    return 0
+
+
+def main(argv):
+    if len(argv) == 2 and argv[0] == "validate":
+        return cmd_validate(argv[1])
+    if len(argv) == 2 and argv[0] == "fold":
+        return cmd_fold(argv[1])
+    print("usage: ledger.py validate <file> | fold <mission>", file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":

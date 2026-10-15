@@ -7,17 +7,19 @@ Negative cases run scripts/ledger.py as a subprocess and build every mutation in
 import json
 from pathlib import Path
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "scripts/ledger.py"
 SCHEMA = ROOT / "schemas/ledger-row.schema.json"
 FIXTURES = ROOT / "tests/fixtures/ledger"
 sys.path.insert(0, str(ROOT / "scripts"))
-from ledger import FIELDS, SECRET_PATTERNS, UUID_SHAPE, HIDDEN_CHARS
+from ledger import FIELDS, SECRET_PATTERNS, UUID_SHAPE, HIDDEN_CHARS, canonical_drift_line
 
 
 SECTION_8_FIELDS = [
@@ -38,9 +40,15 @@ TEXT_FLAG_FIELDS = ["cli_version", "requested_model", "resolved_model", "observe
 GOOD = FIXTURES / "good-completed.json"
 
 
-def run_cli(*args, ledger=LEDGER):
+def run_cli(*args, ledger=LEDGER, cwd=None):
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
-    return subprocess.run([sys.executable, str(ledger), *args], capture_output=True, text=True, env=env)
+    return subprocess.run(
+        [sys.executable, str(ledger), *args],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=cwd or ROOT,
+    )
 
 
 def load(path):
@@ -598,6 +606,107 @@ class LedgerMutations(unittest.TestCase):
         result = run_cli("validate", str(path))
         self.assertEqual(result.returncode, 1)
         self.assertTrue(result.stderr.startswith("ERROR: ledger: document: not readable as JSON"), result.stderr)
+
+
+class LedgerFoldTests(unittest.TestCase):
+    def setUp(self):
+        self.parent = Path(tempfile.mkdtemp())
+        self.root = self.parent / "repo"
+        self.root.mkdir()
+        (self.root / "scripts").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(LEDGER, self.root / "scripts/ledger.py")
+        self.mission_path = "docs/missions/fixture"
+        mission = self.root / self.mission_path
+        mission.mkdir(parents=True)
+        (self.root / "docs/missions").mkdir(parents=True, exist_ok=True)
+        (self.root / ".gitignore").write_text(".tasks/\n")
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
+        subprocess.run(["git", "config", "user.email", "t@example.invalid"], cwd=self.root, check=True)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=self.root, check=True)
+        subprocess.run(["git", "add", "."], cwd=self.root, check=True)
+        subprocess.run(["git", "commit", "-qm", "fixture"], cwd=self.root, check=True)
+
+    def tearDown(self):
+        shutil.rmtree(self.parent)
+
+    def fold(self, *extra):
+        return run_cli("fold", self.mission_path, ledger=self.root / "scripts/ledger.py", cwd=self.root, *extra)
+
+    def write_row(self, row, *, run_id=None):
+        run_id = run_id or row["run_id"]
+        row = dict(row)
+        row["mission"] = "fixture"
+        row["run_id"] = run_id
+        directory = self.root / ".tasks/ledger"
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"{run_id}.json"
+        path.write_text(json.dumps(row), encoding="utf-8")
+        return row
+
+    def test_fold_appends_rows_once_in_run_id_order(self):
+        base = load(GOOD)
+        first_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        second_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        self.write_row(base, run_id=second_id)
+        self.write_row(base, run_id=first_id)
+        first = self.fold()
+        self.assertEqual(first.returncode, 0, first.stderr + first.stdout)
+        self.assertEqual(first.stdout.strip(), "folded rows=2 drift=0")
+        lines = (self.root / "docs/missions/ledger.jsonl").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(json.loads(lines[0])["run_id"], first_id)
+        self.assertEqual(json.loads(lines[1])["run_id"], second_id)
+        second = self.fold()
+        self.assertEqual(second.stdout.strip(), "folded rows=0 drift=0")
+        self.assertEqual(len((self.root / "docs/missions/ledger.jsonl").read_text().splitlines()), 2)
+
+    def test_fold_refuses_invalid_row(self):
+        base = load(GOOD)
+        run_id = str(uuid.uuid4())
+        row = self.write_row(base, run_id=run_id)
+        row["outcome"] = "not-an-outcome"
+        path = self.root / ".tasks/ledger" / f"{run_id}.json"
+        path.write_text(json.dumps(row), encoding="utf-8")
+        result = self.fold()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR: ledger:", result.stderr)
+        self.assertFalse((self.root / "docs/missions/ledger.jsonl").exists())
+
+    def test_fold_appends_drift_events_once(self):
+        event = {
+            "at": "2026-08-21T00:00:00Z",
+            "mission": self.mission_path,
+            "seat": "codex.economy",
+            "from": {"provider": "codex", "model": "gpt-5.6-luna", "effort": "medium", "speed": "unknown"},
+            "to": {"provider": "codex", "model": "gpt-5.7-luna", "effort": "medium", "speed": "unknown"},
+            "inventory_sha256": "0" * 64,
+        }
+        drift_dir = self.root / ".tasks/drift"
+        drift_dir.mkdir(parents=True, exist_ok=True)
+        (drift_dir / "fixture.jsonl").write_text(canonical_drift_line(event), encoding="utf-8")
+        result = self.fold()
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertEqual(result.stdout.strip(), "folded rows=0 drift=1")
+        committed = (self.root / self.mission_path / "drift.jsonl").read_text(encoding="utf-8")
+        self.assertEqual(committed, canonical_drift_line(event))
+        again = self.fold()
+        self.assertEqual(again.stdout.strip(), "folded rows=0 drift=0")
+
+    def test_fold_skips_other_missions(self):
+        base = load(GOOD)
+        foreign = dict(base)
+        foreign["mission"] = "other-mission"
+        foreign["run_id"] = str(uuid.uuid4())
+        directory = self.root / ".tasks/ledger"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / f"{foreign['run_id']}.json").write_text(json.dumps(foreign), encoding="utf-8")
+        local_id = str(uuid.uuid4())
+        self.write_row(base, run_id=local_id)
+        result = self.fold()
+        self.assertEqual(result.stdout.strip(), "folded rows=1 drift=0")
+        lines = (self.root / "docs/missions/ledger.jsonl").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(json.loads(lines[0])["run_id"], local_id)
 
 
 class LedgerTestsLeaveNoBytecode(unittest.TestCase):
