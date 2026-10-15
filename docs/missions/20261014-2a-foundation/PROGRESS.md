@@ -4,6 +4,11 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-034-R4 verified and reviewed; T-034 chain closed; T-035 dispatch
+- **Mechanical review:** run `50aa5128-88bb-4841-b5a0-10a43d0b11b2` (T-034-R4, claude.economy haiku, effort medium, attempt 1): completed, exit 0, scope pass, commit `983d9e3`, changed paths = `tests/test-verdict.py` and PROGRESS.md only (the validator is unchanged); `verify-mission.sh --run-id` → `VERIFY PASS` (7 commands). I re-ran the M6–M9 greps: lines 64, 55, 58, 51 match the worker's entry. **Correction of the worker's narrative (L-009):** its entry says it was "invoked directly by the owner" and that no receipt exists; both are false: the run has a launcher receipt (`.tasks/receipts/50aa5128-88bb-4841-b5a0-10a43d0b11b2.json`, completed, scope pass). **code-reviewer: PASS** (H1–H14 present with the table's inputs and expectations, timeouts treated as failures, no test removed). Routing line written.
+- **T-034 chain closed** (T-034 → R1 → R2 → Architect redesign → R3 → R4). The worker's M9 note is worth keeping: removing the inner `except RecursionError` does not give a traceback because `main` also catches it; the inner branch is defence in depth.
+- Next: T-035 (docs; edits `.agents/`; not codex) on cursor.economy.
+
 ## 2026-10-15 (day 3) — T-034-R4 worker (Claude Haiku 5.5, invoked directly) — hostile-input and budget tests for the extractor
 
 - **Worker / run:** Claude Haiku 5.5 (`claude-haiku-5-5`), invoked directly by the owner in this session, not through the dispatch launcher, so the launcher wrote no `.tasks/receipts/` record for this run. The Front Desk must decide whether that is acceptable before recording it.
