@@ -35,6 +35,7 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-15 — T-041 v2 implementation re-verified locally.** Oracle A/B, ledger tests (70), ledger integration subset (14), `shellcheck`, JSON validation and the full suite passed; implementation remains the scoped `0bff888` commit.
 - **2026-10-15 — T-041 attempt 3 (cursor.economy, run 255afe50-0813-4ca2-bac4-fa6dc137f079): scope fail again — my task-text mistakes (two)** (1) I put the PROGRESS.md allowance in a section the allow-list parser does not read; (2) the new scope command compared HEAD~1..HEAD, which is a docs commit when the worker makes no commit. Worker entry kept at ; tree restored. Class harness/plan defect, not the model.
   Fixed (recorded): PROGRESS.md added to the real MAY list; the scope command compares the worker commit 0bff888 with its parent (it exits 0 now). Attempt 4 on codex.economy. Lesson: rule 6 needs a run of the dispatch itself on a no-commit re-verification, not only of the commands.
 - **2026-10-15 — T-041 attempt 2 (cursor.economy, run 8ecab630-4416-4ab7-a808-28cecd84dd7f): scope fail on PROGRESS.md — harness/task conflict, not a task failure** The launcher prompt still says "Append a PROGRESS.md entry"; T-041 forbade touching PROGRESS.md, so the worker's entry was a scope violation. Entry preserved at , tree restored. Class harness (does not use an attempt).
