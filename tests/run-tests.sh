@@ -87,6 +87,10 @@ check "registry and fleet-state legacy parity" python3 tests/test-registry.py
 check "fleet doctor identity and login checks" python3 tests/test-fleet-doctor.py
 check "seat smoke scratch clone and dry-run plan" python3 tests/test-seat-smoke.py
 
+echo "== observed CLI output (F003)"
+check "observed model and usage parser over real CLI samples" python3 tests/test-observe-output.py
+check "observe parser focused test leaves no scripts bytecode" test ! -e "$HARNESS/scripts/__pycache__"
+
 # F006 regressions must use the public propagation/release entry points. Tagged
 # and untagged source state is always isolated so this suite is independent of
 # the checkout from which it was invoked.

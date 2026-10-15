@@ -1,0 +1,6 @@
+{"type":"result","usage":{"input_tokens":"2","output_tokens":true,"cache_read_input_tokens":-1,"output_tokens_details":{"thinking_tokens":"29"}},"modelUsage":["claude-haiku-5-5"],"fast_mode_state":""}
+{"type":"system","subtype":"init","model":5}
+{"type":"turn.completed","usage":"x"}
+[1,2]
+"text"
+null

@@ -4,6 +4,15 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Worker (Claude Haiku 5.5, in-session) — T-018 observation parser (F003 slice)
+- **Task:** T-018, feature F003. Not run through a frozen `fleet.json` seat or `spawn-worker.sh`; no `.tasks/receipts/` entry was written by this run.
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; the three P-2 samples present. Tree clean at start (`b4e7cb0`).
+- **Added:** `scripts/observe_output.py` (`observe(provider, raw)` and the CLI), `tests/test-observe-output.py` (8 unittest cases, literal expectations), `tests/fixtures/observe/` (10 files: the three P-2 samples with ids zeroed and Cursor `cwd` set to `/workspace`, plus the derived log, two-model, two-turn, no-init-model, wrong-types, empty and garbage fixtures), `tests/run-tests.sh` (new "observed CLI output (F003)" section, two checks), `harness-manifest.json` (`scripts/observe_output.py` after `scripts/execution_receipt.py` in `install_payload_paths` and `update_paths`).
+- **Choices the task left open:** `observe` with a non-bytes `raw` returns all-unknown instead of raising; a Cursor run where one init event has a model and another does not gives `unknown` (the set of init models must be exactly one non-null value); a `result` whose `modelUsage` has one key that is not a non-empty string gives `unknown`.
+- **Checks run by this worker (exit codes):** `shellcheck scripts/*.sh tests/*.sh` 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-observe-output.py` 0 (8 tests OK); CLI value check (claude, codex, cursor, agy) 0; wiring grep 0; fixture privacy grep 0; `python3 scripts/harness-manifest.py --root . validate` 0 (prints `3.0.0`); `test ! -e scripts/__pycache__ && test ! -e tests/__pycache__` 0.
+- **Not run here, by standing rule:** `bash tests/run-tests.sh` (the verifier runs it outside the sandbox) and `test -z "$(git status --porcelain --untracked-files=all)"` before the commit. Missing evidence: the full-suite result for this change.
+- **Attempts:** 1 of 2. No failure occurred.
+
 ## MORNING REPORT (as of 06:25 CEST, 2026-10-15) — Front Desk (Sonnet 5.5) — mission 2A, night 2
 **State:** branch `mission/2a-foundation`, pushed (last pushed commit before this entry: `6fa9a06`). Tree clean, no `scripts/__pycache__`, nothing active at the time of writing. Mission status `in-progress`. **No feature was accepted tonight and no gate advanced.** F001 stays accepted (night 1). Nothing was tagged, no PR, `main` untouched. Audit `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` printed `VERIFY OK` at every Architect review. The loop is still running (T-018 next); a later morning report entry replaces this one if anything changes.
 
