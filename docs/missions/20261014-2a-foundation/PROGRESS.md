@@ -4,6 +4,15 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — Architect review of T-020 PASS; F003 READY FOR ACCEPTANCE (prepared, not run); morning report refreshed
+- **Architect review of T-020 (alone):** run `5f7baf7e-1fe1-49f4-81cb-fec872ad4e81`, receipt `.tasks/receipts/5f7baf7e-1fe1-49f4-81cb-fec872ad4e81.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `22c9aeb`. **Verdict: PASS** on `c598964`. Contracts 1-5 give byte-identical commands on a 4,536-spec grid; contract 6 only adds codex `--json`, claude `--output-format json` and Cursor `--output-format stream-json` (agy unchanged; the prompt stays where it was); all 88 saved specs load and pass a real JSON Schema validator; observation comes from CLI output only (a mutation that copied a spec/seat value as `observed` failed 12 tests); no raw output goes into receipts; logs now hold JSON instead of plain text (nothing lost, tail harder to read); `tests/run-tests.sh` changed 3 lines, each still a byte comparison of the whole command including the prompt; 8 of 14 mutations caught.
+- **Finding:** the new stdin test can never fail (stdin is closed for every provider twice over, once in the runner and once because bash gives a backgrounded job `/dev/null`), so removing the runner's line still passes. 6 surviving mutations are missing regression tests, not wrong behaviour. The Architect proposed a test-only follow-up `T-020-R1`; **not a precondition for F003**. I have not written it yet (queue).
+- **F003 step coverage (Architect):** step 1 runs `a80bf0df`, `e4d52ac3`, `40859e3d`; steps 2-4 runs `7e75c8e2` and `86a9c529`; step 5 shellcheck and the full suite in `86a9c529`'s record. Open for the owner: agy fixtures were never captured (agy hangs), so agy is only covered as "reports nothing, so `unknown`".
+- **I checked the hash myself:** `shasum -a 256 verification/86a9c529-….json` = `a85b3ac10ab890e4bd00dff542e052d632c4618700a010a209e436e239837fe8`, equal to the Architect's. **Proof in real life:** the receipt of this very Architect run (the first on contract 6) has `schema_version: 2` and observed values: model `claude-opus-5-5`, `fast_state` `off`, usage input 58, output 32750, cache 3106441, reasoning 13967 — none copied from the spec. (API-equivalent cost reported by the CLI for this one review: about $2.30; Claude Pro is a subscription, so this is not a charge; it is a size indicator.)
+- **Acceptance command prepared in the morning report §5; I did NOT run it** (the owner's rules: do not accept features).
+- **Morning report refreshed (07:55):** §1 counts (23 worker runs, 16 done, 18 Architect runs) and §5 (F003 command).
+- **Next:** F005 ledger chain (T-027 schema+validator, depends on T-019 done) and the F004 chain T-021 … (T-021 waits on T-039 only via the contract number, which is now moot: contract 6 is T-020's, so T-039 will be 7). Time 07:55.
+
 ## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-020 (`c598964`), F003 acceptance run
 
 - **Run:** `5f7baf7e-1fe1-49f4-81cb-fec872ad4e81`; log `.tasks/logs/5f7baf7e-1fe1-49f4-81cb-fec872ad4e81.log`; spec role `brain`, action `review`, base `0549599`, write scope this file only, **provider contract 6** (this run is the first spawn on the new argv). The launcher writes the receipt `.tasks/receipts/5f7baf7e-1fe1-49f4-81cb-fec872ad4e81.json` when this run ends; it did not exist while this entry was written.
@@ -246,13 +255,13 @@ Verdict: FAIL
 - **Not run here, by standing rule:** `bash tests/run-tests.sh` (the verifier runs it outside the sandbox) and `test -z "$(git status --porcelain --untracked-files=all)"` before the commit. Missing evidence: the full-suite result for this change.
 - **Attempts:** 1 of 2. No failure occurred.
 
-## MORNING REPORT (as of 06:50 CEST, 2026-10-15) — Front Desk (Sonnet 5.5) — mission 2A, night 2
+## MORNING REPORT (as of 07:55 CEST, 2026-10-15) — Front Desk (Sonnet 5.5) — mission 2A, night 2
 **State:** branch `mission/2a-foundation`, pushed (last pushed commit before this refresh: `ed5ab44` or later; see `git log`). Tree clean, no `scripts/__pycache__`, nothing active at the time of writing. Mission status `in-progress`. **No feature was accepted tonight and no gate advanced.** F001 stays accepted (night 1). Nothing was tagged, no PR, `main` untouched. Audit `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` printed `VERIFY OK` at every Architect review. The loop is still running (next: T-019-R1, the schema fix); a later refresh replaces this entry if anything changes.
 
 ### 1. Runs used, and how many ended task-done
-- **Worker runs: 20** (T-007 … T-040, routing data in `routing-data.jsonl`). **13 ended done** (`VERIFY PASS` and reviewer PASS); **1 passed verification but failed the Architect's review** (T-019); 6 failed verification the first time. Of those 6: **5 were plan defects, not attributable to a model** (T-009 a1, T-011 a1, T-012 a1, T-013 a1, T-017 a1) and **1 was a task failure** (T-015 a1, cursor.economy). Every non-attributable failure was repaired by a corrected task text (often a code-free qualification run, because the verifier reads its commands from the receipt's base commit).
+- **Worker runs: 23** (T-007 … T-040, routing data in `routing-data.jsonl`). **16 ended done** (`VERIFY PASS` and reviewer PASS, counting qualification runs); **1 passed verification but failed the Architect's review** (T-019, then fixed by T-019-R1/R2); 6 failed verification the first time. Of those 6: **5 were plan defects, not attributable to a model** (T-009 a1, T-011 a1, T-012 a1, T-013 a1, T-017 a1) and **1 was a task failure** (T-015 a1, cursor.economy). Every non-attributable failure was repaired by a corrected task text (often a code-free qualification run, because the verifier reads its commands from the receipt's base commit).
 - **One launch refused by the parser** (T-015 attempt 2, prose inside the allow-list section): no run, no attempt used. **One launch failed on the harness** at S1 (agy).
-- **Architect runs: 16** (1 plan, 13 reviews, 1 combined review + agy plan, 1 plan for A-2/T-040/T-018). All verdicts PASS except T-015 attempt 1 (FAIL, then PASS on attempt 2) and T-019 (FAIL: schema blocker, see §2).
+- **Architect runs: 18** (1 plan, 15 reviews, 1 combined review + agy plan, 1 plan for A-2/T-040/T-018). All verdicts PASS except T-015 attempt 1 (FAIL, then PASS on attempt 2) and T-019 (FAIL: schema blocker; PASS after T-019-R1). The T-020 review run was the first on provider contract 6, and its own receipt carries real observed values (see §5).
 - **Real seat smokes (all via the real adapter in a scratch clone):** S1 five seats, S2 one seat launched (cursor.premium refused before launch), S-codex two seats. **Probes:** P-1 (Codex `--add-dir .agents`) PASS; P-2 (CLI JSON fields) done; P-3 for agy (3 tries) inconclusive.
 
 ### 2. Failures, each with its class
@@ -290,7 +299,15 @@ Small numbers: no conclusion about a model yet. Average wall time per run: claud
 - If you want real numbers, check each vendor's usage page; I cannot read them.
 
 ### 5. Features ready for your acceptance
-**None.** Progress by feature: **F004** slices T-009, T-013, T-014, T-015, T-016, T-017, T-040 done and reviewed; remaining T-021 … T-026, and **T-039 is blocked** (agy hang, step 7). **F007** carrier slices T-007, T-008, T-010, T-011, T-012 done (clean-worktree verifier, numbered records, seat smoke); accepted only on T-038. **F003**: T-018 (parser) done and reviewed (PASS); T-019 (receipt `observation` block): verified but the Architect's review says FAIL, the JSON schema is broken, the code half is sound, and a fix task T-019-R1 is needed; T-020 (corrected tonight against the real CLI output) not started. **F005**, **F006**: not started. Gate 1 (after F001, F003-F006) is not reached.
+**F003 is ready (prepared, NOT run).** Acceptance rests on T-020 run `86a9c529-95d9-42b3-9e23-b24c18fec0ff` (VERIFY PASS, 10 commands, plus the Architect's PASS on `c598964`) and the earlier slices T-018 `7e75c8e2-…`, T-019 `a80bf0df-…`, T-019-R1 `e4d52ac3-…`, T-019-R2 `40859e3d-…` (all verified and reviewed). The record hash was recomputed by me and matches the Architect's. Command (put your identity in `--accepted-by`):
+
+```bash
+bash scripts/accept-feature.sh --run-id 86a9c529-95d9-42b3-9e23-b24c18fec0ff --verification-sha256 a85b3ac10ab890e4bd00dff542e052d632c4618700a010a209e436e239837fe8 --accepted-by "<your identity>" docs/missions/20261014-2a-foundation
+bash scripts/verify-mission.sh --require-workers docs/missions/20261014-2a-foundation
+```
+
+Proof that F003 works in real life: the Architect run `5f7baf7e-…` was the first on contract 6, and its receipt now holds real observed values (model `claude-opus-5-5`, fast state `off`, usage 58 input / 32750 output / 3106441 cache / 13967 reasoning), none copied from the spec. Caveat: F003 step 2 says agy fixtures "fill the fields"; agy output was never captured (every agy turn hangs), so agy is covered only as "reports nothing, so `unknown`" — your call whether that is enough.
+Other progress: **F004** slices T-009, T-013, T-014, T-015, T-016, T-017, T-040 done and reviewed; remaining T-021 … T-026, and **T-039 is blocked** (agy hang, step 7). **F007** carrier slices T-007, T-008, T-010, T-011, T-012 done (clean-worktree verifier, numbered records, seat smoke); accepted only on T-038. **F005**, **F006**: not started. Gate 1 (after F001, F003-F006) is not reached.
 
 ### 6. Decisions I need from you
 1. **Re-freeze `cursor.premium` and `agy.economy`** (both contradict themselves: `grok-4.7-xhigh`/medium and `gemini-3.8-flash-high`/medium). The Architect recommends changing only the effort field (`xhigh`, `high`); alternative: switch to the `-medium` model names. Either needs a Human entry. Until then `cursor.premium` is refused before launch.
