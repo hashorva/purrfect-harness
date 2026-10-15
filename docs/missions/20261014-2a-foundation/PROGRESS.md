@@ -4,6 +4,12 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-035 verified and reviewed; F006 READY FOR ACCEPTANCE (command prepared, not run)
+- **Mechanical review:** run `db01ac53-00de-4d30-9230-05894b952ebe` (T-035, cursor.economy composer-2.5, effort medium, speed standard, attempt 1): completed, exit 0, scope pass, commit `afe2380`, changed paths = the two skills and PROGRESS.md only; `verify-mission.sh --run-id` → `VERIFY PASS` (8 commands, the five F006 steps incl. the full suite). **code-reviewer: PASS** (commands match the validator's real CLI; no worker-accept claim; no claim that the adapter sends the schema flag). Routing line written.
+- **F006 acceptance command (owner decides; I do not run it):**
+  `bash scripts/accept-feature.sh --run-id db01ac53-00de-4d30-9230-05894b952ebe --verification-sha256 d652eeeadeb8f0b0adf7596f944300ecf85b49e3b994356ade4a06b4257ba46b --accepted-by "<identity>" docs/missions/20261014-2a-foundation`, then `bash scripts/verify-mission.sh --require-workers docs/missions/20261014-2a-foundation`.
+- **Remaining:** F007 (T-036 smoke mission, T-037 needs T-026 and a working agy, T-038 Gate-2 input); T-026/T-039 blocked by the agy hang.
+
 ## 2026-10-15 (day 3) — T-035 worker (Cursor, owner session) — name plan and review schemas in the skills
 
 - **Worker / run:** Cursor Composer in the owner session (not `spawn-worker.sh`); no `.tasks/receipts/` record unless the Front Desk requires one.
