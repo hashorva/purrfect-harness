@@ -916,6 +916,130 @@ class LedgerFoldTests(unittest.TestCase):
         self.assertEqual(json.loads(lines[0])["run_id"], local_id)
 
 
+VIEW_MISSION = "fixture-mission"
+TOKEN_NAMES = ("tokens_input", "tokens_output", "tokens_cache", "tokens_reasoning")
+UNKNOWN = {"value": None, "source": "unknown"}
+
+
+def flag(value, source="observed"):
+    return {"value": value, "source": source}
+
+
+def view_row(feature, attempt=1, outcome="completed", scope="pass", mission=VIEW_MISSION, tokens=None):
+    row = load(GOOD)
+    row.update(mission=mission, feature=feature, attempt=attempt, outcome=outcome, scope_result=scope,
+               run_id=str(uuid.uuid4()), parent_run=None)
+    for name, value in zip(TOKEN_NAMES, tokens or (flag(0), flag(0), flag(0), flag(0))):
+        row[name] = value
+    return row
+
+
+class LedgerViewTests(unittest.TestCase):
+    def setUp(self):
+        self.parent = Path(tempfile.mkdtemp())
+        self.ledger = self.parent / "ledger.jsonl"
+        self.features = self.parent / "features.json"
+
+    def tearDown(self):
+        shutil.rmtree(self.parent)
+
+    def write(self, rows, accepted_ids, extra_features=()):
+        self.ledger.write_text("".join(canonical_row_line(row) for row in rows), encoding="utf-8")
+        features = [{"id": feature, "passes": feature in accepted_ids} for feature in (*accepted_ids, *extra_features)]
+        self.features.write_text(json.dumps({"mission": VIEW_MISSION, "features": features}), encoding="utf-8")
+
+    def view(self, ledger=None, features=None):
+        return run_cli("view", str(ledger or self.ledger), "--features", str(features or self.features), cwd=self.parent)
+
+    def snapshot(self):
+        return {str(path): path.read_bytes() for path in sorted(self.parent.rglob("*")) if path.is_file()}
+
+    def fixture_rows(self):
+        return [
+            # F001: accepted on attempt 1, plus a failed attempt 2 with unknown tokens.
+            view_row("F001", 1, tokens=(flag(100), flag(10, "estimated"), flag(1000), flag(0))),
+            view_row("F001", 2, outcome="failed", scope="fail",
+                     tokens=(UNKNOWN, flag(20), UNKNOWN, flag(0, "estimated"))),
+            # F002: accepted on attempt 2, so not a first-try hit.
+            view_row("F002", 1, outcome="failed", scope="fail", tokens=(flag(3, "estimated"), UNKNOWN, flag(0), UNKNOWN)),
+            view_row("F002", 2, tokens=(flag(7), flag(0), flag(0), flag(0))),
+            # F003: not accepted, so it is left out of every line.
+            view_row("F003", 1, tokens=(flag(999), flag(999), flag(999), flag(999))),
+            # F004: accepted in the features file but has no completed run: counted, not a hit.
+            view_row("F004", 1, outcome="failed", scope="fail", tokens=(UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN)),
+            # Another mission's row for F001 must be ignored.
+            view_row("F001", 1, mission="other-mission", tokens=(flag(999), flag(999), flag(999), flag(999))),
+        ]
+
+    def test_view_prints_first_try_rate_and_tokens_per_accepted_feature(self):
+        self.write(self.fixture_rows(), accepted_ids=["F001", "F002", "F004"], extra_features=["F003"])
+        result = self.view()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, (
+            "first_try_rate 1/3\n"
+            "tokens F001 observed=1120 estimated=10 unknown_runs=1\n"
+            "tokens F002 observed=7 estimated=3 unknown_runs=1\n"
+            "tokens F004 observed=0 estimated=0 unknown_runs=1\n"
+        ))
+        self.assertEqual(result.stderr, "")
+
+    def test_view_with_no_accepted_features_reports_zero_of_zero(self):
+        self.write(self.fixture_rows(), accepted_ids=[], extra_features=["F001", "F002"])
+        result = self.view()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "first_try_rate 0/0\n")
+
+    def test_view_stores_nothing_and_leaves_the_directory_unchanged(self):
+        self.write(self.fixture_rows(), accepted_ids=["F001", "F002"])
+        before = self.snapshot()
+        listing_before = sorted(str(path) for path in self.parent.rglob("*"))
+        result = self.view()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(sorted(str(path) for path in self.parent.rglob("*")), listing_before)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_view_refuses_a_row_that_fails_the_schema(self):
+        rows = self.fixture_rows()
+        rows[0]["tokens_input"] = {"value": 5}
+        self.write(rows, accepted_ids=["F001"])
+        result = self.view()
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("ERROR: ledger:", result.stderr)
+
+    def test_view_refuses_a_row_with_a_privacy_violation(self):
+        rows = self.fixture_rows()
+        rows[1]["task"] = "/Users/someone/private/checkout"
+        self.write(rows, accepted_ids=["F001"])
+        result = self.view()
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertNotIn("/Users/someone", result.stderr)
+
+    def test_view_refuses_a_features_file_with_a_non_boolean_passes(self):
+        self.write(self.fixture_rows(), accepted_ids=["F001"])
+        document = json.loads(self.features.read_text(encoding="utf-8"))
+        document["features"][0]["passes"] = "yes"
+        self.features.write_text(json.dumps(document), encoding="utf-8")
+        result = self.view()
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("features.json.features", result.stderr)
+
+    def test_view_refuses_a_missing_features_file(self):
+        self.write(self.fixture_rows(), accepted_ids=["F001"])
+        result = self.view(features=self.parent / "absent.json")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("file does not exist", result.stderr)
+
+    def test_view_usage_error_exits_2(self):
+        self.write(self.fixture_rows(), accepted_ids=["F001"])
+        result = run_cli("view", str(self.ledger), cwd=self.parent)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+
+
 class LedgerTestsLeaveNoBytecode(unittest.TestCase):
     def test_no_bytecode_folder_in_the_tree(self):
         self.assertFalse((ROOT / "scripts/__pycache__").exists())

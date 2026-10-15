@@ -4,6 +4,15 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — T-031 worker (claude-haiku-5-5, economy) — derived view implemented; awaiting verifier
+- **Baseline (before edits):** `shellcheck scripts/*.sh tests/*.sh` exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` exit 0 (59 tests). `tests/run-tests.sh` not run by the worker, per the task.
+- **Change:** `scripts/ledger.py view <ledger.jsonl> --features <features.json>` prints `first_try_rate <hits>/<accepted>` and one `tokens <feature> observed=<sum> estimated=<sum> unknown_runs=<n>` line per accepted feature (`passes: true`). It reads through `safe_read` and writes nothing.
+- **Definitions I chose (not spelled out in the task or proposal):** the accepted run is the feature's `completed` row with `scope_result: pass` and the highest attempt (ties go to the later row). A feature with no such row counts in the denominator but not the numerator. `unknown_runs` counts rows with at least one token field whose source is `unknown`. Rows are filtered to the features file's `mission`, and every row is validated first.
+- **Tests:** `tests/test-ledger.py` adds `LedgerViewTests` (8 cases, all fixtures built in a temp dir): exact stdout for mixed fixtures, 0/0 case, directory listing and bytes unchanged before/after, schema and privacy refusals (exit 1, no stdout, the offending value not echoed), non-boolean `passes` refused, missing features file refused, usage error exit 2.
+- **Checks after edits:** `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` exit 0 (67 tests); `shellcheck scripts/*.sh tests/*.sh` exit 0; `test ! -e scripts/__pycache__ && test ! -e tests/__pycache__` exit 0.
+- **Not run by the worker:** `bash tests/run-tests.sh` (the verifier runs it outside the sandbox, per the task). Its result is missing from this entry.
+- **Feature acceptance:** none. F005 stays `passes: false` (other F005 steps are still open).
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-030 chain closed (code-reviewer PASS on T-030-R2); T-031 dispatch
 - **code-reviewer: PASS on `787cc15`** (4-key drift shape matching `fleet_state.py`, shape checked before the privacy walk, cap only on `.tasks/` inputs, tests a–d plus a >1 MiB committed-ledger test and the integration extension present; the worker recorded its temporary-copy mutation evidence). T-030 chain closed (T-030, R1, R2).
 - Next: T-031 (derived view; S; code-reviewer) on claude.economy.

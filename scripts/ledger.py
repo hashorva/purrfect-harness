@@ -8,6 +8,8 @@ the spec or guessed. Unknown keys are rejected, so a new field needs a schema ch
 Usage:
   ledger.py validate <file>   (exit 0 valid, 1 invalid, 2 usage)
   ledger.py fold <mission>    (append new rows and drift events; exit 0 ok, 1 invalid, 2 usage)
+  ledger.py view <ledger.jsonl> --features <features.json>
+                              (derived view on stdout; writes nothing; exit 0 ok, 1 invalid, 2 usage)
 """
 import hashlib
 import json
@@ -42,6 +44,7 @@ RUN_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 MAX_INPUT_BYTES = 1024 * 1024
 DRIFT_KEYS = ("at", "mission", "seat", "from", "to", "inventory_sha256")
 RESOLUTION_KEYS = ("provider", "model", "effort", "speed")
+TOKEN_FIELDS = ("tokens_input", "tokens_output", "tokens_cache", "tokens_reasoning")
 
 FIELDS = (
     "schema_version", "mission", "feature", "task", "run_id", "parent_run", "group_id",
@@ -506,12 +509,100 @@ def cmd_fold(mission):
     return 0
 
 
+def load_rows(ledger_jsonl):
+    content = safe_read(ledger_jsonl, "ledger.jsonl", max_bytes=None)
+    rows = []
+    for line in content.splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError as error:
+            raise LedgerError("ledger.jsonl", "line is not valid JSON") from error
+        if not isinstance(row, dict):
+            raise LedgerError("ledger.jsonl", "line must be an object")
+        validate_row(row)
+        rows.append(row)
+    return rows
+
+
+def load_features(features_json):
+    content = safe_read(features_json, "features.json")
+    try:
+        document = json.loads(content)
+    except ValueError as error:
+        raise LedgerError("features.json", "document not readable as JSON") from error
+    if not isinstance(document, dict) or not isinstance(document.get("mission"), str) or not isinstance(document.get("features"), list):
+        raise LedgerError("features.json", "must have a mission string and a features array")
+    for item in document["features"]:
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not isinstance(item.get("passes"), bool):
+            raise LedgerError("features.json.features", "each feature needs a string id and a boolean passes")
+    return document["mission"], document["features"]
+
+
+def accepted_run(rows):
+    """The feature's accepted run: the completed, scope-passing row with the highest attempt.
+
+    Ties go to the later row in ledger order. Returns None when no row qualifies.
+    """
+    best = None
+    for row in rows:
+        if row["outcome"] == "completed" and row["scope_result"] == "pass":
+            if best is None or row["attempt"] >= best["attempt"]:
+                best = row
+    return best
+
+
+def view_lines(rows, mission, features):
+    by_feature = {}
+    for row in rows:
+        if row["mission"] == mission:
+            by_feature.setdefault(row["feature"], []).append(row)
+    accepted = [item["id"] for item in features if item["passes"]]
+    hits = 0
+    for feature in accepted:
+        run = accepted_run(by_feature.get(feature, []))
+        if run is not None and run["attempt"] == 1:
+            hits += 1
+    lines = [f"first_try_rate {hits}/{len(accepted)}"]
+    for feature in accepted:
+        observed = estimated = unknown_runs = 0
+        for row in by_feature.get(feature, []):
+            sources = [row[name]["source"] for name in TOKEN_FIELDS]
+            for name in TOKEN_FIELDS:
+                if row[name]["source"] == "observed":
+                    observed += row[name]["value"]
+                elif row[name]["source"] == "estimated":
+                    estimated += row[name]["value"]
+            if "unknown" in sources:
+                unknown_runs += 1
+        lines.append(f"tokens {feature} observed={observed} estimated={estimated} unknown_runs={unknown_runs}")
+    return lines
+
+
+def cmd_view(ledger_path, features_path):
+    try:
+        rows = load_rows(Path(ledger_path))
+        mission, features = load_features(Path(features_path))
+    except OSError as error:
+        print(f"ERROR: ledger: {error}", file=sys.stderr)
+        return 1
+    except LedgerError as error:
+        print(f"ERROR: ledger: {error}", file=sys.stderr)
+        return 1
+    for line in view_lines(rows, mission, features):
+        print(line)
+    return 0
+
+
 def main(argv):
     if len(argv) == 2 and argv[0] == "validate":
         return cmd_validate(argv[1])
     if len(argv) == 2 and argv[0] == "fold":
         return cmd_fold(argv[1])
-    print("usage: ledger.py validate <file> | fold <mission>", file=sys.stderr)
+    if len(argv) == 4 and argv[0] == "view" and argv[2] == "--features":
+        return cmd_view(argv[1], argv[3])
+    print("usage: ledger.py validate <file> | fold <mission> | view <ledger.jsonl> --features <features.json>", file=sys.stderr)
     return 2
 
 
