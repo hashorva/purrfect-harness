@@ -35,6 +35,8 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-15 — T-041 attempt 1 (codex.economy, run a5343e36-0abb-46ac-b70d-31e3e53894c4): work in, verification FAIL on one plan-defect command** Commit 0bff888, scope pass, 11 allowed paths; 7 of 8 verification commands exit 0 (incl. both oracles and the full suite). The failing command is the Architect's scope check (its base = last commit touching the task file, so my later docs commits fell in range). Class task, attributable:false.
+  Task text changed (recorded): scope command now compares HEAD~1 with HEAD, and an "Attempt 2 note" tells the worker to change nothing. Attempt 2 on cursor.economy, then Architect review of the diff.
 - **2026-10-15 — T-041 dispatch (ledger v2), codex.economy** Task committed (Architect-written, rule 6 checked: oracles fail on base, pass after the reference patch). Worker must not touch PROGRESS.md; I record the run from the receipt.
 - **2026-10-15 — Architect run A (9477ab3f): ledger work split into T-041 (complete) and T-042 (outline).** Full text: `reviews/9477ab3f-9623-422a-ad14-20f77ced8f17.md`, mutants `…-mutants.md`; reference patch kept local at `.tasks/plans/T-041-reference.patch` (the worker never sees it).
   T-041 = `configured` source, real door name + `tier`, Cursor family by model (fixes the Grok-as-Composer pool bug); T-042 = pool/billing read at `base_commit` (it breaks two existing tests on purpose, so it is separate). 29 local v1 rows must not be folded (no migration; set aside, listed in the review file).
