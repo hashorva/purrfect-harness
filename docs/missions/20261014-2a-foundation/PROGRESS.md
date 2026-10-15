@@ -4,6 +4,16 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — T-034-R2 worker — refuse deep JSON in every entry mode; raw_decode scan
+- **Change:** `scripts/validate_verdict.py` now catches `RecursionError`, `ValueError` (including decode errors), and file errors at the after-run and plain data entry points, reporting `ERROR: verdict:` with exit 1. Object extraction uses `JSONDecoder.raw_decode`; successful values are remembered and scanning resumes after each value, while failed candidates advance. Consecutive unmatched `{` runs are skipped linearly after the decoder rejects them. The 4 MiB cap, final-result-only rule, and schema validation remain in place. `tests/test-verdict.py` adds both real-entry-point regressions for 200000 nested brackets and stray `[`, `{`, `}`, and `]` prose cases.
+- **Checks:** focused test suite (24 tests) exit 0; both schema checks exit 0; suite/manifest greps exit 0; shellcheck exit 0; no `__pycache__`; `git diff --check` exit 0. The full `bash tests/run-tests.sh` is reserved for the verifier per the task's standing 2A rule and was not run by this worker.
+- **Mutation evidence:** each mutation was applied only to a temporary copy of the validator and test tree; all four focused tests failed as intended (exit 1).
+  - `scripts/validate_verdict.py:260` — `except (OSError, ValueError, RecursionError, SchemaError, KeyError) as exc:` mutated to `except (OSError, ValueError, SchemaError, KeyError) as exc:` (flag-path RecursionError catch removed).
+  - `scripts/validate_verdict.py:276` — `except (OSError, ValueError, RecursionError, SchemaError) as exc:` mutated to `except (OSError, ValueError, SchemaError) as exc:` (data-mode RecursionError catch removed).
+  - `scripts/validate_verdict.py:68` — `pos = end` mutated to `pos = start + 1` (resume-after-end rule removed).
+  - `scripts/validate_verdict.py:38` — `start = text.find("{", pos)` mutated to `start = text.find("{", pos) if pos == 0 else -1` (candidate loop restricted to first `{`).
+- **Scope/result:** only the task allow-list changed; no feature acceptance or gate/status change. Commit: `fix(verdicts): all after-run branches refuse hostile input cleanly; raw_decode scan`.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — code-reviewer FAIL on T-034-R1 (reproduced); T-034-R2 written
 - **Mechanical review of T-034-R1:** run `ec7f2ef2-63c2-49d7-9c3e-24b1601def3f` (claude.economy haiku, attempt 1): completed, exit 0, scope pass, commit `bff503a`, 3 paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS`. My replay of the Architect's hostile cases (bare, prose, fenced, envelope, both two-object orders, fail-open, depth 5000, 1 MiB of `{`, 5 MB text) all behaved correctly.
 - **code-reviewer FAIL**, two points I reproduced myself: (1) a 200000-bracket file gives a `RecursionError` traceback in the flag path (`--after-run claude`) and in data mode (the guard covers only the extraction branch); (2) the worker's custom bracket matcher fails on a stray `[` in prose before a valid verdict (`Step [1 of 2: <plan>` is refused as "no JSON object"); the task had asked for a `raw_decode` scan. Third point: mutation evidence names no line numbers. Routing line for T-034-R1: `verify-passed-review-failed`, class `task` (claude.economy).

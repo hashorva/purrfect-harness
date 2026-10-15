@@ -11,11 +11,6 @@ KEYWORDS = {"$schema", "title", "type", "required", "properties", "additionalPro
 KNOWN_TYPES = frozenset({"object", "array", "string", "integer", "number", "boolean", "null"})
 REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
 MAX_OUTPUT_BYTES = 4 * 1024 * 1024
-# Only these characters change the scan state, so the scanner jumps between them.
-SCAN_SPECIAL = re.compile(r'["\\\[\]{}]')
-CLOSERS = {"{": "}", "[": "]"}
-
-
 class SchemaError(Exception):
     pass
 
@@ -35,47 +30,49 @@ def read_bounded_text(path):
 
 
 def _top_level_spans(text):
-    """Return (start, end) for each top-level {} or [] span in one linear pass.
-
-    Brackets are matched with a stack and quoted strings are skipped, so nested
-    values are never reported on their own. An opener that never closes gives no span.
-    """
-    stack = []
+    """Return decoded top-level object spans, skipping over complete values."""
+    decoder = json.JSONDecoder()
     spans = []
-    in_string = False
-    skip_before = 0
-    for match in SCAN_SPECIAL.finditer(text):
-        pos = match.start()
-        char = match.group()
-        if pos < skip_before:
-            continue
-        if in_string:
-            if char == "\\":
-                skip_before = pos + 2
-            elif char == '"':
-                in_string = False
-        elif char == '"':
-            in_string = bool(stack)
-        elif char in "[{":
-            stack.append((char, pos))
-        elif char in "]}" and stack and CLOSERS[stack[-1][0]] == char:
-            _, start = stack.pop()
-            if not stack:
-                spans.append((start, pos + 1))
-    return spans
+    pos = 0
+    while True:
+        start = text.find("{", pos)
+        if start < 0:
+            return spans
+        try:
+            value, end = decoder.raw_decode(text, start)
+        except (json.JSONDecodeError, ValueError):
+            if start + 1 < len(text) and text[start + 1] == "{":
+                run_end = start + 2
+                while run_end < len(text) and text[run_end] == "{":
+                    run_end += 1
+                pos = text.find("{", run_end)
+                if pos < 0:
+                    return spans
+            else:
+                pos = start + 1
+        except RecursionError:
+            # Deep malformed runs make each opener expensive to retry. None of
+            # the intervening characters can begin a useful candidate object.
+            next_start = text.find("{", start + 1)
+            if next_start == start + 1:
+                run_end = next_start + 1
+                while run_end < len(text) and text[run_end] == "{":
+                    run_end += 1
+                pos = text.find("{", run_end)
+                if pos < 0:
+                    return spans
+            else:
+                raise ValueError("JSON nests too deeply to read") from None
+        else:
+            spans.append((start, end, value))
+            pos = end
 
 
 def _last_object(text, accept=lambda value: True):
     """Return the last top-level JSON object in text that accept() takes, or None."""
-    for start, end in reversed(_top_level_spans(text)):
+    for start, end, value in reversed(_top_level_spans(text)):
         if text[start] != "{":
             continue
-        try:
-            value = json.loads(text[start:end])
-        except json.JSONDecodeError:
-            continue
-        except RecursionError:
-            raise ValueError("JSON nests too deeply to read") from None
         if isinstance(value, dict) and accept(value):
             return value
     return None
@@ -237,7 +234,7 @@ def main(argv):
     if len(argv) == 3 and argv[1] == "--check-schema":
         try:
             check_schema(read_json(argv[2]))
-        except (OSError, json.JSONDecodeError, SchemaError) as exc:
+        except (OSError, ValueError, RecursionError, SchemaError) as exc:
             report_schema_error(exc)
             return 1
         return 0
@@ -254,7 +251,7 @@ def main(argv):
             else:
                 value = json.loads(read_bounded_text(output_path))
                 mode = "flag"
-        except (OSError, json.JSONDecodeError, SchemaError, ValueError, KeyError) as exc:
+        except (OSError, ValueError, RecursionError, SchemaError, KeyError) as exc:
             report_schema_error(exc)
             return 1
         errors = validate(value, schema)
@@ -270,7 +267,7 @@ def main(argv):
         schema = read_json(argv[1])
         check_schema(schema)
         value = read_json(argv[2])
-    except (OSError, json.JSONDecodeError, SchemaError) as exc:
+    except (OSError, ValueError, RecursionError, SchemaError) as exc:
         report_schema_error(exc)
         return 1
     errors = validate(value, schema)

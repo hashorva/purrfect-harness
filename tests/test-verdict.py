@@ -109,6 +109,23 @@ class VerdictValidatorTests(unittest.TestCase):
     def test_final_text_without_json_is_refused(self):
         self.assert_refused(self.run_after_run_text(self.envelope("no plan")), "no JSON object")
 
+    def test_stray_brackets_before_verdict_do_not_hide_it(self):
+        prefixes = ("Step [1 of 2: ", "Note: {unclosed ", "stray } and ] ")
+        for prefix in prefixes:
+            with self.subTest(prefix=prefix):
+                result = self.run_after_run_text(self.envelope(prefix + self.plan_text()))
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_deep_nesting_refused_cleanly_in_flag_and_data_modes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            deep_path = Path(directory) / "deep.json"
+            deep_path.write_text("[" * 200_000 + "]" * 200_000, encoding="utf-8")
+            flagged = self.run_after_run(
+                "claude", "schemas/task-plan.schema.json", deep_path)
+            data = self.run_validator("schemas/task-plan.schema.json", deep_path)
+        self.assert_refused(flagged)
+        self.assert_refused(data)
+
     def test_deep_nesting_is_refused_cleanly(self):
         deep = '{"a":' * 5000 + "1" + "}" * 5000
         self.assert_refused(self.run_after_run_text(deep))
