@@ -35,6 +35,11 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-15 — BRAIN review (Opus) of T-041 / commit 0bff888 — calibration review 1, Opus side. Run cb23708f-7387-4c3b-85b0-77df3be10740, log `.tasks/logs/cb23708f-7387-4c3b-85b0-77df3be10740.log`. Verdict PASS, no blocking issues.** Attribution: receipt a5343e36 (codex.economy) lists commit 0bff888 and its 11 paths, scope pass; record `verification/2884c3e6…json` result pass, 8/8 commands exit 0.
+  By effect: `configured` only on requested_model/resolved_model/effort (validator, schema `configuredTextFlag`, builder reads receipt configuration, never the spec); observed_model/cli_version/fast_state refuse it; door = registry key or `unknown` (Cursor by model family, so Grok at standard speed is cursor-grok); `tier` is economy, premium or null; v1 rows are refused.
+  My evidence (scratch copy of 0bff888, only the tests' fake CLIs, PYTHONDONTWRITEBYTECODE=1, live tree untouched): 32 hostile probes through `ledger.py validate`, no value echoed; 30 mutants (23 from the task list + 7 extra), all killed.
+  Non-blocking: N1 validator accepts any non-empty `door` (also `economy`, the v1 meaning) → check door ∈ registry doors ∪ {unknown} in T-042. N2 mutant X01 (configured value type check skipped) is killed only by Oracle A, not by `tests/test-ledger.py`. N3 fold stops at the first invalid row: 31 local v1 rows of this mission in `.tasks/ledger/` must be set aside before the F005 fold. N4 `reviews/grok-calib-1-T-041.md` is 19 bytes (verdict only, no evidence).
+  Calibration (owner decision 2): grok and Opus agree on blocking issues (none); grok reported no non-blocking ones (missed N1, N2). My write scope is PROGRESS.md only: the full review and the routing-data row are in blocks at the end of this file for the Front Desk to split out.
 - **2026-10-15 — T-041 verified (attempt 4 record); calibration review 1 of 3 (grok-4.7-high) done; Opus review requested** Record: run 2884c3e6-27c7-4565-95e7-0650aaa76437 (codex.economy), VERIFY PASS, 8 commands incl. both oracles and the full suite; the implementation is commit 0bff888 (attempts 1–4 = one implementation, three plan/harness failures of mine). Grok review (cursor.premium, plan mode, scratch clone): "Verdict: PASS", no findings listed (`reviews/grok-calib-1-T-041.md`).
   **ARCHITECT REVIEW REQUEST, T-041 (commit 0bff888 only; a privacy/evidence guard).** `git show 0bff888`; task `tasks/T-041.md`. Confirm with evidence you produced: `configured` is the only label for spec/receipt-configured values and `observed` only for CLI-reported ones, in the validator, schema, runner builder and fixtures; `door` = real registry door and `tier` present (null for brain runs); v1 rows refused; Grok at standard speed maps to cursor-grok not cursor-composer; hostile inputs (wrong source label, tier/door mutated, unknown door, extra keys) refused with no value echoed; mutate each new check once in scratch copies and report how many tests catch. RULES: fake provider CLIs on PATH, never a real provider, PYTHONDONTWRITEBYTECODE=1, nothing in the live tree, no secret-shaped literal. Do not write long output: your PROGRESS entry at most 10 lines; the full text goes in a block headed `=== FILE: reviews/<your run id>.md ===` at the end. End with Verdict: PASS or FAIL and blocking issues only.
 - **2026-10-15 — T-041 v2 implementation re-verified locally.** Oracle A/B, ledger tests (70), ledger integration subset (14), `shellcheck`, JSON validation and the full suite passed; implementation remains the scoped `0bff888` commit.
@@ -78,3 +83,116 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 - **2026-10-15 — T-030 chain closed.** Fold keyed on run_id, 4-key drift shape, no cap on committed targets. Archive entries "T-030", "T-030-R1", "T-030-R2".
 - **2026-10-15 — T-028-R4 / T-029 chain closed.** Privacy rule extended; ledger step never changes a run's outcome. Archive entries "T-028-R4", "T-029-R1..R3".
 - **2026-10-15 — F005/F006 acceptance commands prepared** (see the day-3 correction in the archive; superseded by the approved sequence above).
+
+<!-- Front Desk: split the two blocks below into their files and remove them from PROGRESS.md. -->
+
+=== FILE: reviews/cb23708f-7387-4c3b-85b0-77df3be10740.md ===
+
+# Brain review (Opus) of T-041, commit 0bff888 — run cb23708f-7387-4c3b-85b0-77df3be10740
+
+Verdict: **PASS**. Blocking issues: none.
+
+## Attribution and records
+
+- Commit 0bff888 comes from run a5343e36-0abb-46ac-b70d-31e3e53894c4 (codex.economy, attempt 1): its receipt
+  lists only that commit and the 11 allow-listed paths, scope `pass`.
+- Run 2884c3e6-27c7-4565-95e7-0650aaa76437 (codex.economy, attempt 4) changed only PROGRESS.md (commit 18768b2), scope `pass`, clean `git_after`.
+  Its record `verification/2884c3e6-27c7-4565-95e7-0650aaa76437.json` has result `pass` and exit 0 for all 8 commands
+  (both oracles, test-ledger, integration `-k ledger`, scope, clean tree, full suite, no `__pycache__`).
+- No code under `scripts/`, `schemas/`, `tests/` or `harness-registry.json` changed between 0bff888 and 8489662.
+
+## Effects confirmed (by reading the diff and running it)
+
+- `configured` exists only on `requested_model`, `resolved_model`, `effort`: `CHECKS` maps those three (and only those)
+  to `configured_text_flag`; schema `$defs/configuredTextFlag` with source enum
+  `["observed","configured","estimated","unknown"]` is referenced by those three properties only; `textFlag` keeps
+  `["observed","estimated","unknown"]`. `observed` is now only the CLI-reported `observed_model`/`fast_state`
+  copied from the receipt's observation; `cli_version` stays unknown.
+- Builder: `requested_model`/`effort` come from `receipt.requested_configuration`, `resolved_model` from
+  `receipt.resolved_configuration`, all labelled `configured`; missing, empty or `"unknown"` values become
+  `{"value": null, "source": "unknown"}`; `spec["model"]`/`spec["effort"]` are no longer read.
+- Door: Cursor door = `cursor-<family of resolved model>`, speed unused (Grok at standard speed → `cursor-grok`,
+  pool `cursor`, billing `included`). Other providers: the CLI name. A name that is not a key of the registry's
+  `doors` gives door, pool and billing all `unknown`, so a derived name is never emitted unless it is a real
+  registry door. `tier` = economy/premium, else null (brain runs).
+- Fixtures: all six on v2, `door` = real CLI door, `tier` = old door value; good-completed's three fields say
+  `configured` (good-failed had none marked `observed`, correctly unchanged).
+- Integration test: only the mutation string changed (`model` → `spec["model"]`), as the task said.
+
+## Hostile inputs through the real CLI (`scripts/ledger.py validate`, scratch copy, 32 probes)
+
+All refused with exit 1 and a fixed message; a marker string placed in the hostile value never appeared in output:
+schema_version 1 / "2" / True / 2.0 (`schema_version: must be 2`); pure v1 shape with tier removed (`tier: is required`);
+`configured` on observed_model/cli_version/fast_state (`<field>.source: must be one of observed, estimated, unknown`);
+hostile string/list/dict as requested_model.source; configured value 3, whitespace, absolute path, email
+(`must be a non-empty string` / `privacy`); unknown source with a value; extra key inside `effort` and at top level
+(`unknown key; name not printed`); tier hostile string, `Economy`, ` economy`, 0, False, list, dict
+(`tier: must be one of economy, premium or null`); tier missing; door empty. Controls (good row, tier null) pass.
+**Accepted:** `door: "economy"` and `door: <any non-empty text>` → finding N1.
+
+## Mutation run (scratch copy of 0bff888, each mutant applied alone, restored after)
+
+Counted: failing tests in `tests/test-ledger.py` / in `tests/test-execution-integration.py -k ledger` / oracles failing.
+Baseline: 0 / 0 / none.
+
+| Mutant | test-ledger | integ. | oracles |
+| --- | --- | --- | --- |
+| M01 `SCHEMA_VERSION = 1` | 107 | 11 | A B |
+| M02 `configured` dropped from `CONFIGURED_SOURCES` | 93 | 11 | A B |
+| M03 requested_model → `text_flag` | 94 | 11 | A B |
+| M04 resolved_model → `text_flag` | 91 | 11 | A B |
+| M05 effort → `text_flag` | 86 | 11 | A B |
+| M06 cli_version → `configured_text_flag` | 1 | 0 | A |
+| M07 observed_model → `configured_text_flag` | 1 | 0 | A |
+| M08 fast_state → `configured_text_flag` | 1 | 0 | A |
+| M09 null tier refused | 2 | 0 | A B |
+| M10 tier check removed | 7 | 0 | A |
+| M11 `tier` dropped from `FIELDS` | 108 | 11 | A B |
+| M12 Cursor door fixed to `cursor-composer` | 1 | 0 | B |
+| M13 door returned as CLI name | 1 | 0 | B |
+| M14 tier passed through unchecked | 1 | 0 | B |
+| M15 resolved model from requested configuration | 1 | 0 | B |
+| M16 `"unknown"` guard removed | 1 | 0 | B |
+| M17 `configured` written as `observed` | 1 | 0 | B |
+| M18 builder `schema_version` 1 | 1 | 10 | B |
+| M19 effort taken from spec | 1 | 0 | — |
+| M20 pool replaced by `"unknown"` | 1 | 1 | B |
+| M21 schema const 2 → 1 | 1 | 0 | — |
+| M22 schema configured source enum reverted | 1 | 0 | — |
+| M23 schema `effort` `$ref` → `textFlag` | 1 | 0 | — |
+| X01 configured value type check skipped | **0** | 0 | A |
+| X02 configured null rule removed | 3 | 0 | A |
+| X03 family = whole model id | 1 | 0 | B |
+| X04 requested model from spec | 1 | 0 | B |
+| X05 schema tier enum drops null | 1 | 0 | — |
+| X06 unknown door keeps derived name | 1 | 0 | B |
+| X07 tier error echoes the value | 7 | 0 | A |
+
+30/30 killed. All builder mutants are caught by the single test
+`test_builder_uses_receipt_configuration_registry_doors_and_independent_tier` (coarse but sufficient).
+
+## Non-blocking findings
+
+- **N1 (evidence guard gap; for T-042 or a small follow-up):** `door`, `pool`, `billing_class` are free text in the
+  validator and schema. A row edited by hand in `.tasks/ledger/` (outside Git scope, so the receipt does not see it)
+  with `door: "economy"` or any name folds. Suggest: the fold checks door ∈ registry `doors` ∪ {`unknown`}, and
+  pool/billing equal that door's registry values at the run's `base_commit` (the same read T-042 adds).
+- **N2 (test gap):** X01 (configured value not type-checked) survives `tests/test-ledger.py`; only Oracle A
+  (not in `run-tests.sh`) kills it. Add a CLI subtest: `requested_model.value = 3` with source `configured`.
+- **N3 (operational, before F005 fold):** `fold_mission` validates every row of this mission in `.tasks/ledger/`
+  and stops at the first error. There are 31 v1 rows of this mission there (3 v2). Move them aside (per the
+  Architect's list) before `python3 scripts/ledger.py fold`, or the fold exits 1.
+- **N4 (calibration quality):** `reviews/grok-calib-1-T-041.md` holds only "Verdict: PASS / done" (19 bytes): no
+  checks, probes or mutants. For calibration reviews 2 and 3, require grok to list its evidence.
+- Nits: `check_schema_version` hard-codes `"must be 2"` instead of using `SCHEMA_VERSION`; `configured_text_flag`
+  duplicates `check_flag` (a `sources` parameter would do); missing blank line before
+  `test_lists_reject_duplicates_and_bad_checks`.
+
+## Calibration (owner decision 2, guard review 1 of 3)
+
+Grok-4.7-high (cursor.premium): PASS, no findings. Opus: PASS, no blocking; 4 non-blocking (N1–N4).
+Same blocking set (none). Grok missed N1 and N2.
+
+=== FILE: routing-data.jsonl (append one line) ===
+
+{"type":"review-calibration","task":"T-041","guard_review":1,"commit":"0bff888","grok_review":"reviews/grok-calib-1-T-041.md","grok_verdict":"PASS","grok_blocking":[],"opus_run_id":"cb23708f-7387-4c3b-85b0-77df3be10740","opus_verdict":"PASS","opus_blocking":[],"same_blocking":true,"opus_nonblocking_missed_by_grok":["N1 door free text","N2 X01 survives test-ledger"],"note":"grok output had no evidence (19 bytes)"}
