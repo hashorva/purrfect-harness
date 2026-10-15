@@ -4,6 +4,49 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — re-review of T-025-R1 (`561d9be`)
+
+- **Run:** `246bcaa2-f353-40b2-925c-e2c4baa154f7`; log `.tasks/logs/246bcaa2-f353-40b2-925c-e2c4baa154f7.log`; spec role `brain`, action `review`, base `65327c6`, write scope this file only. The launcher writes the receipt `.tasks/receipts/246bcaa2-f353-40b2-925c-e2c4baa154f7.json` when this run ends; it did not exist while this entry was written.
+- **Run under review:** `9fe32ab2-9118-46fa-8783-6b861eb4c85e`. Its receipt exists: completed, exit 0, scope pass, `git_after` clean at `561d9be`. It changed 3 paths, all in the allow-list. Its VerificationRecord has `result: pass`, and all 8 commands exit 0.
+- **Test rules followed:**
+  - Trees: new = `561d9be`, old = `bb26198`. Each is a `git clone` in the session scratchpad, plus 7 more scratch clones for mutations.
+  - Fake `claude`, `codex`, `cursor-agent`, `agent`, `agy` and `grok` were first on PATH. Each exits 97 and logs its calls.
+  - No real provider CLI was launched and no `-fast` model was used. All Python ran with `PYTHONDONTWRITEBYTECODE=1`, and none used `python3 -I`.
+  - Live tree: `git status --short` is empty before this entry, there is no `__pycache__`, and the hash of `scripts/*.py` and `tests/*.py` is unchanged before and after my runs.
+- **(1) My T-025 reproduction now fails closed — confirmed.**
+  - Fixture: I took `.tasks/fleet-inventory.json`, made it a codex first-run failure (provider `failure`, no codex `last_good`, every codex seat `unavailable`), then set `codex.premium` to `source: fallback`, `health: degraded`.
+  - Old tree, made-up model `gpt-forged-terra-99`: `freeze` exits 0 and writes a `fleet.json` with that model. With the real-looking model `gpt-5.6-terra` it exits 0 and writes one too.
+  - New tree, both models: `freeze` exits 1 with `ERROR: binding worker uses seat codex.premium with source fallback; fallback bindings are no longer allowed`, and no `fleet.json` is written.
+  - Only one code path reads inventory seats into a binding: v1 `freeze` (`fleet_state.py:304`). `freeze_v2` and `resolve_v2` read provider records only. So the guard is in place where it matters.
+  - The code diff is that one added line. `freeze_v2` is untouched.
+  - The frozen 2A fleet and the Phase-1 fleet (`20260821-execution-truth`) pass `validate-fleet` in both trees.
+  - A valid freeze (live inventory, observed seat) gives byte-identical `fleet.json` in old and new once the mission path is normalised.
+- **(2) Old inventories stay readable — confirmed.** `validate-inventory` exits 0 on the degraded `fallback` seat (both models) in both trees. The new test pins this case (`historical-fallback-inventory.json`).
+- **(3) Probe behaviour unchanged — confirmed.**
+  - A first-run failure still gives an `unavailable` seat, and `freeze` refuses it (`binding worker has unavailable model`) in both trees.
+  - The inventory writer (`make_seats` and the last-good path) is not in the diff, so retained last-good behaviour is unchanged.
+- **(4) The three mutations that survived T-025 are now caught — confirmed: 7 of 7 caught.** Each mutation ran in its own scratch clone, and I checked which test case caught it:
+  - Drop the freeze refusal: caught by the `forged` freeze case.
+  - Drop the fallback branch's `health != "degraded"`: caught by `healthy-fallback`, which now uses a real `fallback` seat and asserts the exact `invalid fallback source` text.
+  - Drop `retained is not None`: caught by `fallback-retained-guard`.
+  - Drop `current status == unavailable`: caught by `fallback-current-unavailable-guard`.
+  - Refuse only models that do not start with `gpt-5`: caught by the `real-looking` case.
+  - Change the refusal text: caught by the exact-text assertion.
+  - Over-tighten `validate-inventory` to refuse every fallback seat: caught by the `historical` pin.
+- **(5) Scope and no weakened test — confirmed.**
+  - Only the 3 allowed files changed. `harness-registry.json`, `schemas/`, and the mission's `fleet.json`, `features.json` and `GOAL.md` have no diff.
+  - Of the 15 lines removed from `tests/test-fleet-state.py`, 14 only replace the path `ROOT/'scripts/fleet_state.py'` with `FLEET_STATE`. The 15th is the old `healthy-fallback` mutation, which is now stricter.
+  - The inventory loop now inlines `reject(...)` as the same `write` plus `run(ok=False)`.
+- **Audit:** `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` → `VERIFY OK`, exit 0, before this entry.
+- **Non-blocking notes:**
+  - (a) The test reads a `FLEET_STATE` environment variable. If someone sets it, the suite tests a different file. The verifier does not set it, but an unset-or-refuse rule would make this explicit.
+  - (b) `validate_fleet_v1` still accepts a `fallback` seat in a `fleet.json`, and it must for the Phase-1 history. It does not check the fleet against its inventory, so a hand-edited `fleet.json` is still unguarded. This was true before T-025.
+  - (c) This was true before T-025 too: `test-fleet-state.py` appends the caller's PATH. My fakes received 32 `agy models` and 32 `cursor-agent models` calls across two runs. Still a candidate for a test-hygiene task.
+  - (d) The stale docs text from my T-025 review (`.agents/skills/mission-init/SKILL.md:38`, `MODEL_ROUTING.md:146`) is still queued.
+- **Not done:** no feature accepted, no features.json, fleet, gate or status change, no worker dispatched, no file outside this entry changed.
+
+Verdict: PASS
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-025-R1 verified; Architect re-review requested
 - **Mechanical review:** run `9fe32ab2-9118-46fa-8783-6b861eb4c85e` (T-025-R1, codex.economy gpt-6-luna, effort medium, attempt 1), receipt `.tasks/receipts/9fe32ab2-9118-46fa-8783-6b861eb4c85e.json`: outcome `completed`, exit 0, scope pass, `git_after` clean, commit `561d9be`, 3 changed paths (`scripts/fleet_state.py`, `tests/test-fleet-state.py`, PROGRESS.md), all in the allow-list. `verify-mission.sh --run-id 9fe32ab2-9118-46fa-8783-6b861eb4c85e` → `VERIFY PASS`, exit 0 (8 commands incl. the `FALLBACKS` grep, `validate-fleet` on the frozen fleet and the full suite). Routing line written (fleet, S, codex.economy, done). Slice evidence for F004, not acceptance.
 - **ARCHITECT REVIEW REQUEST, T-025-R1 alone (commit `561d9be`; a safety fix in the freeze path).** Run `git show 561d9be`. Confirm with evidence you produced: (1) **your own T-025 reproduction now fails closed**: the inventory with one seat `source: fallback` and the model `gpt-forged-terra-99` is refused by the v1 `freeze` (non-zero exit, no `fleet.json` written), and a `fallback` seat with a real-looking model is refused too; `freeze_v2` and the frozen 2A fleet are unchanged; (2) `validate-inventory` still reads an old inventory with a `degraded` `fallback` seat (intended); (3) a first-run probe failure still yields an `unavailable` seat; retained last-good is unchanged; (4) the three mutations that survived T-025 (health / retained state / current-unavailable) are now caught, and each new test asserts the exact `ERROR:` text; mutate the new logic in scratch copies and report how many of your mutations are caught; (5) only the three allowed files changed, no test weakened. **RULES FOR YOUR TESTS:** a fake `cursor-agent`, `codex`, `claude` and `agy` first on PATH before any test or mutation; never launch a real provider CLI; no `-fast` model; `PYTHONDONTWRITEBYTECODE=1`; avoid `python3 -I` for anything that writes bytecode into the repo; leave nothing in the live tree. End with `Verdict: PASS` or `Verdict: FAIL` and blocking issues only.
