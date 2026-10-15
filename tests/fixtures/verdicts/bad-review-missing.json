@@ -1,0 +1,13 @@
+{
+  "commits": [
+    {
+      "commit": "abc123",
+      "verdict": "PASS",
+      "evidence": [
+        "Focused test passed"
+      ]
+    }
+  ],
+  "findings": [],
+  "verdict": "PASS"
+}

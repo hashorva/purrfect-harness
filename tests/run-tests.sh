@@ -96,6 +96,7 @@ check "execution receipt focused test leaves no scripts bytecode" test ! -e "$HA
 
 echo "== ledger row v1 (F005)"
 check "ledger row schema, source flags and validator contract" python3 tests/test-ledger.py
+check "task-plan and review verdict schema validation" python3 tests/test-verdict.py
 check "ledger focused test leaves no scripts or tests bytecode" bash -c "test ! -e '$HARNESS/scripts/__pycache__' && test ! -e '$HARNESS/tests/__pycache__'"
 
 # F006 regressions must use the public propagation/release entry points. Tagged

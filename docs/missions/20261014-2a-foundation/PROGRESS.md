@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — T-033 worker — verdict schemas and subset validator implemented; awaiting verifier
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0. `python3 -c 'import jsonschema'` succeeded in this environment (the task expected the module might be missing); no package was installed or used.
+- **Change:** added task-plan and review-verdict schemas, the dependency-free `scripts/validate_verdict.py` with explicit unsupported-keyword refusal and `--check-schema`, good/bad fixture JSON, focused tests, suite wiring, and manifest ownership entries.
+- **Checks:** `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verdict.py` exit 0 (4 tests); both `--check-schema` commands exit 0; suite/manifest grep exit 0; `shellcheck scripts/*.sh tests/*.sh` exit 0; JSON parsing exit 0; no `__pycache__`; `git diff --check` exit 0.
+- **Not run by the worker:** `bash tests/run-tests.sh`; task iteration policy reserves it for the verifier. Its result is not known here.
+- **Result:** no feature acceptance or gate/status change; `features.json` untouched. Scoped change committed as `feat(verdicts): task-plan and review schemas with validator`.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — F006 starts: T-033 dispatch
 - F005 is ready for acceptance (command above). Next in the owner's order: T-026/T-039 are blocked (agy hangs), so F006. **T-033** (schemas + dependency-free validator, category schema, M, code-reviewer) on codex.economy.
 

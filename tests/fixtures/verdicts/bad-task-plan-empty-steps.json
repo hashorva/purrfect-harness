@@ -1,0 +1,27 @@
+{
+  "plan_id": "p-1",
+  "mission": "2A",
+  "verdict": "READY",
+  "tasks": [
+    {
+      "id": "T-1",
+      "feature": "F006",
+      "title": "Schemas",
+      "category": "schema",
+      "size": "M",
+      "review": "code-reviewer",
+      "seats_to_avoid": [],
+      "depends_on": [],
+      "allow_list": [
+        "scripts/validate_verdict.py"
+      ],
+      "verification": [
+        [
+          "python3",
+          "tests/test-verdict.py"
+        ]
+      ],
+      "steps": []
+    }
+  ]
+}
