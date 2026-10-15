@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 — Worker (cursor.economy) — T-017 attempt 2 qualification (`a9eb86b`)
+
+- **Attempt 2 qualification:** no code or test edits. Validator, registry evidence text, `fleet_state` docstring pin, and tests remain as committed in `a9eb86b`; this session re-ran the focused checks and prepended this entry so the verifier can run the corrected command list from `tasks/T-017.md`.
+- **Focused checks (exit codes):** `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-registry.py` → **0** (13 tests, OK); `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-fleet-state.py` → **0**.
+- **Slice evidence for F004 only; not acceptance.** No `features.json`, fleet, GOAL, gate, or acceptance changes.
+- **Allow-list:** `docs/missions/20261014-2a-foundation/PROGRESS.md` only.
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — Architect review of T-017 PASS; T-017 text cleaned; qualification dispatch
 - **Architect review of T-017 (alone):** run `caaf837d-51fa-43b8-80ce-8dbde687dc77`, receipt `.tasks/receipts/caaf837d-51fa-43b8-80ce-8dbde687dc77.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `9e62559`. **Verdict: PASS** on `a9eb86b`: the only registry change is Claude's `sandbox_limits.evidence` text (every value dispatch reads is byte-identical to `38ed10f`; `validate-fleet` OK in both trees); 321 malformed inputs of its own all rejected cleanly (the old loader let 285 through), the live registry still accepted; N3 unchanged in behaviour (one docstring line plus a test); the four survivors of the T-014 review are now each caught; 23 of 25 new mutations caught (the 2 survivors are test gaps; code still rejects them); other registry users' tests pass; full suite OK. Fake providers only.
 - **Follow-ups (non-blocking):** add the inputs `{"low": true}` and `["low", ["low"]]` to the tests to catch the 2 surviving mutations. The Architect also found two leftovers in my T-017 text: `harness-registry.json` still in the MUST NOT list, and the "why" section still describing the removed check. **Fixed now (recorded task-text change):** the MUST NOT line says "except the evidence text of Claude's `sandbox_limits` (the one allowed change)", and the why bullet describes the new check. The file parses with the real parser.
