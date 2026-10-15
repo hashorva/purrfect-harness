@@ -4,6 +4,11 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-036 verified; code-reviewer FAIL; T-036-R1 written
+- **Mechanical review:** run `e0832e36-e87f-4d2d-a9ca-d107ac1361e1` (T-036, codex.economy gpt-6-luna, effort medium, attempt 1): completed, exit 0, scope pass, commit `5b07061`, 6 changed paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS`. I ran the command on a real run: it printed seat, spec sha, receipt, record and ledger line; an unknown run id reported two MISSING lines.
+- **code-reviewer FAIL**, hostile-id point reproduced by me (`reconstruct-run.sh <mission> ../x` is accepted and reported as MISSING instead of refused). Other findings: symlinked ledger row followed; tests mock every loader, no read-only test, no `--all` test, no multi-record test. The task text asked only for "complete fixture exits 0, each of the four removed exits 1"; the hostile-id/read-only/`--all` requirements came from my review brief, so the routing line is `verify-passed-review-failed`, class `task`, `attributable:false`.
+- **T-036-R1** written and dispatched on cursor.economy.
+
 ## 2026-10-15 (day 3) — T-036 worker — reconstruct a run from its four artifacts
 
 - **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` exit 0 (67 tests).
