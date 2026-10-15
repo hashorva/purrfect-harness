@@ -4,6 +4,64 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## MORNING REPORT (as of 06:25 CEST, 2026-10-15) — Front Desk (Sonnet 5.5) — mission 2A, night 2
+**State:** branch `mission/2a-foundation`, pushed (last pushed commit before this entry: `6fa9a06`). Tree clean, no `scripts/__pycache__`, nothing active at the time of writing. Mission status `in-progress`. **No feature was accepted tonight and no gate advanced.** F001 stays accepted (night 1). Nothing was tagged, no PR, `main` untouched. Audit `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` printed `VERIFY OK` at every Architect review. The loop is still running (T-018 next); a later morning report entry replaces this one if anything changes.
+
+### 1. Runs used, and how many ended task-done
+- **Worker runs: 18** (T-007 … T-040, routing data in `routing-data.jsonl`). **12 ended done** (verified `VERIFY PASS`); 6 failed verification the first time. Of those 6: **5 were plan defects, not attributable to a model** (T-009 a1, T-011 a1, T-012 a1, T-013 a1, T-017 a1) and **1 was a task failure** (T-015 a1, cursor.economy). Every non-attributable failure was repaired by a corrected task text (often a code-free qualification run, because the verifier reads its commands from the receipt's base commit).
+- **One launch refused by the parser** (T-015 attempt 2, prose inside the allow-list section): no run, no attempt used. **One launch failed on the harness** at S1 (agy).
+- **Architect runs: 15** (1 plan, 12 reviews, 1 combined review + agy plan, 1 plan for A-2/T-040/T-018). All verdicts PASS except T-015 attempt 1 (FAIL, then PASS on attempt 2).
+- **Real seat smokes (all via the real adapter in a scratch clone):** S1 five seats, S2 one seat launched (cursor.premium refused before launch), S-codex two seats. **Probes:** P-1 (Codex `--add-dir .agents`) PASS; P-2 (CLI JSON fields) done; P-3 for agy (3 tries) inconclusive.
+
+### 2. Failures, each with its class
+| run | what | class |
+|---|---|---|
+| S1 agy.economy | `--model gemini-3.8-flash-high conflicts with --effort=medium` (adapter sends both) | harness (adapter bug); evidence file |
+| agy probes ×3 (5 min, 90 s, 60 s) | model accepted, turn never completes, no error | environment/unknown (account or service?) |
+| T-009 a1 (codex.economy) | `tests/run-tests.sh:454` still expected the bracketed Cursor model; not in allow-list | plan defect |
+| T-011 a1 (codex.economy) | 2 integration fixtures with dirty receipts + the mission audit ran inside the worktree | plan defect |
+| T-012 a1 (codex.economy) | audit ran inside the worktree | plan defect |
+| T-013 a1 (claude.economy) | spec-glob and audit ran inside the worktree | plan defect |
+| T-015 a1 (cursor.economy) | worker changed `worker_write_scope` return type unrequested, broke `tests/test-seat-smoke.py` | **task** (plus two plan defects: my item 6 loosened a gate; a glob gap) |
+| T-015 a2 launch | prose inside "Files you MAY touch" | text defect, no run |
+| T-017 a1 (codex.economy) | a check I left (`git diff --quiet` on the registry) contradicted the evidence-text item I added | plan defect (mine) |
+| Architect incident (disclosed by it) | its first mutation run launched the **real** `cursor-agent` twice, once with `composer-2.5-fast` | process incident; **cost unknown; one fast-mode request against your rule** |
+
+### 3. Category × seat (task failures only; non-attributable plan defects excluded; done / task-failed)
+| category | claude.economy | codex.economy | cursor.economy |
+|---|---|---|---|
+| adapter | 1 / 0 | 1 / 0 | — |
+| diagnostics | 2 / 0 | — | — |
+| dispatch-policy | — | 1 / 0 | 0 / 1 |
+| docs | — | 1 / 0 | — |
+| launcher | — | — | 2 / 0 |
+| registry | 1 / 0 | 1 / 0 (qualification T-017 a2 not in this count; see data) | 2 / 0 |
+| verification | — | 1 / 0 | 2 / 0 |
+Small numbers: no conclusion about a model yet. Average wall time per run: claude 238 s, codex 261 s, cursor 254 s (6-7 runs each). `agy.economy` and `cursor.premium` never ran a task (see §6). **Smoke results** (final): claude.economy/premium usable; codex.economy/premium usable (since contract 5; were usable-with-limit); cursor.economy usable; cursor.premium refused before launch; agy.economy unusable.
+
+### 4. Quota used per vendor (my estimates; the CLIs report no remaining quota) and pauses
+- **No CLI reported a usage or rate limit tonight. No seat was paused. No credits, no fast mode requested by me.** (The only fast-mode request was the Architect's accidental one above.)
+- Claude (Pro): 15 Architect runs (Opus, effort high), 5 Haiku worker runs, 2 smoke runs, ~12 `code-reviewer`/small calls, 1 probe, plus this Front Desk session. Codex (Plus): 7 worker runs, 4 smoke runs, 3 probe calls (+1 hung call killed). Cursor (bundle): 6 worker runs, 1 smoke run, 1 probe, **2 unplanned Architect runs (1 fast)**. agy (Google AI Pro): 1 failed launch, 3 hung probe calls (about 7.5 minutes), several non-billable `agy models` calls. Grok via `grok`: none.
+- If you want real numbers, check each vendor's usage page; I cannot read them.
+
+### 5. Features ready for your acceptance
+**None.** Progress by feature: **F004** slices T-009, T-013, T-014, T-015, T-016, T-017, T-040 done and reviewed; remaining T-021 … T-026, and **T-039 is blocked** (agy hang, step 7). **F007** carrier slices T-007, T-008, T-010, T-011, T-012 done (clean-worktree verifier, numbered records, seat smoke); accepted only on T-038. **F003** (T-018 … T-020, corrected tonight against the real CLI output), **F005**, **F006**: not started. Gate 1 (after F001, F003-F006) is not reached.
+
+### 6. Decisions I need from you
+1. **Re-freeze `cursor.premium` and `agy.economy`** (both contradict themselves: `grok-4.7-xhigh`/medium and `gemini-3.8-flash-high`/medium). The Architect recommends changing only the effort field (`xhigh`, `high`); alternative: switch to the `-medium` model names. Either needs a Human entry. Until then `cursor.premium` is refused before launch.
+2. **agy hang:** every agy turn hangs (3 probes, different timeouts, plan mode). Please check the Antigravity app / Google AI Pro quota. T-039 (agy contract) and everything that depends on a working agy wait for a probe that returns `OK`. The **brain-seat move to agy Opus (A-1)** is blocked by this and by F004 not being done; I did not prepare it.
+3. **Parallel dispatch (A-2):** read `docs/proposals/20261015-parallel-dispatch.md` (Architect's proposal built on the new verifier and smoke). Your decision.
+4. **Protocol change flagged by the Architect:** the verifier now refuses a receipt whose after-state has uncommitted changes. 18 earlier real worker runs ended uncommitted and 6 Phase-1 records passed on such runs; the docs now say a qualification run is needed only when a worker left changes uncommitted. Overrule if you disagree.
+5. **The unplanned fast-mode Cursor request:** accept, or tell me to forbid test runs that can reach a real provider (the Architect now puts fakes first on PATH; I put that rule in every review request).
+6. **P-3 (Claude two-model case):** a small probe before T-020 would show whether a Claude run that uses a helper model reports two models (then "unknown", which would break F007). I did not run it.
+7. **Contract numbering:** T-013 took contract 5; when T-039 unblocks its text changes from "contract 5" to "current + 1" (6).
+
+### 7. My own mistakes tonight (all recorded in their entries)
+Wrote an evidence file into the repo during an Architect run (its receipt scope = fail; audit unaffected); added item 6 to T-015 that loosened a gate; added a T-017 item that contradicted an existing check; a scripted T-017 edit failed silently inside a background command; appended a duplicate routing line; started a verifier with an empty run id. Lessons (candidates L-001 … L-014, none promoted): see the entries; the new ones are L-010 reproduce the failure before filing a fix, L-011 write nothing into the repo while a run is active, L-012 grep for an edit before recording it, L-013 a follow-up that changes a gate's grammar is a decision, not a task item, L-014 re-read a task's verification list when adding an item.
+
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-040 reviewed (code-reviewer PASS)
+- **`code-reviewer` on `3930f02`:** Verdict PASS. The stale row (b) is gone from the skill and the template; the new rule is in place and matches the code (`CURRENT_PROVIDER_CONTRACT = 5`; the flag only when a `write_scope` pattern starts with `.agents/`; broad patterns do not qualify); login row (a) kept; the template keeps every placeholder and heading; no contradiction in the skill. T-040 is slice evidence for F004, not acceptance.
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-040 verified (Codex wrote .agents/ under a real task)
 - **Mechanical review:** run `fd3cb89a-44ff-4f69-b074-a05666bbb56c` (T-040, codex.economy gpt-6-luna, effort medium), receipt `.tasks/receipts/fd3cb89a-44ff-4f69-b074-a05666bbb56c.json`: outcome `completed`, exit 0, scope pass, commit `3930f02`, 3 changed paths (`.agents/skills/dispatch-worker/SKILL.md`, `docs/missions/templates/WORKER_TASK.template.md`, PROGRESS.md), all in the allow-list. `verify-mission.sh --run-id fd3cb89a-44ff-4f69-b074-a05666bbb56c` → `VERIFY PASS`, exit 0 (7 commands incl. the wording assertions, the shipped-template test, the changed-files scope check and the full suite). Record is slice evidence for F004, not acceptance. Routing line written (docs, S, codex.economy, attempt 1, done).
 - **Real-conditions proof for the Codex flag:** a Codex worker, under a task whose allow-list names `.agents/skills/dispatch-worker/SKILL.md`, wrote that file (the receipt's changed paths include it). This is the first real task use of contract 5 / `--add-dir <repo>/.agents`; the earlier proof was the P-1 probe and the smoke. The `.agents/` limit is lifted for Codex when the allow-list names `.agents/…`.
