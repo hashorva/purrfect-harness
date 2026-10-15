@@ -22,6 +22,7 @@ import stat
 from pathlib import Path
 
 SCHEMA_VERSION = 2
+REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
 SOURCES = ("observed", "estimated", "unknown")
 CONFIGURED_SOURCES = ("observed", "configured", "estimated", "unknown")
 # Privacy rule, applied to every text value at every nesting level (lists included).
@@ -283,12 +284,26 @@ CHECKS = {
 }
 
 
-def validate_row(row):
-    """Raise LedgerError on the first contract violation; return None for a valid row."""
+def registry_door_names(path=REGISTRY_PATH):
+    try:
+        registry = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise LedgerError("door", "registry unavailable") from error
+    if not isinstance(registry, dict) or not isinstance(registry.get("doors"), dict):
+        raise LedgerError("door", "registry unavailable")
+    return frozenset(registry["doors"])
+
+
+def validate_row(row, door_names=None):
+    """Raise LedgerError on the first contract violation, including an unknown registry door."""
     check_privacy("", row)
     check_object("", row, FIELDS)
     for name in FIELDS:
         CHECKS[name](name, row[name])
+    if row["door"] != "unknown":
+        allowed_doors = registry_door_names() if door_names is None else door_names
+        if row["door"] not in allowed_doors:
+            fail("door", "must be a registry door name or unknown")
 
 
 def canonical_row_line(row):

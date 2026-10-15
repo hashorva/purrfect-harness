@@ -1354,22 +1354,12 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         (self.root / "scripts/execution_runner.py").write_text(original)
         self.commit_fixture("restore ledger runner")
 
-    def install_codex_hostile_pool_provider(self, pool_value):
-        self.install_fixture_emitting_provider("codex", "codex.jsonl")
-        path = self.bin / "codex"
-        inject = (
-            "import json as _json\n"
-            "_reg = _json.loads(pathlib.Path('harness-registry.json').read_text())\n"
-            f"_reg['doors']['codex']['pool'] = {json.dumps(pool_value)}\n"
-            "pathlib.Path('harness-registry.json').write_text(_json.dumps(_reg))\n"
-        )
-        path.write_text(path.read_text().replace("raise SystemExit", inject + "raise SystemExit", 1))
-
-    def install_codex_malformed_registry_provider(self):
-        self.install_fixture_emitting_provider("codex", "codex.jsonl")
-        path = self.bin / "codex"
-        inject = "pathlib.Path('harness-registry.json').write_text('[1, 2, 3]\\n')\n"
-        path.write_text(path.read_text().replace("raise SystemExit", inject + "raise SystemExit", 1))
+    def commit_codex_hostile_pool_registry(self, pool_value):
+        registry_path = self.root / "harness-registry.json"
+        registry = json.loads(registry_path.read_text())
+        registry["doors"]["codex"]["pool"] = pool_value
+        registry_path.write_text(json.dumps(registry))
+        self.commit_fixture("hostile committed registry")
 
     def prove_runner_mutation_fails(self, old, new=None, check=None):
         if check is None and callable(new):
@@ -1433,7 +1423,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
 
     def test_ledger_validator_refusal_warns_without_leaking_value(self):
         hostile = "/" + "tmp" + "/" + "h" + "ostile-pool"
-        self.install_codex_hostile_pool_provider(hostile)
+        self.commit_codex_hostile_pool_registry(hostile)
         self.write_fleet("codex", "ledger-model", "medium", "unknown")
         result = self.invoke(self.ledger_worker_base())
         run_id = self.latest_receipt()["run_id"]
@@ -1442,39 +1432,110 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
 
         def check():
             self.clean_runs()
-            self.install_codex_hostile_pool_provider(hostile)
+            self.commit_codex_hostile_pool_registry(hostile)
             retry = self.invoke(self.ledger_worker_base())
             self.assert_ledger_warn_without_row(retry, self.latest_receipt()["run_id"], hostile=hostile)
 
-        self.prove_runner_mutation_fails("        validate_row(row)\n", "", check)
+        self.prove_runner_mutation_fails("        validate_row(row, door_names=frozenset(base_registry_doors(spec[\"repo\"], spec[\"base_commit\"])))\n", "", check)
         self.clean_runs()
 
-    def test_ledger_malformed_registry_warns_without_changing_outcome(self):
-        self.install_codex_malformed_registry_provider()
+    def test_ledger_registry_edited_during_run_does_not_change_row(self):
+        hostile = "/" + "tmp" + "/worker-pool-secret"
         self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        starting_commit = self.git("rev-parse", "HEAD").stdout.strip()
+        for edit in ("pool", "malformed", "commit"):
+            self.clean_runs()
+            self.git("reset", "--hard", starting_commit)
+            self.install_fixture_emitting_provider("codex", "codex.jsonl")
+            provider = self.bin / "codex"
+            source = provider.read_text()
+            if edit == "pool":
+                inject = ("registry = json.loads(pathlib.Path('harness-registry.json').read_text())\n"
+                          f"registry['doors']['codex']['pool'] = {json.dumps(hostile)}\n"
+                          "pathlib.Path('harness-registry.json').write_text(json.dumps(registry))\n")
+            elif edit == "malformed":
+                inject = "pathlib.Path('harness-registry.json').write_text('[1, 2, 3]\\n')\n"
+            else:
+                inject = ("registry = json.loads(pathlib.Path('harness-registry.json').read_text())\n"
+                          f"registry['doors']['codex']['pool'] = {json.dumps(hostile)}\n"
+                          "pathlib.Path('harness-registry.json').write_text(json.dumps(registry))\n"
+                          "subprocess.run(['git', 'add', 'harness-registry.json'], check=True)\n"
+                          "subprocess.run(['git', 'commit', '-qm', 'provider registry edit'], check=True)\n")
+            source = source.replace("sys.stdout.buffer.write", "import subprocess\n" + inject + "sys.stdout.buffer.write", 1)
+            provider.write_text(source)
+            result = self.invoke(self.ledger_worker_base())
+            run_id = self.latest_receipt()["run_id"]
+            self.assertIn("receipt=", result.stdout)
+            self.assertNotIn("Traceback", result.stderr)
+            log = self.log_text(run_id)
+            self.assertNotIn("WARN", log)
+            row_path = self.root / ".tasks/ledger" / f"{run_id}.json"
+            self.assertTrue(row_path.is_file(), edit)
+            row = json.loads(row_path.read_text())
+            self.assertEqual((row["door"], row["pool"], row["billing_class"]), ("codex", "openai", "included"))
+            self.assertNotIn(hostile, json.dumps(row) + log)
+        self.clean_runs()
+
+        self.git("reset", "--hard", starting_commit)
+
+        def malformed_worktree_check():
+            self.clean_runs()
+            self.install_fixture_emitting_provider("codex", "codex.jsonl")
+            provider = self.bin / "codex"
+            source = provider.read_text().replace(
+                "sys.stdout.buffer.write",
+                "pathlib.Path('harness-registry.json').write_text('[1, 2, 3]\\n')\nsys.stdout.buffer.write", 1,
+            )
+            provider.write_text(source)
+            result = self.invoke(self.ledger_worker_base())
+            self.assertIn("receipt=", result.stdout, result.stderr + result.stdout)
+            run_id = self.latest_receipt()["run_id"]
+            self.assertIn("receipt=", result.stdout)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertNotIn("WARN", self.log_text(run_id))
+            row_path = self.root / ".tasks/ledger" / f"{run_id}.json"
+            self.assertTrue(row_path.is_file())
+            row = json.loads(row_path.read_text())
+            self.assertEqual((row["door"], row["pool"], row["billing_class"]), ("codex", "openai", "included"))
+
+        self.prove_runner_mutation_fails(
+            '    doors = base_registry_doors(spec["repo"], spec["base_commit"])\n',
+            '    doors = json.loads((Path(spec["repo"]) / "harness-registry.json").read_text()).get("doors", {})\n',
+            malformed_worktree_check,
+        )
+        self.prove_runner_mutation_fails(
+            '        validate_row(row, door_names=frozenset(base_registry_doors(spec["repo"], spec["base_commit"])))\n',
+            '        validate_row(row)\n',
+            malformed_worktree_check,
+        )
+        self.clean_runs()
+
+    def test_ledger_registry_missing_at_base_gives_unknown_door(self):
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        with (self.root / ".gitignore").open("a") as handle:
+            handle.write("\nharness-registry.json\n")
+        self.invoke(["git", "rm", "--cached", "harness-registry.json"])
+        self.commit_fixture("untrack registry")
         result = self.invoke(self.ledger_worker_base())
         run_id = self.latest_receipt()["run_id"]
-        receipt = self.latest_receipt()
-        self.assertIn("receipt=", result.stdout)
-        self.assertNotIn("Traceback", result.stderr)
-        self.assertEqual(receipt["exit_code"], 0)
-        self.assertIn("WARN: ledger row not written:", self.log_text(run_id))
-        self.assertFalse((self.root / ".tasks/ledger" / f"{run_id}.json").is_file())
+        self.assert_terminal_run_hygiene(result, expected_exit=0)
+        self.assertNotIn("WARN", self.log_text(run_id))
+        row = json.loads((self.root / ".tasks/ledger" / f"{run_id}.json").read_text())
+        self.assertEqual((row["door"], row["pool"], row["billing_class"]), ("unknown", "unknown", "unknown"))
 
         def check():
             self.clean_runs()
-            self.install_codex_malformed_registry_provider()
+            self.invoke(["git", "rm", "--cached", "harness-registry.json"])
             broken = self.invoke(self.ledger_worker_base())
-            run_id = self.run_id_from_output(broken)
-            self.assertIn("receipt=", broken.stdout)
-            receipt = self.latest_receipt()
-            self.assertEqual(receipt["run_id"], run_id)
-            self.assertEqual(receipt["exit_code"], 0)
-            self.assertIn("WARN: ledger row not written:", self.log_text(run_id))
+            run_id = self.latest_receipt()["run_id"]
+            self.assert_terminal_run_hygiene(broken, expected_exit=0)
+            row_path = self.root / ".tasks/ledger" / f"{run_id}.json"
+            self.assertTrue(row_path.is_file(), "expected a ledger row when the base registry is absent")
+            self.assertEqual(json.loads(row_path.read_text())["door"], "unknown")
 
         self.prove_runner_mutation_fails(
-            "    except Exception:\n        warn_ledger(log, \"ledger: row build failed\")\n",
-            "",
+            "    if result.returncode != 0:\n        return {}\n",
+            "    if result.returncode != 0:\n        raise OSError()\n",
             check,
         )
         self.clean_runs()
@@ -1691,7 +1752,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
 
     def test_ledger_generic_failure_warn_never_prints_exception_text(self):
         secret = "ledger-" + "secret-" + "probe"
-        faulty = (ROOT / "scripts/ledger.py").read_text() + f"\n\ndef validate_row(row):\n    raise RuntimeError({secret!r})\n"
+        faulty = (ROOT / "scripts/ledger.py").read_text() + f"\n\ndef validate_row(row, door_names=None):\n    raise RuntimeError({secret!r})\n"
 
         def check():
             self.clean_runs()

@@ -383,8 +383,11 @@ class LedgerMutations(unittest.TestCase):
             mutant = source.replace('r"(?i:Bearer)[ \\t]\\S"', 'r"Bearer \\S"')
         self.assertNotEqual(mutant, source, rule)
         with tempfile.TemporaryDirectory() as temp:
-            copy = Path(temp) / "ledger.py"
+            scripts = Path(temp) / "scripts"
+            scripts.mkdir()
+            copy = scripts / "ledger.py"
             copy.write_text(mutant, encoding="utf-8")
+            shutil.copy2(ROOT / "harness-registry.json", Path(temp) / "harness-registry.json")
             row_path = Path(temp) / "row.json"
             row = json.loads(json.dumps(load(GOOD)))
             row[field] = hostile
@@ -643,10 +646,146 @@ class LedgerMutations(unittest.TestCase):
 
 
 
+class LedgerDoorTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.row = load(GOOD)
+        self.row_path = Path(self.tmp.name) / "row.json"
+
+    def validate(self, row=None, ledger=LEDGER):
+        self.row_path.write_text(json.dumps(row or self.row), encoding="utf-8")
+        return run_cli("validate", str(self.row_path), ledger=ledger)
+
+    def test_door_names_are_registry_values(self):
+        registry = load(ROOT / "harness-registry.json")
+        for door in (*registry["doors"], "unknown"):
+            with self.subTest(door=door):
+                row = dict(self.row, door=door)
+                self.assertEqual(self.validate(row).returncode, 0)
+
+    def test_non_registry_doors_are_refused_without_echo(self):
+        message = "ERROR: ledger: door: must be a registry door name or unknown"
+        for door in ("economy", "premium", "cursor", "Claude", "claude-", "openai"):
+            with self.subTest(door=door):
+                result = self.validate(dict(self.row, door=door))
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stderr.strip(), message)
+                self.assertNotIn(door, result.stderr)
+
+    def test_missing_and_malformed_registry_fail_closed(self):
+        for content in (None, "[1, 2, 3]"):
+            with self.subTest(content=content):
+                root = Path(self.tmp.name) / ("missing" if content is None else "malformed")
+                scripts = root / "scripts"
+                scripts.mkdir(parents=True)
+                ledger = scripts / "ledger.py"
+                shutil.copy2(LEDGER, ledger)
+                if content is not None:
+                    (root / "harness-registry.json").write_text(content)
+                result = self.validate(ledger=ledger)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stderr.strip(), "ERROR: ledger: door: registry unavailable")
+
+    def test_explicit_door_names_replace_registry(self):
+        from ledger import validate_row
+        row = dict(self.row, door="claude")
+        with self.assertRaisesRegex(Exception, "must be a registry door name or unknown"):
+            validate_row(row, door_names=frozenset({"codex"}))
+        validate_row(dict(self.row, door="unknown"), door_names=frozenset())
+
+
+class LedgerBaseCommitRegistryTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = Path(self.tmp.name) / "repo"
+        self.repo.mkdir()
+        self.git("init", "-q")
+        self.git("config", "user.email", "t@example.invalid")
+        self.git("config", "user.name", "t")
+        shutil.copy2(ROOT / "harness-registry.json", self.repo / "harness-registry.json")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "base")
+        self.base = self.git("rev-parse", "HEAD")
+        self.spec, self.receipt = self.inputs()
+
+    def git(self, *args, input=None):
+        return subprocess.run(["git", "-C", str(self.repo), *args], input=input, capture_output=True,
+                              text=True, check=True).stdout.strip()
+
+    def inputs(self):
+        unknown = {"value": None, "source": "unknown"}
+        spec = {"repo": str(self.repo), "base_commit": self.base if hasattr(self, "base") else "HEAD",
+                "mission": "docs/missions/x", "work_unit": "T-1", "run_id": str(uuid.uuid4()),
+                "attempt": 1, "provider": "codex", "write_scope": ["a"]}
+        receipt = {"feature": "F001", "observation": {"observed_model": unknown, "fast_state": unknown,
+                   "usage": {k: unknown for k in ("input", "output", "cache", "reasoning")}},
+                   "started_at": "2026-10-15T00:00:00Z", "finished_at": "2026-10-15T00:00:01Z",
+                   "changed_paths": [], "scope": {"result": "pass"}, "outcome": "completed",
+                   "requested_configuration": {"model": "m", "effort": "high"},
+                   "resolved_configuration": {"model": "m"}}
+        return spec, receipt
+
+    def row(self, base=None):
+        self.spec["base_commit"] = base or self.base
+        return execution_runner.build_ledger_row(self.spec, self.receipt, tier="economy")
+
+    def test_working_tree_changes_do_not_change_registry_row(self):
+        expected = ("codex", "openai", "included")
+        self.assertEqual(tuple(self.row()[key] for key in ("door", "pool", "billing_class")), expected)
+        registry_path = self.repo / "harness-registry.json"
+        original = registry_path.read_text()
+        for content in (json.dumps(dict(doors={"codex": {"pool": "hostile", "billing_class": "hostile"}})), "[1,2,3]", None):
+            if content is None:
+                registry_path.unlink()
+            else:
+                registry_path.write_text(content)
+            self.assertEqual(tuple(self.row()[key] for key in ("door", "pool", "billing_class")), expected)
+        registry_path.write_text(original)
+
+    def test_later_commit_changes_only_when_selected_as_base(self):
+        registry = json.loads((self.repo / "harness-registry.json").read_text())
+        registry["doors"]["codex"]["pool"] = "later-pool"
+        (self.repo / "harness-registry.json").write_text(json.dumps(registry))
+        self.git("add", "harness-registry.json")
+        self.git("commit", "-qm", "later")
+        later = self.git("rev-parse", "HEAD")
+        self.assertEqual(self.row()["pool"], "openai")
+        self.assertEqual(self.row(later)["pool"], "later-pool")
+
+    def test_replace_ref_is_ignored(self):
+        registry = json.loads((self.repo / "harness-registry.json").read_text())
+        registry["doors"]["codex"]["pool"] = "replacement"
+        blob = self.git("hash-object", "-w", "--stdin", input=json.dumps(registry))
+        original_blob = self.git("rev-parse", f"{self.base}:harness-registry.json")
+        self.git("replace", original_blob, blob)
+        self.assertIn(b"replacement", subprocess.run(["git", "-C", str(self.repo), "cat-file", "blob",
+                      f"{self.base}:harness-registry.json"], capture_output=True, check=True).stdout)
+        self.assertEqual(self.row()["pool"], "openai")
+
+    def test_unavailable_base_registry_falls_back_to_unknown(self):
+        registry_path = self.repo / "harness-registry.json"
+        for content in ("{", "{}", '{"doors": [1]}', None):
+            if content is None:
+                self.git("rm", "-q", "harness-registry.json")
+            else:
+                registry_path.write_text(content)
+                self.git("add", "harness-registry.json")
+            self.git("commit", "-qm", "invalid registry")
+            commit = self.git("rev-parse", "HEAD")
+            row = self.row(commit)
+            self.assertEqual(tuple(row[key] for key in ("door", "pool", "billing_class")),
+                             ("unknown", "unknown", "unknown"))
+        row = self.row("not-a-commit")
+        self.assertEqual(tuple(row[key] for key in ("door", "pool", "billing_class")),
+                         ("unknown", "unknown", "unknown"))
+
+
 class LedgerBuilderTests(unittest.TestCase):
     def row(self, provider, model, speed="standard", tier="economy", requested=None, effort="high", resolved=None, missing_configuration=False):
         unknown = {"value": None, "source": "unknown"}
-        spec = {"repo": str(ROOT), "mission": "docs/missions/x", "work_unit": "T-1", "run_id": str(uuid.uuid4()), "attempt": 1, "provider": provider, "model": "spec-model", "effort": "spec-effort", "speed": speed, "write_scope": ["file"], "feature": "F001"}
+        spec = {"repo": str(ROOT), "base_commit": "HEAD", "mission": "docs/missions/x", "work_unit": "T-1", "run_id": str(uuid.uuid4()), "attempt": 1, "provider": provider, "model": "spec-model", "effort": "spec-effort", "speed": speed, "write_scope": ["file"], "feature": "F001"}
         receipt = {"feature": "F001", "observation": {"observed_model": unknown, "fast_state": unknown, "usage": {k: unknown for k in ("input", "output", "cache", "reasoning")}}, "started_at": "2026-10-15T00:00:00Z", "finished_at": "2026-10-15T00:00:01Z", "changed_paths": [], "scope": {"result": "pass"}, "outcome": "completed", "requested_configuration": {"model": model if requested is None else requested, "effort": effort}, "resolved_configuration": {"model": model if resolved is None else resolved}}
         if missing_configuration:
             receipt["requested_configuration"].pop("model")
@@ -691,6 +830,7 @@ class LedgerFoldTests(unittest.TestCase):
         self.root.mkdir()
         (self.root / "scripts").mkdir(parents=True, exist_ok=True)
         shutil.copy2(LEDGER, self.root / "scripts/ledger.py")
+        shutil.copy2(ROOT / "harness-registry.json", self.root / "harness-registry.json")
         self.mission_path = "docs/missions/fixture"
         mission = self.root / self.mission_path
         mission.mkdir(parents=True)

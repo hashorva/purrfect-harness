@@ -67,13 +67,28 @@ def configured_text(value):
     return {"value": value, "source": "configured"}
 
 
-def registry_door_pool_and_billing(repo, provider, resolved_model):
-    path = Path(repo) / "harness-registry.json"
+def base_registry_doors(repo, base_commit):
+    if not isinstance(base_commit, str) or not base_commit or base_commit.startswith("-"):
+        return {}
     try:
-        registry = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return "unknown", "unknown", "unknown"
-    doors = registry.get("doors") or {}
+        result = subprocess.run(
+            ["git", "--no-replace-objects", "-C", str(repo), "cat-file", "blob", f"{base_commit}:harness-registry.json"],
+            stdin=subprocess.DEVNULL, capture_output=True, timeout=30, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    if result.returncode != 0:
+        return {}
+    try:
+        registry = json.loads(result.stdout.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError):
+        return {}
+    if not isinstance(registry, dict) or not isinstance(registry.get("doors"), dict):
+        return {}
+    return registry["doors"]
+
+
+def registry_door_pool_and_billing(doors, provider, resolved_model):
     cli = ledger_cli_name(provider)
     if cli == "cursor":
         family = resolved_model.split("-", 1)[0] if isinstance(resolved_model, str) else ""
@@ -98,7 +113,8 @@ def build_ledger_row(spec, receipt, *, tier):
     resolved_configuration = receipt.get("resolved_configuration") or {}
     requested_configuration = receipt.get("requested_configuration") or {}
     resolved_model = resolved_configuration.get("model")
-    door, pool, billing_class = registry_door_pool_and_billing(spec["repo"], spec["provider"], resolved_model)
+    doors = base_registry_doors(spec["repo"], spec["base_commit"])
+    door, pool, billing_class = registry_door_pool_and_billing(doors, spec["provider"], resolved_model)
     mission = Path(spec["mission"]).name
     feature = receipt["feature"] if receipt.get("feature") else "unknown"
     return {
@@ -210,7 +226,8 @@ def write_ledger_row(spec, receipt, *, tier, log):
         return
     try:
         row = build_ledger_row(spec, receipt, tier=tier)
-        validate_row(row)
+        # Door names also come from the base commit, so a worker-edited registry cannot reject the row.
+        validate_row(row, door_names=frozenset(base_registry_doors(spec["repo"], spec["base_commit"])))
         destination = artifact_directory(spec["repo"], "ledger") / f"{spec['run_id']}.json"
         _atomic_create_ledger(destination, canonical_bytes(row))
     except LedgerError as error:
