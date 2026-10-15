@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import execution_receipt
@@ -15,6 +16,17 @@ import verification_record
 
 def sha256(raw):
     return hashlib.sha256(raw).hexdigest()
+
+
+def canonical_run_id(run_id):
+    """Return run_id when it is a canonical lowercase UUID, else None."""
+    try:
+        parsed = uuid.UUID(run_id)
+    except (ValueError, AttributeError, TypeError):
+        return None
+    if str(parsed) != run_id:
+        return None
+    return run_id
 
 
 def mission_root(root, value):
@@ -100,7 +112,10 @@ def reconstruct(root, mission, run_id):
         missing.append("VerificationRecord (invalid)")
         print(f"  VerificationRecords: INVALID ({exc})")
 
-    if not ledger_path.exists():
+    if ledger_path.is_symlink() or (ledger_path.exists() and not ledger_path.is_file()):
+        missing.append("ledger row (not a regular file)")
+        print("  ledger: MISSING")
+    elif not ledger_path.is_file():
         missing.append("ledger row")
         print("  ledger: MISSING")
     else:
@@ -133,6 +148,10 @@ def main(argv=None):
     if not run_ids:
         print("ERROR: no runs selected", file=sys.stderr)
         return 2
+    for run_id in run_ids:
+        if canonical_run_id(run_id) is None:
+            print("ERROR: reconstruct: invalid run id", file=sys.stderr)
+            return 2
     failures = []
     for run_id in run_ids:
         missing = reconstruct(root, mission, run_id)

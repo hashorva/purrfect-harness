@@ -1,82 +1,229 @@
 #!/usr/bin/env python3
-"""Reconstruction reports complete evidence and names every missing artifact."""
+"""Reconstruction reports complete evidence and refuses hostile run ids."""
 import contextlib
+import hashlib
+import importlib.util
 import io
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+import execution_receipt
+import execution_spec
 import reconstruct_run
+import verification_record
+
+_integration_spec = importlib.util.spec_from_file_location(
+    "execution_integration", ROOT / "tests/test-execution-integration.py")
+integration = importlib.util.module_from_spec(_integration_spec)
+_integration_spec.loader.exec_module(integration)
 
 RUN = "01234567-89ab-42cd-8ef0-0123456789ab"
+MISSION = "docs/missions/fixture"
+OTHER_MISSION = "docs/missions/other"
 
 
-class ReconstructTests(unittest.TestCase):
+def tree_snapshot(root):
+    entries = []
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            kind = "symlink"
+        elif path.is_file():
+            kind = "file"
+        elif path.is_dir():
+            kind = "dir"
+        else:
+            kind = "other"
+        stat = path.lstat()
+        entries.append((path.relative_to(root).as_posix(), kind, stat.st_size, stat.st_mtime_ns))
+    return entries
+
+
+class ReconstructFixture(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
-        self.mission = self.root / "docs/missions/example"
-        self.mission.mkdir(parents=True)
-        for directory in (".tasks/specs", ".tasks/receipts", ".tasks/ledger", "docs/missions/example/verification"):
-            (self.root / directory).mkdir(parents=True, exist_ok=True)
-        for path in (self.root / ".tasks/specs" / f"{RUN}.json",
-                     self.root / ".tasks/receipts" / f"{RUN}.json",
-                     self.mission / "verification" / f"{RUN}.json"):
-            path.write_text("{}\n", encoding="utf-8")
-        (self.root / ".tasks/ledger" / f"{RUN}.json").write_text(
-            json.dumps({"run_id": RUN}), encoding="utf-8")
+        self.wrapper = integration.WrapperIntegration("runTest")
+        self.wrapper.setUp()
+        self.root = self.wrapper.root
         self.cwd = os.getcwd()
         os.chdir(self.root)
-        self.patches = [
-            patch.object(reconstruct_run.execution_spec, "load_persisted", return_value=({
-                "run_id": RUN, "mission": "docs/missions/example", "provider": "codex",
-                "model": "gpt-fixture", "effort": "medium", "speed": "standard"}, b"spec")),
-            patch.object(reconstruct_run.execution_receipt, "load_receipt", return_value={
-                "run_id": RUN, "mission": "docs/missions/example", "outcome": "completed",
-                "exit_code": 0, "commits": [], "observation": {"observed_model": {"value": "gpt-fixture", "source": "observed"}}}),
-            patch.object(reconstruct_run.verification_record, "load_record", return_value=({"run_id": RUN, "result": "pass"}, b"record")),
-            patch.object(reconstruct_run.ledger, "validate_row", return_value=None),
-        ]
-        for item in self.patches:
-            item.start()
+        self.wrapper.write_fleet("codex", "reconstruct-model", "medium", "unknown")
+        self.wrapper.task.write_text(
+            "---\ntask_id: T-001\nfeature: F001\n---\n# Task\n\n"
+            "## Files you MAY touch\n- `allowed.txt`\n\n## Verification commands\n\n- `[\"true\"]`\n")
+        self.wrapper.commit_fixture("reconstruct task")
+        worker = self.wrapper.invoke([
+            "bash", "scripts/spawn-worker.sh", "codex", f"{MISSION}/tasks/T-001.md",
+            "--model", "reconstruct-model", "--feature", "F001",
+        ], env={"PROVIDER_ACTION": "commit"})
+        self.assertEqual(worker.returncode, 0, worker.stderr + worker.stdout)
+        self.run_id = max(
+            (path for path in (self.root / ".tasks/receipts").glob("*.json")
+             if json.loads(path.read_text())["role"] == "worker"),
+            key=lambda path: path.stat().st_mtime_ns,
+        ).stem
+        verified = self.wrapper.invoke(
+            ["bash", "scripts/verify-mission.sh", "--run-id", self.run_id, MISSION])
+        self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        self.wrapper.commit_fixture("verification record")
+        self.assertTrue((self.root / ".tasks/ledger" / f"{self.run_id}.json").is_file())
 
     def tearDown(self):
-        for item in self.patches:
-            item.stop()
         os.chdir(self.cwd)
-        self.temp.cleanup()
+        self.wrapper.tearDown()
 
-    def invoke(self):
-        output = io.StringIO()
-        with contextlib.redirect_stdout(output):
-            result = reconstruct_run.main(["docs/missions/example", RUN])
-        return result, output.getvalue()
+    def invoke(self, *argv, stderr=False):
+        stdout = io.StringIO()
+        stderr_buf = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr_buf):
+            code = reconstruct_run.main(list(argv))
+        if stderr:
+            return code, stdout.getvalue(), stderr_buf.getvalue()
+        return code, stdout.getvalue()
 
-    def test_complete_fixture_exits_zero(self):
-        code, output = self.invoke()
+    def spec_raw(self):
+        path = self.root / ".tasks/specs" / f"{self.run_id}.json"
+        return path.read_bytes()
+
+    def receipt_doc(self):
+        return json.loads((self.root / ".tasks/receipts" / f"{self.run_id}.json").read_text())
+
+    def test_complete_fixture_exits_zero_and_prints_evidence(self):
+        code, output = self.invoke(MISSION, self.run_id)
         self.assertEqual(code, 0, output)
-        for item in ("seat: codex / gpt-fixture", "receipt: completed", "VerificationRecord", "ledger:"):
-            self.assertIn(item, output)
+        receipt = self.receipt_doc()
+        spec, raw = execution_spec.load_persisted(self.root / ".tasks/specs" / f"{self.run_id}.json")
+        self.assertIn(f"seat: {spec['provider']} / {spec['model']} / {spec['effort']} / {spec['speed']}", output)
+        self.assertIn(f"sha256={hashlib.sha256(raw).hexdigest()}", output)
+        self.assertIn(f"receipt: {receipt['outcome']} exit={receipt['exit_code']}", output)
+        self.assertIn(f"commits={json.dumps(receipt['commits'])}", output)
+        observed = receipt["observation"]["observed_model"]
+        self.assertIn(f"observed model: {observed['value']} (source={observed['source']})", output)
+        record_path = self.root / MISSION / "verification" / f"{self.run_id}.json"
+        record, record_raw = verification_record.load_record(record_path)
+        self.assertIn(f"VerificationRecord {record_path.name}: {record['result']} sha256={hashlib.sha256(record_raw).hexdigest()}", output)
+        self.assertIn("ledger:", output)
+        self.assertIn("VALID", output)
 
     def test_each_missing_artifact_exits_one_and_names_it(self):
-        cases = ((".tasks/specs", "spec"), (".tasks/receipts", "receipt"),
-                 ("docs/missions/example/verification", "VerificationRecord"),
-                 (".tasks/ledger", "ledger row"))
-        for directory, name in cases:
+        cases = (
+            (self.root / ".tasks/specs" / f"{self.run_id}.json", "spec"),
+            (self.root / ".tasks/receipts" / f"{self.run_id}.json", "receipt"),
+            (self.root / MISSION / "verification" / f"{self.run_id}.json", "VerificationRecord"),
+            (self.root / ".tasks/ledger" / f"{self.run_id}.json", "ledger row"),
+        )
+        for path, name in cases:
             with self.subTest(name=name):
-                path = self.root / directory / f"{RUN}.json"
+                backup = path.read_bytes()
                 path.unlink()
-                code, output = self.invoke()
+                code, output = self.invoke(MISSION, self.run_id)
                 self.assertEqual(code, 1, output)
-                self.assertIn(f"MISSING {RUN}: {name}", output)
-                path.write_text(json.dumps({"run_id": RUN}) if directory == ".tasks/ledger" else "{}\n",
-                                encoding="utf-8")
+                self.assertIn(f"MISSING {self.run_id}: {name}", output)
+                path.write_bytes(backup)
+
+    def test_multiple_gaps_list_all_of_them(self):
+        (self.root / ".tasks/specs" / f"{self.run_id}.json").unlink()
+        (self.root / ".tasks/receipts" / f"{self.run_id}.json").unlink()
+        code, output = self.invoke(MISSION, self.run_id)
+        self.assertEqual(code, 1, output)
+        self.assertIn(f"MISSING {self.run_id}: spec", output)
+        self.assertIn(f"MISSING {self.run_id}: receipt", output)
+
+    def test_invalid_receipt_run_id_is_reported_not_crashed(self):
+        path = self.root / ".tasks/receipts" / f"{self.run_id}.json"
+        receipt = json.loads(path.read_text())
+        receipt["run_id"] = RUN
+        path.chmod(0o600)
+        path.write_bytes(execution_receipt.canonical_bytes(receipt))
+        code, output = self.invoke(MISSION, self.run_id)
+        self.assertEqual(code, 1, output)
+        self.assertIn("receipt: INVALID", output)
+        self.assertIn(f"MISSING {self.run_id}: receipt (invalid)", output)
+
+    def test_two_verification_records_are_listed(self):
+        second = self.wrapper.invoke(
+            ["bash", "scripts/verify-mission.sh", "--run-id", self.run_id, MISSION])
+        self.assertEqual(second.returncode, 0, second.stderr + second.stdout)
+        code, output = self.invoke(MISSION, self.run_id)
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"VerificationRecord {self.run_id}.json:", output)
+        self.assertIn(f"VerificationRecord {self.run_id}.2.json:", output)
+
+    def test_hostile_run_ids_exit_two_without_echoing_id(self):
+        hostile = ("../x", "x/y", RUN.upper(), "", "a" * 300)
+        for run_id in hostile:
+            with self.subTest(run_id=repr(run_id)):
+                before = tree_snapshot(self.root)
+                code, _out, err = self.invoke(MISSION, run_id, stderr=True)
+                self.assertEqual(code, 2, err)
+                self.assertEqual(err.strip(), "ERROR: reconstruct: invalid run id")
+                if run_id:
+                    self.assertNotIn(run_id, err)
+                self.assertEqual(tree_snapshot(self.root), before)
+
+    def test_symlinked_ledger_row_exits_one(self):
+        path = self.root / ".tasks/ledger" / f"{self.run_id}.json"
+        real = path.read_bytes()
+        path.unlink()
+        target = self.root / ".tasks/ledger" / "real-row.json"
+        target.write_bytes(real)
+        path.symlink_to(target.name)
+        code, output = self.invoke(MISSION, self.run_id)
+        self.assertEqual(code, 1, output)
+        self.assertIn(f"MISSING {self.run_id}: ledger row (not a regular file)", output)
+
+    def test_read_only_fixture_tree(self):
+        before = tree_snapshot(self.root)
+        code, output = self.invoke(MISSION, self.run_id)
+        self.assertEqual(code, 0, output)
+        self.assertEqual(tree_snapshot(self.root), before)
+
+    def test_all_enumerates_mission_receipts_and_skips_other_missions(self):
+        other = self.root / OTHER_MISSION
+        other.mkdir(parents=True)
+        (other / "GOAL.md").write_text("---\nstatus: in-progress\n---\n# Other\n")
+        foreign_id = RUN
+        foreign = {
+            "schema_version": 2,
+            "run_id": foreign_id,
+            "mission": OTHER_MISSION,
+            "role": "worker",
+            "outcome": "completed",
+        }
+        (self.root / ".tasks/receipts" / f"{foreign_id}.json").write_text(
+            json.dumps(foreign, sort_keys=True) + "\n")
+        self.wrapper.commit_fixture("before second worker")
+        second = self.wrapper.invoke([
+            "bash", "scripts/spawn-worker.sh", "codex", f"{MISSION}/tasks/T-001.md",
+            "--model", "reconstruct-model", "--feature", "F001",
+        ], env={"PROVIDER_ACTION": "commit"})
+        self.assertEqual(second.returncode, 0, second.stderr + second.stdout)
+        second_id = max(
+            (path for path in (self.root / ".tasks/receipts").glob("*.json")
+             if json.loads(path.read_text())["role"] == "worker" and path.stem != self.run_id),
+            key=lambda path: path.stat().st_mtime_ns,
+        ).stem
+        verified = self.wrapper.invoke(
+            ["bash", "scripts/verify-mission.sh", "--run-id", second_id, MISSION])
+        self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        self.wrapper.commit_fixture("second verification")
+        code, output = self.invoke(MISSION, "--all")
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"RUN {self.run_id}", output)
+        self.assertIn(f"RUN {second_id}", output)
+        self.assertNotIn(f"RUN {foreign_id}", output)
+
+    def test_all_exits_one_when_one_run_lacks_an_artifact(self):
+        (self.root / ".tasks/ledger" / f"{self.run_id}.json").unlink()
+        code, output = self.invoke(MISSION, "--all")
+        self.assertEqual(code, 1, output)
+        self.assertIn(f"MISSING {self.run_id}: ledger row", output)
 
 
 if __name__ == "__main__":

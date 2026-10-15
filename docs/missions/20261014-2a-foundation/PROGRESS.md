@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — T-036-R1 worker (Cursor) — reconstruct-run hostile ids and real-fixture tests
+
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` exit 0 (67 tests).
+- **Changed:** `scripts/reconstruct_run.py` validates every run id as a canonical lowercase UUID before any artifact path is built (`ERROR: reconstruct: invalid run id`, exit 2, id not echoed); symlinked or non-regular ledger rows report `MISSING <run_id>: ledger row (not a regular file)` without following the symlink. Replaced mocked `tests/test-reconstruct.py` with integration-built fixtures (spawn + verify + ledger): full field assertions, four single-gap cases, multi-gap listing, invalid receipt identity, two VerificationRecords, hostile ids, read-only tree snapshot, `--all` (mission receipts only; **symlinked receipt files are skipped** in `discover_ids`, not refused).
+- **Checks (run by me):** `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-reconstruct.py` exit 0 (10 tests, ~14 s); suite/manifest grep exit 0; `shellcheck scripts/*.sh tests/*.sh` exit 0; `bash tests/run-tests.sh` exit 0 (~307 s); no `scripts/__pycache__` or `tests/__pycache__`; `git diff --check` exit 0.
+- **Mutations** (temp copies only; `grep -nF` on live tree): `scripts/reconstruct_run.py:152:        if canonical_run_id(run_id) is None:` removed → `test_hostile_run_ids_exit_two_without_echoing_id` fails; `scripts/reconstruct_run.py:115:    if ledger_path.is_symlink() or (ledger_path.exists() and not ledger_path.is_file()):` → `elif not ledger_path.is_file():` → `test_symlinked_ledger_row_exits_one` fails.
+- **Result:** no feature acceptance or gate/status change; allow-list only. Commit: `fix(evidence): reconstruct-run refuses hostile ids; real-fixture tests`.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-036 verified; code-reviewer FAIL; T-036-R1 written
 - **Mechanical review:** run `e0832e36-e87f-4d2d-a9ca-d107ac1361e1` (T-036, codex.economy gpt-6-luna, effort medium, attempt 1): completed, exit 0, scope pass, commit `5b07061`, 6 changed paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS`. I ran the command on a real run: it printed seat, spec sha, receipt, record and ledger line; an unknown run id reported two MISSING lines.
 - **code-reviewer FAIL**, hostile-id point reproduced by me (`reconstruct-run.sh <mission> ../x` is accepted and reported as MISSING instead of refused). Other findings: symlinked ledger row followed; tests mock every loader, no read-only test, no `--all` test, no multi-record test. The task text asked only for "complete fixture exits 0, each of the four removed exits 1"; the hostile-id/read-only/`--all` requirements came from my review brief, so the routing line is `verify-passed-review-failed`, class `task`, `attributable:false`.
