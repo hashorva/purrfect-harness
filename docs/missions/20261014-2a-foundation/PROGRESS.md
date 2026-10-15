@@ -4,6 +4,11 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — code-reviewer FAIL on T-033; T-033-R1 written
+- **code-reviewer FAIL on `38dbe40`** (three blocking points, all in the validator and its tests): (1) the validator fails open: `--check-schema` does not recurse into `additionalProperties` or other schema-valued keywords, and keyword values (`enum`, `minItems`, `pattern`...) are not shape-checked, so an unsupported construct is silently dropped or a traceback occurs; (2) the refusal test covers only a top-level unknown keyword; (3) the bad-fixture tests assert only exit 1, and no fixture exercises the `type` keyword. The routing line for T-033 is amended to `verify-passed-review-failed`, class `task` (codex.economy).
+- **T-033-R1** (S) written from those points and dispatched on cursor.economy.
+- **Lesson candidate (from the reviewer, for the owner; I do not edit AGENTS.md or skills for it):** "A subset validator must validate the shape of every keyword value and recurse into every schema-valued keyword, and each refusal path needs a negative test."
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-033 verified; code-reviewer requested
 - **Mechanical review:** run `25a94e52-d046-41f6-9fae-89c9996ff59a` (T-033, codex.economy gpt-6-luna, effort medium, attempt 1): completed, exit 0, scope pass, commit `38dbe40`, changed paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (7 commands incl. full suite). Routing line written.
 
