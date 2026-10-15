@@ -4,6 +4,12 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 — Worker — T-021 implementation
+- **Changes:** added required door-to-provider links and per-provider `model_name_encoding` metadata; registry validation checks both contracts; added `encode_model`, `decode_model`, and the `encodings` CLI; tests cover required fields, encoding examples and round trips, the current adapter across supported effort/speed combinations, and unchanged `legacy_view` parity.
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` and `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-registry.py` both exited 0.
+- **Checks:** registry tests (17 tests), fleet-state tests, registry loading, 2A `validate-fleet`, the encoding CLI grep, ShellCheck, JSON parsing, `git diff --check`, and the no-`__pycache__` checks all exited 0. The full `bash tests/run-tests.sh` was not run: T-021 marks it verification-only and directs the worker not to run it. The verification command must provide that result.
+- **Result:** no feature acceptance or gate/status change. Scoped change and this entry committed as `feat(registry): model-name encoding and door providers`.
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-021 text fixed (stale contract number); T-021 dispatch
 - **Task-text change (recorded):** `tasks/T-021.md` item 5 said the adapter "(contract 4) accepts every model `encode_model` produces"; the Architect flagged this earlier (T-013 took 5, T-020 took 6). It now says "the current provider contract; today 6". The file parses with the real parser.
 - **Order of work (F004 cannot complete tonight because T-039 is blocked on agy):** continue the F004 chain T-021 → T-022 → T-023 → T-024 (T-025 deletes FALLBACKS; T-026 moves the chair seat to agy and is blocked by the agy hang), then the F005 chain T-027 … (T-029/T-030 need T-024), then F006 T-033 … , so that F005 and F006 can reach "ready for acceptance" tonight.

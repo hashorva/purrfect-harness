@@ -10,10 +10,14 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
 spec = importlib.util.spec_from_file_location("harness_registry", ROOT / "scripts/harness_registry.py")
 registry_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(registry_module)
 registry = registry_module.load_registry()
+adapter_spec = importlib.util.spec_from_file_location("execute_provider", ROOT / "scripts/execute_provider.py")
+adapter_module = importlib.util.module_from_spec(adapter_spec)
+adapter_spec.loader.exec_module(adapter_module)
 
 # Golden copy of the fleet_state constants at commit 1345c67.  This must remain
 # independent from the registry so the parity proof is not self-referential.
@@ -36,6 +40,96 @@ GOLDEN_FALLBACKS = {"grok":"cursor-grok-4.5-high", "composer":"composer-2.5", "s
 
 
 class RegistryTests(unittest.TestCase):
+    def test_model_encoding_and_door_provider_validation(self):
+        for name, provider in registry["providers"].items():
+            with self.subTest(provider=name):
+                self.assertIn("model_name_encoding", provider)
+                if provider["effort_encoding"] == "flag":
+                    self.assertIsNone(provider["model_name_encoding"])
+                else:
+                    encoding = provider["model_name_encoding"]
+                    self.assertTrue(encoding["effort_tokens"])
+                    self.assertIsInstance(encoding["families_without_effort"], list)
+        for name, door in registry["doors"].items():
+            with self.subTest(door=name):
+                self.assertIn(door["provider"], registry["providers"])
+
+        invalid = copy.deepcopy(registry)
+        del invalid["providers"]["agy"]["model_name_encoding"]
+        with self.assertRaisesRegex(registry_module.RegistryError, "model_name_encoding"):
+            registry_module.validate_registry(invalid)
+        invalid = copy.deepcopy(registry)
+        invalid["providers"]["claude"]["model_name_encoding"] = {}
+        with self.assertRaisesRegex(registry_module.RegistryError, "must be null"):
+            registry_module.validate_registry(invalid)
+        invalid = copy.deepcopy(registry)
+        invalid["doors"]["agy"]["provider"] = "missing"
+        with self.assertRaisesRegex(registry_module.RegistryError, "provider key"):
+            registry_module.validate_registry(invalid)
+
+    def test_model_name_encoding_round_trips(self):
+        cases = (
+            ("cursor", "grok-4.7", "grok", "medium", False, "grok-4.7-medium"),
+            ("cursor", "grok-4.7", "grok", "xhigh", True, "grok-4.7-xhigh-fast"),
+            ("cursor", "composer-2.5", "composer", "high", False, "composer-2.5"),
+            ("cursor", "composer-2.5", "composer", "medium", True, "composer-2.5-fast"),
+            ("agy", "gemini-3.8-flash", "flash", "high", False, "gemini-3.8-flash-high"),
+        )
+        for provider, base, family, effort, fast, expected in cases:
+            with self.subTest(model=expected):
+                encoded = registry_module.encode_model(registry, provider, base, family, effort, fast)
+                self.assertEqual(encoded, expected)
+                self.assertEqual(registry_module.decode_model(registry, provider, encoded),
+                                 {"base": base, "effort": None if family == "composer" else effort, "fast": fast})
+
+    def test_encoded_models_are_accepted_by_provider_adapter(self):
+        cases = (
+            ("claude", "claude-opus-5-5", "opus", "high", False, "unknown"),
+            ("codex", "gpt-6-luna", "luna", "xhigh", False, "unknown"),
+            ("cursor", "grok-4.7", "grok", "medium", False, "standard"),
+            ("cursor", "grok-4.7", "grok", "xhigh", True, "fast"),
+            ("cursor", "composer-2.5", "composer", "high", False, "standard"),
+            ("agy", "gemini-3.8-flash", "flash", "high", False, "unknown"),
+        )
+        for provider, base, family, effort, fast, speed in cases:
+            with self.subTest(provider=provider, model=base, effort=effort, fast=fast):
+                model = registry_module.encode_model(registry, provider, base, family, effort, fast)
+                spec = {"provider": "agent" if provider == "cursor" else provider,
+                        "model": model, "effort": effort, "speed": speed,
+                        "repo": "/tmp/repo", "prompt": "ok", "provider_contract_version": 6}
+                argv, _ = adapter_module.provider_contract(spec)
+                self.assertIn(model, argv)
+
+        models = {
+            "claude": ("claude-opus-5-5", "opus"),
+            "codex": ("gpt-6-luna", "luna"),
+            "cursor": ("grok-4.7", "grok"),
+            "agy": ("gemini-3.8-flash", "flash"),
+        }
+        for provider, provider_data in registry["providers"].items():
+            base, family = models[provider]
+            speeds = provider_data["capabilities"]["speeds"]
+            families = [family, *provider_data["model_name_encoding"]["families_without_effort"]] if provider_data["model_name_encoding"] else [family]
+            for effort in provider_data["capabilities"]["efforts"]:
+                for speed in speeds:
+                    for model_family in families:
+                        fast = speed == "fast"
+                        model = registry_module.encode_model(registry, provider, base, model_family, effort, fast)
+                        spec = {"provider": "agent" if provider == "cursor" else provider,
+                                "model": model, "effort": effort, "speed": speed,
+                                "repo": "/tmp/repo", "prompt": "ok", "provider_contract_version": 6}
+                        argv, _ = adapter_module.provider_contract(spec)
+                        self.assertIn(model, argv)
+
+    def test_encodings_cli_lists_each_provider(self):
+        result = subprocess.run([sys.executable, str(ROOT / "scripts/harness_registry.py"), "encodings"],
+                                text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertEqual(len(lines), len(registry["providers"]))
+        self.assertIn("cursor effort=model-name fast=model-name tokens=none,minimal,low,medium,high,xhigh,max", lines)
+        self.assertIn("agy effort=model-name fast=unsupported tokens=low,medium,high", lines)
+
     def test_parity_with_existing_constants(self):
         fleet_spec = importlib.util.spec_from_file_location("fleet_state", ROOT / "scripts/fleet_state.py")
         fleet = importlib.util.module_from_spec(fleet_spec)

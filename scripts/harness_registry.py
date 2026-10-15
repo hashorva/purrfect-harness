@@ -6,8 +6,8 @@ import re
 import sys
 
 REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
-PROVIDER_FIELDS = ("binary", "legacy_names", "probe_command", "list_parser", "identity_check", "identity_pattern", "login_check", "effort_encoding", "fast_encoding", "discovery_directory", "capabilities", "sandbox_limits")
-DOOR_FIELDS = ("billing_class", "pool", "no_zdr", "priority")
+PROVIDER_FIELDS = ("binary", "legacy_names", "probe_command", "list_parser", "identity_check", "identity_pattern", "login_check", "effort_encoding", "fast_encoding", "model_name_encoding", "discovery_directory", "capabilities", "sandbox_limits")
+DOOR_FIELDS = ("provider", "billing_class", "pool", "no_zdr", "priority")
 ROOT_FIELDS = ("schema_version", "providers", "doors", "seat_specs", "fallbacks")
 
 
@@ -56,6 +56,29 @@ def validate_registry(data):
         for field in ("effort_encoding", "fast_encoding"):
             if provider[field] not in ("flag", "model-name", "unsupported"):
                 raise RegistryError(f"{label}.{field} invalid")
+        model_encoding = provider["model_name_encoding"]
+        if provider["effort_encoding"] == "flag":
+            if model_encoding is not None:
+                raise RegistryError(f"{label}.model_name_encoding must be null when effort_encoding is flag")
+        else:
+            _require_fields(model_encoding, ("effort_tokens", "fast_suffix", "families_without_effort"),
+                            label + ".model_name_encoding")
+            tokens = model_encoding["effort_tokens"]
+            allowed_tokens = {"none", "minimal", "low", "medium", "high", "xhigh", "max"}
+            if (not isinstance(tokens, list) or not tokens
+                    or any(not isinstance(token, str) or token not in allowed_tokens for token in tokens)
+                    or len(tokens) != len(set(tokens))):
+                raise RegistryError(f"{label}.model_name_encoding.effort_tokens must be a non-empty list of distinct supported tokens")
+            suffix = model_encoding["fast_suffix"]
+            if suffix is not None and suffix != "-fast":
+                raise RegistryError(f"{label}.model_name_encoding.fast_suffix must be '-fast' or null")
+            if (provider["fast_encoding"] == "model-name") != (suffix is not None):
+                raise RegistryError(f"{label}.model_name_encoding.fast_suffix must agree with fast_encoding")
+            families = model_encoding["families_without_effort"]
+            if (not isinstance(families, list)
+                    or any(not isinstance(family, str) or not family.strip() for family in families)
+                    or len(families) != len(set(families))):
+                raise RegistryError(f"{label}.model_name_encoding.families_without_effort must be distinct non-empty text values")
         for field in ("probe_command", "identity_check"):
             if not isinstance(provider[field], list) or not provider[field] or not all(isinstance(x, str) and x for x in provider[field]):
                 raise RegistryError(f"{label}.{field} must be a non-empty command array")
@@ -93,6 +116,8 @@ def validate_registry(data):
     for name, door in doors.items():
         label = f"doors.{name}"
         _require_fields(door, DOOR_FIELDS, label)
+        if not isinstance(door["provider"], str) or door["provider"] not in providers:
+            raise RegistryError(f"{label}.provider must be a provider key")
         if door["billing_class"] not in ("included", "credits", "api"):
             raise RegistryError(f"{label}.billing_class invalid")
         if not isinstance(door["pool"], str) or not door["pool"].strip():
@@ -156,10 +181,66 @@ def canonical_provider(registry, name):
     raise RegistryError(f"unknown provider: {name}")
 
 
+def encode_model(registry, provider, base, family, effort, fast):
+    """Encode requested effort and speed into a provider's model name when configured."""
+    validate_registry(registry)
+    key = canonical_provider(registry, provider)
+    spec = registry["providers"][key]
+    if not isinstance(base, str) or not base.strip() or not isinstance(family, str) or not family.strip():
+        raise RegistryError("base and family must be non-empty text")
+    if not isinstance(fast, bool):
+        raise RegistryError("fast must be boolean")
+    encoding = spec["model_name_encoding"]
+    if encoding is None:
+        if fast:
+            raise RegistryError(f"{key} does not support fast model names")
+        return base
+    if fast and encoding["fast_suffix"] is None:
+        raise RegistryError(f"{key} does not support fast model names")
+    if family not in encoding["families_without_effort"]:
+        if effort not in encoding["effort_tokens"]:
+            raise RegistryError(f"{key} does not support model-name effort {effort!r}")
+        base = f"{base}-{effort}"
+    if fast:
+        base += encoding["fast_suffix"]
+    return base
+
+
+def decode_model(registry, provider, model):
+    """Decode a provider model name into base, optional effort and fast state."""
+    validate_registry(registry)
+    key = canonical_provider(registry, provider)
+    if not isinstance(model, str) or not model:
+        raise RegistryError("model must be non-empty text")
+    encoding = registry["providers"][key]["model_name_encoding"]
+    if encoding is None:
+        return {"base": model, "effort": None, "fast": False}
+    fast = bool(encoding["fast_suffix"] and model.endswith(encoding["fast_suffix"]))
+    if fast:
+        model = model[:-len(encoding["fast_suffix"])]
+    effort = None
+    for token in sorted(encoding["effort_tokens"], key=len, reverse=True):
+        suffix = "-" + token
+        if model.endswith(suffix):
+            model = model[:-len(suffix)]
+            effort = token
+            break
+    if not model:
+        raise RegistryError("model name has no base")
+    return {"base": model, "effort": effort, "fast": fast}
+
+
 if __name__ == "__main__":
     try:
         if len(sys.argv) == 1:
             load_registry()
+        elif len(sys.argv) == 2 and sys.argv[1] == "encodings":
+            data = load_registry()
+            for name, provider in data["providers"].items():
+                encoding = provider["effort_encoding"]
+                tokens = (",".join(provider["model_name_encoding"]["effort_tokens"])
+                          if provider["model_name_encoding"] is not None else "-")
+                print(f"{name} effort={encoding} fast={provider['fast_encoding']} tokens={tokens}")
         elif len(sys.argv) == 3 and sys.argv[1] == "persisted-name":
             data = load_registry()
             key = canonical_provider(data, sys.argv[2])
@@ -167,7 +248,7 @@ if __name__ == "__main__":
                      for provider_key, provider in data["providers"].items()}
             print(names[key])
         else:
-            raise RegistryError("usage: harness_registry.py [persisted-name NAME]")
+            raise RegistryError("usage: harness_registry.py [persisted-name NAME | encodings]")
     except RegistryError as exc:
         message = f"ERROR: registry: {exc}"
         if len(sys.argv) > 1:

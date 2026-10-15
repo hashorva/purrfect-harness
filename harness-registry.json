@@ -15,6 +15,7 @@
       ],
       "effort_encoding": "flag",
       "fast_encoding": "unsupported",
+      "model_name_encoding": null,
       "discovery_directory": "~/.claude",
       "capabilities": {
         "efforts": [
@@ -54,6 +55,7 @@
       ],
       "effort_encoding": "flag",
       "fast_encoding": "unsupported",
+      "model_name_encoding": null,
       "discovery_directory": "~/.codex",
       "capabilities": {
         "efforts": [
@@ -94,6 +96,11 @@
       ],
       "effort_encoding": "model-name",
       "fast_encoding": "model-name",
+      "model_name_encoding": {
+        "effort_tokens": ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+        "fast_suffix": "-fast",
+        "families_without_effort": ["composer"]
+      },
       "discovery_directory": "~/.cursor",
       "capabilities": {
         "efforts": [
@@ -132,6 +139,11 @@
       ],
       "effort_encoding": "model-name",
       "fast_encoding": "unsupported",
+      "model_name_encoding": {
+        "effort_tokens": ["low", "medium", "high"],
+        "fast_suffix": null,
+        "families_without_effort": []
+      },
       "discovery_directory": "~/.gemini",
       "capabilities": {
         "efforts": [
@@ -157,30 +169,35 @@
   },
   "doors": {
     "claude": {
+      "provider": "claude",
       "billing_class": "included",
       "pool": "anthropic",
       "no_zdr": false,
       "priority": 1
     },
     "codex": {
+      "provider": "codex",
       "billing_class": "included",
       "pool": "openai",
       "no_zdr": false,
       "priority": 1
     },
     "cursor-composer": {
+      "provider": "cursor",
       "billing_class": "included",
       "pool": "cursor",
       "no_zdr": false,
       "priority": 1
     },
     "cursor-grok": {
+      "provider": "cursor",
       "billing_class": "included",
       "pool": "cursor",
       "no_zdr": false,
       "priority": 2
     },
     "agy": {
+      "provider": "agy",
       "billing_class": "included",
       "pool": "google",
       "no_zdr": false,
