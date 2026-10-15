@@ -166,7 +166,11 @@ class VerificationRecordIntegration(unittest.TestCase):
         self.assertNotIn("accepted_by", doc)
         self.assertEqual(oct(record.stat().st_mode & 0o777), "0o400")
         duplicate = self.call("bash", "scripts/verify-mission.sh", "--run-id", self.run_id, self.mission)
-        self.assertNotEqual(duplicate.returncode, 0)
+        self.assertEqual(duplicate.returncode, 0, duplicate.stderr + duplicate.stdout)
+        second_record = self.fixture.mission / "verification" / f"{self.run_id}.2.json"
+        self.assertTrue(second_record.is_file())
+        self.assertEqual(record.read_bytes(), raw)
+        second_hash = hashlib.sha256(second_record.read_bytes()).hexdigest()
         good_hash = hashlib.sha256(raw).hexdigest()
         bad_hash = self.call("bash", "scripts/accept-feature.sh", "--run-id", self.run_id, "--verification-sha256", "0" * 64, "--accepted-by", "reviewer", self.mission)
         self.assertNotEqual(bad_hash.returncode, 0)
@@ -180,14 +184,41 @@ class VerificationRecordIntegration(unittest.TestCase):
         lock.rmdir()
         features_path = self.fixture.mission / "features.json"
         features_path.chmod(0o640)
-        accepted = self.call("bash", "scripts/accept-feature.sh", "--run-id", self.run_id, "--verification-sha256", good_hash, "--accepted-by", "reviewer", self.mission, env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
+        accepted = self.call("bash", "scripts/accept-feature.sh", "--run-id", self.run_id, "--verification-sha256", second_hash, "--accepted-by", "reviewer", self.mission, env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
         self.assertEqual(accepted.returncode, 0, accepted.stderr + accepted.stdout + repr(list((self.fixture.root / ".tasks/locks").glob("*"))))
         self.assertEqual(features_path.stat().st_mode & 0o777, 0o640)
         feature = json.loads(features_path.read_text())["features"][0]
         self.assertEqual(feature["accepted_run_id"], self.run_id)
-        self.assertEqual(feature["accepted_verification_sha256"], good_hash)
+        self.assertEqual(feature["accepted_verification_sha256"], second_hash)
         audited = self.call("bash", "scripts/verify-mission.sh", "--require-workers", self.mission)
         self.assertEqual(audited.returncode, 0, audited.stderr + audited.stdout)
+
+    def test_failed_record_hash_cannot_be_accepted(self):
+        run_id = self.make_run_with_check(["false"])
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", run_id, self.mission)
+        self.assertNotEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        record = self.fixture.mission / "verification" / f"{run_id}.json"
+        failed_hash = hashlib.sha256(record.read_bytes()).hexdigest()
+        denied = self.call("bash", "scripts/accept-feature.sh", "--run-id", run_id,
+                           "--verification-sha256", failed_hash, "--accepted-by", "reviewer", self.mission,
+                           env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
+        self.assertNotEqual(denied.returncode, 0, denied.stderr + denied.stdout)
+
+    def test_audit_rejects_gap_in_accepted_run_record_numbers(self):
+        run_id = self.make_run_with_check(["true"])
+        for expected in (0, 0):
+            verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", run_id, self.mission)
+            self.assertEqual(verified.returncode, expected, verified.stderr + verified.stdout)
+        second = self.fixture.mission / "verification" / f"{run_id}.2.json"
+        second_hash = hashlib.sha256(second.read_bytes()).hexdigest()
+        accepted = self.call("bash", "scripts/accept-feature.sh", "--run-id", run_id,
+                             "--verification-sha256", second_hash, "--accepted-by", "reviewer", self.mission,
+                             env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
+        self.assertEqual(accepted.returncode, 0, accepted.stderr + accepted.stdout)
+        second.rename(self.fixture.mission / "verification" / f"{run_id}.3.json")
+        audited = self.call("bash", "scripts/verify-mission.sh", "--require-workers", self.mission)
+        self.assertNotEqual(audited.returncode, 0, audited.stderr + audited.stdout)
+        self.assertIn("not contiguous", audited.stderr + audited.stdout)
 
     def test_unrelated_live_git_change_does_not_invalidate_receipt_worktree(self):
         (self.fixture.root / "unrelated.txt").write_text("must invalidate verification\n")
@@ -402,6 +433,7 @@ class VerificationRecordIntegration(unittest.TestCase):
                            "--verification-sha256", "0" * 64, "--accepted-by", "reviewer", self.mission,
                            env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
         self.assertNotEqual(denied.returncode, 0, denied.stderr + denied.stdout)
+        self.assertIn("verification hash must identify exactly one record", denied.stderr)
 
     def test_required_guard_mutations_break_the_real_focused_entry_and_restore(self):
         """Every named authority guard is mounted: removing it breaks a real test entry."""
@@ -438,8 +470,8 @@ class VerificationRecordIntegration(unittest.TestCase):
              "prev_sigterm = None", "test_sigterm_during_verify_leaves_no_worktree_or_temp_dir"),
             ("lock", 'if os.environ.get("PURRFECT_DISPATCH_LOCK_PATH") or (lock_dir.is_dir() and list(lock_dir.glob("*.lock"))):',
              'if False:', "test_real_run_verification_is_immutable_and_acceptance_is_separate"),
-            ("acceptance-hash", 'if digest(raw) != expected_hash or record["result"] != "pass":',
-             'if record["result"] != "pass":', "test_wrong_acceptance_hash_is_rejected_at_the_real_entry_point"),
+            ("acceptance-hash", 'if len(matches_for_hash) != 1:',
+             'if len(matches_for_hash) != 0:', "test_wrong_acceptance_hash_is_rejected_at_the_real_entry_point"),
         )
         selected = os.environ.get("GUARD_MUTATION_LABEL")
         for label, old, new, target in mutations:

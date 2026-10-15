@@ -765,6 +765,14 @@ Plan: READY
 - **Scope/state:** only task allow-listed files changed. `scripts/fleet_state.py` remains untouched; no feature acceptance or mission gate/status change made.
 - **Commit:** `feat(registry): add harness-registry.json, loader and parity test`.
 
+# 2026-10-15 — T-012 worker — numbered immutable VerificationRecords
+
+- **Changed:** a run’s first record remains `<run_id>.json`; repeat verification creates the next free numbered record through `atomic_create`. Acceptance resolves the cited hash among that run’s records and requires one passing match. Audit resolves accepted hashes the same way and rejects gaps in record numbering. Added regression coverage for repeat verification and first-record immutability, acceptance by second-record hash, failed-record refusal, unknown-hash refusal, and numbering gaps; updated the orchestration contract.
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; focused VerificationRecord suite exit 0 (18 tests).
+- **Checks:** `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verification-record.py` exit 0 (20 tests); `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-integration.py` exit 0 (22 tests); `shellcheck scripts/*.sh tests/*.sh` exit 0; VerificationRecord history check exit 0; `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` exit 0; `git diff --check` exit 0. The first implementation run found the guard-mutation regression still targeted the former hash check; the mutation and real-entry assertion were updated, and the final focused run passed.
+- **Not run:** `bash tests/run-tests.sh`, as T-012 explicitly says the full suite is an orchestrator verification command run outside the worker sandbox. Final `__pycache__` check is recorded after the final commands below.
+- **Result:** slice evidence only; no F007 acceptance or gate/status change. Commit: `feat(verify): numbered immutable VerificationRecords per run`.
+
 ## 2026-10-14 — Front Desk (Sonnet 5.5) — Architect review recorded; T-001 attempt 2 dispatch
 
 - **Architect review of `68942df`:** run `127dd9c6-faa4-4bb3-9a70-0897226ea49a`, receipt `.tasks/receipts/127dd9c6-faa4-4bb3-9a70-0897226ea49a.json` (outcome `completed`, exit 0, scope pass, commit `5dec815`). **Verdict: PASS** on all three points: all 8 mutations still applied, each still makes its focused test fail, nothing in the live tree is written. `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` exit 0.

@@ -172,8 +172,14 @@ def bind(root, mission, run_id):
 
 
 def verify(root, mission, run_id):
-    destination = mission / "verification" / f"{run_id}.json"
-    if destination.exists(): fail("VerificationRecord already exists for this run")
+    record_dir = mission / "verification"
+    base = record_dir / f"{run_id}.json"
+    destination = base
+    if base.exists():
+        number = 2
+        while (record_dir / f"{run_id}.{number}.json").exists():
+            number += 1
+        destination = record_dir / f"{run_id}.{number}.json"
     receipt, receipt_path, spec_path, spec_raw, task, task_raw, commands = bind(root, mission, run_id)
     if receipt["git_after"]["status_entry_count"] != 0 or receipt["git_after"]["dirty_paths"]:
         fail("worktree verification needs a clean receipt git_after")
@@ -289,6 +295,36 @@ def load_record(path):
     return validate_record(record), raw
 
 
+def run_records(mission, run_id):
+    """Return a run's numbered record paths, rejecting noncanonical suffixes."""
+    record_dir = mission / "verification"
+    paths = {}
+    base = record_dir / f"{run_id}.json"
+    if base.exists() or base.is_symlink():
+        paths[1] = base
+    for path in record_dir.glob(f"{run_id}.*.json"):
+        suffix = path.name[len(run_id) + 1:-5]
+        if not suffix.isdecimal() or suffix.startswith("0") or int(suffix) < 2:
+            fail(f"VerificationRecord has invalid number: {path.name}")
+        number = int(suffix)
+        if number in paths:
+            fail(f"VerificationRecord number is duplicated: {path.name}")
+        paths[number] = path
+    return paths
+
+
+def record_for_hash(mission, run_id, expected_hash):
+    paths = run_records(mission, run_id)
+    matches_for_hash = []
+    for path in paths.values():
+        record, raw = load_record(path)
+        if digest(raw) == expected_hash:
+            matches_for_hash.append((record, raw))
+    if len(matches_for_hash) != 1:
+        fail("verification hash must identify exactly one record for this run")
+    return matches_for_hash[0]
+
+
 def revalidate_record(root, mission, record):
     """Rebind every record assertion to the exact current receipt/spec/base task."""
     receipt, receipt_path, spec_path, spec_raw, task, task_raw, commands = bind(root, mission, record["run_id"])
@@ -317,9 +353,8 @@ def accept(root, mission, run_id, expected_hash, accepted_by):
     lock_dir = root / ".tasks/locks"
     if os.environ.get("PURRFECT_DISPATCH_LOCK_PATH") or (lock_dir.is_dir() and list(lock_dir.glob("*.lock"))):
         fail("acceptance refuses while a dispatch workspace lock exists")
-    record_path = mission / "verification" / f"{run_id}.json"
-    record, raw = load_record(record_path)
-    if digest(raw) != expected_hash or record["result"] != "pass": fail("verification record hash does not name a passing record")
+    record, _raw = record_for_hash(mission, run_id, expected_hash)
+    if record["run_id"] != run_id or record["result"] != "pass": fail("verification record hash does not name a passing record")
     revalidate_record(root, mission, record)
     feature_path = mission / "features.json"
     try: doc = json.loads(feature_path.read_text())
@@ -374,8 +409,12 @@ def audit(root, mission, require_workers=False):
             except ValueError:
                 failures.append(f"feature {feature.get('id')}: acceptance metadata is invalid"); continue
             try:
-                record, raw = load_record(mission / "verification" / f"{feature['accepted_run_id']}.json")
-                if digest(raw) != feature["accepted_verification_sha256"] or record["result"] != "pass" or record["feature"] != feature["id"]: raise VerificationError("record does not match accepted feature")
+                run_id = feature["accepted_run_id"]
+                paths = run_records(mission, run_id)
+                if not paths or sorted(paths) != list(range(1, max(paths) + 1)):
+                    raise VerificationError("VerificationRecord numbers are not contiguous from 1")
+                record, _raw = record_for_hash(mission, run_id, feature["accepted_verification_sha256"])
+                if record["run_id"] != run_id or record["result"] != "pass" or record["feature"] != feature["id"]: raise VerificationError("record does not match accepted feature")
                 revalidate_record(root, mission, record)
             except (VerificationError, KeyError) as exc: failures.append(f"feature {feature.get('id')}: {exc}")
     if require_workers and not any(isinstance(f, dict) and f.get("passes") is True and f.get("bootstrap") is not True for f in features): failures.append("--require-workers needs an accepted verified worker feature")

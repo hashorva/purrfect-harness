@@ -148,7 +148,9 @@ requires a clean receipt `git_after`, then checks out that commit in a temporary
 detached worktree and requires its snapshot to match before and after checks. A
 check that needs machine-local state (for example `.tasks/`) reads it through
 `$PURRFECT_LIVE_ROOT`. The verifier atomically creates an immutable
-VerificationRecord in the live mission. It does not change feature acceptance.
+VerificationRecord in the live mission; a run may be verified again, each
+verification adds a numbered immutable record, and failed records remain as
+history. Acceptance cites the hash of the specific passing record.
 Only the orchestrator then runs:
 
 ```bash
