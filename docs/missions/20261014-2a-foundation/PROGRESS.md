@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-019-R2 verified; code-reviewer requested
+- **Mechanical review:** run `40859e3d-aaa4-48ee-97d8-c977464dc4ea` (T-019-R2, codex.economy gpt-6-luna, effort medium, attempt 1), receipt `.tasks/receipts/40859e3d-aaa4-48ee-97d8-c977464dc4ea.json`: outcome `completed`, exit 0, scope pass, commit `701cf66`, 2 changed paths (`tests/test-execution-receipt.py`, PROGRESS.md). `verify-mission.sh --run-id 40859e3d-aaa4-48ee-97d8-c977464dc4ea` → `VERIFY PASS`, exit 0 (7 commands incl. the full suite and the audit from the live root). Slice evidence for F003, not acceptance. Routing line written (receipts, S, codex.economy, attempt 1, done). The worker says it proved the test fails when the observation text check is weakened, in a temporary copy.
+- **Review class:** test-only diff → `code-reviewer`, per the Architect.
+
 ## 2026-10-15 — Worker — T-019-R2 numeric observed model regression
 
 - **Task:** `tasks/T-019-R2.md`, F003, test only. Read the mission task, F003, current progress, receipt schema, validator sections and receipt tests; inspected `git log --oneline -10`.
