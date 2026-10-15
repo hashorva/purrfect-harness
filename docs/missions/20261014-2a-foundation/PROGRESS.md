@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-028-R4 verified; Architect review queued
+- **Mechanical review:** run `0f894102-a5cb-45f2-a19b-ad9f648ed519` (T-028-R4, codex.economy gpt-6-luna, effort medium, attempt 1), receipt: outcome `completed`, exit 0, scope pass, commit `0ad14ec`, 3 changed paths all in the allow-list. `verify-mission.sh --run-id …` → `VERIFY PASS` (5 commands incl. full suite). No `__pycache__` found before verify. Routing line written (ledger, S, codex.economy, done).
+- **Privacy code → Architect review required** (one focused pass with mutation tests and hostile inputs). Queued; will run together with T-029-R1's review to keep Claude quota use small, as separate runs.
+
 ## 2026-10-15 — Worker — T-028-R4 (F005 ledger privacy extension)
 
 - Extended ledger privacy checks to refuse `/tmp/`, `/etc/`, `~/`, and `$HOME` path fragments; added U+202A–U+202E and U+2066–U+2069 to the hidden-character rule; made bearer matching case-insensitive and accepted a tab separator. Added two-field refusal coverage for each requested path and bidi value, bearer capitalization/tab cases, and an allowed `scripts/ledger.py` check label. Error reporting continues to name only the field and privacy reason.
