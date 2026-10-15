@@ -4,6 +4,9 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — F006 starts: T-033 dispatch
+- F005 is ready for acceptance (command above). Next in the owner's order: T-026/T-039 are blocked (agy hangs), so F006. **T-033** (schemas + dependency-free validator, category schema, M, code-reviewer) on codex.economy.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-032-R1 verified; F005 READY FOR ACCEPTANCE (command prepared, not run)
 - **Mechanical review:** run `bbb4eb9d-1d01-4638-9916-58aa64dae309` (T-032-R1, claude.economy haiku, effort medium, attempt 1): completed, exit 0, scope pass, commit `8a52278`, 3 changed paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (8 commands, the full F005 set incl. the full suite). The sentence `A ledger row holds execution summaries only: no transcripts, prompts, secrets, or absolute paths.` is in both files (grep, lines SKILL.md:141 and ORCHESTRATION.md:167). Routing line written.
 - **T-029/T-030/T-031/T-032 chains are closed; every guard change had an Architect review that ended in PASS-or-fixed, and every fix had a code-reviewer or Architect re-check.** Note: the Architect's last T-030 pass was the R1 re-review (FAIL); R2 had only code-reviewer + the extended integration test, as the Architect judged proportional.
