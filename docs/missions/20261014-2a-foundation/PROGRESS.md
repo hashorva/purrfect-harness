@@ -4,6 +4,16 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — T-032-R1 worker (claude.economy, Haiku 5.5) — privacy sentence stated in ledger docs; awaiting verifier
+- **Did:** replaced the ledger privacy wording in `.agents/skills/dispatch-worker/SKILL.md` (section 4) and `docs/missions/ORCHESTRATION.md` with the same sentence: "A ledger row holds execution summaries only: no transcripts, prompts, secrets, or absolute paths." ORCHESTRATION.md's ledger sentence now reads "store validated rows only" before it. Docs only; no `scripts/`, `tests/`, schema or mission state touched.
+- **Commit message:** `docs(ledger): state the full privacy rule` (the Objective's message). The task's exit-criteria line names `docs(ledger): fold the ledger in the acceptance commit`, which is the T-032 subject; I followed the Objective and flag the mismatch for the Front Desk.
+- **PROGRESS placement:** the task says "prepend one entry", while the request said "append". The file header says newest entry on top, so this entry sits above the previous one.
+- **Baseline (before edits):** `shellcheck scripts/*.sh tests/*.sh` exit 0; `tests/test-ledger.py` exit 0.
+- **Checks after edits:** schema JSON load exit 0; `tests/test-ledger.py` exit 0; `tests/test-execution-integration.py` exit 0; `git check-ignore` pair exit 0; `ledger.py fold` grep pair exit 0; `shellcheck scripts/*.sh tests/*.sh` exit 0; no `__pycache__` exit 0.
+- **Not run by this worker:** `bash tests/run-tests.sh` (a verifier command, run outside the sandbox per the standing rule). Its result is not known to this worker.
+- **Note on the sentence:** the privacy walk in `scripts/ledger.py` (`ABSOLUTE_PATH`, `SENSITIVE_PATH`, `PROMPT_PREFIXES`, `SECRET_PATTERNS`) covers the four categories; this worker read it but did not test each one.
+- **Status:** no feature accepted; no gate or status change; `features.json` untouched.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-032 verified; code-reviewer FAIL on wording; T-032-R1 written
 - **Mechanical review:** run `7a6ab77f-c55a-4a7a-96ea-015697f3ae32` (T-032, cursor.economy composer-2.5, effort medium, speed standard, attempt 1): completed, exit 0, scope pass, commit `751bd96`, 3 changed paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (8 commands, all seven F005 steps covered incl. the full suite). Routing line written (`verify-passed-review-failed`).
 - **code-reviewer: FAIL, one wording issue**: the privacy sentence in the skill and in ORCHESTRATION.md omits absolute paths, which `ledger.py` enforces. (That "absolute paths" must appear came from my review brief, not from the T-032 task text, so I mark the routing line `attributable:false`.) Everything else matched: the fold command, the acceptance-commit files, rows staying under `.tasks/ledger/` until fold, no worker authority to fold or accept.

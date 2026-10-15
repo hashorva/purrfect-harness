@@ -163,9 +163,9 @@ bash scripts/verify-mission.sh --require-workers "$MISSION"
 ```
 
 The committed `docs/missions/ledger.jsonl` and mission `drift.jsonl` store
-validated execution summaries only—never provider transcripts or prompt text;
-per-run JSON remains under `.tasks/ledger/` until fold lands in the acceptance
-commit.
+validated rows only. A ledger row holds execution summaries only: no transcripts,
+prompts, secrets, or absolute paths. Per-run JSON remains under `.tasks/ledger/`
+until fold lands in the acceptance commit.
 
 Acceptance records `accepted_run_id`, `accepted_verification_sha256`, `accepted_at`,
 and `accepted_by`. A failed, no-op, unrelated, legacy, or null-evidence run cannot

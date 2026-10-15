@@ -138,9 +138,7 @@ Acceptance records `accepted_run_id`, `accepted_verification_sha256`,
 `accepted_at`, and `accepted_by` in features.json. No separate acceptance
 artifact is needed. Each run's row stays gitignored under `.tasks/ledger/`
 until fold; commit verification, acceptance, `docs/missions/ledger.jsonl`, and
-`$MISSION/drift.jsonl` together with the progress record. A ledger row may
-hold execution summaries only and must never contain transcript text, prompt
-text, or secret-like strings.
+`$MISSION/drift.jsonl` together with the progress record. A ledger row holds execution summaries only: no transcripts, prompts, secrets, or absolute paths.
 
 ## 5. Handle failures and gates
 
