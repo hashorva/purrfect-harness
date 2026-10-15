@@ -6,7 +6,7 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 
 ## Current status (2026-10-16)
 - Mission 2A Foundation, branch `mission/2a-foundation`, status in-progress. Gate 0 passed. **Gate 1 target:** F001–F006 accepted and the deterministic suite green (prepare, do not advance).
-- **Accepted:** F001. **Verified, acceptance approved, not yet run:** F003, F006. **Waiting on one task (ledger fixes):** F005. **F004** and **F007** wait for the agy amendment (agy dropped from the mission by owner decision; T-026 and T-039 deferred).
+- **Accepted:** F001, F003, F006. **Waiting on one task (ledger fixes):** F005. **F004** and **F007** wait for the agy amendment (agy dropped from the mission by owner decision; T-026 and T-039 deferred).
 - Full history before this reset: `progress-archive/2026-10-14_15.md` (717 KB, kept verbatim). Routing data: `routing-data.jsonl`. Receipts/records: `.tasks/receipts/`, `verification/`.
 - Seats: usable claude.economy, claude.premium, codex.economy, codex.premium, cursor.economy; **cursor.premium** frozen as unusable (`grok-4.7-xhigh` with effort medium) pending the approved re-freeze to `grok-4.7-high`/standard; **agy.economy unusable** (every turn hangs; evidence in the archive, entry "day 3 / agy re-smoke").
 
@@ -35,6 +35,8 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-16 — F003 and F006 accepted (owner approved)** F003: run 86a9c529-95d9-42b3-9e23-b24c18fec0ff, record sha a85b3ac1…, `ACCEPT OK`; F006: run db01ac53-00de-4d30-9230-05894b952ebe, sha recomputed d652eeea… before running, `ACCEPT OK`.
+  `verify-mission.sh --require-workers` after each: `VERIFY OK`, exit 0. Accepted by "Front Desk (claude-sonnet-5-5), owner-approved by Zamir (2026-10-16)". features.json committed.
 - **2026-10-16 — PROGRESS.md reset (owner step 0)** Moved all 250 entries (717 KB) verbatim to `progress-archive/2026-10-14_15.md`; PROGRESS.md now holds status, decisions in force, open decisions, active lessons and recent entries (5.4 KB).
   Reviewer outputs go to `reviews/<run-id>.md`; workers no longer write this file (launcher prompt and template change to follow as a task).
   The structured-progress proposal is the next Architect planning run.

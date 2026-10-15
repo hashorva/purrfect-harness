@@ -93,7 +93,11 @@
         "mission-init and the review action name the schemas",
         "shellcheck and bash tests/run-tests.sh exit 0"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "db01ac53-00de-4d30-9230-05894b952ebe",
+      "accepted_verification_sha256": "d652eeeadeb8f0b0adf7596f944300ecf85b49e3b994356ade4a06b4257ba46b",
+      "accepted_at": "2026-10-15T17:52:26.292009Z",
+      "accepted_by": "Front Desk (claude-sonnet-5-5), owner-approved by Zamir (2026-10-16)"
     },
     {
       "id": "F007",
