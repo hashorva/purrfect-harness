@@ -35,6 +35,7 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-15 — T-042 ready (rule 6 checked, incl. full suite after the patch); dispatch on cursor.economy** Architect plan run 5f1c114d-66d5-410e-b383-06108375ed7e: task text, 23-style mutant list (`reviews/5f1c114d-66d5-410e-b383-06108375ed7e-mutants.md`), reference patch kept local (`.tasks/plans/T-042-reference.patch`). My check: 2 oracle commands fail on base and pass after the patch; the full suite passes after the patch.
 - **2026-10-15 — ARCHITECT PLANNING RUN T-042 (brain run 5f1c114d-66d5-410e-b383-06108375ed7e, log `.tasks/logs/5f1c114d-66d5-410e-b383-06108375ed7e.log`): T-042 delivered complete.** Planning only. No worker ran, no commits were reviewed, and this run wrote only this file. The blocks are at the end …
   Full text: `reviews/entry-0b7c18f9.md`.
 - **2026-10-15 — ARCHITECT PLANNING RUN T-042 (not a diff review; time box 30 min; entry max 10 lines)** Design T-042 (task text + reference patch + mutants, owner rule 6) for ledger item (d): pool and billing_class read from `harness-registry.json` at the run's `spec.base_commit` (`git -C <repo> sh …
