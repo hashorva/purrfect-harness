@@ -17,7 +17,7 @@ LEDGER = ROOT / "scripts/ledger.py"
 SCHEMA = ROOT / "schemas/ledger-row.schema.json"
 FIXTURES = ROOT / "tests/fixtures/ledger"
 sys.path.insert(0, str(ROOT / "scripts"))
-from ledger import FIELDS
+from ledger import FIELDS, SECRET_PATTERNS, UUID_SHAPE, HIDDEN_CHARS
 
 
 SECTION_8_FIELDS = [
@@ -53,9 +53,18 @@ UNKNOWN_KEY_MESSAGE = "row: unknown key; name not printed"
 def hostile_values():
     """Fake secret-, path-, contact- and prompt-shaped values. Each is built at run time from fragments."""
     uuid = "0f1e2d3c" + "-4b5a-4968-8778-" + "6a5b4c3d2e1f"
+    classic = "ghp_" + "Zq9A" * 4 + "xB7c" * 5
+    fine_grained = "github_pat_" + "Zq9A" * 4 + "xB7c" * 5
     return [
         ("github token", "ghp_" + "A" * 36),
         ("github fine-grained token", "github_pat_" + "11" + "A" * 20),
+        ("mixed github token", classic),
+        ("mixed fine-grained token", fine_grained),
+        ("zero-width non-joiner", "left" + "\u200c" + "right"),
+        ("zero-width joiner", "left" + "\u200d" + "right"),
+        ("left-to-right mark", "left" + "\u200e" + "right"),
+        ("right-to-left mark", "left" + "\u200f" + "right"),
+        ("uppercase foreign uuid", "0F1E2D3C" + "-4B5A-4968-8778-" + "6A5B4C3D2E1F"),
         ("aws key id", "AKIA" + "IOSFODNN7EXAMPLE"),
         ("slack token", "xox" + "b-" + "000000000000-0000000000000-" + "A" * 24),
         ("pem header", "-----" + "BEGIN FAKE TEST KEY-----"),
@@ -81,6 +90,19 @@ def hostile_values():
         ("prompt role", "You are " + "a reviewer"),
         ("prompt follow", "Follow " + "AGENTS.md and go"),
         ("carriage return", "T-028" + "\r" + "slice"),
+        ("alternate users path", "/Users/" + "another/project"),
+        ("alternate private path", "/private/" + "tmp/another"),
+        ("alternate home path", "/home/" + "another/work"),
+        ("alternate windows path", "D:" + "\\" + "repo\\another"),
+        ("alternate email", "dev" + "@" + "example.invalid"),
+        ("alternate bearer", "Bear" + "er " + "YWJj" * 4),
+        ("alternate long hex", "fedcba9876543210" + "fedcba9876543210"),
+        ("alternate base64", "YWJjZGVm" * 5),
+        ("alternate prompt", "Follow " + "AGENTS.md carefully"),
+        ("alternate word joiner", "task" + "\u2060" + "name"),
+        ("alternate byte order mark", "\ufeff" + "secret-like"),
+        ("alternate full-width at", "dev" + "\uff20" + "example.invalid"),
+        ("alternate line separator", "one" + "\u2028" + "two"),
     ]
 
 
@@ -339,6 +361,39 @@ class LedgerMutations(unittest.TestCase):
             hostile,
         )
 
+    def test_github_tokens_are_caught_only_by_their_own_pattern(self):
+        values = (
+            ("classic", "ghp_" + "Zq9A" * 4 + "xB7c" * 5, r"ghp_[A-Za-z0-9]{20,}"),
+            ("fine_grained", "github_pat_" + "Zq9A" * 4 + "xB7c" * 5, r"github_pat_"),
+        )
+        patterns = {pattern.pattern: pattern for pattern in SECRET_PATTERNS}
+        for label, hostile, expected in values:
+            with self.subTest(token=label):
+                self.assertEqual(sum(pattern.search(hostile) is not None for pattern in SECRET_PATTERNS), 1)
+                self.assertIsNotNone(patterns[expected].search(hostile))
+                self.expect_privacy_rejection(
+                    self.mutated(lambda row, v=hostile: row.__setitem__("task", v)), "task: privacy", hostile,
+                )
+
+    def test_privacy_rule_rejects_each_zero_width_and_directional_mark(self):
+        for codepoint in ("\u200c", "\u200d", "\u200e", "\u200f"):
+            hostile = "left" + codepoint + "right"
+            with self.subTest(codepoint=ord(codepoint)):
+                self.assertIsNotNone(HIDDEN_CHARS.search(hostile))
+                self.expect_privacy_rejection(
+                    self.mutated(lambda row, v=hostile: row.__setitem__("task", v)), "task: privacy", hostile,
+                )
+
+    def test_privacy_rule_rejects_uppercase_uuid_in_text_field(self):
+        hostile = "0F1E2D3C" + "-4B5A-4968-8778-" + "6A5B4C3D2E1F"
+        self.assertIsNotNone(UUID_SHAPE.search(hostile))
+        for field in ("task", "escalation_reason"):
+            with self.subTest(field=field):
+                self.expect_privacy_rejection(
+                    self.mutated(lambda row, n=field, v=hostile: row.__setitem__(n, v)),
+                    f"{field}: privacy", hostile,
+                )
+
     def test_privacy_rule_rejects_fine_grained_github_token(self):
         hostile = "github_pat_" + "11AAAAAA0000000000000000000000000000000000"
         self.expect_privacy_rejection(
@@ -384,10 +439,12 @@ class LedgerMutations(unittest.TestCase):
         )
 
     def test_hostile_values_are_rejected_in_every_field_family(self):
-        # 27 hostile values, each placed in two different fields: 54 cases, every one refused.
+        # Distinct hostile values each go in two different fields; every case must be refused.
         cases = 0
         locations = hostile_locations()
-        for index, (label, hostile) in enumerate(hostile_values()):
+        values = hostile_values()
+        self.assertGreaterEqual(len(values), 40)
+        for index, (label, hostile) in enumerate(values):
             for offset in (0, 9):
                 path, edit = locations[(index + offset) % len(locations)]
                 cases += 1
@@ -397,7 +454,7 @@ class LedgerMutations(unittest.TestCase):
                         f"{path}: privacy",
                         hostile,
                     )
-        self.assertGreaterEqual(cases, 40)
+        self.assertEqual(cases, len(values) * 2)
 
     def test_privacy_rule_rejects_absolute_paths(self):
         # Point 1.
