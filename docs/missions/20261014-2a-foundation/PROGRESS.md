@@ -4,6 +4,59 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-025 (`bb26198`)
+
+- **Run:** `ecbe01bd-37ac-43f8-9c38-054e74a54a0f`; log `.tasks/logs/ecbe01bd-37ac-43f8-9c38-054e74a54a0f.log`; spec role `brain`, `claude`/`opus`, effort `high`, base `aacb647`, write scope this file only. The launcher writes the receipt `.tasks/receipts/ecbe01bd-37ac-43f8-9c38-054e74a54a0f.json` when this run ends; it did not exist while this entry was written. The worker run under review is `2e046137-19c7-4c3f-ace4-3097e5c2fd9c`. Its receipt exists (completed, exit 0, scope pass, `git_after` with no dirty paths at `bb26198`) and its VerificationRecord has `result: pass`.
+- **Test rules followed:**
+  - Trees: new = `bb26198`, old = `5204b4b` (its parent). Each is a `git clone` in the session scratchpad. Mutations ran in two more scratch clones, which were clean afterwards.
+  - Fake `claude`, `codex`, `cursor-agent`, `agent`, `agy` and `grok` were first on PATH. For the tests these fakes exit 97 and log their calls. For the inventory comparison they are success fakes, which also log calls. No real provider CLI was launched and no `-fast` model was used. All Python ran with `PYTHONDONTWRITEBYTECODE=1`.
+  - Live tree: `git status --short` is empty before this entry, and there is no `__pycache__` in `scripts/` or `tests/`.
+- **(1) Constant, registry key and golden tests — consistent.**
+  - `FALLBACKS`, `fallbacks`, `GOLDEN_FALLBACKS` and the two fallback validator cases were removed together. `harness_registry.py` loads (exit 0). `test-registry.py` passes with 26 tests in both trees. `ROOT_FIELDS` no longer contains `fallbacks`.
+  - **An old registry that still has `fallbacks` is accepted, and the key is ignored.** This is not a deliberate rule. `validate_registry` ignores every unknown root key: an extra `junk_root_key` is accepted the same way. No test covers it. The registry is manifest-owned, so an update replaces the whole file. Non-blocking.
+- **(2) Inventory behaviour.** I ran the public `fleet-inventory.sh` with a corrupt codex cache:
+  - First-run probe failure: old gave `fallback`, `gpt-5.6-luna` / `gpt-5.6-terra`, `degraded`. New gives `unavailable`, `unavailable`, `unknown`. The old guess for luna was wrong: the cache listed `gpt-6-luna`.
+  - Retained last-good: both trees give `last_good`, `gpt-6-luna` / `gpt-5.6-terra`, `degraded`. After timestamp normalization the inventory files are byte-identical.
+  - The frozen 2A fleet and the Phase-1 fleet (`20260821-execution-truth`, which has 4 `fallback`/`degraded` seats) both pass `validate-fleet` (exit 0) in both trees.
+  - `.tasks/fleet-inventory.json` validates in both trees. `.tasks/fleet-inventory.legacy-20260821.json` is refused identically in both trees: it is not canonical JSON, and once canonicalized it has the wrong field set. This happened before T-025 and is unrelated to it.
+- **(3) `fleet-inventory.sh` with a working probe — unchanged.** I used the same fake outputs for codex (cache), `cursor-agent`, `agy` and `claude`. Old and new trees give byte-identical inventory JSON (5205 bytes) and stdout once `probed_at` timestamps are normalized.
+- **(4) Consumers of the removed constant — none left in code.** `git grep` finds `FALLBACKS` or `fallbacks` only in history and plan documents (audit, proposal, features.json, plan-night2, VerificationRecords). Some text is stale:
+  - `.agents/skills/mission-init/SKILL.md:38` ("fallback guesses remain degraded")
+  - `docs/missions/MODEL_ROUTING.md:146` ("label any policy fallback as degraded")
+
+  Both describe a path that no longer exists. The test name `healthy-fallback` in `tests/test-fleet-state.py` is stale too (see the blocking item).
+- **(5) Mutations of the new logic (scratch clone of `bb26198`; the control passes):**
+  - Caught: first-run failure guesses a model again (test-fleet-state).
+  - Caught: `fallback` branch removed from validation (the historical inventory check fails).
+  - Caught: `fallback` dropped from the allowed source set.
+  - Caught: `fallbacks` required in `ROOT_FIELDS` again.
+  - **Survived:** the fallback branch's `health != "degraded"` check dropped.
+  - **Survived:** its `retained is not None` check dropped.
+  - **Survived:** its `current status == unavailable` check dropped.
+  - In the old tree the health-check mutation **was caught** (test-fleet-state exit 1). That coverage was lost because `fresh` now gives an `unavailable` seat, so the `healthy-fallback` forgery case now hits the `unavailable` branch, not the `fallback` branch.
+- **BLOCKING — a forged `fallback` seat with any model now validates and freezes.**
+  - Before T-025 the fallback branch also required `model == FALLBACKS[family]`, so a `fallback` seat could only carry a known id. Now any non-empty model passes.
+  - Reproduced in scratch: I took the new first-fail inventory and set `codex.premium` to `source: fallback`, `health: degraded`, `model: gpt-forged-terra-99`. Then I ran `validate-inventory` and the v1 `freeze`:
+    - Old tree: both refuse with `invalid fallback source`, exit 1.
+    - New tree: both exit 0, and `fleet.json` is frozen with `model: gpt-forged-terra-99, source: fallback`.
+  - No code writes `fallback` any more. A `fallback` seat in a new inventory is therefore historical or forged, and freezing from it is never legitimate. The test file explicitly guards against inventory forgery ("reproduces the formerly accepted forgery"), so this reopens a closed path into a frozen binding.
+  - `freeze_v2` is not affected: it resolves from provider records, not from inventory seats.
+- **Proposed correction T-025-R1:**
+  - Feature F004, small, economy seat. Allow-list: `scripts/fleet_state.py`, `tests/test-fleet-state.py`, PROGRESS.md.
+  - Keep validating historical `fallback` seats as evidence.
+  - Make v1 `freeze` refuse a binding whose inventory seat has `source: fallback`, with a clear message, for example `binding X is a historical fallback guess; re-probe`.
+  - Add negative tests on a copy of the historical inventory: freeze refuses `fallback`; `validate-inventory` refuses a `fallback` seat that is `healthy`, one with retained last-good, and one whose current provider status is `unavailable`. Rename or re-point the `healthy-fallback` case so that it exercises the `fallback` branch.
+  - Checks: `test-fleet-state.py`, `test-registry.py`, 2A and Phase-1 `validate-fleet`, shellcheck, the full suite (verification only), and no `__pycache__`. Each of my three surviving mutations must then fail the test. Re-review by the Architect, because this is a freeze guard.
+- **Non-blocking notes:**
+  - (a) `make_seats` now has two identical branches (`elif status == "unavailable"` and `else`). They could be merged; behaviour is the same.
+  - (b) Unknown registry root keys are ignored silently. Refusing them would make (1) deliberate.
+  - (c) Stale text in (4).
+  - (d) This was already true before T-025: `test-fleet-state.py` appends the caller's PATH, so on a machine with real CLIs installed, its "absent provider" phases run the real `agy models` and `cursor-agent models` (my fakes got those calls). Candidate for a later test-hygiene task.
+- **Audit:** `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` → `VERIFY OK`, exit 0, before this entry.
+- **Not done:** no feature accepted, no features.json, fleet, gate or status change, no worker dispatched, no file outside this entry changed.
+
+Verdict: FAIL. One blocking issue: v1 `freeze` (via `validate-inventory`) now accepts a forged `fallback` seat with any model id, and the fallback branch's remaining checks have no tests. Correction: T-025-R1 as above.
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-025 verified; Architect review requested
 - **Mechanical review:** run `2e046137-19c7-4c3f-ace4-3097e5c2fd9c` (T-025, cursor.economy composer-2.5, effort medium, speed standard, attempt 1), receipt `.tasks/receipts/2e046137-19c7-4c3f-ace4-3097e5c2fd9c.json`: outcome `completed`, exit 0, scope pass, `git_after` clean, commit `bb26198`, 6 changed paths (`harness-registry.json`, `scripts/fleet_state.py`, `scripts/harness_registry.py`, `tests/test-fleet-state.py`, `tests/test-registry.py`, PROGRESS.md), all in the allow-list. `verify-mission.sh --run-id 2e046137-19c7-4c3f-ace4-3097e5c2fd9c` → `VERIFY PASS`, exit 0 (8 commands incl. the `FALLBACKS` definition grep, `validate-fleet` on the frozen fleet and the full suite). Routing line written (registry, S, cursor.economy, done). Slice evidence for F004, not acceptance.
 - **ARCHITECT REVIEW REQUEST, T-025 alone (commit `bb26198`; removes the inventory fallback binding = dispatch behaviour).** Run `git show bb26198`. Confirm with evidence you produced: (1) the constant `FALLBACKS`, its registry key `fallbacks` and the golden-constant tests are gone or replaced consistently; `harness-registry.json` still loads and the registry validator no longer demands `fallbacks`; **old registry files that still carry a `fallbacks` key** (consumer installs) are handled deliberately (refused with a clear message, or ignored; say which and whether a test covers it); (2) **inventory behaviour**: with a failed first-run probe a seat is now `unavailable` (never a guessed model); with retained last-good state it is still `degraded` last-good (unchanged); an old inventory file with `source: fallback` and a `degraded` health still validates or is refused deliberately — show which, and check the **frozen 2A fleet** (`fleet.json`) and the Phase-1 mission's fleet still validate with `validate-fleet`; (3) `fleet-inventory.sh` (the public wrapper) behaves for a working probe exactly as before: same JSON bytes for the same fake provider outputs, old tree vs new tree; (4) no consumer of the removed constant is left (grep the whole repo incl. `.agents/` and docs: report stale text only, not a failure); (5) mutate the new logic in scratch copies and confirm tests fail. **RULES FOR YOUR TESTS:** a fake `cursor-agent`, `codex`, `claude` and `agy` first on PATH before any test or mutation; never launch a real provider CLI; no `-fast` model; `PYTHONDONTWRITEBYTECODE=1`; avoid `python3 -I` for anything that writes bytecode into the repo; leave nothing in the live tree. End with `Verdict: PASS` or `Verdict: FAIL` and blocking issues only.
