@@ -4,6 +4,12 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — Architect review of T-014 PASS; T-015 and T-017 texts extended; T-015 dispatch
+- **Architect review of T-014 (alone):** run `05f78029-3faf-488a-8c72-7a02faa0f37f`, receipt `.tasks/receipts/05f78029-3faf-488a-8c72-7a02faa0f37f.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `87072fe`. **Verdict: PASS** on `01b136c`: the change only adds data (legacy view and the `fleet_state` constants byte-identical; `validate-fleet` on the frozen fleet OK); every recorded limit has evidence (Codex's `.agents/` list is empty after T-013; Cursor and agy are `"unknown"`, nothing observed); the loader validates the field; 10 of 14 mutations caught (4 are test gaps only); nothing reads the field yet. Fake providers only; live tree clean.
+- **Follow-ups and where I put them (task-text changes, recorded):** (a) `"./"` accepted as a prefix → added as item 6 of `tasks/T-015.md` (normalise a leading `./` on prefix and pattern, with tests); (b) the 4 missing negative tests, and Claude's evidence text citing the login-visibility check → added as a section to `tasks/T-017.md`, plus `harness-registry.json` (Claude's evidence text only) added to its allow-list; (c) the empty Codex list hides a rule (Codex still can't write `.agents/` with a broad pattern): carried by the sandbox-limit docs queue — the Sandbox limits row (b) must say a Codex task that edits `.agents/` names `.agents/…` paths; (d) the worker's PROGRESS entry claimed it ran `fleet-doctor.sh` and the full suite itself (forbidden); not verifiable, both passed under the verifier — the L-009 point again (narratives are not evidence).
+- **T-014 is slice evidence for F004, not acceptance.**
+- **Next:** T-015 (`dispatch_policy.py` refuses allow-lists that hit a seat write limit; dispatch-policy, M; Architect alone) on **cursor.economy** (T-015 edits the `.agents/` skill and its own text says not Codex; worker runs: claude 5, codex 4, cursor 4).
+
 ## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-014 (`01b136c`)
 
 - **Run:** `05f78029-3faf-488a-8c72-7a02faa0f37f`; log `.tasks/logs/05f78029-3faf-488a-8c72-7a02faa0f37f.log`; spec role `brain`, action `review`, base `ebbe122`, write scope this file only. The launcher writes the receipt `.tasks/receipts/05f78029-3faf-488a-8c72-7a02faa0f37f.json` when this run ends; it did not exist while this entry was written.
