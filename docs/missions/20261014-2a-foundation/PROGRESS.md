@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — Architect verdict: T-028-R4 PASS; T-029-R1 FAIL (two blocking); T-029-R2 written
+- **Architect review** run `808ef7ff-4dc2-416a-a5ae-750c8968870f`, commit `bc5c164`. T-028-R4 (`0ad14ec`): PASS (340/340 hostile placements refused, 12/12 mutations caught). Informational near-misses left to the owner: `/tmp` and `/etc` without trailing slash, `/TMP/x`, `${HOME}`, `~root/x`, double-space or NBSP after Bearer, U+061C. T-029-R1 (`d92e122`): FAIL: (1) a `scripts/ledger.py` left unimportable changes spawn exit (1 or 125) and drops `receipt=`; (2) clobber test (f) not load-bearing.
+- **T-029-R2** written from the Architect's follow-up (`tasks/T-029-R2.md`, ledger, S, review `code-reviewer` + the two end-to-end scenarios). Dispatching on claude.economy (rotation).
+
 ## 2026-10-15 (day 3) — Brain / Architect (claude/opus, effort high) — review of T-028-R4 (`0ad14ec`) and T-029-R1 (`d92e122`)
 
 - **Run:** `808ef7ff-4dc2-416a-a5ae-750c8968870f`; log `.tasks/logs/808ef7ff-4dc2-416a-a5ae-750c8968870f.log`; spec role `brain`, action `review`, base `3d87ae9`, write scope this file only. The launcher writes `.tasks/receipts/808ef7ff-….json` when this run ends; it did not exist while this entry was written.
