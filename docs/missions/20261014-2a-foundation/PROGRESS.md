@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-030 chain closed (code-reviewer PASS on T-030-R2); T-031 dispatch
+- **code-reviewer: PASS on `787cc15`** (4-key drift shape matching `fleet_state.py`, shape checked before the privacy walk, cap only on `.tasks/` inputs, tests a–d plus a >1 MiB committed-ledger test and the integration extension present; the worker recorded its temporary-copy mutation evidence). T-030 chain closed (T-030, R1, R2).
+- Next: T-031 (derived view; S; code-reviewer) on claude.economy.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-030-R2 verified; code-reviewer requested
 - **Mechanical review:** run `98ef63d5-4bae-4c92-a502-11ed20e5a9fd` (T-030-R2, cursor.economy composer-2.5, effort medium, speed standard, attempt 1), receipt: completed, exit 0, scope pass, commit `787cc15`, 4 changed paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (6 commands incl. the extended integration test). Routing line written.
 - Review: `code-reviewer` plus the integration test, as the Architect judged proportional.
