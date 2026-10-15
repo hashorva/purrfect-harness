@@ -303,6 +303,7 @@ def freeze(args):
     for name,b in binds.items():
         exact_keys(b,{"inventory_seat","effort","speed"},"bindings."+name); source=inv["seats"].get(b["inventory_seat"])
         if source is None: fail(f"binding {name} references missing inventory seat")
+        if source["source"] == "fallback": fail(f"binding {name} uses seat {b['inventory_seat']} with source fallback; fallback bindings are no longer allowed")
         if source["model"]=="unavailable": fail(f"binding {name} has unavailable model")
         if b["effort"] not in source["capabilities"]["efforts"] or b["speed"] not in source["capabilities"]["speeds"]: fail(f"binding {name} requests unsupported capability")
         seats[name]={k:source[k] for k in ("provider","model","family","health","source","capabilities")}; seats[name].update(effort=b["effort"],speed=b["speed"])

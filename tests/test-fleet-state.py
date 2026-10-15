@@ -4,6 +4,7 @@ import hashlib, json, os, shutil, stat, subprocess, sys, tempfile
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
+FLEET_STATE=Path(os.environ.get('FLEET_STATE', ROOT/'scripts/fleet_state.py'))
 def run(*args, env=None, ok=True):
     p=subprocess.run(args,text=True,capture_output=True,env=env)
     if ok != (p.returncode == 0): raise AssertionError(f"{args}: {p.returncode}: {p.stderr}")
@@ -96,8 +97,8 @@ def main():
     fresh=d/'fresh.json'; run('/bin/bash',str(public),'--json','--out',str(fresh),env=env); f=json.loads(fresh.read_text())
     assert f['seats']['codex.premium']['source']=='unavailable' and f['seats']['codex.premium']['model']=='unavailable'
     historical=json.loads(fresh.read_text()); historical['seats']['codex.premium'].update(model='gpt-5.6-terra',health='degraded',source='fallback')
-    write(d/'historical-fallback-inventory.json',historical); run('python3',str(ROOT/'scripts/fleet_state.py'),'validate-inventory',str(d/'historical-fallback-inventory.json'))
-    bad=json.loads(fresh.read_text()); bad['seats']['codex.premium']['model']=''; reject(('python3',str(ROOT/'scripts/fleet_state.py'),'validate-inventory'),d/'bad.json',bad)
+    write(d/'historical-fallback-inventory.json',historical); run('python3',str(FLEET_STATE),'validate-inventory',str(d/'historical-fallback-inventory.json'))
+    bad=json.loads(fresh.read_text()); bad['seats']['codex.premium']['model']=''; reject(('python3',str(FLEET_STATE),'validate-inventory'),d/'bad.json',bad)
     # Exact nested inventory shape and provenance: this reproduces the formerly accepted forgery.
     for label, mutate in (
       ('partial-provider',lambda x:x['providers'].pop('codex')),
@@ -110,33 +111,54 @@ def main():
       ('seat-provider',lambda x:x['seats']['codex.premium'].__setitem__('provider','agent')),
       ('seat-capabilities',lambda x:x['seats']['codex.premium'].__setitem__('capabilities',{'efforts':['bogus'],'speeds':['wild']})),
       ('forged-healthy-source',lambda x:(x['seats']['codex.premium'].__setitem__('health','healthy'),x['seats']['codex.premium'].__setitem__('source','observed'))),
-      ('healthy-fallback',lambda x:x['seats']['codex.premium'].__setitem__('health','healthy')),
+      ('healthy-fallback',lambda x:(x['seats']['codex.premium'].update(model='gpt-5.6-terra',health='healthy',source='fallback'))),
       ('alias-non-claude',lambda x:(x['seats']['codex.premium'].__setitem__('source','alias'),x['seats']['codex.premium'].__setitem__('health','healthy'))),
       ('observed-claude',lambda x:(x['seats']['brain'].__setitem__('source','observed'),x['seats']['brain'].__setitem__('health','healthy'))),
     ):
       candidate=json.loads(json.dumps(second if label in {'partial-last-good','unknown-last-good'} else json.loads(fresh.read_text())))
-      mutate(candidate); reject(('python3',str(ROOT/'scripts/fleet_state.py'),'validate-inventory'),d/(label+'.json'),candidate)
+      mutate(candidate)
+      write(d/(label+'.json'),candidate)
+      rejected=run('python3',str(FLEET_STATE),'validate-inventory',str(d/(label+'.json')),ok=False)
+      if label=='healthy-fallback': assert rejected.stderr.strip()=='ERROR: inventory.seats.codex.premium invalid fallback source', rejected.stderr
+    for label, base in (('fallback-retained-guard',second),('fallback-current-unavailable-guard',json.loads(fresh.read_text()))):
+      candidate=json.loads(json.dumps(base)); candidate['seats']['codex.premium'].update(model='gpt-5.6-terra',health='degraded',source='fallback')
+      if label=='fallback-current-unavailable-guard':
+        provider=candidate['providers']['codex']; caps=provider['capabilities']; provider.clear(); provider.update(probed_at=candidate['probed_at'],capabilities=caps,status='unavailable',error='not on PATH')
+      path=d/(label+'.json'); write(path,candidate)
+      rejected=run('python3',str(FLEET_STATE),'validate-inventory',str(path),ok=False)
+      assert rejected.stderr.strip()=='ERROR: inventory.seats.codex.premium invalid fallback source', rejected.stderr
     corrupt=b'{not json'; inv.chmod(0o644); inv.write_bytes(corrupt); run('/bin/bash',str(public),'--out',str(inv),env=env,ok=False); assert inv.read_bytes()==corrupt
+    fallback_bindings=d/'fallback-bindings.json'; write(fallback_bindings,{'worker':{'inventory_seat':'codex.premium','effort':'medium','speed':'unknown'}})
+    # Historical fallback inventories remain readable, but v1 freeze refuses every fallback model.
+    for label, model in (('forged', 'gpt-forged-terra-99'), ('real-looking', 'gpt-5.6-terra')):
+      fallback=json.loads(fresh.read_text()); fallback['seats']['codex.premium'].update(model=model,health='degraded',source='fallback')
+      fallback_inv=d/(label+'-fallback-inventory.json'); write(fallback_inv,fallback)
+      run('python3',str(FLEET_STATE),'validate-inventory',str(fallback_inv))
+      fallback_mission=d/(label+'-fallback-mission'); fallback_mission.mkdir()
+      fallback_fleet=fallback_mission/'fleet.json'
+      result=run('python3',str(FLEET_STATE),'freeze','--mission-dir',str(fallback_mission),'--inventory',str(fallback_inv),'--bindings',str(fallback_bindings),'--approved-by','human','--approved-at','2026-08-21T00:00:00Z',ok=False)
+      assert result.stderr.strip()=='ERROR: binding worker uses seat codex.premium with source fallback; fallback bindings are no longer allowed', result.stderr
+      assert not fallback_fleet.exists(), fallback_fleet
     # Restore trusted inventory and freeze exact bytes into a canonical no-clobber snapshot.
     write(inv,second); bindings=d/'bindings.json'; write(bindings,{'worker':{'inventory_seat':'codex.premium','effort':'medium','speed':'unknown'}})
     mission=d/'docs/missions/x'; mission.mkdir(parents=True); fleet=mission/'fleet.json'
-    run('python3',str(ROOT/'scripts/fleet_state.py'),'freeze','--mission-dir',str(mission),'--inventory',str(inv),'--bindings',str(bindings),'--approved-by','human','--approved-at','2026-08-21T00:00:00Z')
+    run('python3',str(FLEET_STATE),'freeze','--mission-dir',str(mission),'--inventory',str(inv),'--bindings',str(bindings),'--approved-by','human','--approved-at','2026-08-21T00:00:00Z')
     frozen=fleet.read_bytes(); data=json.loads(frozen); assert data['inventory']['sha256']==hashlib.sha256(inv.read_bytes()).hexdigest() and stat.S_IMODE(fleet.stat().st_mode)==0o444
-    run('python3',str(ROOT/'scripts/fleet_state.py'),'freeze','--mission-dir',str(mission),'--inventory',str(inv),'--bindings',str(bindings),'--approved-by','human','--approved-at','2026-08-21T00:00:00Z',ok=False); assert fleet.read_bytes()==frozen
+    run('python3',str(FLEET_STATE),'freeze','--mission-dir',str(mission),'--inventory',str(inv),'--bindings',str(bindings),'--approved-by','human','--approved-at','2026-08-21T00:00:00Z',ok=False); assert fleet.read_bytes()==frozen
     # Resolution reads only fleet: remove inventory and assert all equality/capability failure paths.
-    inv.unlink(); good=run('python3',str(ROOT/'scripts/fleet_state.py'),'resolve','--fleet',str(fleet),'--seat','worker'); assert json.loads(good.stdout)['model']=='gpt-5.6-terra'
-    for flag,value in (('--provider','agent'),('--model','wrong'),('--effort','high'),('--speed','fast')): run('python3',str(ROOT/'scripts/fleet_state.py'),'resolve','--fleet',str(fleet),'--seat','worker',flag,value,ok=False)
-    run('python3',str(ROOT/'scripts/fleet_state.py'),'resolve','--fleet',str(fleet),'--seat','missing',ok=False)
-    run('python3',str(ROOT/'scripts/fleet_state.py'),'resolve','--fleet',str(d/'missing-fleet.json'),'--seat','worker',ok=False)
-    fleet.chmod(0o644); fleet.write_bytes(frozen+b' '); run('python3',str(ROOT/'scripts/fleet_state.py'),'validate-fleet',str(fleet),ok=False); fleet.write_bytes(frozen); fleet.chmod(0o444)
-    unapproved=json.loads(frozen); unapproved['approval']['status']='draft'; write(d/'unapproved.json',unapproved); run('python3',str(ROOT/'scripts/fleet_state.py'),'validate-fleet',str(d/'unapproved.json'),ok=False)
-    unsupported=json.loads(frozen); unsupported['seats']['worker']['effort']='bogus'; write(d/'unsupported.json',unsupported); run('python3',str(ROOT/'scripts/fleet_state.py'),'validate-fleet',str(d/'unsupported.json'),ok=False)
+    inv.unlink(); good=run('python3',str(FLEET_STATE),'resolve','--fleet',str(fleet),'--seat','worker'); assert json.loads(good.stdout)['model']=='gpt-5.6-terra'
+    for flag,value in (('--provider','agent'),('--model','wrong'),('--effort','high'),('--speed','fast')): run('python3',str(FLEET_STATE),'resolve','--fleet',str(fleet),'--seat','worker',flag,value,ok=False)
+    run('python3',str(FLEET_STATE),'resolve','--fleet',str(fleet),'--seat','missing',ok=False)
+    run('python3',str(FLEET_STATE),'resolve','--fleet',str(d/'missing-fleet.json'),'--seat','worker',ok=False)
+    fleet.chmod(0o644); fleet.write_bytes(frozen+b' '); run('python3',str(FLEET_STATE),'validate-fleet',str(fleet),ok=False); fleet.write_bytes(frozen); fleet.chmod(0o444)
+    unapproved=json.loads(frozen); unapproved['approval']['status']='draft'; write(d/'unapproved.json',unapproved); run('python3',str(FLEET_STATE),'validate-fleet',str(d/'unapproved.json'),ok=False)
+    unsupported=json.loads(frozen); unsupported['seats']['worker']['effort']='bogus'; write(d/'unsupported.json',unsupported); run('python3',str(FLEET_STATE),'validate-fleet',str(d/'unsupported.json'),ok=False)
     # Degraded Claude provenance is valid for retained and fallback bindings.
     for source in ('last_good','fallback'):
       claude_degraded=json.loads(frozen)
       claude_degraded['seats']['worker'].update(provider='claude',model='sonnet',family='sonnet',speed='unknown',health='degraded',source=source,capabilities={'efforts':['low','medium','high','xhigh','max'],'speeds':['unknown']})
       write(d/(source+'-claude.json'),claude_degraded)
-      run('python3',str(ROOT/'scripts/fleet_state.py'),'validate-fleet',str(d/(source+'-claude.json')))
+      run('python3',str(FLEET_STATE),'validate-fleet',str(d/(source+'-claude.json')))
     for label, mutate in (
       ('invalid-hash',lambda x:x['inventory'].__setitem__('sha256','bad')),
       ('fleet-extra',lambda x:x.__setitem__('junk',True)),
@@ -154,7 +176,7 @@ def main():
       ('fleet-last-good-healthy',lambda x:x['seats']['worker'].update(source='last_good',health='healthy')),
       ('fleet-alias-degraded',lambda x:x['seats']['worker'].update(source='alias',health='degraded')),
     ):
-      candidate=json.loads(frozen); mutate(candidate); reject(('python3',str(ROOT/'scripts/fleet_state.py'),'validate-fleet'),d/(label+'.json'),candidate)
+      candidate=json.loads(frozen); mutate(candidate); reject(('python3',str(FLEET_STATE),'validate-fleet'),d/(label+'.json'),candidate)
     require_schema_policy()
   print('fleet policy tests passed')
 if __name__=='__main__': main()
