@@ -1126,6 +1126,36 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         drift_dir.chmod(0o700)
         self.clean_runs()
 
+    def test_v2_worker_refuses_model_effort_and_speed_flags_that_differ_from_the_seat(self):
+        self.set_status("in-progress")
+        base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--feature", "F001"]
+        mismatches = (
+            (["--model", "gpt-5.7-luna", "--effort", "medium", "--speed", "unknown"], "ERROR: fleet model assertion failed"),
+            (["--model", "gpt-5.6-luna", "--effort", "high", "--speed", "unknown"], "ERROR: fleet effort assertion failed"),
+            (["--model", "gpt-5.6-luna", "--effort", "medium", "--speed", "fast"], "ERROR: fleet speed assertion failed"),
+        )
+        for flags, message in mismatches:
+            with self.subTest(flags=flags):
+                # clean_runs() removes .tasks, which holds the inventory, so each case rebuilds the fixture.
+                self.write_v2_fleet_and_inventory("gpt-5.6-luna")
+                result = self.invoke(base + flags)
+                self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+                self.assertIn(message, result.stderr)
+                self.assert_no_run_artifacts()
+                self.clean_runs()
+
+    def test_v2_worker_refuses_a_seat_whose_family_has_no_available_model(self):
+        self.set_status("in-progress")
+        # codex observes only a sol model, so the seat's luna family is absent and must not be guessed.
+        self.write_v2_fleet_and_inventory("gpt-5.6-sol")
+        base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--feature", "F001", "--effort", "medium", "--speed", "unknown"]
+        result = self.invoke(base)
+        self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("ERROR: fleet seat resolved as unavailable", result.stderr)
+        self.assert_no_run_artifacts()
+        self.assertFalse((self.root / ".tasks/drift/fixture.jsonl").exists())
+        self.clean_runs()
+
     def assert_no_run_artifacts(self):
         tasks = self.root / ".tasks"
         self.assertFalse((tasks / "invoked.json").exists())

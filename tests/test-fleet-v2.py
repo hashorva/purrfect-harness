@@ -200,6 +200,36 @@ def resolver_checks(d):
     assert s1_gone.returncode == 1 and json.loads(s1_gone.stdout)["source"] == "unavailable", (s1_gone.returncode, s1_gone.stdout)
 
 
+def schema_node(schema, node):
+    """Follow local $ref links so the key check reads the declared shape, not the pointer."""
+    while "$ref" in node:
+        assert node["$ref"].startswith("#/$defs/"), node
+        node = schema["$defs"][node["$ref"].split("/")[-1]]
+    return node
+
+
+def assert_keys_agree(schema, node, value, label):
+    """Dependency-free agreement: every key the code writes is declared, and every required key is written."""
+    node = schema_node(schema, node)
+    declared = set(node["properties"])
+    written = set(value)
+    assert written <= declared, (label, "written but undeclared", sorted(written - declared))
+    assert set(node.get("required", [])) <= written, (label, "required but not written", sorted(set(node.get("required", [])) - written))
+
+
+def check_v2_schema_agreement(frozen):
+    """The v2 schema must declare every key that freeze-v2 writes, at every nesting level it covers."""
+    schema = json.loads(SCHEMA.read_text())
+    fleet_node = schema["$defs"]["fleetV2"]
+    assert_keys_agree(schema, fleet_node, frozen, "fleet")
+    for name in ("mission", "inventory", "approval", "policy"):
+        assert_keys_agree(schema, fleet_node["properties"][name], frozen[name], name)
+    seat_node = schema_node(schema, fleet_node["properties"]["seats"]["additionalProperties"])
+    for name, seat in frozen["seats"].items():
+        assert_keys_agree(schema, seat_node, seat, "seat " + name)
+        assert_keys_agree(schema, seat_node["properties"]["approved_resolution"], seat["approved_resolution"], "approved_resolution " + name)
+
+
 def main():
     with tempfile.TemporaryDirectory() as tmp:
         d = Path(tmp)
@@ -329,6 +359,7 @@ def main():
         assert frozen_doc["seats"]["codex.economy"]["approved_resolution"] == {
             "provider": "codex", "model": "gpt-5.7-luna", "effort": "medium", "speed": "unknown"}
         assert run_cli("validate-fleet", freeze_mission / "fleet.json").returncode == 0
+        check_v2_schema_agreement(frozen_doc)
 
     print("fleet v2 validation tests passed")
 

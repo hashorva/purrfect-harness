@@ -99,7 +99,7 @@
     "v2Seat": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["family", "effort", "doors", "speed"],
+      "required": ["family", "effort", "doors", "speed", "approved_resolution"],
       "properties": {
         "family": { "$ref": "#/$defs/text" },
         "effort": { "$ref": "#/$defs/text" },
@@ -109,7 +109,19 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": { "$ref": "#/$defs/text" }
-        }
+        },
+        "approved_resolution": { "$ref": "#/$defs/approvedResolution" }
+      }
+    },
+    "approvedResolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model", "effort", "speed"],
+      "properties": {
+        "provider": { "$ref": "#/$defs/text" },
+        "model": { "$ref": "#/$defs/text" },
+        "effort": { "$ref": "#/$defs/text" },
+        "speed": { "$ref": "#/$defs/text" }
       }
     },
     "seat": {
