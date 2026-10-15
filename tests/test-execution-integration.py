@@ -18,6 +18,7 @@ OBSERVE_FIXTURES = ROOT / "tests/fixtures/observe"
 PROVIDERS = ("codex", "claude", "agent", "agy")
 sys.path.insert(0, str(ROOT / "scripts"))
 from observe_output import observe  # noqa: E402
+import fleet_state  # noqa: E402
 
 
 class WrapperIntegration(unittest.TestCase):
@@ -162,6 +163,36 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         fleet.chmod(0o444)
         self.commit_fixture("frozen fleet")
         return doc
+
+    def write_v2_fleet_and_inventory(self, model):
+        (self.root / ".tasks").mkdir(exist_ok=True)
+        providers = {}
+        for name in fleet_state.PROVIDERS:
+            base = {"probed_at": "2026-08-21T00:00:00Z", "capabilities": fleet_state.CAPABILITIES[name]}
+            if name == "codex":
+                providers[name] = {**base, "status": "success", "path": "/bin/codex", "aliases": [], "observed_models": [model]}
+            elif name == "claude":
+                providers[name] = {**base, "status": "success", "path": "/bin/claude", "aliases": ["opus", "sonnet", "haiku"], "observed_models": []}
+            else:
+                providers[name] = {**base, "status": "success", "path": f"/bin/{name}", "aliases": [], "observed_models": ["fixture-1.0-low"]}
+        inventory = {"schema_version": 1, "probed_at": "2026-08-21T00:00:00Z", "providers": providers,
+                     "last_good": {}, "seats": fleet_state.make_seats(providers, {})}
+        fleet_state.validate_inventory(inventory)
+        (self.root / ".tasks/fleet-inventory.json").write_text(fleet_state.canonical(inventory))
+        fleet = {
+            "schema_version": 2, "mission": {"path": "docs/missions/fixture"},
+            "inventory": {"sha256": "0" * 64, "probed_at": "2026-08-21T00:00:00Z"},
+            "approval": {"status": "approved", "approved_by": "human", "approved_at": "2026-08-21T00:00:00Z"},
+            "policy": {"billing_classes": ["included"], "fast": False, "no_zdr": "allow"},
+            "seats": {"codex.economy": {"family": "luna", "effort": "medium", "speed": "unknown", "doors": ["codex"],
+                                             "approved_resolution": {"provider": "codex", "model": "gpt-5.6-luna", "effort": "medium", "speed": "unknown"}}},
+        }
+        path = self.mission / "fleet.json"
+        if path.exists():
+            path.chmod(0o644)
+        path.write_text(fleet_state.canonical(fleet))
+        path.chmod(0o444)
+        self.commit_fixture("frozen v2 fleet")
 
     def assert_worker_rejected(self, args):
         result = self.invoke(args)
@@ -1054,6 +1085,45 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             result.stderr,
         )
         self.assert_no_run_artifacts()
+        self.clean_runs()
+
+    def test_v2_worker_records_exactly_one_drift_event_for_changed_inventory(self):
+        self.set_status("in-progress")
+        self.write_v2_fleet_and_inventory("gpt-5.6-luna")
+        base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--feature", "F001", "--effort", "medium", "--speed", "unknown"]
+        first = self.invoke(base)
+        self.assertEqual(first.returncode, 0, first.stderr + first.stdout)
+        self.write_v2_fleet_and_inventory("gpt-5.7-luna")
+        second = self.invoke(base)
+        self.assertEqual(second.returncode, 0, second.stderr + second.stdout)
+        drift_path = self.root / ".tasks/drift/fixture.jsonl"
+        events = [json.loads(line) for line in drift_path.read_text().splitlines()]
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["from"]["model"], "gpt-5.6-luna")
+        self.assertEqual(events[0]["to"]["model"], "gpt-5.7-luna")
+        third = self.invoke(base)
+        self.assertEqual(third.returncode, 0, third.stderr + third.stdout)
+        self.assertEqual(len(drift_path.read_text().splitlines()), 1)
+
+    def test_v2_worker_fails_before_artifacts_when_drift_directory_is_unwritable(self):
+        self.set_status("in-progress")
+        self.write_v2_fleet_and_inventory("gpt-5.6-luna")
+        base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--feature", "F001", "--effort", "medium", "--speed", "unknown"]
+        initial = self.invoke(base)
+        self.assertEqual(initial.returncode, 0, initial.stderr + initial.stdout)
+        self.write_v2_fleet_and_inventory("gpt-5.7-luna")
+        for dirname in ("locks", "specs", "logs", "receipts"):
+            shutil.rmtree(self.root / ".tasks" / dirname, ignore_errors=True)
+        drift_dir = self.root / ".tasks/drift"
+        drift_dir.mkdir(parents=True)
+        drift_dir.chmod(0o500)
+        rejected = self.invoke(base)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("ERROR: drift event could not be written", rejected.stderr)
+        tasks = self.root / ".tasks"
+        for dirname in ("locks", "specs", "logs", "receipts"):
+            self.assertFalse(list((tasks / dirname).glob("*")) if (tasks / dirname).exists() else [])
+        drift_dir.chmod(0o700)
         self.clean_runs()
 
     def assert_no_run_artifacts(self):

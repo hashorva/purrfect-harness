@@ -196,7 +196,7 @@ WRITE_SCOPE_JSON="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.
 
 RESOLVE_ARGS=(python3 "$ROOT/scripts/fleet_state.py" resolve
   --fleet "$FLEET" --seat "$FLEET_SEAT" --mission-path "$MISSION"
-  --provider "$WORKER" --effort "$EFFORT" --speed "$SPEED")
+  --provider "$WORKER" --effort "$EFFORT" --speed "$SPEED" --inventory "$ROOT/.tasks/fleet-inventory.json" --root "$ROOT")
 [ -z "$MODEL_OVERRIDE" ] || RESOLVE_ARGS+=(--model "$MODEL_OVERRIDE")
 BINDING_JSON="$(PYTHONDONTWRITEBYTECODE=1 "${RESOLVE_ARGS[@]}")" || exit $?
 MODEL="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["model"])' <<<"$BINDING_JSON")"

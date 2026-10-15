@@ -22,7 +22,7 @@ from pathlib import Path
 _SCRIPTS_DIR = str(Path(__file__).resolve().parent)
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
-from harness_registry import RegistryError, decode_model, encode_model, legacy_view, load_registry
+from harness_registry import RegistryError, canonical_provider, decode_model, encode_model, legacy_view, load_registry
 
 BILLING_CLASSES = frozenset({"included", "credits", "api"})
 NO_ZDR_POLICY = frozenset({"allow", "forbid"})
@@ -242,7 +242,7 @@ def validate_fleet_policy(value):
     if value["no_zdr"] not in NO_ZDR_POLICY: fail("fleet.policy.no_zdr invalid")
 def validate_fleet_v2_seat(name,value,registry,policy):
     label="fleet.seats."+name
-    exact_keys(value,{"family","effort","doors","speed"},label)
+    exact_keys(value,{"family","effort","doors","speed","approved_resolution"},label)
     text(value["family"],label+".family"); text(value["effort"],label+".effort"); text(value["speed"],label+".speed")
     doors=value["doors"]
     if not isinstance(doors,list) or not doors: fail(f"{label}.doors must be a non-empty array")
@@ -258,6 +258,11 @@ def validate_fleet_v2_seat(name,value,registry,policy):
     if value["speed"] == "fast" and not policy["fast"]: fail(f"{label} speed fast requires fleet.policy.fast")
     families={(p,f) for p,f in registry["seat_specs"].values()}
     if not any((door_map[door]["provider"],value["family"]) in families for door in doors): fail(f"{label} family {value['family']!r} unsupported for its doors")
+    resolution=value["approved_resolution"]
+    exact_keys(resolution,{"provider","model","effort","speed"},label+".approved_resolution")
+    for key in ("provider","model","effort","speed"): text(resolution[key],label+".approved_resolution."+key)
+    if resolution["effort"] != value["effort"] or resolution["speed"] != value["speed"]: fail(f"{label}.approved_resolution capability mismatch")
+    if not any(door_map[door]["provider"] == resolution["provider"] for door in doors): fail(f"{label}.approved_resolution provider is not in its doors")
 def validate_fleet_v1(doc):
     exact_keys(doc,{"schema_version","mission","inventory","approval","seats"},"fleet")
     if doc["schema_version"]!=1: fail("fleet schema_version must be 1")
@@ -307,16 +312,70 @@ def freeze(args):
     mission=Path(args.mission_dir); fleet=mission/"fleet.json"
     doc={"schema_version":1,"mission":{"path":str(mission)},"inventory":{"sha256":sha(raw),"probed_at":inv["probed_at"]},"approval":{"status":"approved","approved_by":args.approved_by,"approved_at":args.approved_at},"seats":seats}
     validate_fleet(doc); atomic_write_new(fleet,canonical(doc).encode(),no_clobber=True,read_only=True); print(canonical(doc),end="")
+def freeze_v2(args):
+    inv,raw=read_json(args.inventory,"inventory",require_canonical=True); validate_inventory(inv)
+    try: bindings=json.loads(Path(args.bindings).read_text()); policy=json.loads(Path(args.policy).read_text())
+    except (OSError,json.JSONDecodeError) as exc: fail(f"invalid v2 freeze input: {exc}")
+    text(args.approved_by,"approved_by"); timestamp(args.approved_at,"approved_at"); validate_fleet_policy(policy)
+    registry=load_registry(); seats={}
+    for name,binding in bindings.items():
+        exact_keys(binding,{"family","effort","doors","speed"},"bindings."+name)
+        seat={**binding,"approved_resolution":{"provider":registry["doors"][binding["doors"][0]]["provider"],"model":"pending","effort":binding["effort"],"speed":binding["speed"]}}
+        seats[name]=seat
+    mission=Path(args.mission_dir)
+    doc={"schema_version":2,"mission":{"path":str(mission)},"inventory":{"sha256":sha(raw),"probed_at":inv["probed_at"]},"approval":{"status":"approved","approved_by":args.approved_by,"approved_at":args.approved_at},"policy":policy,"seats":seats}
+    for name,seat in seats.items():
+        result=resolve_v2(doc,name,registry,inv)
+        if result["source"]=="unavailable": fail(f"binding {name} resolves as unavailable at freeze")
+        seat["approved_resolution"]={key:result[key] for key in ("provider","model","effort","speed")}
+    validate_fleet_v2(doc,registry); atomic_write_new(mission/"fleet.json",canonical(doc).encode(),no_clobber=True,read_only=True); print(canonical(doc),end="")
 def resolve(args):
     doc,_=read_json(args.fleet,"fleet",require_canonical=True); validate_fleet(doc)
-    if doc["schema_version"] == 2: fail("fleet v2 is not resolvable yet")
     if args.mission_path is not None and doc["mission"]["path"] != args.mission_path: fail("fleet mission path assertion failed")
+    if doc["schema_version"] == 2:
+        inventory_doc,_=read_json(args.inventory,"inventory",require_canonical=True); validate_inventory(inventory_doc)
+        resolved=resolve_v2(doc,args.seat,load_registry(),inventory_doc)
+        if resolved["source"] == "unavailable": fail("fleet seat resolved as unavailable")
+        result={"provider":resolved["provider"],"model":resolved["model"],"effort":resolved["effort"],"speed":resolved["speed"]}
+        for key in result:
+            asserted=getattr(args,key)
+            if key == "provider" and asserted is not None:
+                try: asserted=canonical_provider(load_registry(),asserted)
+                except RegistryError: pass
+            if asserted is not None and result[key] != asserted: fail(f"fleet {key} assertion failed")
+        drift(args.root,args.seat,doc,result,inventory_doc,args.inventory)
+        print(canonical({"seat":args.seat,**result}),end="")
+        return
     seat=doc["seats"].get(args.seat)
     if seat is None: fail("fleet seat not found")
     for key in ("provider","model","effort","speed"):
         val=getattr(args,key)
         if val is not None and seat[key] != val: fail(f"fleet {key} assertion failed")
     print(canonical({"seat":args.seat,**seat}),end="")
+
+def drift(root_path,seat_name,fleet,resolved,inventory,inventory_path):
+    seat=fleet["seats"][seat_name]; mission=fleet["mission"]["path"]
+    root=Path(root_path).resolve()
+    slug=Path(mission).name
+    log=root/".tasks"/"drift"/(slug+".jsonl")
+    prior=None
+    if log.exists():
+        try:
+            for line in log.read_text().splitlines():
+                event=json.loads(line)
+                if event.get("mission")==mission and event.get("seat")==seat_name: prior=event["to"]
+        except (OSError,json.JSONDecodeError,KeyError) as exc: fail(f"invalid drift log: {exc}")
+    source=prior or seat["approved_resolution"]
+    if source == resolved: return
+    try:
+        if log.parent.exists() and log.parent.stat().st_mode & 0o222 == 0: raise OSError("drift directory has no write bits")
+        if log.exists() and log.stat().st_mode & 0o222 == 0: raise OSError("drift log has no write bits")
+        log.parent.mkdir(parents=True,exist_ok=True)
+        event={"at":now(),"mission":mission,"seat":seat_name,"from":source,"to":resolved,"inventory_sha256":sha(Path(inventory_path).read_bytes())}
+        with log.open("a",encoding="utf-8") as handle:
+            handle.write(json.dumps(event,sort_keys=True,separators=(",",":"))+"\n"); handle.flush(); os.fsync(handle.fileno())
+    except OSError:
+        fail("drift event could not be written")
 def inventory_keys(registry):
     """Canonical provider -> inventory key, which is the persisted legacy name (cursor -> agent)."""
     return dict(zip(registry["providers"], legacy_view(registry)[0]))
@@ -352,7 +411,8 @@ def main():
     parser=argparse.ArgumentParser(); sub=parser.add_subparsers(dest="command",required=True)
     p=sub.add_parser("inventory"); p.add_argument("--json",action="store_true"); p.add_argument("--out",default=".tasks/fleet-inventory.json")
     p=sub.add_parser("freeze"); p.add_argument("--mission-dir",required=True); p.add_argument("--inventory",required=True); p.add_argument("--bindings",required=True); p.add_argument("--approved-by",required=True); p.add_argument("--approved-at",required=True)
-    p=sub.add_parser("resolve"); p.add_argument("--fleet",required=True); p.add_argument("--seat",required=True); p.add_argument("--mission-path"); p.add_argument("--provider"); p.add_argument("--model"); p.add_argument("--effort"); p.add_argument("--speed")
+    p=sub.add_parser("freeze-v2"); p.add_argument("--mission-dir",required=True); p.add_argument("--inventory",required=True); p.add_argument("--bindings",required=True); p.add_argument("--policy",required=True); p.add_argument("--approved-by",required=True); p.add_argument("--approved-at",required=True)
+    p=sub.add_parser("resolve"); p.add_argument("--fleet",required=True); p.add_argument("--seat",required=True); p.add_argument("--mission-path"); p.add_argument("--provider"); p.add_argument("--model"); p.add_argument("--effort"); p.add_argument("--speed"); p.add_argument("--inventory",default=".tasks/fleet-inventory.json"); p.add_argument("--root",default=".")
     p=sub.add_parser("resolve-v2"); p.add_argument("--fleet",required=True); p.add_argument("--seat",required=True); p.add_argument("--inventory",required=True)
     p=sub.add_parser("validate-inventory"); p.add_argument("file")
     p=sub.add_parser("validate-fleet"); p.add_argument("file")
@@ -360,6 +420,7 @@ def main():
     try:
         if args.command=="inventory": inventory(args.out,args.json)
         elif args.command=="freeze": freeze(args)
+        elif args.command=="freeze-v2": freeze_v2(args)
         elif args.command=="resolve": resolve(args)
         elif args.command=="resolve-v2": return resolve_v2_command(args)
         elif args.command=="validate-inventory": validate_inventory(read_json(args.file,"inventory",True)[0])

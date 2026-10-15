@@ -50,8 +50,8 @@ def good_v2():
         "approval": {"status": "approved", "approved_by": "test", "approved_at": "2026-10-14T15:25:56Z"},
         "policy": {"billing_classes": ["included"], "fast": False, "no_zdr": "allow"},
         "seats": {
-            "codex.economy": {"family": "luna", "effort": "medium", "speed": "unknown", "doors": ["codex"]},
-            "cursor.economy": {"family": "composer", "effort": "medium", "speed": "standard", "doors": ["cursor-composer"]},
+            "codex.economy": {"family": "luna", "effort": "medium", "speed": "unknown", "doors": ["codex"], "approved_resolution": {"provider": "codex", "model": "gpt-5.6-luna", "effort": "medium", "speed": "unknown"}},
+            "cursor.economy": {"family": "composer", "effort": "medium", "speed": "standard", "doors": ["cursor-composer"], "approved_resolution": {"provider": "cursor", "model": "composer-2.5", "effort": "medium", "speed": "standard"}},
         },
     }
 
@@ -97,7 +97,10 @@ def fleet_with(seats, fast=False, billing=("included",), no_zdr="allow"):
 
 
 def seat(family, doors, effort="medium", speed="unknown"):
-    return {"family": family, "effort": effort, "speed": speed, "doors": doors}
+    provider = "cursor" if doors[0].startswith("cursor") else "claude" if doors[0].startswith("claude") else "codex"
+    model = {"luna": "gpt-5.6-luna", "terra": "gpt-5.6-terra", "composer": "composer-2.5", "grok": "grok-4.7-high", "opus": "opus"}.get(family, "fixture-model")
+    return {"family": family, "effort": effort, "speed": speed, "doors": doors,
+            "approved_resolution": {"provider": provider, "model": model, "effort": effort, "speed": speed}}
 
 
 def resolver_checks(d):
@@ -238,8 +241,11 @@ def main():
         non_object.write_text("[]\n")
         expect_error(run_cli("validate-fleet", non_object), "fleet must be an object")
 
-        resolve = run_cli("resolve", "--fleet", good, "--seat", "codex.economy")
-        expect_error(resolve, "fleet v2 is not resolvable yet")
+        resolve_inventory = d / "resolve-inventory.json"
+        write(resolve_inventory, inventory({"codex": ["gpt-5.7-luna"]}))
+        resolve = run_cli("resolve", "--fleet", good, "--seat", "codex.economy",
+                          "--inventory", resolve_inventory, "--root", d)
+        assert resolve.returncode == 0 and json.loads(resolve.stdout)["model"] == "gpt-5.7-luna", (resolve.returncode, resolve.stdout, resolve.stderr)
 
         spec = importlib.util.find_spec("jsonschema")
         if spec is None:
@@ -255,6 +261,74 @@ def main():
                 assert code_ok == schema_ok, (code_ok, schema_ok, document)
 
         resolver_checks(d)
+
+        # `resolve` is the launcher entry point: drift is appended once on a
+        # changed live resolution, then remains quiet for the same binding.
+        drift_fleet = fleet_with({"codex.economy": seat("luna", ["codex"])})
+        drift_fleet_path = d / "docs/missions/fixture/fleet.json"
+        (d / ".tasks/drift/fixture.jsonl").unlink(missing_ok=True)
+        drift_fleet_path.parent.mkdir(parents=True)
+        write(drift_fleet_path, drift_fleet)
+        drift_inventory_path = d / ".tasks/fleet-inventory.json"
+        drift_inventory_path.parent.mkdir(parents=True, exist_ok=True)
+        live_inventory = inventory({"codex": ["gpt-6-luna"]})
+        drift_inventory_path.write_text(fleet_state.canonical(live_inventory))
+        resolve_args = ("resolve", "--fleet", drift_fleet_path, "--seat", "codex.economy",
+                        "--mission-path", "docs/missions/fixture", "--inventory", drift_inventory_path, "--root", d)
+        for _ in range(3):
+            result = run_cli(*resolve_args)
+            assert result.returncode == 0, (result.returncode, result.stderr)
+            assert json.loads(result.stdout)["model"] == "gpt-6-luna"
+        drift_log = d / ".tasks/drift/fixture.jsonl"
+        events = [json.loads(line) for line in drift_log.read_text().splitlines()]
+        assert len(events) == 1 and events[0]["from"]["model"] == "gpt-5.6-luna" and events[0]["to"]["model"] == "gpt-6-luna", events
+        assert set(events[0]) == {"at", "mission", "seat", "from", "to", "inventory_sha256"}
+
+        blocked_root = d / "blocked"
+        blocked_fleet_path = blocked_root / "docs/missions/fixture/fleet.json"
+        blocked_fleet_path.parent.mkdir(parents=True)
+        write(blocked_fleet_path, drift_fleet)
+        blocked_inventory = blocked_root / ".tasks/fleet-inventory.json"
+        blocked_inventory.parent.mkdir(parents=True)
+        blocked_inventory.write_text(fleet_state.canonical(live_inventory))
+        blocked_dir = blocked_root / ".tasks/drift"
+        blocked_dir.mkdir()
+        blocked_dir.chmod(0o500)
+        blocked = run_cli("resolve", "--fleet", blocked_fleet_path, "--seat", "codex.economy",
+                          "--mission-path", "docs/missions/fixture", "--inventory", blocked_inventory, "--root", blocked_root)
+        assert blocked.returncode != 0 and "ERROR: drift event could not be written" in blocked.stderr, (blocked.returncode, blocked.stderr)
+        assert not list((blocked_root / ".tasks").glob("specs/*"))
+        blocked_dir.chmod(0o700)
+
+        v1_root = d / "v1-root"
+        v1_root.mkdir()
+        v1_doc = json.loads(MISSION_FLEET.read_text())
+        v1_doc["mission"]["path"] = "docs/missions/fixture"
+        v1_path = v1_root / "fleet.json"
+        write(v1_path, v1_doc)
+        v1_resolve = run_cli("resolve", "--fleet", v1_path, "--seat", "codex.economy",
+                             "--mission-path", "docs/missions/fixture", "--root", v1_root)
+        assert v1_resolve.returncode == 0, v1_resolve.stderr
+        assert not (v1_root / ".tasks/drift/fixture.jsonl").exists()
+
+        freeze_root = d / "freeze-root"
+        freeze_mission = freeze_root / "docs/missions/frozen"
+        freeze_mission.mkdir(parents=True)
+        freeze_inventory_path = d / "freeze-inventory.json"
+        freeze_inventory = inventory({"codex": ["gpt-5.6-luna", "gpt-5.7-luna"]})
+        write(freeze_inventory_path, freeze_inventory)
+        bindings_path = d / "freeze-bindings.json"
+        write(bindings_path, {"codex.economy": {"family": "luna", "effort": "medium", "speed": "unknown", "doors": ["codex"]}})
+        policy_path = d / "freeze-policy.json"
+        write(policy_path, {"billing_classes": ["included"], "fast": False, "no_zdr": "allow"})
+        frozen = run_cli("freeze-v2", "--mission-dir", freeze_mission, "--inventory", freeze_inventory_path,
+                         "--bindings", bindings_path, "--policy", policy_path, "--approved-by", "test",
+                         "--approved-at", NOW)
+        assert frozen.returncode == 0, frozen.stderr
+        frozen_doc = json.loads(frozen.stdout)
+        assert frozen_doc["seats"]["codex.economy"]["approved_resolution"] == {
+            "provider": "codex", "model": "gpt-5.7-luna", "effort": "medium", "speed": "unknown"}
+        assert run_cli("validate-fleet", freeze_mission / "fleet.json").returncode == 0
 
     print("fleet v2 validation tests passed")
 

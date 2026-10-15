@@ -105,7 +105,7 @@ WRITE_SCOPE_JSON="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.
 
 if [ "$ACTION" = review ]; then
   RESOLVE_ARGS=(python3 "$ROOT/scripts/fleet_state.py" resolve
-    --fleet "$FLEET" --seat brain --mission-path "$MISSION")
+    --fleet "$FLEET" --seat brain --mission-path "$MISSION" --inventory "$ROOT/.tasks/fleet-inventory.json" --root "$ROOT")
   [ -z "$PROVIDER" ] || RESOLVE_ARGS+=(--provider "$PROVIDER")
   [ -z "$MODEL" ] || RESOLVE_ARGS+=(--model "$MODEL")
   [ -z "$EFFORT" ] || RESOLVE_ARGS+=(--effort "$EFFORT")
