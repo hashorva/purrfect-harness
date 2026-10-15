@@ -193,17 +193,17 @@ def write_ledger_row(spec, receipt, *, tier, log):
     except ImportError:
         warn_ledger(log, "ledger: module unavailable")
         return
-    row = build_ledger_row(spec, receipt, tier=tier)
     try:
+        row = build_ledger_row(spec, receipt, tier=tier)
         validate_row(row)
+        destination = artifact_directory(spec["repo"], "ledger") / f"{spec['run_id']}.json"
+        _atomic_create_ledger(destination, canonical_bytes(row))
     except LedgerError as error:
         warn_ledger(log, f"{error.field}: {error.reason}")
-        return
-    destination = artifact_directory(spec["repo"], "ledger") / f"{spec['run_id']}.json"
-    try:
-        _atomic_create_ledger(destination, canonical_bytes(row))
     except OSError:
         warn_ledger(log, "ledger: write failed")
+    except Exception:
+        warn_ledger(log, "ledger: row build failed")
 
 
 def terminate_tree(process):
@@ -363,9 +363,10 @@ def run(args):
     )
     try:
         receipt_doc = json.loads(receipt.read_text(encoding="utf-8"))
-        write_ledger_row(spec, receipt_doc, tier=args.tier, log=log)
-    except (OSError, json.JSONDecodeError, SpecError):
+    except (OSError, json.JSONDecodeError):
         warn_ledger(log, "ledger: receipt unreadable")
+    else:
+        write_ledger_row(spec, receipt_doc, tier=args.tier, log=log)
     try:
         display = receipt.relative_to(Path.cwd())
     except ValueError:

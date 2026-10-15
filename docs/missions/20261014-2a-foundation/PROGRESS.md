@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 — Worker — T-029-R1 (F005 ledger never changes run outcome)
+
+- **Code:** `write_ledger_row` now wraps build, validate and write in one `try`/`except` (`LedgerError`, `OSError`, then any `Exception` → `WARN: ledger row not written: …`); receipt parsing is separate so a ledger `OSError` is never logged as `ledger: receipt unreadable`.
+- **Tests (integration temp repo, fake `codex`/`agent` on PATH):** (a) read-only `.tasks/ledger` → exit 0, `receipt=`, WARN, no row; mutation removing ledger `OSError`/`Exception` handlers → spawn exit ≠ 0. (b) hostile pool via provider registry rewrite → WARN `pool: privacy`, value absent from stdout/stderr/log; mutation skipping `validate_row` → row would be written. (c) provider writes malformed registry list → receipt `exit_code` 0, WARN, no row; mutation removing broad `Exception` handler → no `receipt=` line. (d) `.tasks/ledger` is a file → same; mutation same as (a). (e) `timed_out` and `launch_failed` rows validate; mutation success-only ledger return → failed run has no row. (f) second `write_ledger_row` same run id leaves bytes unchanged; mutation `os.replace` + skip validate → `feature` clobbered. (g) `observed_model` from receipt not spec; mutation copies spec model → assertion fails. (h) `diff_size.files` matches receipt `changed_paths`; mutation forces 0 → fails. (i) input/output token counts match receipt usage (distinct fixture values); mutation swaps input value → fails. (j) `check_command_label` yields `bash#1`/`bash#2`; mutation drops index → fails.
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; focused `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-integration.py` exit 0 before edits.
+- **Checks:** `shellcheck` exit 0; `test-execution-integration.py` exit 0 (41 OK); `test-ledger.py` exit 0 (43 OK); `git check-ignore -q .tasks/ledger/x.json` exit 0; no `scripts/__pycache__` or `tests/__pycache__`. Per task policy, `bash tests/run-tests.sh` not run by this worker.
+- **Scope:** only `scripts/execution_runner.py`, `tests/test-execution-integration.py`, and this entry. No feature acceptance or gate/status change.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-028-R4 verified; Architect review queued
 - **Mechanical review:** run `0f894102-a5cb-45f2-a19b-ad9f648ed519` (T-028-R4, codex.economy gpt-6-luna, effort medium, attempt 1), receipt: outcome `completed`, exit 0, scope pass, commit `0ad14ec`, 3 changed paths all in the allow-list. `verify-mission.sh --run-id …` → `VERIFY PASS` (5 commands incl. full suite). No `__pycache__` found before verify. Routing line written (ledger, S, codex.economy, done).
 - **Privacy code → Architect review required** (one focused pass with mutation tests and hostile inputs). Queued; will run together with T-029-R1's review to keep Claude quota use small, as separate runs.

@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import subprocess
@@ -1315,6 +1316,318 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertEqual(dry.returncode, 0, dry.stderr)
         self.assertNotIn(".tasks/", dry.stdout)
 
+    def ledger_worker_base(self):
+        return ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                "--model", "ledger-model", "--feature", "F001"]
+
+    def latest_receipt(self):
+        return json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())
+
+    def log_text(self, run_id):
+        return (self.root / ".tasks/logs" / f"{run_id}.log").read_text()
+
+    def assert_terminal_run_hygiene(self, result, *, expected_exit):
+        self.assertEqual(result.returncode, expected_exit, result.stderr + result.stdout)
+        self.assertIn("receipt=", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def mutate_runner_once(self, old, new):
+        runner = self.root / "scripts/execution_runner.py"
+        original = runner.read_text()
+        mutant = original.replace(old, new, 1)
+        self.assertNotEqual(mutant, original, f"mutation pattern not found: {old[:40]!r}")
+        runner.write_text(mutant)
+        self.commit_fixture("ledger runner mutation")
+        return original
+
+    def restore_runner(self, original):
+        (self.root / "scripts/execution_runner.py").write_text(original)
+        self.commit_fixture("restore ledger runner")
+
+    def install_codex_hostile_pool_provider(self, pool_value):
+        self.install_fixture_emitting_provider("codex", "codex.jsonl")
+        path = self.bin / "codex"
+        inject = (
+            "import json as _json\n"
+            "_reg = _json.loads(pathlib.Path('harness-registry.json').read_text())\n"
+            f"_reg['doors']['codex']['pool'] = {json.dumps(pool_value)}\n"
+            "pathlib.Path('harness-registry.json').write_text(_json.dumps(_reg))\n"
+        )
+        path.write_text(path.read_text().replace("raise SystemExit", inject + "raise SystemExit", 1))
+
+    def install_codex_malformed_registry_provider(self):
+        self.install_fixture_emitting_provider("codex", "codex.jsonl")
+        path = self.bin / "codex"
+        inject = "pathlib.Path('harness-registry.json').write_text('[1, 2, 3]\\n')\n"
+        path.write_text(path.read_text().replace("raise SystemExit", inject + "raise SystemExit", 1))
+
+    def prove_runner_mutation_fails(self, old, new=None, check=None):
+        if check is None and callable(new):
+            replacements = old
+            check = new
+        else:
+            replacements = [(old, new)]
+        runner = self.root / "scripts/execution_runner.py"
+        original = runner.read_text()
+        mutant = original
+        for pattern, replacement in replacements:
+            mutant = mutant.replace(pattern, replacement, 1)
+            self.assertNotEqual(mutant, original, f"mutation pattern not found: {pattern[:40]!r}")
+        runner.write_text(mutant)
+        self.commit_fixture("ledger runner mutation")
+        try:
+            with self.assertRaises(AssertionError):
+                check()
+        finally:
+            self.restore_runner(original)
+
+    def run_id_from_output(self, result):
+        combined = result.stdout + result.stderr
+        match = re.search(r"run_id=([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})", combined)
+        self.assertIsNotNone(match, combined)
+        return match.group(1)
+
+    def assert_ledger_warn_without_row(self, result, run_id, *, hostile=None):
+        self.assert_terminal_run_hygiene(result, expected_exit=0)
+        log = self.log_text(run_id)
+        self.assertIn("WARN: ledger row not written:", log)
+        self.assertFalse((self.root / ".tasks/ledger" / f"{run_id}.json").is_file())
+        combined = result.stdout + result.stderr + log
+        if hostile is not None:
+            self.assertNotIn(hostile, combined)
+
+    def test_ledger_readonly_directory_warns_without_changing_outcome(self):
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        ledger_dir = self.root / ".tasks" / "ledger"
+        ledger_dir.mkdir(parents=True)
+        os.chmod(ledger_dir, 0o555)
+        result = self.invoke(self.ledger_worker_base())
+        run_id = self.latest_receipt()["run_id"]
+        self.assert_ledger_warn_without_row(result, run_id)
+
+        def check():
+            self.clean_runs()
+            ledger_dir = self.root / ".tasks" / "ledger"
+            ledger_dir.mkdir(parents=True)
+            os.chmod(ledger_dir, 0o555)
+            retry = self.invoke(self.ledger_worker_base())
+            self.assert_ledger_warn_without_row(retry, self.latest_receipt()["run_id"])
+
+        self.prove_runner_mutation_fails(
+            "    except OSError:\n        warn_ledger(log, \"ledger: write failed\")\n"
+            "    except Exception:\n        warn_ledger(log, \"ledger: row build failed\")\n",
+            "    except OSError:\n        raise\n",
+            check,
+        )
+        self.clean_runs()
+
+    def test_ledger_validator_refusal_warns_without_leaking_value(self):
+        hostile = "/" + "tmp" + "/" + "h" + "ostile-pool"
+        self.install_codex_hostile_pool_provider(hostile)
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        result = self.invoke(self.ledger_worker_base())
+        run_id = self.latest_receipt()["run_id"]
+        self.assert_ledger_warn_without_row(result, run_id, hostile=hostile)
+        self.assertIn("pool: privacy", self.log_text(run_id))
+
+        def check():
+            self.clean_runs()
+            self.install_codex_hostile_pool_provider(hostile)
+            retry = self.invoke(self.ledger_worker_base())
+            self.assert_ledger_warn_without_row(retry, self.latest_receipt()["run_id"], hostile=hostile)
+
+        self.prove_runner_mutation_fails("        validate_row(row)\n", "", check)
+        self.clean_runs()
+
+    def test_ledger_malformed_registry_warns_without_changing_outcome(self):
+        self.install_codex_malformed_registry_provider()
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        result = self.invoke(self.ledger_worker_base())
+        run_id = self.latest_receipt()["run_id"]
+        receipt = self.latest_receipt()
+        self.assertIn("receipt=", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(receipt["exit_code"], 0)
+        self.assertIn("WARN: ledger row not written:", self.log_text(run_id))
+        self.assertFalse((self.root / ".tasks/ledger" / f"{run_id}.json").is_file())
+
+        def check():
+            self.clean_runs()
+            self.install_codex_malformed_registry_provider()
+            broken = self.invoke(self.ledger_worker_base())
+            run_id = self.run_id_from_output(broken)
+            self.assertIn("receipt=", broken.stdout)
+            receipt = self.latest_receipt()
+            self.assertEqual(receipt["run_id"], run_id)
+            self.assertEqual(receipt["exit_code"], 0)
+            self.assertIn("WARN: ledger row not written:", self.log_text(run_id))
+
+        self.prove_runner_mutation_fails(
+            "    except Exception:\n        warn_ledger(log, \"ledger: row build failed\")\n",
+            "",
+            check,
+        )
+        self.clean_runs()
+
+    def test_ledger_unwritable_path_warns_without_changing_outcome(self):
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        tasks = self.root / ".tasks"
+        tasks.mkdir(parents=True, exist_ok=True)
+        (tasks / "ledger").write_text("not a directory\n")
+        result = self.invoke(self.ledger_worker_base())
+        run_id = self.latest_receipt()["run_id"]
+        self.assert_ledger_warn_without_row(result, run_id)
+
+        def check():
+            self.clean_runs()
+            tasks = self.root / ".tasks"
+            tasks.mkdir(parents=True, exist_ok=True)
+            (tasks / "ledger").write_text("not a directory\n")
+            retry = self.invoke(self.ledger_worker_base())
+            self.assert_ledger_warn_without_row(retry, self.latest_receipt()["run_id"])
+
+        self.prove_runner_mutation_fails(
+            "    except Exception:\n        warn_ledger(log, \"ledger: row build failed\")\n",
+            "",
+            check,
+        )
+        self.clean_runs()
+
+    def test_ledger_row_observed_model_matches_receipt_not_spec(self):
+        self.install_fixture_emitting_provider("agent", "cursor.jsonl")
+        spec_model = "spec-only-model-name"
+        self.write_fleet("agent", spec_model, "medium", "standard")
+        result = self.invoke([
+            "bash", "scripts/spawn-worker.sh", "agent", "docs/missions/fixture/tasks/T-001.md",
+            "--model", spec_model, "--effort", "medium", "--speed", "standard", "--feature", "F001",
+        ])
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        receipt = self.latest_receipt()
+        row = json.loads((self.root / ".tasks/ledger" / f"{receipt['run_id']}.json").read_text())
+        self.assertEqual(row["observed_model"], receipt["observation"]["observed_model"])
+        self.assertNotEqual(spec_model, receipt["observation"]["observed_model"]["value"])
+
+        def check():
+            self.clean_runs()
+            self.install_fixture_emitting_provider("agent", "cursor.jsonl")
+            self.write_fleet("agent", spec_model, "medium", "standard")
+            self.invoke([
+                "bash", "scripts/spawn-worker.sh", "agent", "docs/missions/fixture/tasks/T-001.md",
+                "--model", spec_model, "--effort", "medium", "--speed", "standard", "--feature", "F001",
+            ])
+            doc = self.latest_receipt()
+            row = json.loads((self.root / ".tasks/ledger" / f"{doc['run_id']}.json").read_text())
+            self.assertEqual(row["observed_model"], doc["observation"]["observed_model"])
+
+        self.prove_runner_mutation_fails(
+            '"value": observation["observed_model"]["value"],',
+            '"value": model,',
+            check,
+        )
+        self.clean_runs()
+
+    def test_ledger_row_diff_file_count_matches_receipt(self):
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        result = self.invoke(self.ledger_worker_base(), env={"PROVIDER_ACTION": "commit"})
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        receipt = self.latest_receipt()
+        row = json.loads((self.root / ".tasks/ledger" / f"{receipt['run_id']}.json").read_text())
+        self.assertEqual(row["diff_size"]["files"]["value"], len(receipt["changed_paths"]))
+
+        def check():
+            self.clean_runs()
+            self.write_fleet("codex", "ledger-model", "medium", "unknown")
+            self.invoke(self.ledger_worker_base(), env={"PROVIDER_ACTION": "commit"})
+            doc = self.latest_receipt()
+            row = json.loads((self.root / ".tasks/ledger" / f"{doc['run_id']}.json").read_text())
+            self.assertEqual(row["diff_size"]["files"]["value"], len(doc["changed_paths"]))
+
+        self.prove_runner_mutation_fails(
+            '"files": observed_number(len(receipt["changed_paths"])),',
+            '"files": observed_number(0),',
+            check,
+        )
+        self.clean_runs()
+
+    def test_ledger_row_token_counts_not_swapped(self):
+        self.install_fixture_emitting_provider("codex", "codex.jsonl")
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        result = self.invoke(self.ledger_worker_base())
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        receipt = self.latest_receipt()
+        usage = receipt["observation"]["usage"]
+        row = json.loads((self.root / ".tasks/ledger" / f"{receipt['run_id']}.json").read_text())
+        self.assertEqual(row["tokens_input"]["value"], usage["input"]["value"])
+        self.assertEqual(row["tokens_output"]["value"], usage["output"]["value"])
+        self.assertNotEqual(usage["input"]["value"], usage["output"]["value"])
+
+        def check():
+            self.clean_runs()
+            self.install_fixture_emitting_provider("codex", "codex.jsonl")
+            self.write_fleet("codex", "ledger-model", "medium", "unknown")
+            self.invoke(self.ledger_worker_base())
+            doc = self.latest_receipt()
+            usage = doc["observation"]["usage"]
+            row = json.loads((self.root / ".tasks/ledger" / f"{doc['run_id']}.json").read_text())
+            self.assertEqual(row["tokens_input"]["value"], usage["input"]["value"])
+            self.assertEqual(row["tokens_output"]["value"], usage["output"]["value"])
+
+        self.prove_runner_mutation_fails(
+            '"value": usage["input"]["value"],',
+            '"value": usage["output"]["value"],',
+            check,
+        )
+        self.clean_runs()
+
+    def test_ledger_second_write_same_run_id_does_not_replace_row(self):
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        result = self.invoke(self.ledger_worker_base())
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        receipt = self.latest_receipt()
+        row_path = self.root / ".tasks/ledger" / f"{receipt['run_id']}.json"
+        first_bytes = row_path.read_bytes()
+        retry = self.invoke([
+            sys.executable, "-c",
+            "import json, pathlib, sys; sys.path.insert(0, 'scripts'); "
+            "from execution_runner import write_ledger_row; "
+            f"spec = json.loads(pathlib.Path('.tasks/specs/{receipt['run_id']}.json').read_text()); "
+            f"receipt = json.loads(pathlib.Path('.tasks/receipts/{receipt['run_id']}.json').read_text()); "
+            "receipt['observation']['observed_model']['value'] = 'mutated'; "
+            f"write_ledger_row(spec, receipt, tier='economy', log=pathlib.Path('.tasks/logs/{receipt['run_id']}.log'))",
+        ])
+        self.assertEqual(retry.returncode, 0, retry.stderr + retry.stdout)
+        self.assertEqual(row_path.read_bytes(), first_bytes)
+
+        def check():
+            self.clean_runs()
+            self.write_fleet("codex", "ledger-model", "medium", "unknown")
+            self.invoke(self.ledger_worker_base())
+            doc = self.latest_receipt()
+            path = self.root / ".tasks/ledger" / f"{doc['run_id']}.json"
+            run_id = doc["run_id"]
+            retry = self.invoke([
+                sys.executable, "-c",
+                "import json, pathlib, sys; sys.path.insert(0, 'scripts'); "
+                "from execution_runner import write_ledger_row; "
+                f"spec = json.loads(pathlib.Path('.tasks/specs/{run_id}.json').read_text()); "
+                f"receipt = json.loads(pathlib.Path('.tasks/receipts/{run_id}.json').read_text()); "
+                "receipt['feature'] = 'F002'; "
+                f"write_ledger_row(spec, receipt, tier='economy', log=pathlib.Path('.tasks/logs/{run_id}.log'))",
+            ])
+            self.assertEqual(retry.returncode, 0, retry.stderr + retry.stdout)
+            row = json.loads(path.read_text())
+            self.assertEqual(row["feature"], "F001")
+
+        self.prove_runner_mutation_fails([
+            ("        validate_row(row)\n", ""),
+            (
+                "        try:\n            os.link(temp, path)\n        except FileExistsError as exc:\n"
+                "            raise OSError(f\"ledger row already exists for run_id {path.stem}\") from exc\n",
+                "        os.replace(temp, path)\n",
+            ),
+        ], check)
+        self.clean_runs()
+
     def test_runner_writes_one_valid_ledger_row_per_outcome(self):
         self.write_fleet("codex", "ledger-model", "medium", "unknown")
         base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
@@ -1331,6 +1644,42 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         failed_row = json.loads((self.root / ".tasks/ledger" / f"{failed_id}.json").read_text())
         self.assertEqual(failed_row["outcome"], "failed")
         self.assert_ledger_row_hygiene(failed_id)
+        self.clean_runs()
+
+        timeout = self.invoke(base, env={"PROVIDER_WAIT_FOR": str(self.parent / "never"),
+                                         "SPAWN_WORKER_TIMEOUT_SECS": "0.15"})
+        self.assertEqual(timeout.returncode, 124, timeout.stderr + timeout.stdout)
+        timed_id = self.latest_receipt()["run_id"]
+        timed_row = json.loads((self.root / ".tasks/ledger" / f"{timed_id}.json").read_text())
+        self.assertEqual(timed_row["outcome"], "timed_out")
+        self.assert_ledger_row_hygiene(timed_id)
+        self.clean_runs()
+
+        codex = self.bin / "codex"
+        stub = codex.read_bytes()
+        codex.unlink()
+        launch = self.invoke(base, env={"PATH": "/usr/bin:/bin"})
+        self.assertEqual(launch.returncode, 127, launch.stderr + launch.stdout)
+        codex.write_bytes(stub)
+        codex.chmod(0o755)
+        launch_id = self.latest_receipt()["run_id"]
+        launch_row = json.loads((self.root / ".tasks/ledger" / f"{launch_id}.json").read_text())
+        self.assertEqual(launch_row["outcome"], "launch_failed")
+        self.assert_ledger_row_hygiene(launch_id)
+
+        def check():
+            self.clean_runs()
+            self.write_fleet("codex", "ledger-model", "medium", "unknown")
+            fail = self.invoke(base, env={"PROVIDER_EXIT": "7"})
+            self.assertEqual(fail.returncode, 7, fail.stderr + fail.stdout)
+            failed_id = self.latest_receipt()["run_id"]
+            self.assert_ledger_row_hygiene(failed_id)
+
+        self.prove_runner_mutation_fails(
+            "    try:\n        row = build_ledger_row(spec, receipt, tier=tier)",
+            "    if receipt.get('outcome') != 'completed':\n        return\n    try:\n        row = build_ledger_row(spec, receipt, tier=tier)",
+            check,
+        )
         self.clean_runs()
 
     def test_verification_command_short_label_passes_ledger_privacy(self):
@@ -1357,6 +1706,22 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertLess(len(label), 80)
         self.assertNotIn("grep", label)
         self.assertEqual(label, "bash#1")
+        second = ["bash", "-c", "true"]
+        label_two = check_command_label(second, 1, [long_argv, second])
+        self.assertEqual(label_two, "bash#2")
+
+        def check():
+            probe = self.invoke([
+                sys.executable, "-c",
+                "import json, sys; sys.path.insert(0, 'scripts'); "
+                "from execution_runner import check_command_label; "
+                f"cmds = {json.dumps([long_argv, second])}; "
+                "print(check_command_label(cmds[1], 1, cmds))",
+            ])
+            self.assertEqual(probe.returncode, 0, probe.stderr)
+            self.assertEqual(probe.stdout.strip(), "bash#2")
+
+        self.prove_runner_mutation_fails('return f"{base}#{occurrence}"', "return base", check)
         good = json.loads((ROOT / "tests/fixtures/ledger/good-completed.json").read_text())
         good["checks"] = [{"name": label, "exit_code": 0}]
         probe = self.parent / "ledger-label-probe.json"
