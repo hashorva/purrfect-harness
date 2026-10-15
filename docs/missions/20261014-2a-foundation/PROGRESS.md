@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — T-036 worker — reconstruct a run from its four artifacts
+
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` exit 0 (67 tests).
+- **Changed:** added `scripts/reconstruct-run.sh` and `scripts/reconstruct_run.py`. The command accepts explicit run IDs or `--all`, validates spec/receipt/VerificationRecords/ledger rows through their existing validators, prints each run's resolved seat, hashes, result, commits, and observed model source, then lists all missing or invalid artifacts and exits non-zero. Added `tests/test-reconstruct.py`, wired it into `tests/run-tests.sh`, and declared both shipped scripts in the install/update manifest paths.
+- **Checks:** `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-reconstruct.py` exit 0 (2 tests; complete fixture plus each artifact missing); suite/manifest grep exit 0; shellcheck exit 0; no scripts/tests `__pycache__`; `git diff --check` exit 0.
+- **Not run:** `bash tests/run-tests.sh` (task verifier command; reserved for verification outside the worker sandbox).
+- **Result:** no feature acceptance or gate/status change; only allow-listed files changed. Commit: `feat(evidence): reconstruct a run from its four artifacts`.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — F007 starts: T-036 dispatch
 - Next in the owner's order after F006: F007. **T-036** (reconstruct command; diagnostics, S, code-reviewer; depends on T-012 and T-029, both verified) on codex.economy. T-037 (the smoke mission with five real runs) depends on T-026 and a working agy and is **blocked**; T-038 (Gate-2 input) follows it.
 
