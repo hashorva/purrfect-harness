@@ -4,6 +4,73 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-017 (`a9eb86b`)
+
+- **Run:** `caaf837d-51fa-43b8-80ce-8dbde687dc77`; log `.tasks/logs/caaf837d-51fa-43b8-80ce-8dbde687dc77.log`; spec role `brain`, action `review`, base `45d4f07`, write scope this file only. The launcher writes the receipt `.tasks/receipts/caaf837d-51fa-43b8-80ce-8dbde687dc77.json` when this run ends; it did not exist while this entry was written.
+- **Worker evidence I read:**
+  - Receipt `edf13ed4-…`: codex.economy `gpt-6-luna`, outcome `completed`, exit 0, scope pass, commit `a9eb86b`, 5 allow-listed paths, clean `git_after`.
+  - VerificationRecord `verification/edf13ed4-b4fc-4373-bec7-b72165b412b2.json`: `fail`. 7 of 8 commands exit 0; the 8th is `git diff --quiet HEAD~1 HEAD -- harness-registry.json`.
+  - `git diff a9eb86b 45d4f07 -- scripts tests schemas harness-registry.json` is empty, so `a9eb86b` is the code under review.
+- **Method:** effects only.
+  - Scratch `git clone`s in the session scratchpad, origin removed: `old` at `38ed10f` (before T-017), and `new` and `mut` at `a9eb86b`.
+  - Fake `claude`, `codex`, `cursor-agent`, `agy`, `agent` and `grok` were first on PATH (each logs and exits 97), with `PYTHONDONTWRITEBYTECODE=1`.
+  - **No real provider CLI ran.** The fake log holds only 33 `agy models` and 33 `cursor-agent models` calls, from the suite's inventory probe. No `-fast` model was launched.
+- **(1) The registry changes only Claude's evidence text: PASS.**
+  - A recursive value diff of the old and new `harness-registry.json` finds one path: `/providers/claude/sandbox_limits/evidence`. Key order is equal.
+  - With that field removed from both, the two registries are deep-equal.
+  - `legacy_view`, `canonical_provider` (`cursor`, `agent`, `codex`, `claude`, `agy`) and the `fleet_state` constants (`PROVIDERS`, `CAPABILITIES`, `SEAT_SPECS`, `FALLBACKS`, `EXECUTABLES`), dumped as JSON from each tree, are byte-identical (2,077 bytes).
+  - Each loader accepts the other tree's registry. `validate-fleet` on this mission's frozen `fleet.json` exits 0 in both trees.
+  - **The new text is backed by a record.** "T-008 (claude.economy) login check passed": T-008's spec `5db78e02-…` is `claude`/`haiku`, and its worker entry records `OK claude: identity matches and login check passed`. This is the observation my T-014 note (d) named. The task text pointed at the S1/S-codex smoke entries instead; the worker's citation is the accurate one.
+- **(2) The new checks reject bad input and accept the live registry: PASS.**
+  - My own oracle has 321 malformed inputs. It covers every listed T-017 case, for every provider, seat and fallback, plus extras: case and whitespace variants of the encodings, `None`, dicts, non-text and nested items in capabilities, 1- and 3-item and tuple-like seat specs, the legacy name `agent` as a seat provider, and blank fallback keys and values.
+  - The new loader rejects all 321 with `RegistryError` (no crash) and accepts the live registry. The old loader accepts 285 of the 321, so the oracle is not vacuous.
+  - The allowed effort and speed sets include every value used today by `schemas/*.json`, `execute_provider.py` and `EFFORT_RANK`, so no current value is refused.
+  - **N3: behaviour unchanged, now pinned.** The `fleet_state.py` diff is the one docstring line. `test_import_fails_closed_on_broken_registry` runs the import in a temporary copy that holds only `fleet_state.py`, `harness_registry.py` and a broken registry, and checks exit 1 plus `ERROR: registry:` in stderr.
+- **(3) The four T-014 survivors are now killed: PASS, 4 of 4.**
+  - Each mutation is killed by its own subtest of `test_sandbox_limits_architect_followup_regressions`:
+    - (a) `sandbox_limits` dropped from `PROVIDER_FIELDS` → "required sandbox_limits";
+    - (b) the sub-field `_require_fields` dropped → "required sandbox subfield";
+    - (c) the array check dropped → "empty prefix string";
+    - (d) the evidence type check dropped → "non-text evidence".
+- **(4) Mutations of the new checks: 23 of 25 killed.**
+  - Clone `mut`, one exact-string change at a time, then `tests/test-registry.py`. A byte-exact restore was checked with `git diff --quiet` after each one, and the clone was clean at the end.
+  - Killed:
+    - encodings 3 of 3: the check removed, only effort checked, only fast checked;
+    - capabilities 6 of 8: raise removed, non-empty dropped, membership dropped, distinct dropped, speeds skipped, efforts skipped;
+    - seat specs 4 of 4: raise removed, length, provider membership, family `.strip()`;
+    - fallbacks 4 of 4: raise removed, key check, key `.strip()`, value `.strip()`;
+    - N3 pin 4 of 4: exit status 2, message prefix changed, error swallowed, `except` never matching.
+  - A first form of "efforts skipped" broke the loop's syntax. I discarded it and re-ran a clean form, which was killed by four efforts subtests.
+  - **Survived, test gaps only, not blocking:**
+    - "capabilities list-type check dropped": the test's non-list input `"low"` is also refused by the membership check;
+    - "capabilities item str-type check dropped": no test has a non-text item, and without the check a nested list raises `TypeError` (fails closed, but not with `RegistryError`).
+  - The unmutated code rejects `{"low": true}`, `["low", ["low"]]` and `{"unknown": 1}` with `RegistryError`.
+- **(5) No consumer breaks: PASS.**
+  - `git grep` for registry users finds `dispatch_policy.py`, `fleet_doctor.py`, `fleet_state.py`, `seat_smoke.py`, `spawn-worker.sh` and `spawn-brain.sh`.
+  - In `new`, with fakes:
+    - `test-fleet-doctor.py`: 8 OK
+    - `test-seat-smoke.py`: 19 OK
+    - `test-execution-integration.py`: 24 OK
+    - `test-execution-spec.py`: 11 OK
+    - `test-fleet-state.py`: exit 0
+    - `harness_registry.py persisted-name cursor` prints `agent`
+    - the loader CLI: exit 0
+    - shellcheck: exit 0
+    - `bash tests/run-tests.sh` (run once): exit 0, `ALL TESTS PASSED`
+  - The values these consumers read (binary, identity and login fields, capabilities, seat specs, legacy names) are unchanged by (1).
+- **Attempt-2 qualification check:** the replacement registry command in `tasks/T-017.md` exits 0 on the live tree at `45d4f07`. It compares against `38ed10f`, not `HEAD~1`, so it holds whatever attempt 2's base commit is. I agree with the Front Desk's attempt-1 classification (`task`, plan defect, `attributable:false`): the failing command contradicts the task's own allow-listed edit, and the registry diff is exactly that edit.
+- **Non-blocking follow-ups (for a later test or docs task, not a correction):**
+  - (a) Add `{"low": true}` and `["low", ["low"]]` capability inputs, to kill the two survivors.
+  - (b) `tasks/T-017.md` text: the deny-list still names `harness-registry.json` while the allow-list permits Claude's evidence text (the scope check follows the allow-list, and attempt 2 changes no code). "Why each check exists" still describes the removed `git diff HEAD~1 HEAD` check. Fix these in the next recorded text edit, if T-017 is touched again.
+- **Audit:** `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` → `VERIFY OK`, exit 0, before this entry. The live tree was clean at `45d4f07`, with 1 worktree and no `__pycache__`.
+- **Not done:**
+  - no acceptance (T-017 is F004 slice evidence; its attempt-2 qualification run must still produce a passing VerificationRecord);
+  - no change to features, fleet, GOAL, status or tasks;
+  - no dispatch.
+  - Scratch clones, fakes, the comparison, the oracle and the mutation scripts stay in the session scratchpad.
+
+Verdict: PASS
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-017 attempt 1: VERIFY FAIL (my plan defect); T-017 text changed; Architect review requested
 - **Run `edf13ed4-b4fc-4373-bec7-b72165b412b2`** (T-017, codex.economy gpt-6-luna, effort medium, attempt 1), receipt `.tasks/receipts/edf13ed4-b4fc-4373-bec7-b72165b412b2.json`: outcome `completed`, exit 0, scope pass, commit `a9eb86b`, 5 changed paths in the allow-list (`harness-registry.json`, `scripts/fleet_state.py`, `scripts/harness_registry.py`, `tests/test-registry.py`, PROGRESS.md). `verify-mission.sh --run-id edf13ed4-b4fc-4373-bec7-b72165b412b2` → **VERIFY FAIL**; record `verification/edf13ed4-b4fc-4373-bec7-b72165b412b2.json` kept as history. 7 of 8 commands pass (registry tests, fleet-state tests, the registry loader, `validate-fleet` on the frozen fleet, shellcheck, the full suite, no-bytecode). The 8th, `git diff --quiet HEAD~1 HEAD -- harness-registry.json` (the registry file must be unchanged), exits 1. The worker flagged the conflict in its report.
 - **Classification:** failure class `task`, **plan defect, not model-attributable, and mine** (`attributable:false`): after the T-014 review I added to `tasks/T-017.md` the follow-up "Claude's `sandbox_limits` evidence text must also cite the login-visibility check", which changes `harness-registry.json`, and I left the original check asserting that file is unchanged. I read the commit's registry diff: the only change is `/providers/claude/sandbox_limits/evidence` (value diff against `38ed10f`, otherwise identical). Lesson (L-014 candidate): when adding an item to a task, re-read its verification list for a check the new item contradicts.
