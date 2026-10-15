@@ -14,7 +14,10 @@ import unittest
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+OBSERVE_FIXTURES = ROOT / "tests/fixtures/observe"
 PROVIDERS = ("codex", "claude", "agent", "agy")
+sys.path.insert(0, str(ROOT / "scripts"))
+from observe_output import observe  # noqa: E402
 
 
 class WrapperIntegration(unittest.TestCase):
@@ -219,12 +222,12 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
     def expected_argv(self, provider, model, effort, speed, prompt):
         repo = self.physical_root
         if provider == "codex":
-            return ["exec", "-C", repo, "-s", "workspace-write", "--add-dir", str(Path(repo) / ".git"), "-m", model, "-c", f'model_reasoning_effort="{effort}"', prompt]
+            return ["exec", "--json", "-C", repo, "-s", "workspace-write", "--add-dir", str(Path(repo) / ".git"), "-m", model, "-c", f'model_reasoning_effort="{effort}"', prompt]
         if provider == "claude":
-            return ["-p", prompt, "--model", model, "--effort", effort, "--allowedTools", "Read,Write,Edit,Bash"]
+            return ["-p", prompt, "--output-format", "json", "--model", model, "--effort", effort, "--allowedTools", "Read,Write,Edit,Bash"]
         if provider == "agy":
             return ["--dangerously-skip-permissions", "--print-timeout", "30m", "--model", model, "--effort", effort, "-p", prompt]
-        return ["-p", "--force", "--trust", "--workspace", repo, "--model", model, prompt]
+        return ["-p", "--force", "--trust", "--output-format", "stream-json", "--workspace", repo, "--model", model, prompt]
 
     def linked(self, *, role, provider, model, effort, speed, work_unit, feature):
         specs = list((self.root / ".tasks/specs").glob("*.json"))
@@ -262,7 +265,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertFalse(receipt["workspace_changed"])
         self.assertEqual(receipt["scope"]["result"], "pass")
         self.assertEqual(spec["schema_version"], 3)
-        self.assertEqual(spec["provider_contract_version"], 5)
+        self.assertEqual(spec["provider_contract_version"], 6)
         self.assertEqual(receipt["log_path"], f".tasks/logs/{spec['run_id']}.log")
         self.assertNotIn(spec["prompt"], json.dumps(receipt))
         invoked = json.loads((self.root / ".tasks/invoked.json").read_text())
@@ -1126,6 +1129,78 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         result = self.invoke(["bash", "scripts/spawn-worker.sh", "cursor", cursor_task,
                              "--model", "cursor-test", "--feature", "F001", "--effort", "medium", "--speed", "fast"])
         self.assert_prelaunch_refused(result, provider="cursor", prefix=".agents/", pattern=".agents/skills/x/SKILL.md")
+
+    def install_fixture_emitting_provider(self, provider, fixture_name):
+        binary = "cursor-agent" if provider == "agent" else provider
+        fixture = OBSERVE_FIXTURES / fixture_name
+        path = self.bin / binary
+        path.write_text(
+            f"""#!/usr/bin/env python3
+import json, os, pathlib, sys
+specs = list(pathlib.Path('.tasks/specs').glob('*.json'))
+pathlib.Path('.tasks/invoked.json').write_text(json.dumps({{
+    'provider': pathlib.Path(sys.argv[0]).name,
+    'argv': sys.argv[1:],
+    'spec_existed': bool(specs),
+    'lock_existed': pathlib.Path(os.environ.get('PURRFECT_DISPATCH_LOCK_PATH', '')).is_dir(),
+    'python_dont_write_bytecode': os.environ.get('PYTHONDONTWRITEBYTECODE'),
+}}))
+sys.stdout.buffer.write(pathlib.Path({json.dumps(str(fixture))}).read_bytes())
+sys.stdout.buffer.flush()
+raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
+"""
+        )
+        path.chmod(0o755)
+
+    def test_receipt_observation_matches_cli_fixture_output(self):
+        cases = [
+            ("codex", "codex.jsonl", "codex-model", "medium", "unknown"),
+            ("claude", "claude.json", "claude-model", "medium", "unknown"),
+            ("agent", "cursor.jsonl", "composer-2.5", "medium", "standard"),
+            ("agent", "cursor-no-init-model.jsonl", "composer-2.5", "medium", "standard"),
+        ]
+        for provider, fixture_name, model, effort, speed in cases:
+            with self.subTest(provider=provider, fixture=fixture_name):
+                self.install_fixture_emitting_provider(provider, fixture_name)
+                self.write_fleet(provider, model, effort, speed)
+                result = self.invoke([
+                    "bash", "scripts/spawn-worker.sh", provider, "docs/missions/fixture/tasks/T-001.md",
+                    "--model", model, "--effort", effort, "--speed", speed, "--feature", "F001",
+                ])
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                observe_name = "cursor" if provider == "agent" else provider
+                expected = observe(observe_name, (OBSERVE_FIXTURES / fixture_name).read_bytes())
+                receipt = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())
+                self.assertEqual(receipt["observation"], expected)
+                if fixture_name == "cursor.jsonl":
+                    self.assertEqual(receipt["observation"]["observed_model"]["value"], "Composer 2.5")
+                    self.assertNotEqual(receipt["model"], "Composer 2.5")
+                if fixture_name == "codex.jsonl":
+                    self.assertEqual(receipt["observation"]["observed_model"]["source"], "unknown")
+                self.clean_runs()
+
+    def test_failed_run_still_writes_receipt_observation(self):
+        self.install_fixture_emitting_provider("codex", "codex.jsonl")
+        self.write_fleet("codex", "codex-model", "medium", "unknown")
+        result = self.invoke([
+            "bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+            "--model", "codex-model", "--feature", "F001",
+        ], env={"PROVIDER_EXIT": "7"})
+        self.assertEqual(result.returncode, 7, result.stderr + result.stdout)
+        receipt = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())
+        self.assertEqual(receipt["outcome"], "failed")
+        self.assertEqual(receipt["observation"], observe("codex", (OBSERVE_FIXTURES / "codex.jsonl").read_bytes()))
+
+    def test_closed_stdin_finishes_eof_reading_provider(self):
+        (self.bin / "codex").write_text("#!/usr/bin/env bash\nwhile IFS= read -r _; do :; done\nexit 0\n")
+        (self.bin / "codex").chmod(0o755)
+        self.write_fleet("codex", "stdin-model", "medium", "unknown")
+        result = self.invoke([
+            "bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+            "--model", "stdin-model", "--feature", "F001",
+        ], env={"SPAWN_WORKER_TIMEOUT_SECS": "2"})
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertNotEqual(result.returncode, 124, result.stderr + result.stdout)
 
     def test_all_worker_provider_tier_mappings_use_frozen_values(self):
         for provider in PROVIDERS:

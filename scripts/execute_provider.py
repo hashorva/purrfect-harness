@@ -30,15 +30,21 @@ def provider_contract(spec):
         writes_agents = any(pattern.startswith(".agents/") for pattern in spec.get("write_scope", []))
         codex_agents_dir = (["--add-dir", str(Path(repo) / ".agents")]
                             if contract_version >= 5 and writes_agents else [])
-        argv = ["codex", "exec", "-C", repo, "-s", "workspace-write", *codex_git_dir, *codex_agents_dir, "-m", model,
-                "-c", f'model_reasoning_effort="{effort}"', prompt]
+        argv = ["codex", "exec"]
+        if contract_version >= 6:
+            argv.append("--json")
+        argv.extend(["-C", repo, "-s", "workspace-write", *codex_git_dir, *codex_agents_dir, "-m", model,
+                     "-c", f'model_reasoning_effort="{effort}"', prompt])
     elif provider == "claude":
         if effort not in {"low", "medium", "high", "xhigh", "max"}:
             raise SpecError("claude does not support requested effort")
         if speed != "unknown":
             raise SpecError("claude speed must be unknown")
-        argv = ["claude", "-p", prompt, "--model", model, "--effort", effort,
-                "--allowedTools", "Read,Write,Edit,Bash"]
+        argv = ["claude", "-p", prompt]
+        if contract_version >= 6:
+            argv.extend(["--output-format", "json"])
+        argv.extend(["--model", model, "--effort", effort,
+                     "--allowedTools", "Read,Write,Edit,Bash"])
     elif provider == "agy":
         if effort not in {"low", "medium", "high"}:
             raise SpecError("agy does not support requested effort")
@@ -64,7 +70,10 @@ def provider_contract(spec):
             resolved_model = f"{model}[effort={effort},fast={'true' if speed == 'fast' else 'false'}]"
         # Contract 3+: Grok Build also installs a bare `agent`, so use Cursor's unambiguous CLI.
         cursor_cli = "cursor-agent" if contract_version >= 3 else "agent"
-        argv = [cursor_cli, "-p", "--force", "--trust", "--workspace", repo, "--model", resolved_model, prompt]
+        argv = [cursor_cli, "-p", "--force", "--trust"]
+        if contract_version >= 6:
+            argv.extend(["--output-format", "stream-json"])
+        argv.extend(["--workspace", repo, "--model", resolved_model, prompt])
     return argv, {}
 
 

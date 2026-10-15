@@ -9,7 +9,8 @@ import sys
 import time
 
 from execute_provider import provider_contract
-from execution_receipt import ReceiptError, capture_before, now, write_receipt
+from execution_receipt import ReceiptError, all_unknown, capture_before, now, write_receipt
+from observe_output import observe
 from execution_spec import artifact_directory, SpecError, load_persisted, spec_sha256
 
 
@@ -94,6 +95,11 @@ def run(args):
 
     outcome = "launch_failed"
     exit_code = 127
+    log_offset = 0
+    try:
+        log_offset = log.stat().st_size
+    except OSError:
+        log_offset = 0
     try:
         try:
             with log.open("ab", buffering=0) as output:
@@ -140,6 +146,19 @@ def run(args):
             signal.signal(signum, handler)
 
     finished_at = now()
+    try:
+        with log.open("rb") as handle:
+            handle.seek(log_offset)
+            raw_output = handle.read()
+        observe_provider = "cursor" if spec["provider"] == "agent" else spec["provider"]
+        observation = observe(observe_provider, raw_output)
+    except Exception:
+        try:
+            with log.open("a", encoding="utf-8") as handle:
+                handle.write("WARN: observation unavailable\n")
+        except OSError:
+            pass
+        observation = all_unknown()
     receipt = write_receipt(
         spec_path=args.spec,
         digest=args.spec_sha256,
@@ -151,6 +170,7 @@ def run(args):
         log_path=str(log),
         task=args.task,
         tier=args.tier,
+        observation=observation,
     )
     try:
         display = receipt.relative_to(Path.cwd())

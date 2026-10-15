@@ -153,7 +153,8 @@ class ExecutionSpecContract(unittest.TestCase):
         self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=1), check=False).returncode, 0)
         self.assertEqual(self.persist(self.spec_v3(provider_contract_version=4), check=False).returncode, 0)
         self.assertEqual(self.persist(self.spec_v3(provider_contract_version=5), check=False).returncode, 0)
-        self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=6), check=False).returncode, 0)
+        self.assertEqual(self.persist(self.spec_v3(provider_contract_version=6), check=False).returncode, 0)
+        self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=7), check=False).returncode, 0)
         self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=True), check=False).returncode, 0)
 
     def test_persistence_is_canonical_hashed_and_no_clobber(self):
@@ -264,15 +265,37 @@ class ExecutionSpecContract(unittest.TestCase):
             else:
                 self.assertEqual(result.stdout.strip(), "OK")
 
-    def test_construct_emits_contract_5(self):
+    def test_construct_emits_contract_6(self):
         spec, path, _ = execution_spec.construct(
             role="worker", mission="docs/missions/fixture", feature="F001", work_unit="T-001", attempt=1,
             provider="codex", model="test-model", effort="medium", speed="unknown", repo=str(self.repo),
             prompt="exact prompt", write_scope=["allowed.txt"],
         )
         self.assertEqual(spec["schema_version"], 3)
-        self.assertEqual(spec["provider_contract_version"], 5)
+        self.assertEqual(spec["provider_contract_version"], 6)
         self.assertEqual(json.loads(path.read_text()), spec)
+
+    def test_contract_six_requests_json_cli_output(self):
+        repo = str(self.repo)
+        git_dir = str(self.repo / ".git")
+        cases = [
+            ("codex", {}, ["codex", "exec", "--json", "-C", repo, "-s", "workspace-write", "--add-dir", git_dir,
+                           "-m", "test-model", "-c", 'model_reasoning_effort="medium"', "exact prompt"]),
+            ("claude", {}, ["claude", "-p", "exact prompt", "--output-format", "json", "--model", "test-model",
+                            "--effort", "medium", "--allowedTools", "Read,Write,Edit,Bash"]),
+            ("agy", {}, ["agy", "--dangerously-skip-permissions", "--print-timeout", "30m", "--model", "test-model",
+                         "--effort", "medium", "-p", "exact prompt"]),
+            ("agent", {"speed": "standard"}, ["cursor-agent", "-p", "--force", "--trust", "--output-format", "stream-json",
+                                              "--workspace", repo, "--model", "test-model", "exact prompt"]),
+        ]
+        for provider, extra, expected in cases:
+            with self.subTest(provider=provider):
+                path, digest = self.persisted(self.spec_v3(provider=provider, provider_contract_version=6, **extra))
+                argv = json.loads(self.adapter(path, digest).stdout)["argv"]
+                self.assertEqual(argv, expected)
+        path, digest = self.persisted(self.spec_v3(provider="codex", provider_contract_version=5))
+        argv = json.loads(self.adapter(path, digest).stdout)["argv"]
+        self.assertNotIn("--json", argv)
 
     def test_negative_adapter_paths_do_not_invoke_provider_sentinel(self):
         env = dict(__import__("os").environ)

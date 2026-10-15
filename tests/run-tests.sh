@@ -392,7 +392,7 @@ chmod +x "$STUBBIN/codex"
 CODEX_MODEL="codex-test-model"
 CODEX_PROMPT="Read docs/missions/20990101-fixture/tasks/T-001.md and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder."
 CODEX_EXPECTED="$TARGET/.codex-expected"
-printf '%s\n' codex exec -C "$TARGET_CANONICAL" -s workspace-write --add-dir "$TARGET_CANONICAL/.git" -m "$CODEX_MODEL" \
+printf '%s\n' codex exec --json -C "$TARGET_CANONICAL" -s workspace-write --add-dir "$TARGET_CANONICAL/.git" -m "$CODEX_MODEL" \
   '-c' 'model_reasoning_effort="medium"' "$CODEX_PROMPT" > "$CODEX_EXPECTED"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/tasks/T-001.md \
@@ -401,7 +401,7 @@ check "codex receives the exact invocation with medium default" \
   cmp -s "$CODEX_EXPECTED" "$CODEX_OUT"
 
 CODEX_EXPECTED_XHIGH="$TARGET/.codex-expected-xhigh"
-printf '%s\n' codex exec -C "$TARGET_CANONICAL" -s workspace-write --add-dir "$TARGET_CANONICAL/.git" -m "$CODEX_MODEL" \
+printf '%s\n' codex exec --json -C "$TARGET_CANONICAL" -s workspace-write --add-dir "$TARGET_CANONICAL/.git" -m "$CODEX_MODEL" \
   '-c' 'model_reasoning_effort="xhigh"' "$CODEX_PROMPT" > "$CODEX_EXPECTED_XHIGH"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/tasks/T-001.md \
@@ -457,7 +457,7 @@ printf '#!/usr/bin/env bash\ntouch "%s"\nexit 0\n' "$GROK_DECOY" > "$STUBBIN/age
 chmod +x "$STUBBIN/agent"
 AGENT_MODEL="agent-test-model"
 AGENT_EXPECTED="$TARGET/.agent-expected"
-printf '%s\n' cursor-agent -p --force --trust --workspace "$TARGET_CANONICAL" --model "$AGENT_MODEL" "$CODEX_PROMPT" > "$AGENT_EXPECTED"
+printf '%s\n' cursor-agent -p --force --trust --output-format stream-json --workspace "$TARGET_CANONICAL" --model "$AGENT_MODEL" "$CODEX_PROMPT" > "$AGENT_EXPECTED"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
     bash scripts/spawn-worker.sh agent docs/missions/20990101-fixture/tasks/T-001.md \
       --tier economy --model "$AGENT_MODEL" --effort xhigh --feature F001 ) >/dev/null 2>&1 || true
