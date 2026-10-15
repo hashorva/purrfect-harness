@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "mission": "20261014-2a-foundation",
   "feature": "F004",
   "task": "T-026",
@@ -10,7 +10,8 @@
   "repair_round": 1,
   "cli": "agy",
   "cli_version": {"value": null, "source": "unknown"},
-  "door": "economy",
+  "door": "agy",
+  "tier": "economy",
   "pool": "agy",
   "billing_class": "subscription",
   "requested_model": {"value": "gemini-3-pro", "source": "estimated"},

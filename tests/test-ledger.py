@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ledger row v1: every section-8 field, a source flag on every number, real CLI entry point.
+"""Ledger row v2: every section-8 field, a source flag on every number, real CLI entry point.
 
 Expected field names are literal (proposal section 8), not read from the code under test.
 Negative cases run scripts/ledger.py as a subprocess and build every mutation in a temp dir.
@@ -20,6 +20,7 @@ SCHEMA = ROOT / "schemas/ledger-row.schema.json"
 FIXTURES = ROOT / "tests/fixtures/ledger"
 sys.path.insert(0, str(ROOT / "scripts"))
 from ledger import FIELDS, SECRET_PATTERNS, UUID_SHAPE, HIDDEN_CHARS, canonical_drift_line, canonical_row_line
+import execution_runner
 
 
 SECTION_8_FIELDS = [
@@ -150,15 +151,21 @@ class LedgerContract(unittest.TestCase):
         self.assertEqual(set(schema["required"]), properties)
         self.assertEqual(properties, set(FIELDS))
         self.assertEqual(set(SECTION_8_FIELDS) - properties, set(), "section 8 field missing from schema")
-        self.assertEqual(properties - set(SECTION_8_FIELDS) - {"schema_version"}, set(), "unexpected schema field")
+        self.assertEqual(properties - set(SECTION_8_FIELDS) - {"schema_version", "tier"}, set(), "unexpected schema field")
+        self.assertEqual(schema["title"], "Purrfect Harness LedgerRow v2")
+        self.assertEqual(schema["properties"]["schema_version"], {"const": 2})
+        self.assertEqual(schema["properties"]["tier"]["enum"], ["economy", "premium", None])
 
     def test_every_number_and_model_field_references_a_source_flag(self):
         properties = load(SCHEMA)["properties"]
         for name in NUMBER_FIELDS:
             self.assertEqual(properties[name]["$ref"], "#/$defs/numberFlag", name)
         for name in TEXT_FLAG_FIELDS:
-            self.assertEqual(properties[name]["$ref"], "#/$defs/textFlag", name)
+            expected = "#/$defs/configuredTextFlag" if name in ("requested_model", "resolved_model", "effort") else "#/$defs/textFlag"
+            self.assertEqual(properties[name]["$ref"], expected, name)
         self.assertEqual(properties["cost"]["required"], ["value", "source", "currency"])
+        self.assertEqual(load(SCHEMA)["$defs"]["configuredTextFlag"]["properties"]["source"]["enum"], ["observed", "configured", "estimated", "unknown"])
+        self.assertEqual(load(SCHEMA)["$defs"]["textFlag"]["properties"]["source"]["enum"], ["observed", "estimated", "unknown"])
 
     def test_good_fixtures_are_valid_through_the_cli(self):
         good = sorted(FIXTURES.glob("good-*.json"))
@@ -318,13 +325,39 @@ class LedgerMutations(unittest.TestCase):
         self.assertNotIn(hidden, result.stdout)
 
     def test_identity_and_enum_fields_are_checked(self):
-        self.expect_invalid(self.mutated(lambda row: row.__setitem__("schema_version", 2)), "schema_version: must be 1")
+        self.expect_invalid(self.mutated(lambda row: row.__setitem__("schema_version", 1)), "schema_version: must be 2")
         self.expect_invalid(self.mutated(lambda row: row.__setitem__("attempt", 0)), "attempt: must be an integer >= 1")
         self.expect_invalid(self.mutated(lambda row: row.__setitem__("run_id", "not-a-run")), "run_id: must be a run id (UUID v1-8)")
         self.expect_invalid(self.mutated(lambda row: row.__setitem__("outcome", "done")), "outcome: must be one of completed, failed, timed_out, interrupted, launch_failed")
         self.expect_invalid(self.mutated(lambda row: row.__setitem__("scope_result", "ok")), "scope_result: must be one of pass, fail, not_checked")
         self.expect_invalid(self.mutated(lambda row: row.__setitem__("ste_flag", "no")), "ste_flag: must be true or false")
 
+    def test_configured_source_is_allowed_only_on_frozen_configuration_fields(self):
+        for name in ("requested_model", "resolved_model", "effort"):
+            with self.subTest(field=name, direction="configured accepted"):
+                row = self.mutated(lambda r, n=name: r[n].update(source="configured"))
+                path = Path(self.tmp.name) / f"configured-{name}.json"
+                path.write_text(json.dumps(row), encoding="utf-8")
+                result = run_cli("validate", str(path))
+                self.assertEqual(result.returncode, 0, result.stderr)
+            with self.subTest(field=name, direction="bad source refused"):
+                self.expect_invalid(self.mutated(lambda r, n=name: r[n].update(source="measured")), f"{name}.source: must be one of observed, configured, estimated, unknown")
+            with self.subTest(field=name, direction="configured null refused"):
+                self.expect_invalid(self.mutated(lambda r, n=name: r[n].update(value=None, source="configured")), f"{name}.value: must not be null when source is configured")
+        for name in ("cli_version", "observed_model", "fast_state"):
+            with self.subTest(field=name, direction="configured refused"):
+                self.expect_invalid(self.mutated(lambda r, n=name: r[n].update(source="configured")), f"{name}.source: must be one of observed, estimated, unknown")
+
+    def test_tier_accepts_only_economy_premium_or_null(self):
+        for value in ("", "gold", "Economy", 1, True, [], {}):
+            with self.subTest(value=value):
+                self.expect_invalid(self.mutated(lambda r, v=value: r.__setitem__("tier", v)), "tier: must be one of economy, premium or null")
+        for value in ("premium", None):
+            with self.subTest(value=value):
+                row = self.mutated(lambda r, v=value: r.__setitem__("tier", v))
+                path = Path(self.tmp.name) / f"tier-{value}.json"
+                path.write_text(json.dumps(row), encoding="utf-8")
+                self.assertEqual(run_cli("validate", str(path)).returncode, 0)
     def test_lists_reject_duplicates_and_bad_checks(self):
         self.expect_invalid(
             self.mutated(lambda row: row.__setitem__("task_class_tags", ["ledger", "ledger"])),
@@ -607,6 +640,48 @@ class LedgerMutations(unittest.TestCase):
         result = run_cli("validate", str(path))
         self.assertEqual(result.returncode, 1)
         self.assertTrue(result.stderr.startswith("ERROR: ledger: document: not readable as JSON"), result.stderr)
+
+
+
+class LedgerBuilderTests(unittest.TestCase):
+    def row(self, provider, model, speed="standard", tier="economy", requested=None, effort="high", resolved=None, missing_configuration=False):
+        unknown = {"value": None, "source": "unknown"}
+        spec = {"repo": str(ROOT), "mission": "docs/missions/x", "work_unit": "T-1", "run_id": str(uuid.uuid4()), "attempt": 1, "provider": provider, "model": "spec-model", "effort": "spec-effort", "speed": speed, "write_scope": ["file"], "feature": "F001"}
+        receipt = {"feature": "F001", "observation": {"observed_model": unknown, "fast_state": unknown, "usage": {k: unknown for k in ("input", "output", "cache", "reasoning")}}, "started_at": "2026-10-15T00:00:00Z", "finished_at": "2026-10-15T00:00:01Z", "changed_paths": [], "scope": {"result": "pass"}, "outcome": "completed", "requested_configuration": {"model": model if requested is None else requested, "effort": effort}, "resolved_configuration": {"model": model if resolved is None else resolved}}
+        if missing_configuration:
+            receipt["requested_configuration"].pop("model")
+            receipt["requested_configuration"].pop("effort")
+            receipt["resolved_configuration"].pop("model")
+        row = execution_runner.build_ledger_row(spec, receipt, tier=tier)
+        from ledger import validate_row
+        validate_row(row)
+        return row
+
+    def test_builder_uses_receipt_configuration_registry_doors_and_independent_tier(self):
+        for speed in ("standard", "fast"):
+            for model, door in (("grok-4.7-high", "cursor-grok"), ("composer-2.5", "cursor-composer")):
+                row = self.row("agent", model, speed=speed, tier="premium")
+                self.assertEqual((row["door"], row["pool"], row["billing_class"], row["tier"]), (door, "cursor", "included", "premium"))
+        self.assertEqual((self.row("agent", "mystery-1")["door"], self.row("agent", "mystery-1")["pool"], self.row("agent", "mystery-1")["billing_class"]), ("unknown", "unknown", "unknown"))
+        self.assertEqual((self.row("codex", "gpt-6-luna")["door"], self.row("codex", "gpt-6-luna")["pool"]), ("codex", "openai"))
+        self.assertEqual((self.row("claude", "opus")["door"], self.row("claude", "opus")["pool"]), ("claude", "anthropic"))
+        self.assertIsNone(self.row("claude", "opus", tier=None)["tier"])
+        self.assertIsNone(self.row("claude", "opus", tier="bogus")["tier"])
+        row = self.row("agent", "grok-4.7-high", requested="grok")
+        self.assertEqual(row["requested_model"], {"value": "grok", "source": "configured"})
+        self.assertEqual(row["resolved_model"], {"value": "grok-4.7-high", "source": "configured"})
+        self.assertEqual(row["effort"], {"value": "high", "source": "configured"})
+        self.assertEqual(self.row("claude", "opus", effort="unknown")["effort"], {"value": None, "source": "unknown"})
+        for value in ("", "unknown"):
+            row = self.row("claude", "opus", requested=value, resolved=value, effort=value)
+            self.assertEqual(row["requested_model"], {"value": None, "source": "unknown"})
+            self.assertEqual(row["resolved_model"], {"value": None, "source": "unknown"})
+            self.assertEqual(row["effort"], {"value": None, "source": "unknown"})
+        missing = self.row("claude", "opus", missing_configuration=True)
+        self.assertEqual(missing["requested_model"], {"value": None, "source": "unknown"})
+        self.assertEqual(missing["resolved_model"], {"value": None, "source": "unknown"})
+        self.assertEqual(missing["effort"], {"value": None, "source": "unknown"})
+        self.assertEqual(row["schema_version"], 2)
 
 
 class LedgerFoldTests(unittest.TestCase):

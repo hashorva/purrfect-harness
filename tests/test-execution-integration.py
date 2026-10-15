@@ -1531,7 +1531,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
 
         self.prove_runner_mutation_fails(
             '"value": observation["observed_model"]["value"],',
-            '"value": model,',
+            '"value": spec["model"],',
             check,
         )
         self.clean_runs()

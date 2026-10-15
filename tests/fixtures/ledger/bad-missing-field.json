@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "mission": "20261014-2a-foundation",
   "feature": "F005",
   "task": "T-027",
@@ -13,7 +13,8 @@
     "value": "2.1.0",
     "source": "observed"
   },
-  "door": "economy",
+  "door": "claude",
+  "tier": "economy",
   "pool": "claude",
   "billing_class": "subscription",
   "requested_model": {

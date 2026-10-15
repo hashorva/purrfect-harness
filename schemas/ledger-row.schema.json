@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Purrfect Harness LedgerRow v1",
+  "title": "Purrfect Harness LedgerRow v2",
   "description": "One summary row per run (proposal section 8). Every number and model name carries a source flag. scripts/ledger.py is the dependency-free validator for this contract.",
   "type": "object",
-  "required": ["schema_version", "mission", "feature", "task", "run_id", "parent_run", "group_id", "attempt", "repair_round", "cli", "cli_version", "door", "pool", "billing_class", "requested_model", "resolved_model", "observed_model", "effort", "fast_state", "task_class_tags", "allow_list_size", "task_text_tokens", "ste_flag", "active_lesson_ids", "experiment_id", "wall_time_s", "turns", "tool_calls", "tokens_input", "tokens_output", "tokens_cache", "tokens_reasoning", "cost", "quota_share", "checks", "diff_size", "scope_result", "anti_gaming_flags", "failure_class", "escalation_reason", "outcome"],
+  "required": ["schema_version", "mission", "feature", "task", "run_id", "parent_run", "group_id", "attempt", "repair_round", "cli", "cli_version", "door", "tier", "pool", "billing_class", "requested_model", "resolved_model", "observed_model", "effort", "fast_state", "task_class_tags", "allow_list_size", "task_text_tokens", "ste_flag", "active_lesson_ids", "experiment_id", "wall_time_s", "turns", "tool_calls", "tokens_input", "tokens_output", "tokens_cache", "tokens_reasoning", "cost", "quota_share", "checks", "diff_size", "scope_result", "anti_gaming_flags", "failure_class", "escalation_reason", "outcome"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "const": 2 },
     "mission": { "$ref": "#/$defs/text" },
     "feature": { "$ref": "#/$defs/text" },
     "task": { "$ref": "#/$defs/text" },
@@ -18,12 +18,13 @@
     "cli": { "$ref": "#/$defs/text" },
     "cli_version": { "$ref": "#/$defs/textFlag" },
     "door": { "$ref": "#/$defs/text" },
+    "tier": { "enum": ["economy", "premium", null] },
     "pool": { "$ref": "#/$defs/text" },
     "billing_class": { "$ref": "#/$defs/text" },
-    "requested_model": { "$ref": "#/$defs/textFlag" },
-    "resolved_model": { "$ref": "#/$defs/textFlag" },
+    "requested_model": { "$ref": "#/$defs/configuredTextFlag" },
+    "resolved_model": { "$ref": "#/$defs/configuredTextFlag" },
     "observed_model": { "$ref": "#/$defs/textFlag" },
-    "effort": { "$ref": "#/$defs/textFlag" },
+    "effort": { "$ref": "#/$defs/configuredTextFlag" },
     "fast_state": { "$ref": "#/$defs/textFlag" },
     "task_class_tags": { "$ref": "#/$defs/textList" },
     "allow_list_size": { "$ref": "#/$defs/numberFlag" },
@@ -103,6 +104,16 @@
       "properties": {
         "value": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
         "source": { "enum": ["observed", "estimated", "unknown"] }
+      },
+      "allOf": [{ "$ref": "#/$defs/sourceRule" }, { "if": { "properties": { "source": { "not": { "const": "unknown" } } }, "required": ["source"] }, "then": { "properties": { "value": { "$ref": "#/$defs/text" } } } }]
+    },
+    "configuredTextFlag": {
+      "type": "object",
+      "required": ["value", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "value": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
+        "source": { "enum": ["observed", "configured", "estimated", "unknown"] }
       },
       "allOf": [{ "$ref": "#/$defs/sourceRule" }, { "if": { "properties": { "source": { "not": { "const": "unknown" } } }, "required": ["source"] }, "then": { "properties": { "value": { "$ref": "#/$defs/text" } } } }]
     }

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Ledger v1 row: field contract and dependency-free validator (F005).
+"""Ledger v2 row: field contract and dependency-free validator (F005).
 
-One row summarises one run, failed runs included. Every number carries a source flag:
-observed (measured), estimated, or unknown (value null). A value is never copied from
-the spec or guessed. Unknown keys are rejected, so a new field needs a schema change.
+One row summarises one run, failed runs included. Every number carries a source flag.
+observed means only what the CLI itself reported; configured means taken from the run's
+frozen configuration; estimated means inferred; unknown has a null value. Unknown keys
+are rejected, so a new field needs a schema change.
 
 Usage:
   ledger.py validate <file>   (exit 0 valid, 1 invalid, 2 usage)
@@ -20,8 +21,9 @@ import sys
 import stat
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SOURCES = ("observed", "estimated", "unknown")
+CONFIGURED_SOURCES = ("observed", "configured", "estimated", "unknown")
 # Privacy rule, applied to every text value at every nesting level (lists included).
 # Not covered, on purpose: a secret split across several fields. Each part alone looks harmless,
 # and the validator checks one value at a time.
@@ -49,7 +51,7 @@ TOKEN_FIELDS = ("tokens_input", "tokens_output", "tokens_cache", "tokens_reasoni
 FIELDS = (
     "schema_version", "mission", "feature", "task", "run_id", "parent_run", "group_id",
     "attempt", "repair_round",
-    "cli", "cli_version", "door", "pool", "billing_class",
+    "cli", "cli_version", "door", "tier", "pool", "billing_class",
     "requested_model", "resolved_model", "observed_model", "effort", "fast_state",
     "task_class_tags", "allow_list_size", "task_text_tokens", "ste_flag", "active_lesson_ids",
     "experiment_id",
@@ -173,6 +175,19 @@ def text_flag(path, value):
     check_flag(path, value, check_text)
 
 
+def configured_text_flag(path, value):
+    check_object(path, value, ("value", "source"))
+    if value["source"] not in CONFIGURED_SOURCES:
+        fail(sub(path, "source"), "must be one of observed, configured, estimated, unknown")
+    if value["source"] == "unknown":
+        if value["value"] is not None:
+            fail(sub(path, "value"), "must be null when source is unknown")
+    elif value["value"] is None:
+        fail(sub(path, "value"), f"must not be null when source is {value['source']}")
+    else:
+        check_text(sub(path, "value"), value["value"])
+
+
 def check_cost(path, value):
     check_flag(path, value, check_number, extra=("currency",))
     check_text(sub(path, "currency"), value["currency"])
@@ -209,7 +224,12 @@ def check_text_list(path, value):
 
 def check_schema_version(path, value):
     if not is_count(value) or value != SCHEMA_VERSION:
-        fail(path, f"must be {SCHEMA_VERSION}")
+        fail(path, "must be 2")
+
+
+def check_tier(path, value):
+    if value is not None and (not isinstance(value, str) or value not in ("economy", "premium")):
+        fail(path, "must be one of economy, premium or null")
 
 
 def check_bool(path, value):
@@ -230,12 +250,13 @@ CHECKS = {
     "cli": check_text,
     "cli_version": text_flag,
     "door": check_text,
+    "tier": check_tier,
     "pool": check_text,
     "billing_class": check_text,
-    "requested_model": text_flag,
-    "resolved_model": text_flag,
+    "requested_model": configured_text_flag,
+    "resolved_model": configured_text_flag,
     "observed_model": text_flag,
-    "effort": text_flag,
+    "effort": configured_text_flag,
     "fast_state": text_flag,
     "task_class_tags": check_text_list,
     "allow_list_size": number_flag,

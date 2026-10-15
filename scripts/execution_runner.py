@@ -61,22 +61,29 @@ def check_command_label(argv, index, commands):
     return f"{base}#{occurrence}"
 
 
-def registry_pool_and_billing(repo, provider, speed):
+def configured_text(value):
+    if not isinstance(value, str) or not value.strip() or value == "unknown":
+        return unknown_text()
+    return {"value": value, "source": "configured"}
+
+
+def registry_door_pool_and_billing(repo, provider, resolved_model):
     path = Path(repo) / "harness-registry.json"
     try:
         registry = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return "unknown", "unknown"
+        return "unknown", "unknown", "unknown"
     doors = registry.get("doors") or {}
     cli = ledger_cli_name(provider)
     if cli == "cursor":
-        door_name = "cursor-grok" if speed == "fast" else "cursor-composer"
+        family = resolved_model.split("-", 1)[0] if isinstance(resolved_model, str) else ""
+        door_name = f"cursor-{family}"
     else:
         door_name = cli
     door = doors.get(door_name)
     if not isinstance(door, dict):
-        return "unknown", "unknown"
-    return door.get("pool") or "unknown", door.get("billing_class") or "unknown"
+        return "unknown", "unknown", "unknown"
+    return door_name, door.get("pool") or "unknown", door.get("billing_class") or "unknown"
 
 
 def wall_time_seconds(started_at, finished_at):
@@ -88,13 +95,14 @@ def wall_time_seconds(started_at, finished_at):
 def build_ledger_row(spec, receipt, *, tier):
     observation = receipt["observation"]
     usage = observation["usage"]
-    pool, billing_class = registry_pool_and_billing(spec["repo"], spec["provider"], spec["speed"])
+    resolved_configuration = receipt.get("resolved_configuration") or {}
+    requested_configuration = receipt.get("requested_configuration") or {}
+    resolved_model = resolved_configuration.get("model")
+    door, pool, billing_class = registry_door_pool_and_billing(spec["repo"], spec["provider"], resolved_model)
     mission = Path(spec["mission"]).name
     feature = receipt["feature"] if receipt.get("feature") else "unknown"
-    door = tier if tier else "unknown"
-    model = spec["model"]
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "mission": mission,
         "feature": feature,
         "task": spec["work_unit"],
@@ -106,15 +114,16 @@ def build_ledger_row(spec, receipt, *, tier):
         "cli": ledger_cli_name(spec["provider"]),
         "cli_version": unknown_text(),
         "door": door,
+        "tier": tier if tier in ("economy", "premium") else None,
         "pool": pool,
         "billing_class": billing_class,
-        "requested_model": observed_text(model),
-        "resolved_model": observed_text(model),
+        "requested_model": configured_text(requested_configuration.get("model")),
+        "resolved_model": configured_text(resolved_model),
         "observed_model": {
             "value": observation["observed_model"]["value"],
             "source": observation["observed_model"]["source"],
         },
-        "effort": observed_text(spec["effort"]),
+        "effort": configured_text(requested_configuration.get("effort")),
         "fast_state": {
             "value": observation["fast_state"]["value"],
             "source": observation["fast_state"]["source"],
