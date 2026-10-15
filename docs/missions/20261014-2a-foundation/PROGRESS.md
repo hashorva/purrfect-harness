@@ -35,8 +35,8 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 | dispatch-policy | — | 1 / 0 | 0 / 1 |
 | docs | — | 1 / 0 | — |
 | launcher | — | — | 2 / 0 |
-| registry | 1 / 0 | 1 / 0 (qualification T-017 a2 not in this count; see data) | 2 / 0 |
-| verification | — | 1 / 0 | 2 / 0 |
+| registry | 1 / 0 | 0 / 0 (T-017 a1 was a plan defect) | 1 / 0 |
+| verification | — | 0 / 0 (T-011 a1 and T-012 a1 were plan defects) | 2 / 0 |
 Small numbers: no conclusion about a model yet. Average wall time per run: claude 238 s, codex 261 s, cursor 254 s (6-7 runs each). `agy.economy` and `cursor.premium` never ran a task (see §6). **Smoke results** (final): claude.economy/premium usable; codex.economy/premium usable (since contract 5; were usable-with-limit); cursor.economy usable; cursor.premium refused before launch; agy.economy unusable.
 
 ### 4. Quota used per vendor (my estimates; the CLIs report no remaining quota) and pauses
