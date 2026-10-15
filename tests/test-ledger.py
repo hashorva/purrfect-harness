@@ -109,6 +109,16 @@ class LedgerMutations(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertEqual(result.stderr.strip(), f"ERROR: ledger: {message}")
 
+    def expect_privacy_rejection(self, row, field_message, hostile):
+        self.count += 1
+        path = Path(self.tmp.name) / f"case-{self.count}.json"
+        path.write_text(json.dumps(row), encoding="utf-8")
+        result = run_cli("validate", str(path))
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertEqual(result.stderr.strip(), f"ERROR: ledger: {field_message}")
+        self.assertNotIn(hostile, result.stderr)
+        self.assertNotIn(hostile, result.stdout)
+
     def mutated(self, edit):
         row = json.loads(json.dumps(self.base))
         edit(row)
@@ -215,6 +225,66 @@ class LedgerMutations(unittest.TestCase):
 
     def test_privacy_rule_rejects_email_addresses(self):
         self.expect_invalid(self.mutated(lambda row: row.__setitem__("task", "owner@example.com")), "task: privacy")
+
+    def test_privacy_rule_rejects_carriage_return(self):
+        hostile = "T-028\rslice"
+        self.expect_privacy_rejection(
+            self.mutated(lambda row, v=hostile: row.__setitem__("task", v)),
+            "task: privacy",
+            hostile,
+        )
+
+    def test_privacy_rule_rejects_ghp_token(self):
+        hostile = "ghp_" + "A" * 36
+        self.expect_privacy_rejection(
+            self.mutated(lambda row, v=hostile: row.__setitem__("failure_class", v)),
+            "failure_class: privacy",
+            hostile,
+        )
+
+    def test_privacy_rule_rejects_github_pat_token(self):
+        hostile = "github_pat_11AAAAAA0000000000000000000000000000000000"
+        self.expect_privacy_rejection(
+            self.mutated(lambda row, v=hostile: row.__setitem__("escalation_reason", v)),
+            "escalation_reason: privacy",
+            hostile,
+        )
+
+    def test_privacy_rule_rejects_akia_key_id(self):
+        hostile = "AKIAIOSFODNN7EXAMPLE"
+        self.expect_privacy_rejection(
+            self.mutated(lambda row, v=hostile: row.__setitem__("group_id", v)),
+            "group_id: privacy",
+            hostile,
+        )
+
+    def test_privacy_rule_rejects_slack_token(self):
+        hostile = "xoxb-000000000000-0000000000000-AAAAAAAAAAAAAAAAAAAAAAAA"
+        self.expect_privacy_rejection(
+            self.mutated(lambda row, v=hostile: row.__setitem__("experiment_id", v)),
+            "experiment_id: privacy",
+            hostile,
+        )
+
+    def test_privacy_rule_rejects_pem_begin_header(self):
+        hostile = "-----BEGIN FAKE TEST KEY-----"
+        self.expect_privacy_rejection(
+            self.mutated(lambda row, v=hostile: row.__setitem__("mission", v)),
+            "mission: privacy",
+            hostile,
+        )
+
+    def test_privacy_rule_rejects_jwt_shaped_value(self):
+        hostile = (
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+            "eyJzdWIiOiJmYWtlLXRlc3Qtc3ViamVjdCJ9."
+            "fakeSignatureSegmentForPrivacyTestOnly"
+        )
+        self.expect_privacy_rejection(
+            self.mutated(lambda row, v=hostile: row["requested_model"].__setitem__("value", v)),
+            "requested_model.value: privacy",
+            hostile,
+        )
 
     def test_invalid_json_is_rejected(self):
         path = Path(self.tmp.name) / "broken.json"
