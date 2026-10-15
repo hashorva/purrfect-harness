@@ -4,6 +4,21 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — T-029-R2 worker (claude.economy, haiku) — complete; awaiting orchestrator verification
+
+- **Baseline (before edits):** `shellcheck scripts/*.sh tests/*.sh` exit 0; `tests/test-execution-integration.py` exit 0 (41 tests).
+- **Changed `scripts/execution_runner.py`:** `ledger` is imported once at runner start, before any provider launches, inside `try/except Exception`. A failed import sets the names to `None`, and the ledger step writes `WARN: ledger row not written: ledger: module unavailable`. The import left `write_ledger_row`, so a `scripts/ledger.py` that a worker edits during a run is never executed by that run. Exit code, `receipt=` line and receipt bytes are unchanged.
+- **Changed `tests/test-execution-integration.py`:** the clobber test's mutant is now `os.replace` in place of `os.link` alone, with validation kept. Its second write already used a valid row (receipt `feature = 'F002'`), so no change was needed there. Three tests were added. No existing test was weakened.
+- **Deviation from objective 2a/2b (reason: the preferred import placement):** an in-run edit to `scripts/ledger.py` is not executed, so the run writes its row from the pre-run module and emits no WARN. The in-run test therefore asserts exit 0, `receipt=`, no traceback, a row written, and no WARN. The WARN path is covered by the pre-broken-module test. The `except ImportError`-only mutant is caught by the pre-broken scenario, because an in-run edit can no longer reach the import.
+- **One line per test:**
+  - `test_ledger_module_edited_during_run_is_not_executed` (SyntaxError and RuntimeError edits): pass with the change. No mutant (not required).
+  - `test_ledger_module_broken_before_run_skips_only_the_ledger_step` (SyntaxError and RuntimeError committed before spawn): pass with the change. Mutant `except ImportError` alone: caught (`AssertionError` at the exit-code check, as `prove_runner_mutation_fails` requires).
+  - `test_ledger_generic_failure_warn_never_prints_exception_text`: pass with the change. Mutant that prints `{exc!r}` in the generic WARN: caught.
+  - `test_ledger_second_write_same_run_id_does_not_replace_row` (clobber, f): pass with the change. Mutant `os.replace` alone with validation kept: caught.
+- **Mutations** ran only in each test's temporary fixture repository; the live tree was not mutated.
+- **Checks (final results):** focused `tests/test-execution-integration.py` exit 0 (44 tests: 41 existing + 3 new); `tests/test-ledger.py` exit 0 (43 tests); `shellcheck scripts/*.sh tests/*.sh` exit 0; `bash tests/run-tests.sh` exit 0 (`ALL TESTS PASSED`); `test ! -e scripts/__pycache__ && test ! -e tests/__pycache__` exit 0; `git check-ignore -q .tasks/ledger/x.json` exit 0; literal-secret grep on the test file: no hits.
+- **Result:** attempt 1 of 2, passed. No feature acceptance, no `features.json`/fleet/gate/status change. Scoped change and this entry committed as `fix(runner): guard the ledger import; make the clobber test load-bearing`.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — Architect verdict: T-028-R4 PASS; T-029-R1 FAIL (two blocking); T-029-R2 written
 - **Architect review** run `808ef7ff-4dc2-416a-a5ae-750c8968870f`, commit `bc5c164`. T-028-R4 (`0ad14ec`): PASS (340/340 hostile placements refused, 12/12 mutations caught). Informational near-misses left to the owner: `/tmp` and `/etc` without trailing slash, `/TMP/x`, `${HOME}`, `~root/x`, double-space or NBSP after Bearer, U+061C. T-029-R1 (`d92e122`): FAIL: (1) a `scripts/ledger.py` left unimportable changes spawn exit (1 or 125) and drops `receipt=`; (2) clobber test (f) not load-bearing.
 - **T-029-R2** written from the Architect's follow-up (`tasks/T-029-R2.md`, ledger, S, review `code-reviewer` + the two end-to-end scenarios). Dispatching on claude.economy (rotation).

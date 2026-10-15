@@ -1618,14 +1618,90 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             row = json.loads(path.read_text())
             self.assertEqual(row["feature"], "F001")
 
-        self.prove_runner_mutation_fails([
-            ("        validate_row(row)\n", ""),
-            (
-                "        try:\n            os.link(temp, path)\n        except FileExistsError as exc:\n"
-                "            raise OSError(f\"ledger row already exists for run_id {path.stem}\") from exc\n",
-                "        os.replace(temp, path)\n",
-            ),
-        ], check)
+        self.prove_runner_mutation_fails(
+            "        try:\n            os.link(temp, path)\n        except FileExistsError as exc:\n"
+            "            raise OSError(f\"ledger row already exists for run_id {path.stem}\") from exc\n",
+            "        os.replace(temp, path)\n",
+            check,
+        )
+        self.clean_runs()
+
+    def install_codex_ledger_editing_provider(self, source):
+        self.install_fixture_emitting_provider("codex", "codex.jsonl")
+        path = self.bin / "codex"
+        inject = f"pathlib.Path('scripts/ledger.py').write_text({source!r})\n"
+        path.write_text(path.read_text().replace("raise SystemExit", inject + "raise SystemExit", 1))
+
+    def restore_ledger_module(self):
+        shutil.copy2(ROOT / "scripts/ledger.py", self.root / "scripts/ledger.py")
+        self.commit_fixture("restore ledger module")
+
+    def run_with_broken_ledger_module(self, source):
+        (self.root / "scripts/ledger.py").write_text(source)
+        self.commit_fixture("broken ledger module")
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        result = self.invoke(self.ledger_worker_base())
+        self.assert_terminal_run_hygiene(result, expected_exit=0)
+        run_id = self.latest_receipt()["run_id"]
+        self.assert_ledger_warn_without_row(result, run_id)
+        self.assertIn("ledger: module unavailable", self.log_text(run_id))
+        self.restore_ledger_module()
+
+    def test_ledger_module_edited_during_run_is_not_executed(self):
+        breakages = {"syntax": "def broken(:\n", "runtime": "raise RuntimeError('ledger import boom')\n"}
+        for label, source in breakages.items():
+            with self.subTest(breakage=label):
+                self.clean_runs()
+                self.install_codex_ledger_editing_provider(source)
+                self.write_fleet("codex", "ledger-model", "medium", "unknown")
+                result = self.invoke(self.ledger_worker_base())
+                self.assert_terminal_run_hygiene(result, expected_exit=0)
+                run_id = self.latest_receipt()["run_id"]
+                self.assertNotIn("WARN", self.log_text(run_id))
+                row = json.loads((self.root / ".tasks/ledger" / f"{run_id}.json").read_text())
+                self.assertEqual(row["run_id"], run_id)
+                self.restore_ledger_module()
+        self.clean_runs()
+
+    def test_ledger_module_broken_before_run_skips_only_the_ledger_step(self):
+        breakages = {"syntax": "def broken(:\n", "runtime": "raise RuntimeError('ledger import boom')\n"}
+        for label, source in breakages.items():
+            with self.subTest(breakage=label):
+                self.clean_runs()
+                self.run_with_broken_ledger_module(source)
+        self.clean_runs()
+        # Restoring `except ImportError` alone lets a SyntaxError escape the runner's start-up import.
+        self.prove_runner_mutation_fails(
+            "except Exception:\n    LedgerError = None\n",
+            "except ImportError:\n    LedgerError = None\n",
+            lambda: self.run_with_broken_ledger_module("def broken(:\n"),
+        )
+        self.clean_runs()
+
+    def test_ledger_generic_failure_warn_never_prints_exception_text(self):
+        secret = "ledger-" + "secret-" + "probe"
+        faulty = (ROOT / "scripts/ledger.py").read_text() + f"\n\ndef validate_row(row):\n    raise RuntimeError({secret!r})\n"
+
+        def check():
+            self.clean_runs()
+            (self.root / "scripts/ledger.py").write_text(faulty)
+            self.commit_fixture("faulty ledger validator")
+            self.write_fleet("codex", "ledger-model", "medium", "unknown")
+            result = self.invoke(self.ledger_worker_base())
+            self.assert_terminal_run_hygiene(result, expected_exit=0)
+            run_id = self.latest_receipt()["run_id"]
+            log = self.log_text(run_id)
+            self.assertIn("WARN: ledger row not written: ledger: row build failed", log)
+            self.assertNotIn(secret, result.stdout + result.stderr + log)
+            self.assertFalse((self.root / ".tasks/ledger" / f"{run_id}.json").is_file())
+            self.restore_ledger_module()
+
+        check()
+        self.prove_runner_mutation_fails(
+            "    except Exception:\n        warn_ledger(log, \"ledger: row build failed\")\n",
+            "    except Exception as exc:\n        warn_ledger(log, f\"ledger: row build failed: {exc!r}\")\n",
+            check,
+        )
         self.clean_runs()
 
     def test_runner_writes_one_valid_ledger_row_per_outcome(self):

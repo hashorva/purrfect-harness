@@ -16,6 +16,14 @@ from execution_receipt import ReceiptError, all_unknown, canonical_bytes, captur
 from observe_output import observe
 from execution_spec import artifact_directory, SpecError, load_persisted, spec_sha256
 
+# Imported before any provider runs, so a worker's later edit to scripts/ledger.py
+# is never executed by this run. A module that fails to import only skips the ledger step.
+try:
+    from ledger import LedgerError, validate_row
+except Exception:
+    LedgerError = None
+    validate_row = None
+
 
 RECEIPT_FAILURE_EXIT = 125
 
@@ -188,9 +196,7 @@ def warn_ledger(log, message):
 
 
 def write_ledger_row(spec, receipt, *, tier, log):
-    try:
-        from ledger import LedgerError, validate_row
-    except ImportError:
+    if validate_row is None:
         warn_ledger(log, "ledger: module unavailable")
         return
     try:
