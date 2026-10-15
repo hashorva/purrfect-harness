@@ -4,6 +4,11 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Worker (codex.economy) — T-040 F004 wording update
+- Replaced the stale Codex `.agents/` sandbox row in `.agents/skills/dispatch-worker/SKILL.md` and the matching `(b)` text in `docs/missions/templates/WORKER_TASK.template.md` with the contract 5 allow-list rule. No other content in either file was changed.
+- Baseline passed: `shellcheck scripts/*.sh tests/*.sh` (exit 0) and `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verification-record.py ShippedWorkerTemplateIntegration` (exit 0). Task checks passed: skill rule assertions, template rule assertions, and `ShippedWorkerTemplateIntegration` (exit 0).
+- Missing worker-side evidence: `bash tests/run-tests.sh` is an orchestrator verification command and was not run in the sandbox; the verifier must run it. No feature acceptance or gate/status change was made.
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — Architect plan received (A-2 proposal, T-040, corrected T-018/T-020); T-040 dispatch
 - **Architect run `e60b00a8-9594-4352-928c-3b069d4593a1`**, receipt `.tasks/receipts/e60b00a8-9594-4352-928c-3b069d4593a1.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `4efae2b`. `Plan: READY`.
 - **A-2 (owner decision in the morning):** the proposal to pull parallel worktree dispatch forward from 2B is committed unchanged as `docs/proposals/20261015-parallel-dispatch.md`. I did not apply anything.

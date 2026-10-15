@@ -164,7 +164,7 @@ routing rules in this table.
 | Limit | Rule |
 | --- | --- |
 | Codex workspace-write cannot see Claude or agy login state; login checks are verification-only. | Do not run login checks (for example `scripts/fleet-doctor.sh`) as worker checks; put them in the task's verification commands. |
-| Codex workspace-write cannot write under `.agents/` (PermissionError); route skill edits to a seat that can, until the adapter is fixed. | Dispatch tasks that edit `.agents/` to a seat that can write there, not to Codex workspace-write. |
+| Codex workspace-write can write under `.agents/` only when the task's allow-list names `.agents/…` paths: since contract 5 (T-013) the adapter then adds `--add-dir <repo>/.agents`. Broad patterns (`**`, `.agents`) do not enable it, so such a write still fails at run time. | Allow-list each skill edit by its `.agents/…` path (for example `.agents/skills/dispatch-worker/SKILL.md`) when the task goes to Codex. Write limits are data in `harness-registry.json` (`sandbox_limits`), which `dispatch_policy.py` enforces before launch. |
 
 Worker checks are focused and sandbox-safe commands only; the full suite and
 real-machine checks go in the task's verification commands. When a new limit is

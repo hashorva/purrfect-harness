@@ -62,9 +62,8 @@ success when a required check's final result is unavailable.
 > (`sandbox_limits`); `dispatch_policy.py` refuses a task that hits one before
 > launch. Login-state limits are routing-only (not decidable from the allow-list).
 > (a) Codex workspace-write cannot see Claude or agy login state; login checks are
-> verification-only. (b) Codex workspace-write cannot write under `.agents/`
-> (PermissionError); route skill edits to a seat that can, until the adapter is
-> fixed. Worker checks are focused and sandbox-safe. The full suite and
+> verification-only. (b) Since contract 5 (T-013), a Codex task can write under `.agents/` when its allow-list names `.agents/…` paths: the adapter then adds `--add-dir <repo>/.agents`. Broad patterns (`**`, `.agents`) do not enable it.
+> Worker checks are focused and sandbox-safe. The full suite and
 > real-machine checks are verification commands, which `verify-mission.sh` runs
 > outside the sandbox.
 
