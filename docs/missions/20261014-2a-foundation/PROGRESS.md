@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-028-R3 verified; code-reviewer requested
+- **Mechanical review:** run `4eee8795-b8bf-4dc4-9c89-fe2eeb4b0ff8` (T-028-R3, codex.economy gpt-6-luna, effort medium, attempt 1), receipt `.tasks/receipts/4eee8795-b8bf-4dc4-9c89-fe2eeb4b0ff8.json`: outcome `completed`, exit 0, scope pass, `git_after` clean, commit `02901e3`, 2 changed paths (`tests/test-ledger.py`, PROGRESS.md), both in the allow-list. `verify-mission.sh --run-id 4eee8795-b8bf-4dc4-9c89-fe2eeb4b0ff8` → `VERIFY PASS`, exit 0 (5 commands incl. the full suite and the literal-secret grep, which finds none). Routing line written (ledger, S, codex.economy, done). Slice evidence for F005, not acceptance.
+- **Review:** `code-reviewer` (tests only, as the Architect specified).
+
 ## 2026-10-15 — T-028-R3 worker — load-bearing ledger privacy tests
 - **Did:** added mixed-case `ghp_` and `github_pat_` values built from fragments, with a test asserting each matches exactly one `SECRET_PATTERNS` entry; added U+200C–U+200F and uppercase UUID checks; expanded the runtime-built hostile set from 27 to 47 distinct values, exercised in two fields each. No validator code changed.
 - **Baseline:** `shellcheck scripts/*.sh tests/*.sh` and `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` passed before edits.
