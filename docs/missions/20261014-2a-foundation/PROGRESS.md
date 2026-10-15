@@ -4,6 +4,16 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — S-CODEX RE-SMOKE: Codex seats now usable for .agents/ edits; T-016 dispatch
+- **S-codex:** `bash scripts/fleet-doctor.sh --smoke --mission docs/missions/20261014-2a-foundation --seat codex.economy --seat codex.premium --timeout 300 --keep --dest <scratchpad>/smoke-s-codex` → exit 0. Summary `.tasks/smoke/20261015T013501Z.json` (local). Live tree clean, no bytecode.
+  | seat | status | model | reason |
+  |---|---|---|---|
+  | codex.economy | **usable** | gpt-6-luna / medium | both smoke files in HEAD (was `usable-with-limit`) |
+  | codex.premium | **usable** | gpt-5.6-terra / medium | both smoke files in HEAD (was `usable-with-limit`) |
+- **Effect on routing exceptions:** the Codex `.agents/` write limit is **lifted for tasks whose allow-list names `.agents/…` paths** (contract 5, T-013; Architect rule above). The "not codex" exception for such tasks is retired; broad patterns (`**`, `.agents`) still do not enable the flag. The sandbox-limit table row (b) should say so; that docs edit is queued.
+- **Usable seats now:** claude.economy, claude.premium, codex.economy, codex.premium, cursor.economy. Unusable: agy.economy (hang; T-039 blocked), cursor.premium (frozen inconsistency, owner decision).
+- **Next:** T-016 (N1: compare provider names after conversion; launcher, S; Architect alone) on **cursor.economy** (worker runs so far: claude 4, codex 4, cursor 3).
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-013 qualified and verified; Codex re-smoke
 - **Mechanical review:** run `19700ad2-8019-4f9f-808a-d867ccde40a5` (T-013 attempt 2, qualification, codex.economy gpt-6-luna, effort medium), receipt `.tasks/receipts/19700ad2-8019-4f9f-808a-d867ccde40a5.json`: outcome `completed`, exit 0, scope pass, commit `9ffba93`, PROGRESS.md only. `verify-mission.sh --run-id 19700ad2-8019-4f9f-808a-d867ccde40a5` → `VERIFY PASS`, exit 0 (7 commands incl. the corrected live-root spec check and audit, and the full suite). Record `verification/19700ad2-8019-4f9f-808a-d867ccde40a5.json`. **Slice evidence for F004, not acceptance.** Code `0ef0359` has the Architect's PASS (run `31c3a37a-…`). Routing line written (adapter, S, codex.economy, attempt 2, done, "qualification run").
 - **Next:** re-smoke the Codex seats (S-codex): with contract 5 a `write_scope` naming `.agents/…` adds `--add-dir <repo>/.agents`. Whether the smoke's own task uses such a write scope decides the result; the smoke task writes `.agents/smoke/<seat>.txt`, so I expect `usable`.
