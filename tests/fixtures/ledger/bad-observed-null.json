@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "mission": "20261014-2a-foundation",
+  "feature": "F005",
+  "task": "T-027",
+  "run_id": "5f0c1e2a-7b3d-4c8e-9a1f-2d6b8e4c7a10",
+  "parent_run": null,
+  "group_id": "mission-2a-night-2",
+  "attempt": 1,
+  "repair_round": 0,
+  "cli": "claude",
+  "cli_version": {
+    "value": "2.1.0",
+    "source": "observed"
+  },
+  "door": "economy",
+  "pool": "claude",
+  "billing_class": "subscription",
+  "requested_model": {
+    "value": "claude-haiku-5-5",
+    "source": "observed"
+  },
+  "resolved_model": {
+    "value": "claude-haiku-5-5",
+    "source": "observed"
+  },
+  "observed_model": {
+    "value": "claude-haiku-5-5",
+    "source": "observed"
+  },
+  "effort": {
+    "value": "medium",
+    "source": "observed"
+  },
+  "fast_state": {
+    "value": "off",
+    "source": "observed"
+  },
+  "task_class_tags": [
+    "ledger",
+    "validator"
+  ],
+  "allow_list_size": {
+    "value": 7,
+    "source": "observed"
+  },
+  "task_text_tokens": {
+    "value": 1840,
+    "source": "estimated"
+  },
+  "ste_flag": false,
+  "active_lesson_ids": [],
+  "experiment_id": null,
+  "wall_time_s": {
+    "value": 412.6,
+    "source": "observed"
+  },
+  "turns": {
+    "value": null,
+    "source": "observed"
+  },
+  "tool_calls": {
+    "value": 44,
+    "source": "observed"
+  },
+  "tokens_input": {
+    "value": 58210,
+    "source": "observed"
+  },
+  "tokens_output": {
+    "value": 9342,
+    "source": "observed"
+  },
+  "tokens_cache": {
+    "value": 401775,
+    "source": "observed"
+  },
+  "tokens_reasoning": {
+    "value": 0,
+    "source": "observed"
+  },
+  "cost": {
+    "value": null,
+    "source": "unknown",
+    "currency": "USD"
+  },
+  "quota_share": {
+    "value": 0.02,
+    "source": "estimated"
+  },
+  "checks": [
+    {
+      "name": "test-ledger.py",
+      "exit_code": 0
+    },
+    {
+      "name": "schema json load",
+      "exit_code": 0
+    },
+    {
+      "name": "shellcheck",
+      "exit_code": 0
+    }
+  ],
+  "diff_size": {
+    "files": {
+      "value": 6,
+      "source": "observed"
+    },
+    "lines": {
+      "value": 412,
+      "source": "observed"
+    }
+  },
+  "scope_result": "pass",
+  "anti_gaming_flags": [],
+  "failure_class": null,
+  "escalation_reason": null,
+  "outcome": "completed"
+}

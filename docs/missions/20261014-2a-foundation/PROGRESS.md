@@ -4,6 +4,22 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — T-027 worker (Haiku 5.5) — ledger row schema and validator; awaiting orchestrator verification
+- **Task:** T-027 (F005 step 1 slice: every section-8 field with a source flag; no run, fold or derived view). Attempt 1 of 2. No launcher run id: invoked directly as the dispatched worker, so no `.tasks/receipts/` entry exists for this session. Seat per dispatch note: claude.economy (not confirmed by a receipt).
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0 before edits. `run-tests.sh` was not run as a baseline (standing rule).
+- **Built:** `schemas/ledger-row.schema.json` (draft 2020-12, `schema_version` 1, 42 fields, `additionalProperties` false). `scripts/ledger.py validate <file>`: stdlib only; exit 0 valid, 1 `ERROR: ledger: <field>: <reason>`, 2 usage. Fixtures in `tests/fixtures/ledger/`: `good-completed.json`, `good-failed.json`, and `bad-missing-field.json`, `bad-number-without-source.json`, `bad-observed-null.json`, `bad-extra-key.json`. `tests/test-ledger.py` (16 tests, runs the CLI; each mutation is built in a temp dir) is wired into `tests/run-tests.sh` under "ledger row v1 (F005)". `scripts/ledger.py` and the schema are in `install_payload_paths` and `update_paths`.
+- **Choices I made (for the orchestrator to check):** identity fields (mission, feature, task, cli, door, pool, billing_class) are plain values. Numbers, `cli_version`, models, `effort` and `fast_state` are value/source pairs. `cost` adds `currency`. `outcome` uses the receipt's enum. `scope_result` is `pass`/`fail`/`not_checked`. The validator does not check for transcript or secret text; that is F005 step 3.
+- **Checks run by the worker (exit codes):**
+  - `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py`: 0 (16 tests OK).
+  - Schema JSON load: 0. Manifest JSON load: 0.
+  - Greps: `tests/test-ledger.py` in run-tests.sh and `scripts/ledger.py` in the manifest: 0.
+  - `shellcheck scripts/*.sh tests/*.sh`: 0.
+  - No `scripts/__pycache__` or `tests/__pycache__`: 0.
+  - **Not run by the worker:** `bash tests/run-tests.sh`. The standing rule bars the worker from running it. The verifier must run it; the new section is untested end to end here.
+- **Negative check:** in a scratch copy I removed the observed-null rule from `ledger.py`. The suite failed 11 cases (exit 1), so the source-flag tests can fail.
+- **Scope:** changed only `schemas/ledger-row.schema.json`, `scripts/ledger.py`, `tests/test-ledger.py`, `tests/fixtures/ledger/*`, `tests/run-tests.sh`, `harness-manifest.json`, and this file. `features.json`, `fleet.json`, `GOAL.md`, `.tasks/` and the `execution_*` scripts are untouched. No acceptance or gate/status change by the worker.
+- **Missing evidence:** `run-tests.sh` exit code (verifier); `verify-mission.sh` (verifier, after this commit).
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — Architect re-review of T-025-R1 PASS; T-025 chain closed; T-027 dispatch
 - **Architect re-review of T-025-R1:** run `246bcaa2-f353-40b2-925c-e2c4baa154f7`, receipt `.tasks/receipts/246bcaa2-f353-40b2-925c-e2c4baa154f7.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `b96b2ad`. **Verdict: PASS** on `561d9be`. Its own reproduction now fails closed: at `bb26198` the v1 `freeze` accepted a `fallback` seat with `gpt-forged-terra-99` or with the real-looking `gpt-5.6-terra` and wrote a `fleet.json`; at `561d9be` it refuses both with the exact `ERROR:` text and writes nothing; v1 `freeze` is the only code that turns an inventory seat into a binding (`freeze_v2` untouched); old inventories with a degraded `fallback` seat still validate; a first-run probe failure still gives `unavailable`; the 2A and Phase-1 fleets still pass `validate-fleet`; a valid freeze is byte-identical; **7 of 7 mutations caught** (including the three that slipped through T-025); only the 3 allowed files changed, no test weakened.
 - **Non-blocking notes (kept):** the test reads a `FLEET_STATE` environment variable (if set, the suite tests another file); a hand-edited `fleet.json` with a `fallback` seat still validates (already true before T-025); the test adds the caller's PATH so installed `agy`/`cursor-agent` get called (64 such calls on its fakes); two docs still describe the removed fallback path: `.agents/skills/mission-init/SKILL.md:38` and `docs/missions/MODEL_ROUTING.md:146` (queued for a docs task).
