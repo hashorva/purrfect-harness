@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — T-029-R3 worker — complete; awaiting orchestrator verification
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-integration.py` exit 0 (44 tests).
+- **Change:** the live second-write probe now changes `receipt['feature']` to valid value `F002`. The test calls `check()` once against the unmutated runner before `prove_runner_mutation_fails`.
+- **Mutation proof:** the integration test used its temporary fixture repository/copy of `scripts/execution_runner.py`; `check()` passed on the original runner, then failed under the `os.replace` mutant because the existing row bytes/feature changed. The live tree's runner was not mutated.
+- **Final worker checks:** integration test exit 0 (44 tests); `tests/test-ledger.py` exit 0 (43 tests); shellcheck exit 0; no `__pycache__`; gitignore check exit 0. The required `bash tests/run-tests.sh` is reserved for the verifier/orchestrator and was not run by this worker.
+- **Result:** attempt 1 of 2, scoped change committed as `test(runner): clobber probe reaches the write; check passes on correct code`. No feature acceptance or gate/status change.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-029-R2 verified; code-reviewer FAIL on one test issue; T-029-R3 written
 - **Mechanical review:** run `dd30f06c-4b15-4c68-ac21-95fd30cce893` (T-029-R2, claude.economy haiku, effort medium, attempt 1): outcome `completed`, exit 0, scope pass, commit `8e2fde0`, 3 changed paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (6 commands). No `__pycache__` to delete.
 - **code-reviewer:** FAIL, one issue (confirmed by me at `tests/test-execution-integration.py` ~1595): the live second-write probe still sets an observed-model value the validator refuses, so it never reaches the write; the validating probe sits only in `check()`, which is never run against the unmutated runner. The runner change itself (import guarded, before provider launch) and tests a, b, e were judged correct. Failure class: task (claude.economy). Routing line written (verify-passed-review-failed).

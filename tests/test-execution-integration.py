@@ -1592,7 +1592,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             "from execution_runner import write_ledger_row; "
             f"spec = json.loads(pathlib.Path('.tasks/specs/{receipt['run_id']}.json').read_text()); "
             f"receipt = json.loads(pathlib.Path('.tasks/receipts/{receipt['run_id']}.json').read_text()); "
-            "receipt['observation']['observed_model']['value'] = 'mutated'; "
+            "receipt['feature'] = 'F002'; "
             f"write_ledger_row(spec, receipt, tier='economy', log=pathlib.Path('.tasks/logs/{receipt['run_id']}.log'))",
         ])
         self.assertEqual(retry.returncode, 0, retry.stderr + retry.stdout)
@@ -1618,6 +1618,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             row = json.loads(path.read_text())
             self.assertEqual(row["feature"], "F001")
 
+        check()
         self.prove_runner_mutation_fails(
             "        try:\n            os.link(temp, path)\n        except FileExistsError as exc:\n"
             "            raise OSError(f\"ledger row already exists for run_id {path.stem}\") from exc\n",
