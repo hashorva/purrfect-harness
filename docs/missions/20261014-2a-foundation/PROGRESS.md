@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — T-032 worker (cursor.economy) — ledger fold documented in acceptance loop; awaiting verifier
+- **Baseline (before edits):** `shellcheck scripts/*.sh tests/*.sh` exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` exit 0 (67 tests).
+- **Change:** `.agents/skills/dispatch-worker/SKILL.md` section 4 — after `accept-feature.sh`, run `python3 scripts/ledger.py fold "$MISSION"`; commit `docs/missions/ledger.jsonl` and `$MISSION/drift.jsonl` with verification/acceptance; rows stay under `.tasks/ledger/` until fold; one-sentence privacy rule (summaries only, no transcript/prompt/secrets). `docs/missions/ORCHESTRATION.md` — same fold in the acceptance command block plus one sentence on what the committed ledger holds.
+- **Checks after edits:** `env PYTHONDONTWRITEBYTECODE=1 python3 -c "import json; json.load(open('schemas/ledger-row.schema.json'))"` exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` exit 0 (67 tests); `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-integration.py` exit 0; `git check-ignore -q .tasks/logs/probe.log && git check-ignore -q .tasks/ledger/probe.json` exit 0; `grep -q 'ledger.py fold' .agents/skills/dispatch-worker/SKILL.md && grep -q 'ledger.py fold' docs/missions/ORCHESTRATION.md` exit 0; `shellcheck scripts/*.sh tests/*.sh` exit 0; `test ! -e scripts/__pycache__ && test ! -e tests/__pycache__` exit 0.
+- **Not run by the worker:** `bash tests/run-tests.sh` (verifier runs it outside the sandbox, per task).
+- **Feature acceptance:** none. F005 stays `passes: false` until the orchestrator accepts after full F005 verification.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-031 reviewed (PASS); T-032 dispatch
 - **code-reviewer: PASS on `a2f3dc6`** (exact output format, mission scoping, unknown never counted as observed, zero-accepted case, writes no file, clean failure without values). 
 - **T-032** is documentation only (skill + ORCHESTRATION.md + PROGRESS.md); it runs no real fold, so the open source-label/`door` decision does not block it. It edits `.agents/`, so not a Codex seat: cursor.economy.

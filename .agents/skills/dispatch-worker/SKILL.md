@@ -130,12 +130,17 @@ VERIFICATION_SHA256=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(
   "$MISSION/verification/$RUN_ID.json")
 bash scripts/accept-feature.sh --run-id "$RUN_ID" \
   --verification-sha256 "$VERIFICATION_SHA256" --accepted-by "orchestrator identity" "$MISSION"
+python3 scripts/ledger.py fold "$MISSION"
 bash scripts/verify-mission.sh --require-workers "$MISSION"
 ```
 
 Acceptance records `accepted_run_id`, `accepted_verification_sha256`,
 `accepted_at`, and `accepted_by` in features.json. No separate acceptance
-artifact is needed. Commit verification and acceptance with the progress record.
+artifact is needed. Each run's row stays gitignored under `.tasks/ledger/`
+until fold; commit verification, acceptance, `docs/missions/ledger.jsonl`, and
+`$MISSION/drift.jsonl` together with the progress record. A ledger row may
+hold execution summaries only and must never contain transcript text, prompt
+text, or secret-like strings.
 
 ## 5. Handle failures and gates
 

@@ -158,8 +158,14 @@ VERIFICATION_SHA256=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(
   "$MISSION/verification/$RUN_ID.json")
 bash scripts/accept-feature.sh --run-id "$RUN_ID" \
   --verification-sha256 "$VERIFICATION_SHA256" --accepted-by "orchestrator identity" "$MISSION"
+python3 scripts/ledger.py fold "$MISSION"
 bash scripts/verify-mission.sh --require-workers "$MISSION"
 ```
+
+The committed `docs/missions/ledger.jsonl` and mission `drift.jsonl` store
+validated execution summaries only—never provider transcripts or prompt text;
+per-run JSON remains under `.tasks/ledger/` until fold lands in the acceptance
+commit.
 
 Acceptance records `accepted_run_id`, `accepted_verification_sha256`, `accepted_at`,
 and `accepted_by`. A failed, no-op, unrelated, legacy, or null-evidence run cannot
