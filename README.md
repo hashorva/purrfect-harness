@@ -59,7 +59,7 @@ flowchart TD
   Receipt --> Review{"Review actual effects<br/>and final check results"}
   Review -->|fail or unproven| Correct["Bounded correction or qualification task;<br/>retain old evidence"]
   Correct --> Task
-  Review -->|pass| Verify["verify-mission.sh --run-id:<br/>same-snapshot VerificationRecord"]
+  Review -->|pass| Verify["verify-mission.sh --run-id:<br/>receipt-commit worktree VerificationRecord"]
   Verify --> Verified{"Required checks passed?"}
   Verified -->|no| Correct
   Verified -->|yes| Accept["Orchestrator accepts exact UUID<br/>and verification hash"]
@@ -185,8 +185,8 @@ There is no separate `acceptance.json`. Provider logs are under
 receipt.” Current ExecutionSpec v3 uses provider contract 2; historical v1/v2
 evidence retains contract 1 semantics instead of being reinterpreted by new flags.
 
-After reviewing effects, **before any further Git-visible change**, verify and
-accept the exact worker run. Set `MISSION` and `RUN_ID` to the actual mission and
+After reviewing effects, verify and accept the exact worker run. Set `MISSION`
+and `RUN_ID` to the actual mission and
 UUID printed by the launcher:
 
 ```bash
@@ -199,13 +199,14 @@ bash scripts/verify-mission.sh --require-workers "$MISSION"
 ```
 
 Verification executes the JSON argv checks from the task at the receipt's base
-commit. The current Git snapshot must equal the receipt's after snapshot both
-before and after checks. Passing verification does **not** accept a feature.
+commit. Checks run in a temporary clean worktree at the receipt's commit, so
+later commits and a dirty live tree do not affect them; a receipt with a dirty
+`git_after` is refused. Passing verification does **not** accept a feature.
 Only the orchestrator accepts after review and a passing record, then commits
 verification, acceptance, and progress. Run the current mission audit before
 any gate/status advance; register the human verdict in `PROGRESS.md`.
 
-If a brain review or later progress commit moved the snapshot before verification,
+If a worker left its changes uncommitted (dirty receipt `git_after`),
 use a bounded qualification task for the same pending feature and a new run.
 Never edit old specs, receipts, or records to fit later state. Failed, no-op,
 unrelated, null-evidence, or legacy runs cannot substitute for current acceptance.

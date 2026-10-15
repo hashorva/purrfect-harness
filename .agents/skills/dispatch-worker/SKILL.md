@@ -93,22 +93,22 @@ Receipt fields include `outcome`, `exit_code`, `git_before`, `git_after`,
   `scope.result` is `pass`.
 - Changed paths and commits demonstrate the requested work within the allow-list.
 - The log shows actual work, not a flag explanation, refusal, or unanswered question.
-- Required checks have final results, and the current Git snapshot still equals
-  the receipt's after snapshot.
+- Required checks have final results, and the receipt's `git_after` is clean (the
+  worker committed).
 
 New worker evidence cannot use null workspace-change values or legacy
 `worker-*.json` receipts as a warning-only substitute. Exit zero alone is not
 proof of implementation.
 
-If later review/progress commits changed the snapshot before run-specific
-verification, do not rewrite the old receipt. Create a bounded qualification
+If the receipt's `git_after` is dirty (the worker did not commit), do not rewrite
+the old receipt. Create a bounded qualification
 task for the same pending feature, commit its checks and allow-list, and run
 it from a clean base. Review and verify that new run; retain the implementation
 run as evidence of its own effects.
 
 ## 4. Verify, then accept separately
 
-Do this before making any further Git-visible change after the reviewed run:
+Do this after effect review; later commits do not affect it:
 
 ```bash
 RUN_ID="<UUID printed by the launcher>"
@@ -116,8 +116,10 @@ bash scripts/verify-mission.sh --run-id "$RUN_ID" "$MISSION"
 ```
 
 This executes the verification argv from the task at the receipt's base commit.
-It requires the current Git snapshot to equal the receipt's after snapshot before
-and after the checks. It creates one immutable record at
+It refuses a dirty receipt `git_after`, runs the checks in a temporary clean
+worktree at the receipt's commit, and requires that worktree's snapshot to equal
+the receipt's before and after the checks. A check that needs machine-local state
+reads it through `$PURRFECT_LIVE_ROOT`. It creates one immutable record at
 `$MISSION/verification/$RUN_ID.json`; it does not accept the feature.
 
 Only after a passing result and effect review may the orchestrator compute the

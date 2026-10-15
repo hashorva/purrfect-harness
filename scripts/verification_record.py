@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -185,7 +186,12 @@ def verify(root, mission, run_id):
     outcomes = []
     passed = True
     before = after = None
+    prev_sigterm = None
     try:
+        def on_sigterm(_signum, _frame):
+            raise SystemExit(143)
+
+        prev_sigterm = signal.signal(signal.SIGTERM, on_sigterm)
         subprocess.run(["git", "-C", str(root), "worktree", "add", "--detach", "--quiet",
                         str(worktree), receipt["git_after"]["head"]], check=True,
                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -231,6 +237,8 @@ def verify(root, mission, run_id):
             cleanup_failed = True
         if cleanup_failed:
             print(f"WARN: verification worktree cleanup failed: {worktree}", file=sys.stderr)
+        if prev_sigterm is not None:
+            signal.signal(signal.SIGTERM, prev_sigterm)
     record = {"schema_version": 1, "run_id": run_id, "mission": receipt["mission"], "feature": receipt["feature"],
               "work_unit": receipt["work_unit"], "attempt": receipt["attempt"],
               "execution_spec": {"path": str(spec_path), "sha256": digest(spec_raw)},

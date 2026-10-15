@@ -136,7 +136,8 @@ state, commits, changed paths, scope, and terminal outcome. The scope guarantee
 is limited to Git-visible changes in the declared workspace; it is not general
 filesystem containment. Unknown provider observations remain `unknown`.
 
-After effect review, before any further Git-visible change:
+After effect review (later commits do not affect it; checks run at the
+receipt's commit):
 
 ```bash
 bash scripts/verify-mission.sh --run-id "$RUN_ID" "$MISSION"
@@ -161,8 +162,9 @@ bash scripts/verify-mission.sh --require-workers "$MISSION"
 Acceptance records `accepted_run_id`, `accepted_verification_sha256`, `accepted_at`,
 and `accepted_by`. A failed, no-op, unrelated, legacy, or null-evidence run cannot
 stand in for this chain. Retain old artifacts without manufacturing acceptance.
-If review or later commits moved the snapshot, dispatch a bounded qualification
-task for the pending feature and verify its new run; do not rewrite old evidence.
+If the receipt's `git_after` is dirty (the worker did not commit), the verifier
+refuses it; dispatch a bounded qualification task for the pending feature and
+verify its new run; do not rewrite old evidence.
 
 ## Human GATE registration (binding)
 

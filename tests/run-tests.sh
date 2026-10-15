@@ -299,7 +299,7 @@ check "verify fails without receipts" sh -c "cd '$TARGET' && ! bash scripts/veri
 printf '%s\n' '.tasks/' '.verifybin/' > "$TARGET/.git/info/exclude"
 VERIFY_BIN="$TARGET/.verifybin"; mkdir -p "$VERIFY_BIN"
 # shellcheck disable=SC2016  # generated stub must expand VERIFY_WRITE at runtime
-printf '%s\n' '#!/usr/bin/env bash' '[ "${VERIFY_WRITE:-0}" != 1 ] || printf "%s\n" verified > proof.txt' 'exit 0' > "$VERIFY_BIN/codex"
+printf '%s\n' '#!/usr/bin/env bash' '[ "${VERIFY_WRITE:-0}" != 1 ] || { printf "%s\n" verified > proof.txt && git add proof.txt && git commit -qm proof; }' 'exit 0' > "$VERIFY_BIN/codex"
 chmod +x "$VERIFY_BIN/codex"
 git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "strict receipt fixture"
 ( cd "$TARGET" && PATH="$VERIFY_BIN:$PATH" SPAWN_BRAIN_TIMEOUT_SECS=0 \

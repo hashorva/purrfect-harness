@@ -376,7 +376,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         launched = self.invoke([
             sys.executable, "scripts/execution_runner.py", "--spec", details["path"], "--spec-sha256", details["sha256"],
             "--log", f".tasks/logs/{run_id}.log", "--timeout", "0", "--task", "docs/missions/fixture/tasks/T-001.md", "--tier", "economy",
-        ], env={"PROVIDER_ACTION": "dirty"})
+        ], env={"PROVIDER_ACTION": "commit"})
         self.assertEqual(launched.returncode, 0, launched.stderr + launched.stdout)
         receipt_path = self.root / ".tasks/receipts" / f"{run_id}.json"
         receipt = json.loads(receipt_path.read_text())
@@ -603,7 +603,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         (self.mission / "features.json").write_text(json.dumps(features, indent=2) + "\n")
         self.git("add", "docs/missions/fixture/features.json")
         self.git("commit", "-qm", "reopen fixture feature")
-        changed = self.invoke(worker_args, env={"PROVIDER_ACTION": "dirty"})
+        changed = self.invoke(worker_args, env={"PROVIDER_ACTION": "commit"})
         self.assertEqual(changed.returncode, 0, changed.stderr + changed.stdout)
         run_id = next(path.stem for path in (self.root / ".tasks/receipts").glob("*.json")
                       if json.loads(path.read_text())["role"] == "worker" and json.loads(path.read_text())["workspace_changed"])
@@ -643,6 +643,24 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                 result = self.invoke(verify)
                 self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
                 restore()
+
+    def test_real_uncommitted_worker_run_is_refused_by_worktree_verifier(self):
+        self.write_fleet("codex", "model", "medium", "unknown", include_brain=True)
+        brain = self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"])
+        self.assertEqual(brain.returncode, 0, brain.stderr + brain.stdout)
+        worker = self.invoke(
+            ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+             "--model", "model", "--feature", "F001"],
+            env={"PROVIDER_ACTION": "dirty"},
+        )
+        self.assertEqual(worker.returncode, 0, worker.stderr + worker.stdout)
+        run_id = next(path.stem for path in (self.root / ".tasks/receipts").glob("*.json")
+                      if json.loads(path.read_text())["role"] == "worker"
+                      and json.loads(path.read_text())["workspace_changed"])
+        verified = self.invoke(["bash", "scripts/verify-mission.sh", "--run-id", run_id, "docs/missions/fixture"])
+        self.assertNotEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        self.assertIn("worktree verification needs a clean receipt git_after", verified.stderr + verified.stdout)
+        self.assertFalse((self.mission / "verification" / f"{run_id}.json").exists())
 
     @staticmethod
     def _rewrite_receipt(path, receipt, **changes):

@@ -7,9 +7,11 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,15 +36,18 @@ class VerificationRecordIntegration(unittest.TestCase):
     def call(self, *args, env=None):
         return self.fixture.invoke(list(args), env=env)
 
-    def make_run_with_check(self, argv):
+    def make_run_with_check(self, argv, extra_env=None):
         self.fixture.task.write_text(
             "---\ntask_id: T-001\nfeature: F001\n---\n# Task\n\n"
             "## Files you MAY touch\n- `allowed.txt`\n\n## Verification commands\n"
             f"\n- `{json.dumps(argv)}`\n")
         self.fixture.commit_fixture("verification command fixture")
+        worker_env = {"PROVIDER_ACTION": "commit"}
+        if extra_env:
+            worker_env.update(extra_env)
         worker = self.call("bash", "scripts/spawn-worker.sh", "codex",
                            "docs/missions/fixture/tasks/T-001.md", "--model", "model",
-                           "--feature", "F001", env={"PROVIDER_ACTION": "commit"})
+                           "--feature", "F001", env=worker_env)
         self.assertEqual(worker.returncode, 0, worker.stderr + worker.stdout)
         return max((path for path in (self.fixture.root / ".tasks/receipts").glob("*.json")
                     if json.loads(path.read_text())["role"] == "worker"),
@@ -95,6 +100,53 @@ class VerificationRecordIntegration(unittest.TestCase):
         self.assertNotEqual(denied.returncode, 0, denied.stderr + denied.stdout)
         self.assertIn("worktree verification needs a clean receipt git_after", denied.stderr + denied.stdout)
         self.assertFalse((self.fixture.mission / "verification" / f"{self.run_id}.json").exists())
+
+    def test_post_checkout_hook_dirtied_worktree_is_refused_before_checks(self):
+        hook = self.fixture.root / ".git/hooks/post-checkout"
+        hook.parent.mkdir(parents=True, exist_ok=True)
+        hook.write_text("#!/bin/sh\nprintf stray > hook-stray.txt\n")
+        hook.chmod(0o755)
+        denied = self.call("bash", "scripts/verify-mission.sh", "--run-id", self.run_id, self.mission)
+        self.assertNotEqual(denied.returncode, 0, denied.stderr + denied.stdout)
+        self.assertIn("verification worktree snapshot does not equal receipt git_after before checks",
+                      denied.stderr + denied.stdout)
+        self.assertFalse((self.fixture.mission / "verification" / f"{self.run_id}.json").exists())
+        listed = self.call("git", "worktree", "list", "--porcelain")
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        self.assertEqual(sum(line.startswith("worktree ") for line in listed.stdout.splitlines()), 1)
+        self.assertFalse((self.fixture.root / "hook-stray.txt").exists())
+
+    def test_sigterm_during_verify_leaves_no_worktree_or_temp_dir(self):
+        with tempfile.TemporaryDirectory(prefix="verification-sigterm-") as temp_dir:
+            marker = Path(temp_dir) / "verify-started.marker"
+            run_id = self.make_run_with_check(
+                ["bash", "-c", 'touch "$MARKER"; exec sleep 60'],
+                extra_env={"MARKER": str(marker)},
+            )
+            proc = subprocess.Popen(
+                [sys.executable, "scripts/verification_record.py", "verify", "--run-id", run_id, self.mission],
+                cwd=self.fixture.root,
+                env={**os.environ, "TMPDIR": temp_dir, "PYTHONDONTWRITEBYTECODE": "1", "MARKER": str(marker)},
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline:
+                if marker.is_file():
+                    break
+                if proc.poll() is not None:
+                    break
+                time.sleep(0.05)
+            self.assertTrue(marker.is_file(), "verifier never reached the sleeping check")
+            proc.send_signal(signal.SIGTERM)
+            stdout, stderr = proc.communicate(timeout=30)
+            self.assertEqual(proc.returncode, 143, (stdout + stderr).decode("utf-8", "replace"))
+            self.assertFalse((self.fixture.mission / "verification" / f"{run_id}.json").exists())
+            listed = self.call("git", "worktree", "list", "--porcelain")
+            self.assertEqual(listed.returncode, 0, listed.stderr)
+            self.assertEqual(sum(line.startswith("worktree ") for line in listed.stdout.splitlines()), 1)
+            self.assertEqual(list(Path(temp_dir).glob("purrfect-verify-*")), [])
 
     def test_live_root_environment_points_outside_check_worktree(self):
         run_id = self.make_run_with_check(["bash", "-c", "test -n \"$PURRFECT_LIVE_ROOT\" && test \"$PURRFECT_LIVE_ROOT\" != \"$(pwd -P)\" && test -d \"$PURRFECT_LIVE_ROOT/.git\""])
@@ -377,6 +429,13 @@ class VerificationRecordIntegration(unittest.TestCase):
              'if False:', "test_revalidation_rejects_every_bound_identity_state_and_hash"),
             ("snapshot-pre-post", 'if before != receipt["git_after"]:\n            fail("verification worktree snapshot does not equal receipt git_after before checks")',
              'if False:\n            pass', "test_check_changing_worktree_fails_and_live_tree_stays_clean_of_check_artifacts"),
+            ("snapshot-pre", 'if before != receipt["git_after"]:\n            fail("verification worktree snapshot does not equal receipt git_after before checks")',
+             'if False:\n            pass', "test_post_checkout_hook_dirtied_worktree_is_refused_before_checks"),
+            ("dirty-receipt-refusal", 'if receipt["git_after"]["status_entry_count"] != 0 or receipt["git_after"]["dirty_paths"]:',
+             'if False:', "test_dirty_receipt_git_after_is_refused"),
+            ("worktree-cwd", "cwd=worktree", "cwd=root", "test_check_changing_worktree_fails_and_live_tree_stays_clean_of_check_artifacts"),
+            ("sigterm-cleanup", "prev_sigterm = signal.signal(signal.SIGTERM, on_sigterm)",
+             "prev_sigterm = None", "test_sigterm_during_verify_leaves_no_worktree_or_temp_dir"),
             ("lock", 'if os.environ.get("PURRFECT_DISPATCH_LOCK_PATH") or (lock_dir.is_dir() and list(lock_dir.glob("*.lock"))):',
              'if False:', "test_real_run_verification_is_immutable_and_acceptance_is_separate"),
             ("acceptance-hash", 'if digest(raw) != expected_hash or record["result"] != "pass":',
@@ -397,6 +456,9 @@ class VerificationRecordIntegration(unittest.TestCase):
                     self.assertIn(old, source)
                     self.assertIn('if after != receipt["git_after"]: passed = False', source)
                     source = source.replace(old, new, 1).replace('if after != receipt["git_after"]: passed = False', 'if False: passed = False', 1)
+                elif label == "snapshot-pre":
+                    self.assertIn(old, source)
+                    source = source.replace(old, new, 1)
                 else:
                     self.assertIn(old, source)
                     source = source.replace(old, new, 1)
