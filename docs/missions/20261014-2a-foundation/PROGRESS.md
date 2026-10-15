@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-028-R1 verified; code-reviewer requested
+- **Mechanical review:** run `fb246641-8d92-4327-8cd7-a3ce72ac5a95` (T-028-R1, cursor.economy composer-2.5, effort medium, speed standard, attempt 1), receipt `.tasks/receipts/fb246641-8d92-4327-8cd7-a3ce72ac5a95.json`: outcome `completed`, exit 0, scope pass, `git_after` clean, commit `ee459a7`, 2 changed paths (`tests/test-ledger.py`, PROGRESS.md), both in the allow-list. `verify-mission.sh --run-id fb246641-8d92-4327-8cd7-a3ce72ac5a95` → `VERIFY PASS`, exit 0 (4 commands incl. the full suite). Routing line written (ledger, S, cursor.economy, done). Slice evidence for F005, not acceptance.
+- **Review:** `code-reviewer` (tests only, per the plan). Next: write T-028-R2 (extension of the privacy rule), then T-029.
+
 ## 2026-10-15 — T-028-R1 worker (Composer 2.5) — seven privacy-pattern negatives; awaiting orchestrator verification
 
 - **Task:** T-028-R1 (F005; tests only). Baseline `shellcheck scripts/*.sh tests/*.sh` and `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` both exited 0 (20 tests before edits).
