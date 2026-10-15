@@ -228,6 +228,14 @@ raise SystemExit(0)
         bad["model"] = 7
         self.assert_rejected(path, bad, "numeric model")
 
+    def test_numeric_observed_model_rejected(self):
+        path, receipt = self.spawn_receipt()
+        bad = copy.deepcopy(receipt)
+        bad["observation"]["observed_model"] = {"source": "observed", "value": 7}
+        self.write_canonical(path, bad)
+        with self.assertRaisesRegex(ReceiptError, r"observation\.observed_model must be non-empty text"):
+            load_receipt(path)
+
     def test_v2_without_observation_rejected(self):
         path, receipt = self.spawn_receipt()
         bad = copy.deepcopy(receipt)
