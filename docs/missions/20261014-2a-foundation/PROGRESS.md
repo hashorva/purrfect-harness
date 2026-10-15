@@ -4,6 +4,9 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-034-R3 verified and reviewed; T-034-R4 dispatch
+- **Mechanical review:** run `c9ae25a7-48d8-4a8c-8e9a-fb9b4edb7eb2` (T-034-R3, cursor.economy composer-2.5, effort medium, speed standard, attempt 1): completed, exit 0, scope pass, commit `4958a42`, 3 paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (7 commands). I re-ran the mutation greps (`grep -nF`): lines 63, 59, 35 and 82 match the worker's entry (the `pos = max(...)` mutated text is, as designed, not in the live file). I replayed the three R2 holes (`Note: {<plan>`, `{{<plan>`, `[{<plan>`) → all accepted (`mode=after-run`); the earlier stray-bracket and deep-nesting cases still refuse cleanly. **code-reviewer: PASS**: lines 32–73 match the Architect's binding code line for line; rows A5–A8, A10, R1–R3, R6, R7 covered; no test removed. Routing line written.
+
 ## 2026-10-15 (day 3) — T-034-R3 worker (cursor.economy) — budgeted greedy scan for the after-run extractor
 - **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `python3 -c 'import jsonschema'` failed (module absent; no third-party module added).
 - **Change:** `scripts/validate_verdict.py`: replaced `_top_level_spans` with the Architect's verbatim `top_level_objects` (`OBJECT_START`, `SCAN_BUDGET`, `ATTEMPT_COST`) and simplified `_last_object` to walk `reversed(top_level_objects(text))`. `final_answer_text`, `extract_last_json_object`, `read_bounded_text`, and `main` unchanged aside from calling the new scan. `tests/test-verdict.py`: semantic rows A5–A8, A10, R3, R6, R7 (temp-dir fixtures); R1/R2 remain `test_first_valid_last_invalid_is_refused` and `test_first_invalid_last_valid_is_accepted`.
