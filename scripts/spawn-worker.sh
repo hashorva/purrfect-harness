@@ -191,7 +191,7 @@ fi
 # persistence, and provider adapter so every rejection is mechanically pre-launch.
 POLICY_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-worker \
   --root "$ROOT" --workspace "$WORKSPACE" --mission "$MISSION" --fleet "$FLEET" \
-  --task "$TASK_ABS" --feature "$FEATURE" --work-unit "$BASE")" || exit $?
+  --task "$TASK_ABS" --feature "$FEATURE" --work-unit "$BASE" --provider "$WORKER")" || exit $?
 WRITE_SCOPE_JSON="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["write_scope"],separators=(",",":")))' <<<"$POLICY_JSON")"
 
 RESOLVE_ARGS=(python3 "$ROOT/scripts/fleet_state.py" resolve

@@ -10,8 +10,10 @@ import subprocess
 import sys
 import uuid
 
-from fleet_state import CAPABILITIES, read_json, validate_fleet
+from execution_receipt import glob_regex
 from execution_spec import artifact_directory, SpecError, validate_write_scope
+from fleet_state import CAPABILITIES, read_json, validate_fleet
+from harness_registry import RegistryError, canonical_provider, load_registry
 
 
 class PolicyError(ValueError):
@@ -138,8 +140,9 @@ def worker_write_scope(task):
         if match is None:
             fail("Files you MAY touch must contain only backtick-quoted path bullets")
         patterns.append(match.group(1))
+    normalized = [normalize_relative_path(pattern) for pattern in patterns]
     try:
-        return validate_write_scope(patterns)
+        return patterns, validate_write_scope(normalized)
     except SpecError as exc:
         raise PolicyError(str(exc)) from exc
 
@@ -155,6 +158,33 @@ def clean_workspace(root):
         fail("cannot inspect workspace cleanliness")
     if result.stdout:
         fail("workspace must be clean before dispatch")
+
+
+def normalize_relative_path(value):
+    while value.startswith("./"):
+        value = value[2:]
+    return value
+
+
+def validate_write_scope_against_sandbox(provider, raw_patterns, write_scope):
+    try:
+        registry = load_registry()
+        canonical = canonical_provider(registry, provider)
+    except RegistryError as exc:
+        raise PolicyError(str(exc)) from exc
+    prefixes = registry["providers"][canonical]["sandbox_limits"]["write_denied_prefixes"]
+    if len(raw_patterns) != len(write_scope):
+        fail("worker task write scope internal error")
+    for raw_pattern, pattern in zip(raw_patterns, write_scope):
+        norm_pattern = normalize_relative_path(raw_pattern)
+        for prefix in prefixes:
+            norm_prefix = normalize_relative_path(prefix)
+            probe = f"{norm_prefix}__probe__"
+            if norm_pattern.startswith(norm_prefix) or glob_regex(pattern).fullmatch(probe):
+                fail(
+                    f"seat limit: {canonical} cannot write {prefix} (allow-list: {raw_pattern}); "
+                    "route this task to another seat"
+                )
 
 
 def validate_capability(provider, effort, speed):
@@ -192,7 +222,8 @@ def validate_worker(args):
     if not args.feature or values.get("feature") != args.feature:
         fail("worker task feature must equal --feature")
     feature_record(mission, args.feature)
-    write_scope = worker_write_scope(task)
+    raw_scope, write_scope = worker_write_scope(task)
+    validate_write_scope_against_sandbox(args.provider, raw_scope, write_scope)
     clean_workspace(root)
     return write_scope
 
@@ -301,6 +332,7 @@ def main():
     worker.add_argument("--task", required=True)
     worker.add_argument("--feature", required=True)
     worker.add_argument("--work-unit", required=True)
+    worker.add_argument("--provider", required=True)
     brain.add_argument("--mission", required=True)
     brain.add_argument("--fleet", required=True)
     brain.add_argument("--action", required=True)

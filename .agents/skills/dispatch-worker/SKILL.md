@@ -156,6 +156,11 @@ be declared at feature authoring; they do not convert worker code into exempt wo
 
 ## Sandbox limits
 
+Per-provider write limits live in `harness-registry.json` (`sandbox_limits`);
+`dispatch_policy.py` refuses a worker task whose allow-list hits one before launch.
+Login-state visibility limits are not decidable from a task file alone; they remain
+routing rules in this table.
+
 | Limit | Rule |
 | --- | --- |
 | Codex workspace-write cannot see Claude or agy login state; login checks are verification-only. | Do not run login checks (for example `scripts/fleet-doctor.sh`) as worker checks; put them in the task's verification commands. |

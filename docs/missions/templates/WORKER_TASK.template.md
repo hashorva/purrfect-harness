@@ -58,10 +58,13 @@ success when a required check's final result is unavailable.
 > Run a long check exactly once, e.g. `bash tests/run-tests.sh > /tmp/rt.log 2>&1; echo exit=$?`,
 > then read the log tail. Never start a second copy of a command that is still running.
 
-> Sandbox limits: (a) Codex workspace-write cannot see Claude or agy login state;
-> login checks are verification-only. (b) Codex workspace-write cannot write under
-> `.agents/` (PermissionError); route skill edits to a seat that can, until the
-> adapter is fixed. Worker checks are focused and sandbox-safe. The full suite and
+> Sandbox limits: per-provider write limits live in `harness-registry.json`
+> (`sandbox_limits`); `dispatch_policy.py` refuses a task that hits one before
+> launch. Login-state limits are routing-only (not decidable from the allow-list).
+> (a) Codex workspace-write cannot see Claude or agy login state; login checks are
+> verification-only. (b) Codex workspace-write cannot write under `.agents/`
+> (PermissionError); route skill edits to a seat that can, until the adapter is
+> fixed. Worker checks are focused and sandbox-safe. The full suite and
 > real-machine checks are verification commands, which `verify-mission.sh` runs
 > outside the sandbox.
 

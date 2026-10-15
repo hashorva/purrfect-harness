@@ -946,7 +946,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         original_worker = worker.read_text()
         worker_gate = '''POLICY_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-worker \\
   --root "$ROOT" --workspace "$WORKSPACE" --mission "$MISSION" --fleet "$FLEET" \\
-  --task "$TASK_ABS" --feature "$FEATURE" --work-unit "$BASE")" || exit $?
+  --task "$TASK_ABS" --feature "$FEATURE" --work-unit "$BASE" --provider "$WORKER")" || exit $?
 '''
         self.assertIn(worker_gate, original_worker)
         worker.write_text(original_worker.replace(worker_gate, "POLICY_JSON='{\"write_scope\":[\"allowed.txt\"]}'\n", 1))
@@ -1003,6 +1003,83 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         spec, _, _, invoked = self.linked(role="worker", provider="codex", model="frozen", effort="medium", speed="unknown", work_unit="T-002", feature="F002")
         self.assertEqual(invoked["argv"], self.expected_argv("codex", "frozen", "medium", "unknown", spec["prompt"]))
+
+    def write_allow_list_task(self, task_id, patterns):
+        lines = [
+            "---",
+            f"task_id: {task_id}",
+            "feature: F001",
+            "---",
+            "# Task",
+            "",
+            "## Files you MAY touch",
+        ]
+        for pattern in patterns:
+            lines.append(f"- `{pattern}`")
+        lines.extend(["", "## Verification commands", "", '- `["true"]`', ""])
+        path = self.task.parent / f"{task_id}.md"
+        path.write_text("\n".join(lines))
+        self.commit_fixture(f"task {task_id}")
+        return f"docs/missions/fixture/tasks/{task_id}.md"
+
+    def fixture_registry_codex_agents_write_denied(self):
+        registry_path = self.root / "harness-registry.json"
+        data = json.loads(registry_path.read_text())
+        data["providers"]["codex"]["sandbox_limits"]["write_denied_prefixes"] = [".agents/"]
+        registry_path.write_text(json.dumps(data, indent=2) + "\n")
+        self.commit_fixture("fixture codex .agents/ write_denied_prefixes")
+
+    def assert_prelaunch_refused(self, result, *, provider, prefix, pattern):
+        self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn(
+            f"ERROR: seat limit: {provider} cannot write {prefix} (allow-list: {pattern}); "
+            "route this task to another seat",
+            result.stderr,
+        )
+        tasks = self.root / ".tasks"
+        self.assertFalse((tasks / "invoked.json").exists())
+        self.assertFalse(list((tasks / "specs").glob("*.json")) if (tasks / "specs").is_dir() else [])
+        self.assertFalse(list((tasks / "logs").glob("*.log")) if (tasks / "logs").is_dir() else [])
+        self.assertFalse(list((tasks / "receipts").glob("*.json")) if (tasks / "receipts").is_dir() else [])
+        self.assertFalse(list((tasks / "locks").glob("*.lock")) if (tasks / "locks").is_dir() else [])
+        self.clean_runs()
+
+    def test_worker_refuses_allow_lists_that_hit_provider_write_limits(self):
+        self.fixture_registry_codex_agents_write_denied()
+        self.write_fleet("codex", "test", "medium", "unknown")
+        opts = ["--model", "test", "--feature", "F001", "--effort", "medium"]
+
+        agents_task = self.write_allow_list_task("T-agents", [".agents/skills/x/SKILL.md"])
+        result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", agents_task, *opts])
+        self.assert_prelaunch_refused(result, provider="codex", prefix=".agents/", pattern=".agents/skills/x/SKILL.md")
+
+        dot_agents_task = self.write_allow_list_task("T-dot-agents", ["./.agents/skills/x/SKILL.md"])
+        result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", dot_agents_task, *opts])
+        self.assert_prelaunch_refused(
+            result, provider="codex", prefix=".agents/", pattern="./.agents/skills/x/SKILL.md"
+        )
+
+        star_task = self.write_allow_list_task("T-star", ["**"])
+        result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", star_task, *opts])
+        self.assert_prelaunch_refused(result, provider="codex", prefix=".agents/", pattern="**")
+
+        docs_task = self.write_allow_list_task("T-docs", ["docs/x.md"])
+        result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", docs_task, *opts])
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.clean_runs()
+
+        dot_docs_task = self.write_allow_list_task("T-dot-docs", ["./docs/x.md"])
+        result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", dot_docs_task, *opts])
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.clean_runs()
+
+        self.write_fleet("claude", "haiku", "medium", "unknown", seat_name="claude.economy")
+        result = self.invoke([
+            "bash", "scripts/spawn-worker.sh", "claude", agents_task,
+            "--model", "haiku", "--feature", "F001", "--effort", "medium",
+        ])
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.clean_runs()
 
     def test_all_worker_provider_tier_mappings_use_frozen_values(self):
         for provider in PROVIDERS:
