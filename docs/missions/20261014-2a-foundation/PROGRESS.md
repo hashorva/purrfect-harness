@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-034-R2 verified; hostile cases replayed; code-reviewer requested
+- **Mechanical review:** run `ad73d861-078e-4cff-b290-db2fbd61f653` (T-034-R2, codex.economy gpt-6-luna, effort medium, attempt 1), receipt: completed, exit 0, scope pass, commit `92b44bb`, 3 paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (7 commands). Routing line written.
+- **My replay** (script in the session scratchpad, 5 cases × flag path, after-run path, data mode): 200000-bracket file → clean `ERROR: verdict:` exit 1 in all three branches (no traceback); stray `[`, `{`, `} ]` before a verdict → accepted for cursor (`mode=after-run`), refused cleanly for flag providers (they require pure JSON); 1 MiB of `{` → exit 1 in 0.1 s. The recursion refusal prints Python's own message (no file content).
+
 ## 2026-10-15 (day 3) — T-034-R2 worker — refuse deep JSON in every entry mode; raw_decode scan
 - **Change:** `scripts/validate_verdict.py` now catches `RecursionError`, `ValueError` (including decode errors), and file errors at the after-run and plain data entry points, reporting `ERROR: verdict:` with exit 1. Object extraction uses `JSONDecoder.raw_decode`; successful values are remembered and scanning resumes after each value, while failed candidates advance. Consecutive unmatched `{` runs are skipped linearly after the decoder rejects them. The 4 MiB cap, final-result-only rule, and schema validation remain in place. `tests/test-verdict.py` adds both real-entry-point regressions for 200000 nested brackets and stray `[`, `{`, `}`, and `]` prose cases.
 - **Checks:** focused test suite (24 tests) exit 0; both schema checks exit 0; suite/manifest greps exit 0; shellcheck exit 0; no `__pycache__`; `git diff --check` exit 0. The full `bash tests/run-tests.sh` is reserved for the verifier per the task's standing 2A rule and was not run by this worker.
