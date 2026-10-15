@@ -29,7 +29,7 @@ class WrapperIntegration(unittest.TestCase):
         (self.root / "scripts").mkdir()
         for name in ("execution_spec.py", "execution_receipt.py", "execution_runner.py",
                      "execute_provider.py", "observe_output.py", "fleet_state.py", "dispatch_policy.py",
-                     "harness_registry.py",
+                     "harness_registry.py", "ledger.py",
                      "spawn-worker.sh", "spawn-brain.sh", "verify-mission.sh", "verification_record.py",
                      "accept-feature.sh", "write-receipt.sh"):
             shutil.copy2(ROOT / "scripts" / name, self.root / "scripts" / name)
@@ -1301,6 +1301,68 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         ], env={"SPAWN_WORKER_TIMEOUT_SECS": "2"})
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertNotEqual(result.returncode, 124, result.stderr + result.stdout)
+
+    def assert_ledger_row_hygiene(self, run_id):
+        ledger_path = self.root / ".tasks/ledger" / f"{run_id}.json"
+        self.assertTrue(ledger_path.is_file(), f"missing ledger row for {run_id}")
+        valid = self.invoke([sys.executable, "scripts/ledger.py", "validate", str(ledger_path)])
+        self.assertEqual(valid.returncode, 0, valid.stderr + valid.stdout)
+        self.assertEqual(self.git("status", "--porcelain").stdout, "")
+        for rel in (f".tasks/logs/{run_id}.log", f".tasks/ledger/{run_id}.json"):
+            ignored = self.invoke(["bash", "-c", f"git check-ignore -q {rel}"])
+            self.assertEqual(ignored.returncode, 0, rel)
+        dry = self.invoke(["bash", "-c", "git add -A --dry-run"])
+        self.assertEqual(dry.returncode, 0, dry.stderr)
+        self.assertNotIn(".tasks/", dry.stdout)
+
+    def test_runner_writes_one_valid_ledger_row_per_outcome(self):
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                "--model", "ledger-model", "--feature", "F001"]
+        ok = self.invoke(base)
+        self.assertEqual(ok.returncode, 0, ok.stderr + ok.stdout)
+        completed_id = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())["run_id"]
+        self.assert_ledger_row_hygiene(completed_id)
+        self.clean_runs()
+
+        fail = self.invoke(base, env={"PROVIDER_EXIT": "7"})
+        self.assertEqual(fail.returncode, 7, fail.stderr + fail.stdout)
+        failed_id = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())["run_id"]
+        failed_row = json.loads((self.root / ".tasks/ledger" / f"{failed_id}.json").read_text())
+        self.assertEqual(failed_row["outcome"], "failed")
+        self.assert_ledger_row_hygiene(failed_id)
+        self.clean_runs()
+
+    def test_verification_command_short_label_passes_ledger_privacy(self):
+        long_argv = [
+            "bash", "-c",
+            "! grep -nE '(ghp_|github_pat_|AKIA|xox[abpr]-|-----BEGIN)[A-Za-z0-9_-]{4,}' tests/test-ledger.py",
+        ]
+        task_path = self.task.parent / "T-ledger-label.md"
+        task_path.write_text(
+            "---\n"
+            "task_id: T-ledger-label\n"
+            "feature: F001\n"
+            "---\n"
+            "# Task\n\n"
+            "## Files you MAY touch\n"
+            "- `allowed.txt`\n\n"
+            "## Verification commands\n\n"
+            f"- `{json.dumps(long_argv)}`\n"
+        )
+        self.commit_fixture("ledger label task")
+        sys.path.insert(0, str(self.root / "scripts"))
+        from execution_runner import check_command_label  # noqa: E402
+        label = check_command_label(long_argv, 0, [long_argv])
+        self.assertLess(len(label), 80)
+        self.assertNotIn("grep", label)
+        self.assertEqual(label, "bash#1")
+        good = json.loads((ROOT / "tests/fixtures/ledger/good-completed.json").read_text())
+        good["checks"] = [{"name": label, "exit_code": 0}]
+        probe = self.parent / "ledger-label-probe.json"
+        probe.write_text(json.dumps(good, indent=2) + "\n")
+        valid = self.invoke([sys.executable, "scripts/ledger.py", "validate", str(probe)])
+        self.assertEqual(valid.returncode, 0, valid.stderr + valid.stdout)
 
     def test_all_worker_provider_tier_mappings_use_frozen_values(self):
         for provider in PROVIDERS:
