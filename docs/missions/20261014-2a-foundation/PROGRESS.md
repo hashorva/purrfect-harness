@@ -4,6 +4,96 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-022 (`cfaf275`)
+
+- **Run:** `d07162b2-2d19-46de-a321-8d456f83226f`; log `.tasks/logs/d07162b2-2d19-46de-a321-8d456f83226f.log`; spec role `brain`, action `review`, base `0bfcf5e`, write scope this file only, provider contract 6. The launcher writes the receipt `.tasks/receipts/d07162b2-2d19-46de-a321-8d456f83226f.json` when this run ends; it did not exist while this entry was written.
+- **Receipt `71d3c526…` (re-checked):** v2, outcome `completed`, exit 0, `workspace_changed: true`, scope `pass`, no violations, `git_after` clean, base `a46a4b9` → commit `cfaf275`, the 5 allow-listed paths. Provider `agent`/`cursor-agent`, `composer-2.5`, economy; observed model `Composer 2.5`. The receipt shows that a Cursor CLI ran. VerificationRecord `71d3c526….json` (the only record for the run): result `pass`, all 7 commands exit 0.
+- **Test rules followed:** fake `cursor-agent`, `agent`, `codex`, `claude`, `agy` and `grok` were first on PATH for every scratch run. They exit 97, and none was called. No real provider CLI was launched, and no `-fast` model was used. All Python ran with `PYTHONDONTWRITEBYTECODE=1` and stdin `/dev/null`. I exported `cfaf275^` and `cfaf275` with `git archive` into the session scratchpad. `jsonschema` 4.26.0 was installed in a scratchpad venv only. The launcher test ran in a scratch `git clone`. Live tree: `git status --short` was empty and there was no `__pycache__` after all checks. (The permission layer declined one batched shell command; I re-ran its steps one at a time. I did not run the old scripts through the launchers; see (3).)
+- **(1) v1 is unchanged — confirmed.** I ran `validate-fleet` from both trees on a corpus of 96 canonical documents. It includes the 2A `fleet.json`, the Phase-1 `fleet.json` and 49 v1 mutations (every header field, every seat field, every seat × `fast`/`max`, and `schema_version` ∈ {0, 2, 3, "1", true, false, 1.0, 2.0, null, −1, missing}).
+  - Every v1 document gets the same exit code from both trees. Both real fleets exit 0 on both trees.
+  - The stderr text is the same, except in three groups:
+    - Wrong version: the message now says "must be 1 or 2".
+    - Version 2 or 2.0 on a v1 body: "missing or extra fields" (the document goes to the v2 path).
+    - A document that is not an object (list, string, null): the old tree prints `ERROR: fleet must be an object`; the new tree crashes with an uncaught `AttributeError` (`doc.get`), exit 1. It still fails closed but no longer prints a clean refusal.
+  - No v1 document is read as v2, and no v2 document is read as v1: v1 plus a `policy` key is refused, and v2 with version 1 is refused.
+  - `freeze`, `resolve` and `inventory` have no diff. `freeze` still writes `schema_version: 1`, and `validate_fleet_v1` is the old body moved, so the frozen bytes cannot change.
+- **(2) v2 validation matches T-022 item 1 — confirmed. Two things the review request names are not in the task.** Results on the same corpus:
+  - **Refused:**
+    - a missing, unknown or string version (3, missing, "2");
+    - a missing policy, or extra or missing policy keys;
+    - `billing_classes` empty, duplicated, `credit`, or a string;
+    - `fast` as `"yes"` or `1`;
+    - `no_zdr` as `"maybe"` or `false`;
+    - doors that are unknown, empty, duplicated, a string or a number;
+    - an effort that the door's provider cannot run (codex `max`, agy `xhigh`);
+    - a speed that the door's provider cannot run (codex `fast`);
+    - extra seat keys (`model`, `provider`), a v1-shaped seat, empty seats, and approval `draft`.
+  - **Accepted:** the good fixture, all three billing classes, `credits` alone, `fast: true`, `no_zdr: forbid`, version `2.0`, and mixed providers in one seat (`cursor-composer` + `codex`, refused only if the capabilities do not fit).
+  - **Not checked (the task asked for neither):**
+    - (a) `family` is free text. `no-such-family`, and `opus` on the `codex` door, are accepted, while v1 refuses a provider/family mismatch.
+    - (b) A seat with `speed: fast` under `policy.fast: false` is accepted. So is a door whose billing class is outside `billing_classes`; today every registry door is `included`, so no such case exists yet.
+    - F004 steps 4, 5 and 8 place these rules at resolution. **T-023 must enforce them, or add them to validation, with tests.**
+  - Unhashable items (`[["included"]]`, `[["codex"]]`) crash with an uncaught `TypeError` in `set()`. They still fail closed, but without a clean message.
+- **(3) Dispatch path — no launch, but the refusal comes from a crash, not a guard.** `resolve`, `dispatch_policy.approved_fleet` and `seat_smoke` all call the shared `validate_fleet`, so a v2 fleet now passes their validation step. The task asked for exactly that ("`validate_fleet` dispatches on `schema_version`"), so this is not a worker defect. Scratch clone with the 2A `fleet.json` replaced by a canonical v2 document and committed:
+  - `dispatch_policy.py validate-worker` (T-023, F004, cursor) and `validate-brain --action review` both **exit 0**.
+  - `fleet_state.py resolve --seat cursor.economy` without assertion flags **exits 0** and prints the v2 seat (`doors`, `family`, …).
+  - `spawn-worker.sh cursor … --effort medium --speed standard` exits 1 with `KeyError: 'provider'` in `resolve`.
+  - `spawn-brain.sh <mission> review`, with and without `--provider claude`, exits 1 with `KeyError: 'provider'`.
+  - The clone had no `.tasks/` afterwards: no lock, spec, log or receipt was created, and no provider ran. So "refuse, not guess" holds in effect, but only through a `KeyError`.
+  - Old tree: from (1), the old `validate_fleet` refuses every v2 document ("missing or extra fields"), so the old launchers stop at `validate-worker`.
+  - Today no v2 fleet exists in the repository; both real fleets are v1, frozen and read-only.
+- **(4) Schema vs code.** A real Draft 2020-12 validator accepts the new schema. On the 96 documents:
+  - The schema and the code agree on every structural case.
+  - The schema cannot express registry lookups, so it accepts unknown doors, a provider effort or speed out of range, and mixed providers. The code refuses these. This is expected, but the schema is looser than the code for v2 seats.
+  - The only case where the code accepts and the schema refuses is `schema_version: true`. The code compares `True == 1`, so it takes the v1 path. Both trees do this; it is not new.
+  - There is no agreement test for this schema. `test-fleet-state.py` reads only `$defs.seat.allOf`. So mutants X, Y and W survive.
+- **(5) Mutations (scratch copies of `cfaf275`; `tests/test-fleet-v2.py` + `tests/test-fleet-state.py`, both green at baseline):**
+  - **Killed (6 of 22):**
+    - S: the speed check removed;
+    - D2: an unknown door silently skipped;
+    - Z: the empty-doors check removed;
+    - B: billing membership removed;
+    - B2: `credit` allowed;
+    - F: the `fast` bool check removed;
+    - V: v2 routed to the v1 validator.
+  - **Survived (16):**
+    - **E: the effort check removed.** The task's required negative "an effort the door's provider cannot run" is missing: the fixture named `bad-effort` changes `speed` to `fast`, not the effort. The worker report says every objective item is done; item 4 is not.
+    - D: the unknown-door check removed. It then crashes with `KeyError`, and the test accepts any non-zero exit. No negative asserts its message.
+    - BD: billing distinct removed.
+    - BE: an empty billing list allowed.
+    - N: the `no_zdr` check removed.
+    - DD: doors distinct removed.
+    - P: policy `exact_keys` removed.
+    - K: v2 seat `exact_keys` removed.
+    - H: the v2 header not validated.
+    - R: empty v2 seats allowed.
+    - U: an unknown version accepted as v2.
+    - T: the family text check removed.
+    - X: schema v2 `const` 3.
+    - Y: schema doors `minItems` 0.
+    - W: schema `fast` of any type.
+  - The code is correct in every survivor case: (2) shows each of these refusals directly. They are missing regression tests, not wrong behavior.
+- **(6) T-021-R1 note — not affected.** `fleet_state.py` imports only `RegistryError`, `legacy_view` and `load_registry`. v2 validation reads `registry["doors"][d]["provider"]` and that provider's `capabilities`. It never calls `encode_model` or `decode_model`. The first consumer of the already-encoded refusal is still T-023 (`resolve_v2`).
+- **Worker report:** accurate on files and exit codes. Inaccurate on scope: "negatives: … an effort the door's provider cannot run" is not tested (see E).
+- **Audit:** `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` → `VERIFY OK`, exit 0, at `0bfcf5e`, before this entry.
+- **Required before F004 acceptance; recommended before T-023 dispatch: T-022-R1.** Any economy seat, `code-reviewer`; allow-list `scripts/fleet_state.py`, `tests/test-fleet-v2.py`, `tests/test-fleet-state.py`, PROGRESS.md. Items:
+  - (a) A real effort negative (codex `max`, agy `xhigh`), so mutant E is killed.
+  - (b) Every negative asserts its own `ERROR:` text, not only a non-zero exit (kills D).
+  - (c) Negatives for `no_zdr`, an empty or duplicated billing list, duplicated doors, extra policy or seat keys, empty seats, version 3/missing/"2", and approval `draft` in v2 (kills BD, BE, N, DD, P, K, H, R, U, T).
+  - (d) A clean `PolicyError` instead of a traceback for a document that is not an object (`obj(doc,"fleet")` before `doc.get`) and for items that are not text in `billing_classes`/`doors` (type check before `set()`), with negatives at the CLI.
+  - (e) Until T-023 lands, `resolve` refuses a `schema_version` 2 document with an explicit error ("fleet v2 is not resolvable yet"), with a negative. Both launchers then stop on a designed check instead of a `KeyError`.
+  - (f) Optional: a `jsonschema`-gated agreement test for the v2 shape, using the T-019-R1 pattern (kills X, Y, W).
+- **Carry into T-023's task text:**
+  - v2 `family` vs the doors' providers;
+  - a `fast` seat under `policy.fast: false`;
+  - a door whose billing class is outside `billing_classes`;
+  - `validate-worker`/`validate-brain` behavior on a v2 fleet, stated explicitly;
+  - the T-021-R1 already-encoded refusal, where `resolve_v2` feeds inventory names into `encode_model`.
+- **Not done:** no `accept-feature.sh` (F004 is not complete; T-022 is slice evidence); no change to features.json, fleet.json, the gate or the status; no worker dispatched.
+- **L-018 candidate:** a negative test that only asserts "exit non-zero" also passes when the guard is gone and the code crashes later. Assert the specific refusal message at the real entry point.
+
+Verdict: PASS (effects are correct and v1 is unchanged. Not blocking for T-022 as slice evidence: the missing effort negative and the other test gaps go to T-022-R1, which is required before F004 acceptance.)
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-022 verified; Architect review requested
 - **Mechanical review:** run `71d3c526-956c-4767-ae5f-5e71594ffecb` (T-022, cursor.economy composer-2.5, effort medium, speed standard, attempt 1), receipt `.tasks/receipts/71d3c526-956c-4767-ae5f-5e71594ffecb.json`: outcome `completed`, exit 0, scope pass, commit `cfaf275`, 5 changed paths (`scripts/fleet_state.py`, `schemas/mission-fleet.schema.json`, `tests/test-fleet-v2.py` new, `tests/run-tests.sh`, PROGRESS.md), all in the allow-list. `verify-mission.sh --run-id 71d3c526-956c-4767-ae5f-5e71594ffecb` → `VERIFY PASS`, exit 0 (7 commands incl. `validate-fleet` on this mission's frozen fleet and the full suite). Routing line written (fleet, M, cursor.economy, attempt 1, done). The receipt's `observation` shows the observed model `Composer 2.5` (from the Cursor init event). Slice evidence for F004, not acceptance.
 - **ARCHITECT REVIEW REQUEST, T-022 alone (commit `cfaf275`; fleet validation = dispatch authority).** Run `git show cfaf275`. Confirm with evidence you produced: (1) **every v1 fleet still validates exactly as before**: this mission's `fleet.json`, the Phase-1 mission's `fleet.json`, and the fixtures: same result and same canonical bytes with the old and new `fleet_state.py` (a v1 file is never reinterpreted as v2 and vice versa); (2) a v2 fleet is a separate document with an explicit version marker; its seats name a family and a policy (doors in priority order, fast/credits opt-in off by default); a v2 file with a missing or unknown version, an unknown policy value, a door not in the registry, `fast` or `credits` enabled without the mission's explicit opt-in, or an unavailable family is refused; (3) nothing in the dispatch path reads v2 yet: `resolve`, `validate_worker`, `spawn-*.sh` and `dispatch_policy.py` still accept only v1 (grep, and run the real launcher in a scratch clone with a v2 file: it must refuse, not guess); (4) the schema file agrees with the code (the agreement style test of T-019-R1 if present; otherwise show it with a real validator installed into your scratchpad only); (5) mutate the new checks in scratch copies and confirm tests fail; (6) the T-021-R1 note: a flag-provider base ending in an effort token is refused; does the v2 validation rely on `encode_model` in a way that this affects? **RULES FOR YOUR TESTS:** a fake `cursor-agent`, `codex`, `claude` and `agy` first on PATH before any test or mutation; never launch a real provider CLI; no `-fast` model; `PYTHONDONTWRITEBYTECODE=1`; avoid `python3 -I` for anything that writes bytecode into the repo; leave nothing in the live tree. End with `Verdict: PASS` or `Verdict: FAIL` and blocking issues only.
