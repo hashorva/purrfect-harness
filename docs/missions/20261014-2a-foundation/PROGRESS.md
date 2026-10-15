@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-032-R1 verified; F005 READY FOR ACCEPTANCE (command prepared, not run)
+- **Mechanical review:** run `bbb4eb9d-1d01-4638-9916-58aa64dae309` (T-032-R1, claude.economy haiku, effort medium, attempt 1): completed, exit 0, scope pass, commit `8a52278`, 3 changed paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (8 commands, the full F005 set incl. the full suite). The sentence `A ledger row holds execution summaries only: no transcripts, prompts, secrets, or absolute paths.` is in both files (grep, lines SKILL.md:141 and ORCHESTRATION.md:167). Routing line written.
+- **T-029/T-030/T-031/T-032 chains are closed; every guard change had an Architect review that ended in PASS-or-fixed, and every fix had a code-reviewer or Architect re-check.** Note: the Architect's last T-030 pass was the R1 re-review (FAIL); R2 had only code-reviewer + the extended integration test, as the Architect judged proportional.
+- **F005 acceptance command (owner decides; I do not run it):**
+  `bash scripts/accept-feature.sh --run-id bbb4eb9d-1d01-4638-9916-58aa64dae309 --verification-sha256 a9513b3545e6e853cc09cbfcdd6d7f5fa8f4cdc3ddde6766b171600c8fc42099 --accepted-by "<identity>" docs/missions/20261014-2a-foundation`, then `bash scripts/verify-mission.sh --require-workers docs/missions/20261014-2a-foundation`.
+  **Before the acceptance commit** the orchestrator also folds: `python3 scripts/ledger.py fold docs/missions/20261014-2a-foundation` and stages `docs/missions/ledger.jsonl` and `docs/missions/20261014-2a-foundation/drift.jsonl`. **Decide first** the two ledger questions from the T-029 review (the spec-supplied fields are labelled `observed`; `door` holds the tier), because `ledger.jsonl` is append-only.
+
 ## 2026-10-15 (day 3) — T-032-R1 worker (claude.economy, Haiku 5.5) — privacy sentence stated in ledger docs; awaiting verifier
 - **Did:** replaced the ledger privacy wording in `.agents/skills/dispatch-worker/SKILL.md` (section 4) and `docs/missions/ORCHESTRATION.md` with the same sentence: "A ledger row holds execution summaries only: no transcripts, prompts, secrets, or absolute paths." ORCHESTRATION.md's ledger sentence now reads "store validated rows only" before it. Docs only; no `scripts/`, `tests/`, schema or mission state touched.
 - **Commit message:** `docs(ledger): state the full privacy rule` (the Objective's message). The task's exit-criteria line names `docs(ledger): fold the ledger in the acceptance commit`, which is the T-032 subject; I followed the Objective and flag the mismatch for the Front Desk.
