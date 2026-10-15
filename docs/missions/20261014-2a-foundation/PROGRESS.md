@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-013 qualified and verified; Codex re-smoke
+- **Mechanical review:** run `19700ad2-8019-4f9f-808a-d867ccde40a5` (T-013 attempt 2, qualification, codex.economy gpt-6-luna, effort medium), receipt `.tasks/receipts/19700ad2-8019-4f9f-808a-d867ccde40a5.json`: outcome `completed`, exit 0, scope pass, commit `9ffba93`, PROGRESS.md only. `verify-mission.sh --run-id 19700ad2-8019-4f9f-808a-d867ccde40a5` → `VERIFY PASS`, exit 0 (7 commands incl. the corrected live-root spec check and audit, and the full suite). Record `verification/19700ad2-8019-4f9f-808a-d867ccde40a5.json`. **Slice evidence for F004, not acceptance.** Code `0ef0359` has the Architect's PASS (run `31c3a37a-…`). Routing line written (adapter, S, codex.economy, attempt 2, done, "qualification run").
+- **Next:** re-smoke the Codex seats (S-codex): with contract 5 a `write_scope` naming `.agents/…` adds `--add-dir <repo>/.agents`. Whether the smoke's own task uses such a write scope decides the result; the smoke task writes `.agents/smoke/<seat>.txt`, so I expect `usable`.
+
 ## 2026-10-15 (night 2) — Worker — T-013 attempt 2 qualification
 - **Qualification for `0ef0359`:** no code changed. `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-spec.py` exited **0** (11 tests passed). Baseline `shellcheck scripts/*.sh tests/*.sh` exited **0**.
 - Only this progress entry is included in the qualification commit; no feature acceptance or gate/status change.
