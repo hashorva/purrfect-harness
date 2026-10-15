@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — Architect review of T-015 attempt 2 PASS; T-017 dispatch
+- **Architect review of T-015 attempt 2:** run `282c85b5-19d0-42c7-949a-aab48340f983`, receipt `.tasks/receipts/282c85b5-19d0-42c7-949a-aab48340f983.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `17b60a3`. **Verdict: PASS** on `2f59364` (with `18507d9`): `worker_write_scope` returns the plain list again (seat-smoke 19 OK untouched, integration 24 OK); the old allow-list grammar is back (122 of 153 grid cases match the old tree; the other 31 are all codex on a test registry, refused for a seat limit or an empty prefix, as intended; `./` entries refused again); the glob gap is closed (all 13 listed patterns refused, the 4 legitimate ones pass; 9,360 exhaustive short-pattern cases, 0 let through); refusal runs before the frozen-seat check, lock, spec, log and provider (80 refused runs left nothing); `spawn-brain.sh` untouched; 13 of 16 mutations caught, including both test gaps from attempt 1. Fake providers only; live tree clean.
+- **Optional follow-ups (test gaps, not blocking):** two-segment prefix and two-prefix list tests (to catch 2 surviving mutations); keep the codex `.agents/` limit set in the "claude passes" sub-case. **Stale docs row (b)** ("Codex cannot write under `.agents/` … until the adapter is fixed") is still in the skill (line 167) and the template (lines 65-66): queued for a small docs task.
+- **T-015 is slice evidence for F004, not acceptance.** Seat note for the table: T-015 failed once for a task reason on cursor.economy (worker's unrequested return-type change) and passed on codex.economy with the corrected text.
+- **Time:** 05:30 CEST. Morning report due by 07:00 at the top of this file.
+- **Next:** T-017 (registry validator gaps + the T-014 follow-ups; registry, S; Architect alone) on **codex.economy** (registry category now reaches its third seat; T-014 was claude).
+
 ## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-015 attempt 2 (`18507d9` + `2f59364`)
 
 - **Run:** `282c85b5-19d0-42c7-949a-aab48340f983`; log `.tasks/logs/282c85b5-19d0-42c7-949a-aab48340f983.log`; spec role `brain`, action `review`, base `29b09da`, write scope this file only. The launcher writes the receipt `.tasks/receipts/282c85b5-19d0-42c7-949a-aab48340f983.json` when this run ends; it did not exist while this entry was written.
