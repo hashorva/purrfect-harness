@@ -35,6 +35,8 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-15 — T-041 attempt 2 (cursor.economy, run 8ecab630-4416-4ab7-a808-28cecd84dd7f): scope fail on PROGRESS.md — harness/task conflict, not a task failure** The launcher prompt still says "Append a PROGRESS.md entry"; T-041 forbade touching PROGRESS.md, so the worker's entry was a scope violation. Entry preserved at , tree restored. Class harness (does not use an attempt).
+  Task text changed (recorded): PROGRESS.md allowed for a 3-line entry. Attempt 3 follows. The launcher-prompt fix ("workers do not write PROGRESS.md") is a separate task, queued with the verifier task.
 - **2026-10-15 — T-041 attempt 1 (codex.economy, run a5343e36-0abb-46ac-b70d-31e3e53894c4): work in, verification FAIL on one plan-defect command** Commit 0bff888, scope pass, 11 allowed paths; 7 of 8 verification commands exit 0 (incl. both oracles and the full suite). The failing command is the Architect's scope check (its base = last commit touching the task file, so my later docs commits fell in range). Class task, attributable:false.
   Task text changed (recorded): scope command now compares HEAD~1 with HEAD, and an "Attempt 2 note" tells the worker to change nothing. Attempt 2 on cursor.economy, then Architect review of the diff.
 - **2026-10-15 — T-041 dispatch (ledger v2), codex.economy** Task committed (Architect-written, rule 6 checked: oracles fail on base, pass after the reference patch). Worker must not touch PROGRESS.md; I record the run from the receipt.
