@@ -4,6 +4,11 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — code-reviewer on T-033-R1: FAIL only for missing mutation proofs; Front Desk ran them (evidence, no code change)
+- **code-reviewer FAIL on `c6fe231`**: code and tests meet objective items 1–4; the only blocking point is that the worker's entry records mutation proofs for 5 of the groups, not for the `items`, `if` and `then` recursion, the data-mode refusal, or the reason assertions.
+- **I ran the missing mutants myself** (scratch copies of `validate_verdict.py`, `tests/test-verdict.py`, fixtures and schemas in the session scratchpad; the live tree untouched; running mutants is evidence, not a quality judgement): `items` dropped from the recursion → `test-verdict.py` exit 1; `if` dropped → exit 1; `then` dropped → exit 1; data-mode `check_schema(schema)` call removed → exit 1; boolean accepted as integer → exit 1; `object` type always true (non-object top level) → exit 1; `string` type always true (kills `expected string`) → exit 1; message `required property is missing` changed → exit 1; message `at least 1 item` changed → exit 1. All 9 caught, so no new test is needed.
+- **Decision:** the objective was met; the missing item was documentation of evidence, now recorded here. T-033-R1 chain closed as PASS-with-recorded-evidence (routing line stays `done`). Next: T-034 (registry `structured_output`; Architect review needed because it edits the registry), then T-035.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-033-R1 verified; code-reviewer requested
 - **Mechanical review:** run `744b3e51-e647-43cc-9696-bc4a182e8226` (T-033-R1, cursor.economy composer-2.5, effort medium, speed standard, attempt 1): completed, exit 0, scope pass, commit `c6fe231`, 4 changed paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (7 commands). Routing line written.
 
