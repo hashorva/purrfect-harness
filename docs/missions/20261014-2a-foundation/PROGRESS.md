@@ -4,6 +4,94 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-020 (`c598964`), F003 acceptance run
+
+- **Run:** `5f7baf7e-1fe1-49f4-81cb-fec872ad4e81`; log `.tasks/logs/5f7baf7e-1fe1-49f4-81cb-fec872ad4e81.log`; spec role `brain`, action `review`, base `0549599`, write scope this file only, **provider contract 6** (this run is the first spawn on the new argv). The launcher writes the receipt `.tasks/receipts/5f7baf7e-1fe1-49f4-81cb-fec872ad4e81.json` when this run ends; it did not exist while this entry was written.
+- **Receipt `86a9c529…` (re-checked):** v2, outcome `completed`, exit 0, `workspace_changed: true`, scope `pass`, no violations, `git_after` clean, base `0c65a83` → commit `c598964`, the 8 allow-listed paths; executable `cursor-agent`, `composer-2.5`, economy. The receipt shows that a Cursor CLI ran. The worker's "in-session" label is wrong again (L-009). The receipt's own `observation` is all-`unknown`, as expected: the runner and spec for that run were contract 5, from before the change. VerificationRecord `86a9c529….json` (the only record for the run): result `pass`, all 10 commands exit 0.
+- **Test rules followed:** fake `cursor-agent`, `agent`, `codex`, `claude`, `agy` and `grok` were first on PATH for every scratch run; they print and exit 97, and none was called. No real provider CLI was launched, and no `-fast` model was used. All Python ran with `PYTHONDONTWRITEBYTECODE=1`, with stdin from `/dev/null` unless noted. I exported `c598964^` and `c598964` with `git archive` into the session scratchpad. `jsonschema` 4.26.0 was installed in a scratchpad venv only. Live tree: `git status --short` was empty and there was no `__pycache__` after all checks.
+- **(1) Contract 6 = current + 1, and contracts 1–5 are unchanged — confirmed.** I ran `provider_contract` from both trees over a grid of 4,536 specs: 4 providers × contract {none, 2, 3, 4, 5, 6, 7} × 6 efforts × 3 speeds × 3 write scopes (none, plain, `.agents/`) × 2–5 models, including `-fast`, effort-encoded and bracketed ids.
+  - Contracts none/1, 2, 3, 4 and 5 (648 rows each) are byte-identical in argv, env and error text.
+  - Contract 6 equals contract 5 with only these insertions: codex `--json` after `exec`; claude `--output-format json` right after the prompt; Cursor `--output-format stream-json` after `--trust`. agy's contract 6 equals its contract 5.
+  - The only other differences are at contract 7. `validate` rejects that number, and so does the JSON schema, checked with a real validator.
+  - Persisted specs: the new tree loads all 88. The old tree loads 87; the 88th is this run's contract-6 spec. A real Draft 2020-12 validator accepts all 88 specs against the new schema, including the contract-6 one. The old schema rejects only that spec.
+- **(2) The argv matches the P-2 evidence, and the prompt keeps its position — confirmed.** The flags are those in `evidence/cli-json-observation.md`: claude `--output-format json`, codex `--json`, cursor-agent `--output-format stream-json`, and no change for agy. In every contract-6 row the prompt stays last for codex and Cursor. For claude it stays immediately after `-p` and before `--allowedTools`.
+- **(3) The runner fills the observation from the CLI only — confirmed.**
+  - The runner records the log size after the launcher header and before `Popen`. After any outcome it reads the log from that offset and passes only `observe(provider, bytes)` to `write_receipt` (`agent` is mapped to `cursor`).
+  - No spec or seat value reaches `observation`. `observe` receives only the provider name and the bytes.
+  - A provider that prints no JSON gives all-`unknown`, and the run completes: the parser skips non-JSON lines, and the `empty`/`garbage` fixtures and the earlier contract-5 tests pass.
+  - A failed run still gets the block (test, and mutant A below).
+- **(4) Privacy and evidence — confirmed, with a change in log content.**
+  - The receipt gets only the parsed scalars: model text, integer counts and fast-state text. It gets no raw output and no prompt. The `linked()` check `assertNotIn(spec["prompt"], json.dumps(receipt))` still runs.
+  - The log location (`.tasks/logs/<run_id>.log`, gitignored) and the launcher header are unchanged.
+  - What the log now holds:
+    - claude: one JSON document. Its `result` field is the same final message that text mode printed, plus usage, cost and `session_id`.
+    - Cursor: the full stream-json event list (init, assistant, thinking deltas, tool calls, final `result`) instead of only the final text.
+    - codex: JSONL events (`item.completed` messages and commands, `turn.completed`) on stdout instead of the text transcript; stderr is still merged.
+  - Nothing that text mode recorded is lost. The tail is now JSON, so it is harder for a human to read.
+  - `session_id` now appears in claude logs. It is not copied into receipts or committed files.
+- **(5) Stdin is closed for every provider — confirmed. The new stdin test is vacuous.**
+  - The runner keeps `stdin=subprocess.DEVNULL`, and so does `execute_provider.py:102`.
+  - Both launchers also start the runner as an async job (`&`) in a non-interactive bash script. Bash then gives the runner `/dev/null` as stdin. Probe: the foreground stdin was a pipe; the backgrounded child's stdin was a character device.
+  - So `test_closed_stdin_finishes_eof_reading_provider`, which goes through `spawn-worker.sh`, cannot fail when the runner's `DEVNULL` is removed. Mutant D passes even when the test is fed an open pipe (`sleep 40 | python3 … -k test_closed_stdin…`, exit 0). The verifier also runs every check with `stdin=DEVNULL`.
+  - Today the only guard on the runner line is the grep verification command. The real-world effect holds twice over.
+- **(6) The `tests/run-tests.sh` edits kept every byte comparison and weakened nothing — confirmed.** The diff is 3 `printf` lines. Each removed line equals its added line except for the inserted flag:
+  - codex medium and codex xhigh: `codex exec -C …` became `codex exec --json -C …`;
+  - Cursor: `… --trust --workspace …` became `… --trust --output-format stream-json --workspace …`.
+  - Each still builds the whole argv, ending with the intact `$CODEX_PROMPT`, and is compared with `cmp -s`.
+  - The claude greps (`-p Read `, and the prompt is not after `--allowedTools`), the agy greps (`-p Read `, not `-p --dangerously…`, `--print-timeout`) and the bare-`agent`-never-invoked check have no diff and still pass. The suite exited 0 as verification command 9.
+- **(7) Mutations (scratch copies of `c598964`; `test-execution-spec.py` + `test-execution-integration.py`, both green at baseline: spec OK, 27 integration tests OK):**
+  - **Killed:**
+    - A: the runner passes `all_unknown()` instead of the observation.
+    - B: the wrong parser is used.
+    - C: the spec model is written as `observed`. This is F003 step 4, and 12 tests fail.
+    - E: no codex `--json`.
+    - H: `CURRENT_PROVIDER_CONTRACT = 5`.
+    - J: the runner reads no bytes.
+    - K: codex `--json` is placed after the prompt.
+    - L: claude's flags are placed after `--allowedTools`.
+  - **Survive:**
+    - D: the runner's `stdin=DEVNULL` is removed. See (5); equivalent on every launcher path.
+    - F and G: claude's or Cursor's JSON flags are also applied to contract 5. Only codex contract 5 is pinned, by `assertNotIn("--json")`. The code is correct, as (1) proves, but historical claude, Cursor and agy argv is unpinned.
+    - I: the log offset is forced to 0. The header has no JSON lines today, so this mutant is equivalent unless a prompt line is a JSON object.
+    - M: the spec schema enum without 6. No test validates specs against the schema; this is the T-019 gap class. The schema is correct, as (1) proves.
+    - N: the `except` around `observe` is removed. The task's WARN/all-`unknown` path has no test.
+  - None of the survivors hides a wrong effect in `c598964`. Each is a missing regression test for behavior I proved directly.
+- **F003 acceptance — each step and its evidence:**
+  1. Receipt schema with `observed_model`, usage (input, output, cache, reasoning) and `fast_state`, each with a source flag:
+     - T-019 `a80bf0df-…` (code);
+     - T-019-R1 `e4d52ac3-…` (the schema fix and the schema/code agreement test; real-validator proof in the Architect re-review);
+     - T-019-R2 `40859e3d-…` (the `observation.observed_model.value` negative);
+     - T-020 verification command 2 (`tests/test-execution-receipt.py`, exit 0 at `c598964`).
+  2. Fixtures fill the fields; nothing reported gives `unknown`; the Cursor model is `unknown` unless the init event reports it:
+     - T-018 `7e75c8e2-…` (parser and fixtures, literal expectations);
+     - T-020 commands 1 and 4. The new integration test shows `cursor.jsonl` → `Composer 2.5`, and `cursor-no-init-model.jsonl` and `codex.jsonl` → model `unknown` although the spec names one.
+     - **Limit:** agy is covered only in the "reports nothing → `unknown`" form. P-2 never captured agy output, so no agy fixture fills fields (`test_agy_is_all_unknown_on_every_fixture`). This is the recorded 2A decision, but the human should know that step 2's "agy fills the fields" is not literally met.
+  3. An old receipt still validates:
+     - the T-019 review (76 v1 receipts load identically and keep their hashes);
+     - T-019-R1 (78/78 receipts valid with a real validator);
+     - T-020 command 6 (`audit` loads every real receipt from the live root, exit 0).
+  4. No guessed value is written as `observed`:
+     - T-018 (`observe` takes only provider and bytes);
+     - T-019 review (3);
+     - T-020: the runner passes only `observe()` output, mutant C is killed, and the integration assertions show the spec model never becomes `observed_model`.
+  5. shellcheck and `bash tests/run-tests.sh` exit 0: T-020 commands 8 and 9, at `c598964`.
+  - **F003 is ready for `accept-feature.sh` on run `86a9c529-95d9-42b3-9e23-b24c18fec0ff`.** The cited record is `verification/86a9c529-95d9-42b3-9e23-b24c18fec0ff.json`, SHA-256 `a85b3ac10ab890e4bd00dff542e052d632c4618700a010a209e436e239837fe8` (the only record for the run, result `pass`). I did not run it.
+- **Recommended follow-up, T-020-R1:** test-only, any economy seat, `code-reviewer`. It is not a precondition for F003 acceptance: no F003 step depends on it, and every effect is proven above. Items:
+  - (a) A stdin test that runs `scripts/execution_runner.py` directly, with an open stdin pipe and a short `--timeout`. This kills mutant D.
+  - (b) Pin contract-5 argv for claude, Cursor and agy, as for codex. This kills F and G.
+  - (c) Force `observe` to raise. Expect an all-`unknown` block, one `WARN: observation unavailable` line, and the outcome and exit code unchanged. This kills N.
+  - (d) A launcher-header prompt line that is a JSON `result` event must not reach the observation. This kills I.
+  - (e) Optional: a `jsonschema`-gated command that validates the persisted specs against `schemas/execution-spec.schema.json`. This kills M. Same pattern as T-019-R1.
+  - Allow-list: `tests/test-execution-integration.py`, `tests/test-execution-spec.py`, PROGRESS.md.
+- **Non-blocking notes:**
+  - (a) The observation is only as trustworthy as the log file. A worker can append lines to its own `.tasks/logs/<run_id>.log`, which is gitignored and outside the scope guarantee. A forged codex `turn.completed` would add to the observed usage. Claude and Cursor take the last `result`, and their real one comes last. A forged Cursor init downgrades the model to `unknown`. Reading from a pipe (tee) would close this. That belongs to 2B anti-gaming, not 2A.
+  - (b) After acceptance, re-smoke S3 should confirm a real contract-6 receipt carries observed values. The first candidate is this run's own receipt (claude JSON). I cannot see it from inside the run, so I do not claim it.
+- **Audit:** `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` → `VERIFY OK`, exit 0, at `0549599`, before this entry.
+- **Not done:** no `accept-feature.sh`; no change to features.json, fleet.json, the gate or the status; no worker dispatched.
+- **L-016 candidate:** a test for a property that an outer layer also provides (bash async-list `/dev/null`, a verifier's `DEVNULL`) must drive the inner layer directly, or it proves nothing about that layer.
+
+Verdict: PASS
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-020 verified; Architect review requested (F003 acceptance run)
 - **Mechanical review:** run `86a9c529-95d9-42b3-9e23-b24c18fec0ff` (T-020, cursor.economy composer-2.5, effort medium, speed standard, attempt 1), receipt `.tasks/receipts/86a9c529-95d9-42b3-9e23-b24c18fec0ff.json`: outcome `completed`, exit 0, scope pass, commit `c598964`, 8 changed paths (`scripts/execute_provider.py`, `scripts/execution_spec.py`, `scripts/execution_runner.py`, `schemas/execution-spec.schema.json`, `tests/test-execution-spec.py`, `tests/test-execution-integration.py`, `tests/run-tests.sh`, PROGRESS.md), all in the allow-list as extended. `verify-mission.sh --run-id 86a9c529-95d9-42b3-9e23-b24c18fec0ff` → `VERIFY PASS`, exit 0 (10 commands: observe, receipt, spec and integration tests, the spec-glob check and the audit from the live root, the stdin-closed grep, shellcheck, the full suite, no-bytecode). Routing line written (adapter, M, cursor.economy, attempt 1, done). Cursor tally: 9 task attempts, 7 done, 2 task failures.
 - **ARCHITECT REVIEW REQUEST, T-020 alone (commit `c598964`; provider argv for all four CLIs, runner, receipts; this is the planned F003 acceptance run).** Run `git show c598964`. Confirm with evidence you produced: (1) the new contract is "current + 1" (6) and contracts 1-5 are byte for byte unchanged for every provider (run `provider_contract` from the old and new trees over a generated spec grid as in your T-009/T-013 reviews; load all persisted specs); (2) the new argv per provider matches the real CLI output recorded in `evidence/cli-json-observation.md` (claude `--output-format json`; codex `--json`; cursor-agent `--output-format stream-json`; agy as T-020 says) and the prompt is still the last argument where it was; (3) the runner passes the captured output to `observe_output.observe(provider, raw)` and writes the result into the receipt's `observation`; **no value is ever copied from the spec or seat as `observed`**; a provider that prints no JSON gives all-`unknown` and the run still completes; (4) **privacy and evidence**: raw output is not copied into the receipt; the worker log (transcript) location and content rules are unchanged; check that switching Claude to `--output-format json` and Cursor to `stream-json` does not lose the transcript the log is supposed to hold (say what the log contains now); (5) stdin stays closed for every provider (the test is real); (6) the `tests/run-tests.sh` edits kept every exact-invocation check a byte comparison of the whole argv including the final prompt and weakened nothing (show the removed and added lines); (7) mutate the new logic in scratch copies and confirm tests fail. **Then answer for acceptance:** F003's steps (see `features.json`) 1-5: for each, name the verified run or the verification command that proves it (T-018 `7e75c8e2-…`, T-019 `a80bf0df-…`, T-019-R1 `e4d52ac3-…`, T-019-R2 `40859e3d-…`, T-020 `86a9c529-…`) and say whether F003 is ready for `accept-feature.sh` on the T-020 run (I will only prepare the command, not run it). **RULES FOR YOUR TESTS:** a fake `cursor-agent`, `codex`, `claude` and `agy` first on PATH before any test or mutation; never launch a real provider CLI; no `-fast` model; `PYTHONDONTWRITEBYTECODE=1`; avoid `python3 -I` for anything that writes bytecode into the repo; leave nothing in the live tree. End with `Verdict: PASS` or `Verdict: FAIL` and blocking issues only.
