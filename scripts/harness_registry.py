@@ -181,6 +181,15 @@ def canonical_provider(registry, name):
     raise RegistryError(f"unknown provider: {name}")
 
 
+def _is_encoded(registry, key, base):
+    """Return True when a base already carries an effort token or a fast suffix."""
+    spec = registry["providers"][key]
+    if spec["model_name_encoding"] is None:
+        return any(base.endswith("-" + token) for token in spec["capabilities"]["efforts"])
+    decoded = decode_model(registry, key, base)
+    return decoded["effort"] is not None or decoded["fast"]
+
+
 def encode_model(registry, provider, base, family, effort, fast):
     """Encode requested effort and speed into a provider's model name when configured."""
     validate_registry(registry)
@@ -190,6 +199,8 @@ def encode_model(registry, provider, base, family, effort, fast):
         raise RegistryError("base and family must be non-empty text")
     if not isinstance(fast, bool):
         raise RegistryError("fast must be boolean")
+    if _is_encoded(registry, key, base):
+        raise RegistryError(f"{key} base {base!r} is already encoded; pass the plain base and let encode_model add effort and fast")
     encoding = spec["model_name_encoding"]
     if encoding is None:
         if fast:

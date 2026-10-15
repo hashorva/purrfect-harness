@@ -320,6 +320,77 @@ class RegistryTests(unittest.TestCase):
             self.assertIn("ERROR: registry:", result.stderr)
             self.assertIn("harness-registry.json", result.stderr)
 
+    def test_already_encoded_bases_are_refused(self):
+        cases = (
+            ("cursor", "grok-4.7-xhigh", "grok", "medium", False),
+            ("agy", "gemini-3.8-flash-high", "flash", "high", False),
+            ("cursor", "composer-2.5-fast", "composer", "medium", True),
+        )
+        for provider, base, family, effort, fast in cases:
+            with self.subTest(base=base):
+                with self.assertRaisesRegex(registry_module.RegistryError, "already encoded"):
+                    registry_module.encode_model(registry, provider, base, family, effort, fast)
+
+    def test_flag_providers_keep_effort_out_of_model_name(self):
+        with self.assertRaisesRegex(registry_module.RegistryError, "already encoded"):
+            registry_module.encode_model(registry, "claude", "claude-opus-5-5-high", "opus", "high", False)
+        self.assertEqual(registry_module.encode_model(registry, "claude", "claude-opus-5-5", "opus", "high", False),
+                         "claude-opus-5-5")
+        self.assertEqual(registry_module.encode_model(registry, "codex", "gpt-6-luna", "luna", "xhigh", False),
+                         "gpt-6-luna")
+
+    def test_flag_and_unsupported_fast_providers_refuse_fast(self):
+        for provider, base, family in (("agy", "gemini-3.8-flash", "flash"),
+                                       ("claude", "claude-opus-5-5", "opus"),
+                                       ("codex", "gpt-6-luna", "luna")):
+            with self.subTest(provider=provider):
+                with self.assertRaisesRegex(registry_module.RegistryError, "does not support fast"):
+                    registry_module.encode_model(registry, provider, base, family, "high", True)
+
+    def test_effort_outside_provider_tokens_is_refused(self):
+        with self.assertRaisesRegex(registry_module.RegistryError, "does not support model-name effort 'xhigh'"):
+            registry_module.encode_model(registry, "agy", "gemini-3.8-flash", "flash", "xhigh", False)
+
+    def test_effort_token_whitelist_is_enforced_by_validator(self):
+        broken = copy.deepcopy(registry)
+        broken["providers"]["cursor"]["model_name_encoding"]["effort_tokens"].append("turbo")
+        with self.assertRaisesRegex(registry_module.RegistryError, "effort_tokens"):
+            registry_module.validate_registry(broken)
+
+    def test_fast_suffix_must_agree_with_fast_encoding(self):
+        cases = (
+            ("model-name encoding without suffix", ("cursor",), None),
+            ("suffix without model-name encoding", ("agy",), "-fast"),
+        )
+        for label, (provider,), suffix in cases:
+            with self.subTest(label=label):
+                broken = copy.deepcopy(registry)
+                broken["providers"][provider]["model_name_encoding"]["fast_suffix"] = suffix
+                with self.assertRaisesRegex(registry_module.RegistryError, "must agree with fast_encoding"):
+                    registry_module.validate_registry(broken)
+
+    def test_door_without_provider_raises_registry_error(self):
+        broken = copy.deepcopy(registry)
+        del broken["doors"]["agy"]["provider"]
+        with self.assertRaisesRegex(registry_module.RegistryError, "doors.agy missing required field: provider"):
+            registry_module.validate_registry(broken)
+
+    def test_door_provider_values_are_pinned(self):
+        expected = {
+            "claude": "claude",
+            "codex": "codex",
+            "cursor-composer": "cursor",
+            "cursor-grok": "cursor",
+            "agy": "agy",
+        }
+        self.assertEqual({name: door["provider"] for name, door in registry["doors"].items()}, expected)
+
+    def test_decode_refuses_empty_base(self):
+        for model in ("", "-high", "-fast"):
+            with self.subTest(model=model):
+                with self.assertRaisesRegex(registry_module.RegistryError, "model"):
+                    registry_module.decode_model(registry, "cursor", model)
+
 
 if __name__ == "__main__":
     unittest.main()
