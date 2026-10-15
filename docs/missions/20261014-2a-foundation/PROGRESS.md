@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 — T-028 worker — ledger privacy rule; awaiting orchestrator verification
+
+- **Task:** T-028 (F005 privacy rule). Baseline `shellcheck scripts/*.sh tests/*.sh` and `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` both exited 0.
+- **Changed:** `scripts/ledger.py` recursively checks every string value, including nested objects and lists, for length over 200, newline characters, the launcher prefix `Read docs/missions/`, each specified secret-like pattern, and email addresses. Violations report `ERROR: ledger: privacy: <field>`. Added real-CLI regression cases for overlength, multiline, launcher prefix, secret-like value, and email value; existing valid fixtures remain covered.
+- **Checks:** focused ledger suite exited 0 (20 tests); shellcheck exited 0; `git diff --check` exited 0; no `scripts/__pycache__` or `tests/__pycache__` (exit 0).
+- **Not run by worker:** `bash tests/run-tests.sh`, per T-028's standing rule that it is run by the verifier outside the sandbox. Its final result and `verify-mission.sh` remain verifier evidence.
+- **Scope/status:** only `scripts/ledger.py`, `tests/test-ledger.py`, and this entry changed. No feature acceptance or gate/status change. Commit: `feat(ledger): privacy rule in the row validator`.
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-027 code-reviewer PASS; T-028 dispatch
 - **`code-reviewer` on `6b6b2b7`:** Verdict PASS, no blocking issues. No field of proposal section 8 is missing (it also covers `schema_version` and `outcome`); every number and text field carries a source flag in both the schema and the validator (a bare number fails "must be an object"; `observed`/`estimated` with null is rejected; `unknown` with a value is rejected; extra properties rejected at every level); the validator needs no third-party library; the test compares the schema's properties with `FIELDS` and a literal section 8 list; all six fixtures are used and the four bad ones assert exact stderr text matching their names; the test is wired into `tests/run-tests.sh` and the manifest lists both new files; fixtures are synthetic (no transcript text, emails, absolute paths, secrets). Per-check "counts" are modelled as one exit code per check, matching the T-027 text. Reviewer's limit: no execution tool; scope claim rests on the receipt. T-027 is slice evidence for F005, not acceptance.
 - **Next: T-028 (ledger privacy rule; ledger, S; Architect alone)** on **codex.economy** (ledger × codex has no data yet; ledger so far: claude 1 done). Scan: see allow-list below; worker runs: claude 11, codex 12, cursor 11.

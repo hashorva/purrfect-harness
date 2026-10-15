@@ -200,6 +200,22 @@ class LedgerMutations(unittest.TestCase):
     def test_row_must_be_an_object(self):
         self.expect_invalid([], "row: must be an object")
 
+    def test_privacy_rules_reject_long_or_multiline_text(self):
+        self.expect_invalid(self.mutated(lambda row: row.__setitem__("task", "x" * 201)), "task: privacy")
+        self.expect_invalid(self.mutated(lambda row: row.__setitem__("task", "first\nsecond")), "task: privacy")
+
+    def test_privacy_rule_rejects_launcher_prompt_prefix(self):
+        self.expect_invalid(self.mutated(lambda row: row.__setitem__("task", "Read docs/missions/example")), "task: privacy")
+
+    def test_privacy_rule_rejects_secret_like_values(self):
+        self.expect_invalid(
+            self.mutated(lambda row: row["checks"][0].__setitem__("name", "sk-" + "a" * 20)),
+            "checks[0].name: privacy",
+        )
+
+    def test_privacy_rule_rejects_email_addresses(self):
+        self.expect_invalid(self.mutated(lambda row: row.__setitem__("task", "owner@example.com")), "task: privacy")
+
     def test_invalid_json_is_rejected(self):
         path = Path(self.tmp.name) / "broken.json"
         path.write_text("{", encoding="utf-8")

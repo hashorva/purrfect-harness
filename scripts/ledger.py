@@ -14,6 +14,12 @@ import sys
 
 SCHEMA_VERSION = 1
 SOURCES = ("observed", "estimated", "unknown")
+SECRET_PATTERNS = tuple(re.compile(pattern) for pattern in (
+    r"sk-[A-Za-z0-9_-]{20,}", r"ghp_[A-Za-z0-9]{20,}", r"github_pat_",
+    r"AKIA[0-9A-Z]{16}", r"xox[abpr]-", r"-----BEGIN", r"eyJ[A-Za-z0-9_-]{20,}\.",
+))
+EMAIL = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+")
+PROMPT_PREFIX = "Read docs/missions/"
 OUTCOMES = ("completed", "failed", "timed_out", "interrupted", "launch_failed")
 SCOPE_RESULTS = ("pass", "fail", "not_checked")
 RUN_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
@@ -63,6 +69,21 @@ def check_object(path, value, keys):
     for key in value:
         if key not in keys:
             fail(sub(path, key), "unknown key")
+
+
+def check_privacy(path, value):
+    """Reject raw prompt, transcript, contact, or secret-like string values."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            check_privacy(sub(path, key), item)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            check_privacy(f"{path}[{index}]", item)
+    elif isinstance(value, str):
+        if (len(value) > 200 or "\n" in value or "\r" in value
+                or PROMPT_PREFIX in value or EMAIL.search(value)
+                or any(pattern.search(value) for pattern in SECRET_PATTERNS)):
+            fail(path or "row", "privacy")
 
 
 def check_text(path, value, nullable=False):
@@ -210,6 +231,7 @@ CHECKS = {
 
 def validate_row(row):
     """Raise LedgerError on the first contract violation; return None for a valid row."""
+    check_privacy("", row)
     check_object("", row, FIELDS)
     for name in FIELDS:
         CHECKS[name](name, row[name])
