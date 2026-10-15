@@ -4,6 +4,55 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-015 attempt 2 (`18507d9` + `2f59364`)
+
+- **Run:** `282c85b5-19d0-42c7-949a-aab48340f983`; log `.tasks/logs/282c85b5-19d0-42c7-949a-aab48340f983.log`; spec role `brain`, action `review`, base `29b09da`, write scope this file only. The launcher writes the receipt `.tasks/receipts/282c85b5-19d0-42c7-949a-aab48340f983.json` when this run ends; it did not exist while this entry was written.
+- **Worker evidence I read:** receipt `de119273-…`: codex.economy `gpt-6-luna`, outcome `completed`, exit 0, scope pass, `5f81cf2` → `2f59364`, 3 allow-listed paths, clean `git_after`. VerificationRecord `verification/de119273-83aa-401f-9006-46a7f8279916.json`: `pass`, all 7 commands exit 0, including `tests/test-seat-smoke.py` and `bash tests/run-tests.sh`. `git diff 2f59364 29b09da -- scripts tests schemas harness-registry.json .agents docs/missions/templates` is empty, so `2f59364` is the code under review.
+- **Method:** effects only. Scratch `git clone`s in the session scratchpad with origin removed: `old` at `20e19fe` (before T-015), and `new` and `mut` at `2f59364`. Fake `claude`, `codex`, `cursor-agent`, `agy`, `agent` and `grok` were first on PATH (each logs and exits 97), with `PYTHONDONTWRITEBYTECODE=1`. **No real provider CLI ran:** the fake-call log is empty (0 bytes) after every step. No `-fast` model was launched.
+- **(1) Contract restored: PASS.**
+  - `worker_write_scope(task)` returns `worker_allow_list(task)`, a plain list. That list is `patterns` after `validate_write_scope(patterns)`, which returns an element-equal copy, so the value equals the pre-`18507d9` return.
+  - `git grep -n worker_write_scope` finds exactly the two consumers: `dispatch_policy.py:245` (`validate_worker`) and `tests/test-seat-smoke.py:21/196`.
+  - `git diff 20e19fe 2f59364 -- tests/test-seat-smoke.py scripts/spawn-brain.sh scripts/execution_spec.py scripts/execution_receipt.py harness-registry.json` is empty. In `new`, `test-seat-smoke.py` gives 19 OK and `test-execution-integration.py` gives 24 OK.
+- **(2) Grammar back to pre-`18507d9`: PASS.** I drove the real `spawn-worker.sh` of each tree through its own `WrapperIntegration` fixture with the same 153-case grid as the attempt-1 review.
+  - Grid: provider {codex, claude} × registry {live, codex `[".agents/"]`, codex `["./.agents/"]`, codex `["./"]`} × 19 patterns, plus one mixed list.
+  - Result: 122 cases identical and 31 different. All 31 are codex on a fixture registry, exit 0 → exit 1, with the seat-limit or empty-prefix message: 9 + 9 seat-limit refusals and 13 empty-prefix refusals.
+  - Live registry: 0 differences. Claude: 0 differences, including under the codex `.agents/` fixture.
+  - `./docs/x.md`, `./.agents/skills/x/SKILL.md`, `././.agents/x.md`, `./` and `.//docs/x.md` are refused again on the live registry with `write_scope entries must not contain empty, dot, or parent segments`, as at `20e19fe`.
+- **(3) Segment rule: PASS.**
+  - All 13 listed patterns are refused for codex `[".agents/"]`. The same holds under `["./.agents/"]`, where the message names the raw prefix.
+  - `docs/x.md`, `docs/**`, `.agentsx/y.md` and `.agents` pass with persisted scope equal to the pattern.
+  - A `./` prefix gives `seat limit prefix './' normalizes to empty and would refuse every task` for every pattern.
+  - The live registry (all four lists empty) refuses nothing new.
+  - Exhaustive property check against the real function, with a path oracle (`glob_regex` over every valid path under the prefix): all 2,340 grammar-valid patterns over `{a,b,*,?,/}` up to length 5 × prefixes `ab/`, `a/b/`, `./ab/`, `b`. **Under-refusals: 0 of 9,360.** There are 417 over-refusals, and every one contains `**` (the fail-closed form the task accepts).
+- **(4) Gate order: PASS.**
+  - The check runs inside `validate_worker` after the feature checks and before `clean_workspace`.
+  - `validate-worker` runs at `spawn-worker.sh:192`, before `fleet_state.py resolve`, `validate-capability` and `acquire-lock`. The wrapper diff is the single `--provider "$WORKER"` argument.
+  - Grid: of 80 refusals, 0 left a spec, log, receipt, lock or provider call.
+  - `spawn-brain.sh` has a 0-line diff.
+- **(5) Mutations: 13 of 16 killed.** Clone `mut`, one exact-string change each; both `test-execution-integration.py` and `test-seat-smoke.py` run in full; byte-exact restore checked with `git diff --quiet`; the clone is clean at the end.
+  - Killed: call removed; `**` rule dropped; `**` treated as no hit; segment glob → literal compare; `>` → `>=` (refuses `.agents` itself); tail always hit; empty-prefix check removed; **prefix not normalised (attempt-1 survivor a)**; **raw provider in the message (attempt-1 survivor b)**; always codex limits; grammar loosened (`./` stripped); return type → tuple (both test files fail); wrapper passes a constant provider.
+  - Survived, test gaps, not blocking:
+    - "a pattern shorter than the prefix hits": this is reachable only with a multi-segment prefix and errs fail-closed. The property check covers `a/b/` on the real code.
+    - "only the first prefix checked": no fixture has two prefixes.
+    - The live registry has neither case.
+  - Survived, equivalent: the check moved after `clean_workspace` (both still run before the lock).
+- **(6) Docs: accurate.**
+  - The skill sentence ("refuses a worker task whose allow-list hits one before launch") and the template sentence now match the mechanism. The attempt-1 over-claim is gone because the glob gap is closed.
+  - **Stale row (b) is still present:** `.agents/skills/dispatch-worker/SKILL.md:167` and `docs/missions/templates/WORKER_TASK.template.md:65-66` ("Codex workspace-write cannot write under `.agents/` … until the adapter is fixed"). It stays queued for the docs task.
+- **Non-blocking follow-ups (for a later test or docs task, not a correction):**
+  - (a) Add fixtures for a two-segment prefix and a two-prefix list, to kill the two test-gap survivors.
+  - (b) The "claude passes" sub-case resets the codex list to `[]` first. Keeping the codex `.agents/` limit there would prove provider isolation in the unit test; the grid proves it today.
+  - (c) `validate_worker` parses the task twice (`worker_allow_list`, then `worker_write_scope`). This is harmless on a committed, clean task.
+- **Audit:** `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` → `VERIFY OK`, exit 0, before this entry. The live tree was clean at `29b09da`, with 1 worktree and no `__pycache__`.
+- **Classification:** none needed (no failure). T-015 is complete as an F004 slice.
+- **Not done:**
+  - no acceptance (the orchestrator accepts F004 when all its slices are in);
+  - no change to features, fleet, GOAL, status or tasks;
+  - no dispatch.
+  - Scratch clones, fakes, the grid, the property check and the mutation scripts stay in the session scratchpad.
+
+Verdict: PASS
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-015 attempt 2 verified; Architect review requested
 - **Mechanical review:** run `de119273-83aa-401f-9006-46a7f8279916` (T-015 attempt 2, codex.economy gpt-6-luna, effort medium), receipt `.tasks/receipts/de119273-83aa-401f-9006-46a7f8279916.json`: outcome `completed`, exit 0, scope pass, commit `2f59364`, 3 changed paths (`scripts/dispatch_policy.py`, `tests/test-execution-integration.py`, PROGRESS.md), all in the allow-list. `verify-mission.sh --run-id de119273-83aa-401f-9006-46a7f8279916` → `VERIFY PASS`, exit 0 (7 commands: integration tests, **seat-smoke tests (the regression oracle)**, verification-record tests, doc grep, shellcheck, the full suite, no-bytecode). Record is slice evidence for F004, not acceptance. Routing line written (dispatch-policy, M, codex.economy, attempt 2, done). Codex.economy worker tally: 6 runs, 5 done, 0 task failures.
 - **Worker narrative note (L-009):** it says its baseline invocation "did not yield a captured final exit code"; not evidence either way — the verifier ran everything.
