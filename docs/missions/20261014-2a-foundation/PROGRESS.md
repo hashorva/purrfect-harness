@@ -4,6 +4,9 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-031 verified; code-reviewer requested
+- **Mechanical review:** run `5cf7e598-581d-4dc8-b2b9-e85438a6fc19` (T-031, claude.economy haiku, effort medium, attempt 1): completed, exit 0, scope pass, commit `a2f3dc6`, 3 changed paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (4 commands). Routing line written.
+
 ## 2026-10-15 (day 3) — T-031 worker (claude-haiku-5-5, economy) — derived view implemented; awaiting verifier
 - **Baseline (before edits):** `shellcheck scripts/*.sh tests/*.sh` exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` exit 0 (59 tests). `tests/run-tests.sh` not run by the worker, per the task.
 - **Change:** `scripts/ledger.py view <ledger.jsonl> --features <features.json>` prints `first_try_rate <hits>/<accepted>` and one `tokens <feature> observed=<sum> estimated=<sum> unknown_runs=<n>` line per accepted feature (`passes: true`). It reads through `safe_read` and writes nothing.
