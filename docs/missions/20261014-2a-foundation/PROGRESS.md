@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — Architect verdict on T-034: FAIL (3 blocking); T-034-R1 written
+- **Architect review** (run `af13c5db-3de7-4fc8-8474-69586c0abf39`, commit `565c6a3`): the registry field is correct and parity holds (4 of 5 mutants caught). Blocking: (1) "last object" picks a nested object, so a real bare or wrapped verdict is refused; (2) fail-open fallback to earlier `result`/`text` strings accepts a verdict the model did not give as its final answer; (3) deep nesting gives a `RecursionError` traceback and the brace scan is quadratic (5 MB did not finish). Routing line for T-034 amended to `verify-passed-review-failed`, class `task` (codex.economy), with a note that "last JSON object" in the task text was ambiguous.
+- **T-034-R1** written from the Architect's proposal (final-answer-only source, last top-level object, 4 MiB cap, linear scan, RecursionError, tests incl. the fail-open case). Dispatching on claude.economy. Review: `code-reviewer` plus the hostile cases, as the Architect judged.
+
 ## 2026-10-15 (day 3) — Brain / Architect (claude/opus, effort high) — review of T-034 (`8799cd1`)
 
 - **Run:** `af13c5db-3de7-4fc8-8474-69586c0abf39`; log `.tasks/logs/af13c5db-3de7-4fc8-8474-69586c0abf39.log`; spec role `brain`, action `review`, base `257c808`, write scope this file only. The launcher writes the receipt `.tasks/receipts/af13c5db-3de7-4fc8-8474-69586c0abf39.json` when this run ends; it did not exist while this entry was written.
