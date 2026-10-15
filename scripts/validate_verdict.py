@@ -10,6 +10,10 @@ KEYWORDS = {"$schema", "title", "type", "required", "properties", "additionalPro
             "items", "enum", "minItems", "minLength", "pattern", "if", "then"}
 KNOWN_TYPES = frozenset({"object", "array", "string", "integer", "number", "boolean", "null"})
 REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
+MAX_OUTPUT_BYTES = 4 * 1024 * 1024
+# Only these characters change the scan state, so the scanner jumps between them.
+SCAN_SPECIAL = re.compile(r'["\\\[\]{}]')
+CLOSERS = {"{": "}", "[": "]"}
 
 
 class SchemaError(Exception):
@@ -21,53 +25,77 @@ def read_json(path):
         return json.load(stream)
 
 
-def _json_objects(text):
-    """Yield complete JSON values embedded in text, in appearance order."""
-    decoder = json.JSONDecoder()
-    for start, char in enumerate(text):
-        if char not in "[{":
+def read_bounded_text(path):
+    """Read at most MAX_OUTPUT_BYTES, refusing larger output before decoding it."""
+    with open(path, "rb") as stream:
+        data = stream.read(MAX_OUTPUT_BYTES + 1)
+    if len(data) > MAX_OUTPUT_BYTES:
+        raise ValueError(f"output exceeds {MAX_OUTPUT_BYTES} bytes")
+    return data.decode("utf-8")
+
+
+def _top_level_spans(text):
+    """Return (start, end) for each top-level {} or [] span in one linear pass.
+
+    Brackets are matched with a stack and quoted strings are skipped, so nested
+    values are never reported on their own. An opener that never closes gives no span.
+    """
+    stack = []
+    spans = []
+    in_string = False
+    skip_before = 0
+    for match in SCAN_SPECIAL.finditer(text):
+        pos = match.start()
+        char = match.group()
+        if pos < skip_before:
+            continue
+        if in_string:
+            if char == "\\":
+                skip_before = pos + 2
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = bool(stack)
+        elif char in "[{":
+            stack.append((char, pos))
+        elif char in "]}" and stack and CLOSERS[stack[-1][0]] == char:
+            _, start = stack.pop()
+            if not stack:
+                spans.append((start, pos + 1))
+    return spans
+
+
+def _last_object(text, accept=lambda value: True):
+    """Return the last top-level JSON object in text that accept() takes, or None."""
+    for start, end in reversed(_top_level_spans(text)):
+        if text[start] != "{":
             continue
         try:
-            value, _ = decoder.raw_decode(text, start)
+            value = json.loads(text[start:end])
         except json.JSONDecodeError:
             continue
-        yield value
+        except RecursionError:
+            raise ValueError("JSON nests too deeply to read") from None
+        if isinstance(value, dict) and accept(value):
+            return value
+    return None
 
 
-def _embedded_text(value):
-    if isinstance(value, dict):
-        for key in ("result", "text"):
-            candidate = value.get(key)
-            if isinstance(candidate, str):
-                yield candidate
-        for child in value.values():
-            if isinstance(child, (dict, list)):
-                yield from _embedded_text(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from _embedded_text(child)
+def final_answer_text(output):
+    """Return the result text of the last CLI envelope, or the whole output if there is none."""
+    envelope = _last_object(
+        output,
+        lambda value: value.get("type") == "result" and isinstance(value.get("result"), str),
+    )
+    return output if envelope is None else envelope["result"]
 
 
 def extract_last_json_object(output):
-    """Extract the final verdict object, including text in CLI JSON envelopes."""
-    objects = list(_json_objects(output))
-    text_candidates = []
-    for item in objects:
-        text_candidates.extend(_embedded_text(item))
-    for candidate in reversed(text_candidates):
-        try:
-            exact = json.loads(candidate)
-        except json.JSONDecodeError:
-            exact = None
-        if isinstance(exact, dict):
-            return exact
-        embedded = [item for item in _json_objects(candidate) if isinstance(item, dict)]
-        if embedded:
-            return embedded[-1]
-    dicts = [item for item in objects if isinstance(item, dict)]
-    if dicts:
-        return dicts[-1]
-    raise ValueError("output contains no JSON object")
+    """Extract the last top-level object from the final answer only; never earlier events."""
+    value = _last_object(final_answer_text(output))
+    if value is None:
+        raise ValueError("output contains no JSON object")
+    return value
 
 
 def provider_json_schema_flag(provider):
@@ -220,11 +248,11 @@ def main(argv):
             schema = read_json(schema_path)
             check_schema(schema)
             if flag is None:
-                output = Path(output_path).read_text(encoding="utf-8")
+                output = read_bounded_text(output_path)
                 value = extract_last_json_object(output)
                 mode = "after-run"
             else:
-                value = read_json(output_path)
+                value = json.loads(read_bounded_text(output_path))
                 mode = "flag"
         except (OSError, json.JSONDecodeError, SchemaError, ValueError, KeyError) as exc:
             report_schema_error(exc)
