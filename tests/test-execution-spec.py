@@ -152,6 +152,8 @@ class ExecutionSpecContract(unittest.TestCase):
         self.assertEqual(self.persist(self.spec_v3(provider_contract_version=3)).returncode, 0)
         self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=1), check=False).returncode, 0)
         self.assertEqual(self.persist(self.spec_v3(provider_contract_version=4), check=False).returncode, 0)
+        self.assertEqual(self.persist(self.spec_v3(provider_contract_version=5), check=False).returncode, 0)
+        self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=6), check=False).returncode, 0)
         self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=True), check=False).returncode, 0)
 
     def test_persistence_is_canonical_hashed_and_no_clobber(self):
@@ -200,6 +202,24 @@ class ExecutionSpecContract(unittest.TestCase):
         fast, fast_digest = self.persisted(self.spec_v3(provider="agent", speed="fast"))
         self.assertEqual(json.loads(self.adapter(fast, fast_digest).stdout)["argv"][-2], "test-model[effort=medium,fast=true]")
 
+    def test_codex_contract_five_mounts_agents_only_when_write_scope_names_it(self):
+        git_dir = str(self.repo / ".git")
+        agents_dir = str(self.repo / ".agents")
+        cases = [
+            (5, [".agents/skills/x/SKILL.md"], ["--add-dir", git_dir, "--add-dir", agents_dir]),
+            (5, ["docs/x.md", ".agents/skills/x/SKILL.md"], ["--add-dir", git_dir, "--add-dir", agents_dir]),
+            (5, ["docs/x.md"], ["--add-dir", git_dir]),
+            (4, [".agents/skills/x/SKILL.md"], ["--add-dir", git_dir]),
+            (3, [".agents/skills/x/SKILL.md"], ["--add-dir", git_dir]),
+        ]
+        for contract, write_scope, expected_dirs in cases:
+            with self.subTest(contract=contract, write_scope=write_scope):
+                path, digest = self.persisted(self.spec_v3(provider="codex", provider_contract_version=contract,
+                                                           write_scope=write_scope))
+                argv = json.loads(self.adapter(path, digest).stdout)["argv"]
+                self.assertEqual(argv, ["codex", "exec", "-C", str(self.repo), "-s", "workspace-write", *expected_dirs,
+                                        "-m", "test-model", "-c", 'model_reasoning_effort="medium"', "exact prompt"])
+
     def test_cursor_contract_four_plain_models_and_prelaunch_rejections(self):
         cases = [
             ("composer-2.5", "medium", "standard", "composer-2.5"),
@@ -244,14 +264,14 @@ class ExecutionSpecContract(unittest.TestCase):
             else:
                 self.assertEqual(result.stdout.strip(), "OK")
 
-    def test_construct_emits_contract_4(self):
+    def test_construct_emits_contract_5(self):
         spec, path, _ = execution_spec.construct(
             role="worker", mission="docs/missions/fixture", feature="F001", work_unit="T-001", attempt=1,
             provider="codex", model="test-model", effort="medium", speed="unknown", repo=str(self.repo),
             prompt="exact prompt", write_scope=["allowed.txt"],
         )
         self.assertEqual(spec["schema_version"], 3)
-        self.assertEqual(spec["provider_contract_version"], 4)
+        self.assertEqual(spec["provider_contract_version"], 5)
         self.assertEqual(json.loads(path.read_text()), spec)
 
     def test_negative_adapter_paths_do_not_invoke_provider_sentinel(self):

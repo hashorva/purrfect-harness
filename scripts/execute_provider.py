@@ -26,7 +26,11 @@ def provider_contract(spec):
             raise SpecError("codex speed must be unknown")
         codex_git_dir = (["--add-dir", str(Path(repo) / ".git")]
                          if contract_version >= 2 else [])
-        argv = ["codex", "exec", "-C", repo, "-s", "workspace-write", *codex_git_dir, "-m", model,
+        # Contract 5+: the workspace-write sandbox refuses .agents/ unless it is mounted too (probe P-1).
+        writes_agents = any(pattern.startswith(".agents/") for pattern in spec.get("write_scope", []))
+        codex_agents_dir = (["--add-dir", str(Path(repo) / ".agents")]
+                            if contract_version >= 5 and writes_agents else [])
+        argv = ["codex", "exec", "-C", repo, "-s", "workspace-write", *codex_git_dir, *codex_agents_dir, "-m", model,
                 "-c", f'model_reasoning_effort="{effort}"', prompt]
     elif provider == "claude":
         if effort not in {"low", "medium", "high", "xhigh", "max"}:

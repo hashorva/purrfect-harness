@@ -100,7 +100,7 @@
           "uniqueItems": true,
           "items": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)(?!\\.git(?:/|$))(?!\\.tasks(?:/|$))[^\\\\\\r\\n]+$" }
         },
-        "provider_contract_version": { "enum": [2, 3, 4] }
+        "provider_contract_version": { "enum": [2, 3, 4, 5] }
       },
       "allOf": [{ "$ref": "#/$defs/roleRules" }]
     }

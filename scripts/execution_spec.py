@@ -17,9 +17,10 @@ FIELDS_V1 = frozenset(("schema_version", "run_id", "mission", "work_unit", "role
                        "attempt", "prompt"))
 FIELDS_V2 = FIELDS_V1 | {"write_scope"}
 FIELDS_V3 = FIELDS_V2 | {"provider_contract_version"}
-# Contracts 2 and 3 are retained history; contract 4 sends Cursor a plain model ID.
-PROVIDER_CONTRACTS_V3 = (2, 3, 4)
-CURRENT_PROVIDER_CONTRACT = 4
+# Contracts 2 and 3 are retained history; contract 4 sends Cursor a plain model ID;
+# contract 5 adds Codex's --add-dir <repo>/.agents when write_scope names .agents/.
+PROVIDER_CONTRACTS_V3 = (2, 3, 4, 5)
+CURRENT_PROVIDER_CONTRACT = 5
 ROLES = frozenset(("brain", "worker"))
 PROVIDERS = frozenset(("codex", "claude", "agent", "agy"))
 COMMIT = re.compile(r"^[0-9a-fA-F]{40,64}$")
@@ -122,7 +123,7 @@ def validate(spec):
         validate_write_scope(spec["write_scope"])
     if version == 3 and (isinstance(spec["provider_contract_version"], bool) or
                          spec["provider_contract_version"] not in PROVIDER_CONTRACTS_V3):
-        raise SpecError("provider_contract_version must equal 2, 3 or 4")
+        raise SpecError("provider_contract_version must equal 2, 3, 4 or 5")
     repo = _repo(spec["repo"])
     if not COMMIT.fullmatch(spec["base_commit"]):
         raise SpecError("base_commit must be a full Git object ID")
