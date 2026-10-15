@@ -4,6 +4,9 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — F007 starts: T-036 dispatch
+- Next in the owner's order after F006: F007. **T-036** (reconstruct command; diagnostics, S, code-reviewer; depends on T-012 and T-029, both verified) on codex.economy. T-037 (the smoke mission with five real runs) depends on T-026 and a working agy and is **blocked**; T-038 (Gate-2 input) follows it.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-035 verified and reviewed; F006 READY FOR ACCEPTANCE (command prepared, not run)
 - **Mechanical review:** run `db01ac53-00de-4d30-9230-05894b952ebe` (T-035, cursor.economy composer-2.5, effort medium, speed standard, attempt 1): completed, exit 0, scope pass, commit `afe2380`, changed paths = the two skills and PROGRESS.md only; `verify-mission.sh --run-id` → `VERIFY PASS` (8 commands, the five F006 steps incl. the full suite). **code-reviewer: PASS** (commands match the validator's real CLI; no worker-accept claim; no claim that the adapter sends the schema flag). Routing line written.
 - **F006 acceptance command (owner decides; I do not run it):**
