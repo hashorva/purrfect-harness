@@ -333,7 +333,7 @@ def resolve_v2(fleet,seat,registry,inventory):
         if door_spec["no_zdr"] and policy["no_zdr"]=="forbid": continue
         record=inventory["providers"][key]
         if record["status"]!="success": continue
-        raw=choose(provider_models(record,key),spec["family"],allow_fast=policy["fast"])
+        raw=choose(provider_models(record,key),spec["family"],allow_fast=fast)
         if raw is None: continue
         # The inventory may list encoded names; encode_model needs the plain base.
         try:

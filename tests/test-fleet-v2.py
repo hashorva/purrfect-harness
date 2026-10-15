@@ -124,9 +124,18 @@ def resolver_checks(d):
     expect(pick(["claude-alt", "codex"]), "claude-alt", "luna-fixture-2.0", source="alias")
     unhealthy = inventory({"codex": ["gpt-5.6-luna", "gpt-5.7-luna"], "claude": ["luna-fixture-2.0"]}, failed=("claude",))
     expect(pick(["claude-alt", "codex"], inventory_doc=unhealthy), "codex", "gpt-5.7-luna")
+    # a healthy first door with no model of the family falls through to the next door
+    no_family_on_first = inventory({"claude": ["opus"], "codex": ["gpt-5.6-luna", "gpt-5.7-luna"]})
+    expect(pick(["claude-alt", "codex"], inventory_doc=no_family_on_first), "codex", "gpt-5.7-luna")
     # a -fast model is never chosen with fast false, even when it is the newest
     expect(pick(["cursor-grok"], family="grok", effort="high", speed="standard"), "cursor-grok", "grok-4.7-high")
     expect(pick(["cursor-grok"], family="grok", effort="high", speed="fast", fast=True), "cursor-grok", "grok-4.8-high-fast")
+    # mission fast:true does not let a standard seat pick -fast names from inventory
+    grok_both = inventory({"agent": ["grok-4.8-high-fast", "grok-4.8-high"]})
+    expect(pick(["cursor-grok"], family="grok", effort="high", speed="standard", fast=True, inventory_doc=grok_both), "cursor-grok", "grok-4.8-high")
+    grok_fast_only = inventory({"agent": ["grok-4.8-high-fast"]})
+    standard_under_fast = pick(["cursor-grok"], family="grok", effort="high", speed="standard", fast=True, inventory_doc=grok_fast_only)
+    assert (standard_under_fast["model"], standard_under_fast["source"]) == (None, "unavailable"), standard_under_fast
     # an inventory of only encoded names yields the plain base, re-encoded with the seat effort
     encoded = inventory({"agent": ["grok-4.7-low", "grok-4.6-high"]})
     expect(pick(["cursor-grok"], family="grok", effort="medium", speed="standard", inventory_doc=encoded), "cursor-grok", "grok-4.7-medium")
@@ -147,6 +156,45 @@ def resolver_checks(d):
     gone = run_cli("resolve-v2", "--fleet", fleet_path, "--seat", "codex.premium", "--inventory", inventory_path)
     assert gone.returncode == 1 and json.loads(gone.stdout)["source"] == "unavailable", (gone.returncode, gone.stdout)
     expect_error(run_cli("resolve-v2", "--fleet", fleet_path, "--seat", "missing", "--inventory", inventory_path), "fleet seat not found")
+
+    fast_off = good_v2()
+    fast_off["seats"]["cursor.economy"] = seat("composer", ["cursor-composer"], speed="fast")
+    fast_off_path = d / "resolve-fast-off.json"
+    write(fast_off_path, fast_off)
+    expect_error(
+        run_cli("resolve-v2", "--fleet", fast_off_path, "--seat", "cursor.economy", "--inventory", inventory_path),
+        "fleet.seats.cursor.economy speed fast requires fleet.policy.fast",
+    )
+    bad_family = good_v2()
+    bad_family["seats"]["codex.economy"] = seat("composer", ["codex"])
+    bad_family_path = d / "resolve-bad-family.json"
+    write(bad_family_path, bad_family)
+    expect_error(
+        run_cli("resolve-v2", "--fleet", bad_family_path, "--seat", "codex.economy", "--inventory", inventory_path),
+        "fleet.seats.codex.economy family 'composer' unsupported for its doors",
+    )
+    ref_inv = inventory({"codex": ["gpt-5.7-luna"]})
+    try:
+        fleet_state.resolve_v2(fast_off, "cursor.economy", registry, ref_inv)
+        raise AssertionError("resolve_v2 should refuse fast seat when policy.fast is false")
+    except fleet_state.PolicyError as exc:
+        assert str(exc) == "fleet.seats.cursor.economy speed fast requires fleet.policy.fast"
+    try:
+        fleet_state.resolve_v2(bad_family, "codex.economy", registry, ref_inv)
+        raise AssertionError("resolve_v2 should refuse unsupported family")
+    except fleet_state.PolicyError as exc:
+        assert str(exc) == "fleet.seats.codex.economy family 'composer' unsupported for its doors"
+
+    s1_fleet = fleet_with({"test.grok": seat("grok", ["cursor-grok"], effort="high", speed="standard")}, fast=True)
+    s1_fleet_path = d / "resolve-s1-fleet.json"
+    s1_inv_path = d / "resolve-s1-inventory.json"
+    write(s1_fleet_path, s1_fleet)
+    write(s1_inv_path, grok_both)
+    s1_ok = run_cli("resolve-v2", "--fleet", s1_fleet_path, "--seat", "test.grok", "--inventory", s1_inv_path)
+    assert s1_ok.returncode == 0 and json.loads(s1_ok.stdout)["model"] == "grok-4.8-high", (s1_ok.returncode, s1_ok.stdout, s1_ok.stderr)
+    write(s1_inv_path, grok_fast_only)
+    s1_gone = run_cli("resolve-v2", "--fleet", s1_fleet_path, "--seat", "test.grok", "--inventory", s1_inv_path)
+    assert s1_gone.returncode == 1 and json.loads(s1_gone.stdout)["source"] == "unavailable", (s1_gone.returncode, s1_gone.stdout)
 
 
 def main():
