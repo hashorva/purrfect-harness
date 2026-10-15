@@ -41,7 +41,7 @@ SCOPE_RESULTS = ("pass", "fail", "not_checked")
 RUN_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 MAX_INPUT_BYTES = 1024 * 1024
 DRIFT_KEYS = ("at", "mission", "seat", "from", "to", "inventory_sha256")
-RESOLUTION_KEYS = ("provider", "door", "model", "effort", "speed", "source")
+RESOLUTION_KEYS = ("provider", "model", "effort", "speed")
 
 FIELDS = (
     "schema_version", "mission", "feature", "task", "run_id", "parent_run", "group_id",
@@ -275,7 +275,7 @@ def canonical_drift_line(event):
     return json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"
 
 
-def safe_read(path, label, *, optional=False):
+def safe_read(path, label, *, optional=False, max_bytes=MAX_INPUT_BYTES):
     try:
         info = path.lstat()
     except FileNotFoundError:
@@ -288,14 +288,14 @@ def safe_read(path, label, *, optional=False):
         raise LedgerError(label, "symlink refused")
     if not stat.S_ISREG(info.st_mode):
         raise LedgerError(label, "not a regular file")
-    if info.st_size > MAX_INPUT_BYTES:
+    if max_bytes is not None and info.st_size > max_bytes:
         raise LedgerError(label, "file exceeds size limit")
     try:
         with path.open("rb") as handle:
-            data = handle.read(MAX_INPUT_BYTES + 1)
+            data = handle.read() if max_bytes is None else handle.read(max_bytes + 1)
     except OSError as error:
         raise LedgerError(label, f"file cannot be read: {error.strerror}") from error
-    if len(data) > MAX_INPUT_BYTES:
+    if max_bytes is not None and len(data) > max_bytes:
         raise LedgerError(label, "file exceeds size limit")
     try:
         return data.decode("utf-8")
@@ -305,6 +305,16 @@ def safe_read(path, label, *, optional=False):
 
 def validate_drift(event):
     check_object("drift", event, DRIFT_KEYS)
+    for name in ("at", "mission", "seat"):
+        check_text(f"drift.{name}", event[name])
+    for name in ("from", "to"):
+        resolution = event[name]
+        check_object(f"drift.{name}", resolution, RESOLUTION_KEYS)
+        for key in RESOLUTION_KEYS:
+            check_text(f"drift.{name}.{key}", resolution[key])
+    if not isinstance(event["inventory_sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", event["inventory_sha256"]):
+        fail("drift.inventory_sha256", "must be 64 lowercase hexadecimal characters")
+
     def check_drift_strings(path, value):
         if isinstance(value, dict):
             for key, item in value.items():
@@ -315,16 +325,8 @@ def validate_drift(event):
         elif isinstance(value, str):
             if path != "drift.inventory_sha256":
                 check_privacy(path, value)
+
     check_drift_strings("drift", event)
-    for name in ("at", "mission", "seat"):
-        check_text(f"drift.{name}", event[name])
-    for name in ("from", "to"):
-        resolution = event[name]
-        check_object(f"drift.{name}", resolution, RESOLUTION_KEYS)
-        for key in RESOLUTION_KEYS:
-            check_text(f"drift.{name}.{key}", resolution[key])
-    if not isinstance(event["inventory_sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", event["inventory_sha256"]):
-        fail("drift.inventory_sha256", "must be 64 lowercase hexadecimal characters")
 
 
 def drift_line_id(line):
@@ -354,7 +356,7 @@ def normalize_mission_path(mission):
 
 def existing_run_ids(ledger_jsonl):
     ids = {}
-    content = safe_read(ledger_jsonl, "ledger.jsonl", optional=True)
+    content = safe_read(ledger_jsonl, "ledger.jsonl", optional=True, max_bytes=None)
     if content is None:
         return ids
     for line in content.splitlines(keepends=True):
@@ -377,7 +379,7 @@ def existing_run_ids(ledger_jsonl):
 
 def existing_drift_ids(drift_jsonl):
     ids = set()
-    content = safe_read(drift_jsonl, "drift.jsonl", optional=True)
+    content = safe_read(drift_jsonl, "drift.jsonl", optional=True, max_bytes=None)
     if content is None:
         return ids
     for line in content.splitlines():

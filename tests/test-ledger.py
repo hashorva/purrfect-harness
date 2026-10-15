@@ -687,8 +687,8 @@ class LedgerFoldTests(unittest.TestCase):
     def good_drift():
         return {
             "at": "2026-08-21T00:00:00Z", "mission": "docs/missions/fixture", "seat": "codex.economy",
-            "from": {"provider": "codex", "door": "codex", "model": "gpt-5.6-luna", "effort": "medium", "speed": "unknown", "source": "observed"},
-            "to": {"provider": "codex", "door": "codex", "model": "gpt-5.7-luna", "effort": "medium", "speed": "unknown", "source": "observed"},
+            "from": {"provider": "codex", "model": "gpt-5.6-luna", "effort": "medium", "speed": "unknown"},
+            "to": {"provider": "codex", "model": "gpt-5.7-luna", "effort": "medium", "speed": "unknown"},
             "inventory_sha256": "0" * 64,
         }
 
@@ -716,6 +716,82 @@ class LedgerFoldTests(unittest.TestCase):
         self.assertEqual(committed, canonical_drift_line(event))
         again = self.fold()
         self.assertEqual(again.stdout.strip(), "folded rows=0 drift=0")
+
+    def test_fold_appends_drift_preserving_existing_drift_bytes(self):
+        first_event = self.good_drift()
+        source = self.root / ".tasks/drift/fixture.jsonl"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(canonical_drift_line(first_event), encoding="utf-8")
+        result = self.fold()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        drift_path = self.root / self.mission_path / "drift.jsonl"
+        old = drift_path.read_bytes()
+        second_event = dict(first_event, inventory_sha256="1" * 64, to=dict(first_event["to"], model="gpt-5.8-luna"))
+        source.write_text(canonical_drift_line(second_event), encoding="utf-8")
+        result = self.fold()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        after = drift_path.read_bytes()
+        self.assertTrue(after.startswith(old))
+        self.assertEqual(after[len(old):], canonical_drift_line(second_event).encode())
+
+    def test_fold_refuses_missing_and_extra_resolution_keys(self):
+        source = self.root / ".tasks/drift/fixture.jsonl"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        missing = self.good_drift()
+        del missing["from"]["speed"]
+        source.write_text(json.dumps(missing) + "\n", encoding="utf-8")
+        result = self.fold()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("speed", result.stderr)
+        source.unlink()
+        extra = self.good_drift()
+        extra["from"]["door"] = "codex"
+        source.write_text(json.dumps(extra) + "\n", encoding="utf-8")
+        result = self.fold()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("unknown key", result.stderr)
+
+    def test_fold_refuses_bad_inventory_sha256(self):
+        source = self.root / ".tasks/drift/fixture.jsonl"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        for bad in ("G" * 64, "a" * 63, "A" * 64):
+            event = self.good_drift()
+            event["inventory_sha256"] = bad
+            source.write_text(json.dumps(event) + "\n", encoding="utf-8")
+            result = self.fold()
+            self.assertEqual(result.returncode, 1, bad)
+            self.assertIn("inventory_sha256", result.stderr)
+            source.unlink()
+
+    def test_fold_refuses_secret_shaped_resolution_key_without_echoing_name(self):
+        source = self.root / ".tasks/drift/fixture.jsonl"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        event = self.good_drift()
+        secret_key = "ghp_" + "K" * 20
+        path_value = "/Users/" + "private"
+        event["from"] = {secret_key: path_value, **event["from"]}
+        source.write_text(json.dumps(event) + "\n", encoding="utf-8")
+        result = self.fold()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        combined = result.stdout + result.stderr
+        self.assertNotIn(secret_key, combined)
+        self.assertIn("unknown key", combined)
+
+    def test_fold_reads_large_committed_ledger_jsonl(self):
+        ledger = self.root / "docs/missions/ledger.jsonl"
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        pad = "x" * 2500
+        lines = []
+        for index in range(500):
+            run_id = f"{index:08x}-0000-4000-8000-000000000000"
+            lines.append(json.dumps({"run_id": run_id, "_pad": pad}) + "\n")
+        ledger.write_text("".join(lines), encoding="utf-8")
+        self.assertGreater(ledger.stat().st_size, 1024 * 1024)
+        row = self.write_row(load(GOOD), run_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        result = self.fold()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "folded rows=1 drift=0")
+        self.assertIn(canonical_row_line(row).strip(), ledger.read_text())
 
     def test_fold_dedupes_drift_within_batch_and_skips_other_mission(self):
         event = self.good_drift()
