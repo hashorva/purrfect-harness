@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-031 reviewed (PASS); T-032 dispatch
+- **code-reviewer: PASS on `a2f3dc6`** (exact output format, mission scoping, unknown never counted as observed, zero-accepted case, writes no file, clean failure without values). 
+- **T-032** is documentation only (skill + ORCHESTRATION.md + PROGRESS.md); it runs no real fold, so the open source-label/`door` decision does not block it. It edits `.agents/`, so not a Codex seat: cursor.economy.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-031 verified; code-reviewer requested
 - **Mechanical review:** run `5cf7e598-581d-4dc8-b2b9-e85438a6fc19` (T-031, claude.economy haiku, effort medium, attempt 1): completed, exit 0, scope pass, commit `a2f3dc6`, 3 changed paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (4 commands). Routing line written.
 
