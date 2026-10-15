@@ -14,6 +14,13 @@ FLEET_STATE = ROOT / "scripts" / "fleet_state.py"
 SCHEMA = ROOT / "schemas" / "mission-fleet.schema.json"
 MISSION_FLEET = ROOT / "docs/missions/20261014-2a-foundation/fleet.json"
 
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(ROOT / "scripts"))
+import fleet_state  # noqa: E402
+from harness_registry import load_registry  # noqa: E402
+
+NOW = "2026-10-14T15:00:44Z"
+
 
 def run_cli(*args):
     return subprocess.run(
@@ -47,6 +54,99 @@ def good_v2():
             "cursor.economy": {"family": "composer", "effort": "medium", "speed": "standard", "doors": ["cursor-composer"]},
         },
     }
+
+
+def door(provider, billing="included", no_zdr=False):
+    return {"provider": provider, "billing_class": billing, "pool": "fixture", "no_zdr": no_zdr, "priority": 9}
+
+
+def fixture_registry():
+    # The real doors are all included and allow ZDR; fixture doors cover the other policy paths.
+    registry = copy.deepcopy(load_registry())
+    registry["doors"].update({
+        "credits-codex": door("codex", "credits"),
+        "api-codex": door("codex", "api"),
+        "nozdr-codex": door("codex", no_zdr=True),
+        "claude-alt": door("claude"),
+    })
+    return registry
+
+
+def inventory(models=None, failed=()):
+    """A valid inventory; `models` maps an inventory key to its observed names (claude: aliases)."""
+    models = models or {}
+    providers = {}
+    for key in fleet_state.PROVIDERS:
+        base = {"probed_at": NOW, "capabilities": fleet_state.CAPABILITIES[key]}
+        if key in failed:
+            providers[key] = {**base, "status": "failure", "path": f"/bin/{key}", "error": "fixture failure"}
+        elif key == "claude":
+            providers[key] = {**base, "status": "success", "path": "/bin/claude", "aliases": models.get(key, ["opus"]), "observed_models": []}
+        else:
+            providers[key] = {**base, "status": "success", "path": f"/bin/{key}", "aliases": [], "observed_models": models.get(key, ["fixture-1.0-low"])}
+    doc = {"schema_version": 1, "probed_at": NOW, "providers": providers, "last_good": {}, "seats": fleet_state.make_seats(providers, {})}
+    fleet_state.validate_inventory(doc)
+    return doc
+
+
+def fleet_with(seats, fast=False, billing=("included",), no_zdr="allow"):
+    doc = good_v2()
+    doc["policy"] = {"billing_classes": list(billing), "fast": fast, "no_zdr": no_zdr}
+    doc["seats"] = seats
+    return doc
+
+
+def seat(family, doors, effort="medium", speed="unknown"):
+    return {"family": family, "effort": effort, "speed": speed, "doors": doors}
+
+
+def resolver_checks(d):
+    registry = fixture_registry()
+    inv = inventory({"codex": ["gpt-5.6-luna", "gpt-5.7-luna"], "agent": ["grok-4.8-high-fast", "grok-4.7-high"], "claude": ["luna-fixture-2.0"]})
+
+    def pick(doors, family="luna", effort="medium", speed="unknown", inventory_doc=inv, **policy):
+        return fleet_state.resolve_v2(fleet_with({"s": seat(family, doors, effort, speed)}, **policy), "s", registry, inventory_doc)
+
+    def expect(result, door_name, model, source="observed"):
+        got = (result["door"], result["model"], result["source"])
+        assert got == (door_name, model, source), (got, result)
+
+    expect(pick(["codex", "api-codex"]), "codex", "gpt-5.7-luna")
+    # credits and api doors are skipped unless the policy lists their billing class
+    expect(pick(["credits-codex", "codex"]), "codex", "gpt-5.7-luna")
+    expect(pick(["credits-codex", "codex"], billing=("included", "credits")), "credits-codex", "gpt-5.7-luna")
+    expect(pick(["api-codex", "codex"]), "codex", "gpt-5.7-luna")
+    expect(pick(["api-codex", "codex"], billing=("included", "api")), "api-codex", "gpt-5.7-luna")
+    # no_zdr doors are skipped only when the policy forbids them
+    expect(pick(["nozdr-codex", "codex"], no_zdr="forbid"), "codex", "gpt-5.7-luna")
+    expect(pick(["nozdr-codex", "codex"]), "nozdr-codex", "gpt-5.7-luna")
+    # an unhealthy first door falls through to the next included door
+    expect(pick(["claude-alt", "codex"]), "claude-alt", "luna-fixture-2.0", source="alias")
+    unhealthy = inventory({"codex": ["gpt-5.6-luna", "gpt-5.7-luna"], "claude": ["luna-fixture-2.0"]}, failed=("claude",))
+    expect(pick(["claude-alt", "codex"], inventory_doc=unhealthy), "codex", "gpt-5.7-luna")
+    # a -fast model is never chosen with fast false, even when it is the newest
+    expect(pick(["cursor-grok"], family="grok", effort="high", speed="standard"), "cursor-grok", "grok-4.7-high")
+    expect(pick(["cursor-grok"], family="grok", effort="high", speed="fast", fast=True), "cursor-grok", "grok-4.8-high-fast")
+    # an inventory of only encoded names yields the plain base, re-encoded with the seat effort
+    encoded = inventory({"agent": ["grok-4.7-low", "grok-4.6-high"]})
+    expect(pick(["cursor-grok"], family="grok", effort="medium", speed="standard", inventory_doc=encoded), "cursor-grok", "grok-4.7-medium")
+    # an absent family stays unavailable, never a guessed id
+    absent = pick(["codex"], family="terra")
+    assert (absent["model"], absent["door"], absent["source"]) == (None, None, "unavailable"), absent
+
+    # CLI at the real entry point, with the real registry
+    fleet_doc = good_v2()
+    fleet_doc["seats"]["codex.premium"] = seat("terra", ["codex"])
+    fleet_path = d / "resolver-fleet.json"
+    inventory_path = d / "resolver-inventory.json"
+    write(fleet_path, fleet_doc)
+    write(inventory_path, inventory({"codex": ["gpt-5.7-luna"]}))
+    ok = run_cli("resolve-v2", "--fleet", fleet_path, "--seat", "codex.economy", "--inventory", inventory_path)
+    assert ok.returncode == 0, ok.stderr
+    assert json.loads(ok.stdout)["model"] == "gpt-5.7-luna", ok.stdout
+    gone = run_cli("resolve-v2", "--fleet", fleet_path, "--seat", "codex.premium", "--inventory", inventory_path)
+    assert gone.returncode == 1 and json.loads(gone.stdout)["source"] == "unavailable", (gone.returncode, gone.stdout)
+    expect_error(run_cli("resolve-v2", "--fleet", fleet_path, "--seat", "missing", "--inventory", inventory_path), "fleet seat not found")
 
 
 def main():
@@ -83,6 +183,8 @@ def main():
         invalid("version-missing", lambda x: x.pop("schema_version"), "fleet schema_version must be 1 or 2")
         invalid("nontext-billing", lambda x: x["policy"].update(billing_classes=[["included"]]), "fleet.policy.billing_classes entries must be non-empty text")
         invalid("nontext-door", lambda x: x["seats"]["codex.economy"].update(doors=[["codex"]]), "fleet.seats.codex.economy.doors entries must be non-empty text")
+        invalid("fast-seat-policy-off", lambda x: x["seats"]["cursor.economy"].update(speed="fast"), "fleet.seats.cursor.economy speed fast requires fleet.policy.fast")
+        invalid("family-unsupported", lambda x: x["seats"]["codex.economy"].update(family="composer"), "fleet.seats.codex.economy family 'composer' unsupported for its doors")
 
         non_object = d / "non-object.json"
         non_object.write_text("[]\n")
@@ -103,6 +205,8 @@ def main():
                 code_ok = run_cli("validate-fleet", path).returncode == 0
                 schema_ok = validator.is_valid(document)
                 assert code_ok == schema_ok, (code_ok, schema_ok, document)
+
+        resolver_checks(d)
 
     print("fleet v2 validation tests passed")
 

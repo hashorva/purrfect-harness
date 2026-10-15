@@ -22,7 +22,7 @@ from pathlib import Path
 _SCRIPTS_DIR = str(Path(__file__).resolve().parent)
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
-from harness_registry import RegistryError, legacy_view, load_registry
+from harness_registry import RegistryError, decode_model, encode_model, legacy_view, load_registry
 
 BILLING_CLASSES = frozenset({"included", "credits", "api"})
 NO_ZDR_POLICY = frozenset({"allow", "forbid"})
@@ -184,9 +184,9 @@ def model_rank(model):
         elif version: break
     effort=next((EFFORT_RANK[t] for t in tokens if t in EFFORT_RANK), 0)
     return (not UNSTABLE.intersection(tokens), tuple(version), date, effort)
-def choose(values, family):
-    # Fast modes cost more and are opt-in only: never chosen automatically.
-    choices=[x for x in values if family in x.lower() and not is_fast(x)]
+def choose(values, family, allow_fast=False):
+    # Fast modes cost more and are opt-in only: never chosen unless allowed.
+    choices=[x for x in values if family in x.lower() and (allow_fast or not is_fast(x))]
     # sorted() is stable, so equal ranks keep the provider's own order.
     return sorted(choices, key=model_rank, reverse=True)[0] if choices else None
 def make_seats(providers,last_good):
@@ -240,7 +240,7 @@ def validate_fleet_policy(value):
         if item not in BILLING_CLASSES: fail("fleet.policy.billing_classes invalid")
     if not isinstance(value["fast"],bool): fail("fleet.policy.fast must be boolean")
     if value["no_zdr"] not in NO_ZDR_POLICY: fail("fleet.policy.no_zdr invalid")
-def validate_fleet_v2_seat(name,value,registry):
+def validate_fleet_v2_seat(name,value,registry,policy):
     label="fleet.seats."+name
     exact_keys(value,{"family","effort","doors","speed"},label)
     text(value["family"],label+".family"); text(value["effort"],label+".effort"); text(value["speed"],label+".speed")
@@ -255,6 +255,9 @@ def validate_fleet_v2_seat(name,value,registry):
         caps=providers[door_map[door]["provider"]]["capabilities"]
         if value["effort"] not in caps["efforts"]: fail(f"{label} effort unsupported for door {door!r}")
         if value["speed"] not in caps["speeds"]: fail(f"{label} speed unsupported for door {door!r}")
+    if value["speed"] == "fast" and not policy["fast"]: fail(f"{label} speed fast requires fleet.policy.fast")
+    families={(p,f) for p,f in registry["seat_specs"].values()}
+    if not any((door_map[door]["provider"],value["family"]) in families for door in doors): fail(f"{label} family {value['family']!r} unsupported for its doors")
 def validate_fleet_v1(doc):
     exact_keys(doc,{"schema_version","mission","inventory","approval","seats"},"fleet")
     if doc["schema_version"]!=1: fail("fleet schema_version must be 1")
@@ -274,14 +277,14 @@ def validate_fleet_v1(doc):
         if v["family"] not in {family for p,family in SEAT_SPECS.values() if p == v["provider"]}: fail("fleet seat provider/family mismatch")
         if v["effort"] not in caps["efforts"] or v["speed"] not in caps["speeds"]: fail("fleet seat unsupported capability")
     return doc
-def validate_fleet_v2(doc):
+def validate_fleet_v2(doc,registry=None):
     exact_keys(doc,{"schema_version","mission","inventory","approval","policy","seats"},"fleet")
     if doc["schema_version"]!=2: fail("fleet schema_version must be 2")
     validate_fleet_header(doc); validate_fleet_policy(doc["policy"])
     obj(doc["seats"],"fleet.seats")
     if not doc["seats"]: fail("fleet requires seats")
-    registry=load_registry()
-    for name,seat in doc["seats"].items(): validate_fleet_v2_seat(name,seat,registry)
+    if registry is None: registry=load_registry()
+    for name,seat in doc["seats"].items(): validate_fleet_v2_seat(name,seat,registry,doc["policy"])
     return doc
 def validate_fleet(doc):
     obj(doc,"fleet")
@@ -314,11 +317,43 @@ def resolve(args):
         val=getattr(args,key)
         if val is not None and seat[key] != val: fail(f"fleet {key} assertion failed")
     print(canonical({"seat":args.seat,**seat}),end="")
+def inventory_keys(registry):
+    """Canonical provider -> inventory key, which is the persisted legacy name (cursor -> agent)."""
+    return dict(zip(registry["providers"], legacy_view(registry)[0]))
+def resolve_v2(fleet,seat,registry,inventory):
+    """Walk the seat's doors in order; the first usable door gives the newest family model, or unavailable."""
+    validate_fleet_v2(fleet,registry); validate_inventory(inventory)
+    spec=fleet["seats"].get(seat)
+    if spec is None: fail("fleet seat not found")
+    policy=fleet["policy"]; keys=inventory_keys(registry)
+    fast=policy["fast"] and spec["speed"]=="fast"
+    for door in spec["doors"]:
+        door_spec=registry["doors"][door]; provider=door_spec["provider"]; key=keys[provider]
+        if door_spec["billing_class"] not in policy["billing_classes"]: continue
+        if door_spec["no_zdr"] and policy["no_zdr"]=="forbid": continue
+        record=inventory["providers"][key]
+        if record["status"]!="success": continue
+        raw=choose(provider_models(record,key),spec["family"],allow_fast=policy["fast"])
+        if raw is None: continue
+        # The inventory may list encoded names; encode_model needs the plain base.
+        try:
+            base=decode_model(registry,provider,raw)["base"]
+            model=encode_model(registry,provider,base,spec["family"],spec["effort"],fast)
+        except RegistryError as exc: fail(str(exc))
+        return {"provider":provider,"door":door,"model":model,"effort":spec["effort"],"speed":spec["speed"],"source":"alias" if key=="claude" else "observed"}
+    return {"provider":None,"door":None,"model":None,"effort":spec["effort"],"speed":spec["speed"],"source":"unavailable"}
+def resolve_v2_command(args):
+    fleet,_=read_json(args.fleet,"fleet",require_canonical=True)
+    inventory_doc,_=read_json(args.inventory,"inventory",require_canonical=True)
+    result=resolve_v2(fleet,args.seat,load_registry(),inventory_doc)
+    print(canonical({"seat":args.seat,**result}),end="")
+    return 1 if result["source"]=="unavailable" else 0
 def main():
     parser=argparse.ArgumentParser(); sub=parser.add_subparsers(dest="command",required=True)
     p=sub.add_parser("inventory"); p.add_argument("--json",action="store_true"); p.add_argument("--out",default=".tasks/fleet-inventory.json")
     p=sub.add_parser("freeze"); p.add_argument("--mission-dir",required=True); p.add_argument("--inventory",required=True); p.add_argument("--bindings",required=True); p.add_argument("--approved-by",required=True); p.add_argument("--approved-at",required=True)
     p=sub.add_parser("resolve"); p.add_argument("--fleet",required=True); p.add_argument("--seat",required=True); p.add_argument("--mission-path"); p.add_argument("--provider"); p.add_argument("--model"); p.add_argument("--effort"); p.add_argument("--speed")
+    p=sub.add_parser("resolve-v2"); p.add_argument("--fleet",required=True); p.add_argument("--seat",required=True); p.add_argument("--inventory",required=True)
     p=sub.add_parser("validate-inventory"); p.add_argument("file")
     p=sub.add_parser("validate-fleet"); p.add_argument("file")
     args=parser.parse_args()
@@ -326,6 +361,7 @@ def main():
         if args.command=="inventory": inventory(args.out,args.json)
         elif args.command=="freeze": freeze(args)
         elif args.command=="resolve": resolve(args)
+        elif args.command=="resolve-v2": return resolve_v2_command(args)
         elif args.command=="validate-inventory": validate_inventory(read_json(args.file,"inventory",True)[0])
         else: validate_fleet(read_json(args.file,"fleet",True)[0])
     except PolicyError as exc: print(f"ERROR: {exc}",file=sys.stderr); return 1
