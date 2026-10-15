@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-029-R3 verified and reviewed; T-029 chain closed; T-030 dispatch
+- **Mechanical review:** run `c3dcfb5b-2bdf-41a9-a825-718cd20359f0` (T-029-R3, codex.economy, effort medium, attempt 1): completed, exit 0, scope pass, commit `01ce737`, tests-only paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (6 commands). **code-reviewer: PASS** (probe uses a validating row; `check()` runs on correct code and fails under the `os.replace` mutant). Routing line written (done).
+- **T-029 chain closed** (T-029, R1, R2, R3). Next: T-030 (fold rows and drift events; Architect review) on cursor.economy.
+
 ## 2026-10-15 (day 3) — T-029-R3 worker — complete; awaiting orchestrator verification
 - **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-integration.py` exit 0 (44 tests).
 - **Change:** the live second-write probe now changes `receipt['feature']` to valid value `F002`. The test calls `check()` once against the unmutated runner before `prove_runner_mutation_fails`.
