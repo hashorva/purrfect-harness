@@ -4,6 +4,73 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — A-2 proposal, T-040 draft, T-018 fixtures check
+
+- **Run:** `e60b00a8-9594-4352-928c-3b069d4593a1`; log `.tasks/logs/e60b00a8-9594-4352-928c-3b069d4593a1.log`; spec role `brain`, action `review`, base `8d870cf`, write scope this file only. The launcher writes the receipt `.tasks/receipts/e60b00a8-9594-4352-928c-3b069d4593a1.json` when this run ends; it did not exist while this entry was written.
+- **Drafts** (gitignored, machine-local) are in `.tasks/plans/e60b00a8-9594-4352-928c-3b069d4593a1/`: `parallel-dispatch.md`, `T-040.md`, `T-018.md`, `T-020.md`. **Front Desk:** commit `parallel-dispatch.md` where you want the owner to read it (for example `docs/missions/20261014-2a-foundation/evidence/` or `docs/proposals/`), and copy the three task files unchanged over/into `tasks/`. Each task parses with the real `dispatch_policy.worker_allow_list`/`worker_write_scope` and the verifier's command-bullet rules, with no `{{` left. `validate_write_scope_against_sandbox` accepts each one for codex, cursor and claude.
+- **1. A-2 (`parallel-dispatch.md`): recommendation is no; keep parallel dispatch in 2B.**
+  - Data:
+    - 17 routing rows: claude 5, codex 6, cursor 6. 11 done, 6 verify-failed. 5 of the 6 failures are plan defects (`attributable:false`); 1 is model-attributable (T-015 a1, cursor). Codex took 4 of the plan defects, all on first attempts.
+    - Night-2 receipts: 21 worker runs took 78 min, 14 Architect runs took 173 min, over a 7.4 h span. Workers are about 17% of the night, the Architect about 39%. No two runs overlapped.
+    - 160 of 210 pending-task pairs are file-disjoint, but most are chained by "Depends on". Hot files: `tests/run-tests.sh` (6 tasks), `tests/test-execution-integration.py` (6).
+    - So two lanes save at most about 40 min a night (5–10%), while each plan defect costs about one worker run plus one Architect review.
+  - Code facts the design must handle:
+    - `acquire_lock` refuses a workspace that is not the root, so linked worktrees are refused today. `spawn-brain.sh` takes the same lock.
+    - Acceptance refuses while any lock exists.
+    - Receipts re-walk `rev-list base..after`, so lanes merge `--no-ff` only.
+    - The Codex adapter's `--add-dir <repo>/.git` is wrong in a linked worktree (it needs the common dir).
+    - Every task prepends to PROGRESS.md, so lanes need `merge=union` or they always conflict.
+  - The minimum slice (T-040 on claude ‖ T-018 on cursor, no Codex lane, 3 guard tasks, about one night's Architect budget), its checks, and what stays out are in §5 of the draft.
+  - **Owner decision:**
+    - (A) Recommended: keep it in 2B, and in 2A adopt "rehearse a task's checks in a scratch clone before committing it".
+    - (B) Append the slice to 2A after F003+F004.
+- **2. T-040 draft (F004, docs, S, `code-reviewer`).**
+  - The task gives the exact new skill row and template sentence. The rule matches `execute_provider.py:30`: an allow-list entry starting with `.agents/` makes contract 5 add `--add-dir <repo>/.agents`; `**` and bare `.agents` do not.
+  - The allow-list names `.agents/skills/dispatch-worker/SKILL.md` exactly, plus the template and PROGRESS.md.
+  - It has 7 JSON-argv checks. Backticks are stripped before matching, because a bullet cannot contain one.
+  - No check needs live `.tasks/`, so no command uses `PURRFECT_LIVE_ROOT`.
+  - **Rehearsed in a scratch clone** (fake CLIs first on PATH, 0 calls; full suite skipped):
+    - On today's text, both content checks exit 1.
+    - After applying the task's own text, all 6 non-suite checks exit 0, including `ShippedWorkerTemplateIntegration`.
+    - A code-file commit makes the changed-files check exit 1.
+  - Two of my own draft defects were caught by this and fixed before this entry:
+    - a `git diff 38ed10f HEAD` code check would always fail, because T-017 changed code after `38ed10f` (the L-014 class);
+    - a "≤80 characters" check would fail on template lines 63–64, which are already 82 characters.
+  - Front Desk: commit only PROGRESS.md between committing T-040 and dispatching it, because the changed-files check diffs from the task's commit.
+- **3. T-018 fixtures check: T-018 must change; T-019 needs no change; T-020 must change.**
+  - Checked against `evidence/cli-json-observation.md` and the raw samples (key structure only; no ids quoted).
+  - T-018 differences (draft `T-018.md`):
+    - (a) Reads the committed evidence file. The samples are named `claude.out`, `codex.out` and `cursor.out`. There is no agy sample.
+    - (b) Pins the exact key map:
+      - claude: `modelUsage` sole key, `usage.input_tokens`, `output_tokens`, `cache_read_input_tokens`, `output_tokens_details.thinking_tokens`, and `fast_mode_state`;
+      - codex: `turn.completed.usage` (`input_tokens`, `output_tokens`, `cached_input_tokens`, `reasoning_output_tokens`), summed per field over turns; model and fast are always unknown;
+      - cursor: the init event's `model`, and the result event's `inputTokens`, `outputTokens` and `cacheReadTokens`; reasoning and fast are unknown;
+      - agy: always all-unknown, because there is no observed shape.
+    - (c) Cursor's model is recorded verbatim as the display name `Composer 2.5`. It is not mapped to an id: a mapping would claim "observed" for a string the CLI never printed.
+    - (d) Claude `modelUsage` with 0 or ≥2 keys gives unknown (no guess).
+    - (e) Values are copied as printed; different fields are never added or subtracted. Claude's input excludes cache reads and Codex's includes them. Cache-write counts are not recorded.
+    - (f) Usage must be an int, not a bool, and ≥0. Model and fast must be non-empty strings. Wrong types give unknown, never an exception.
+    - (g) Added fixtures: `claude-log.txt` (the runner-log shape, including Claude's real stdin warning line), `claude-two-models.json`, `codex-two-turns.jsonl`, `cursor-no-init-model.jsonl` and `wrong-types.jsonl`.
+    - (h) The expected values are literal and equal the samples' real numbers (checked from the raw files).
+    - (i) A CLI value check pins those numbers.
+    - (j) **Privacy grep fixed:** the Cursor sample's `cwd` is a `/private/var/folders/…` temp path. The old grep (`/Users/` only) exits 0 on an unscrubbed copy (proven); the new one exits 1 on raw copies and 0 on scrubbed ones. It also refuses any UUID other than the zero placeholder.
+    - (k) A clean-tree check.
+  - T-019: consistent as written. Its rules fit the parser output, and a Cursor display name is valid text.
+  - T-020 differences (draft `T-020.md`):
+    - Objective 3 said "the Cursor fixture gives `observed_model` unknown although the spec names a model", which is false after P-2. It now expects `Composer 2.5` from `cursor.jsonl`, and unknown from `cursor-no-init-model.jsonl` and `codex.jsonl` although the spec names a model.
+    - agy's argv is explicitly unchanged in the new contract, because P-2 proved no agy output.
+    - The reading list points at the evidence file and the fixtures.
+    - New check: a stdin grep, plus an integration case with a fake CLI that reads stdin.
+  - **`< /dev/null` answer: not needed.** Stdin is already closed in both launch paths (`execution_runner.py:102`, `execute_provider.py:93`, `stdin=subprocess.DEVNULL`). T-020 now pins that with a test and a grep. P-2 also shows `claude -p` waits 3 s and warns on an open stdin.
+- **Risks for later tasks (not T-018 blockers):**
+  - (1) A Claude worker run whose `modelUsage` lists a helper model beside the main one gives `observed_model` unknown. That would break F007 step 2 for the claude run. Suggest a probe P-3 before T-020: one tiny `claude -p --output-format json --model sonnet` call with one tool use, counting the `modelUsage` keys.
+  - (2) F004's drift check (T-021..T-026) must compare a Cursor display name with the frozen model id. That mapping belongs in registry data under F004, not in the parser.
+- **My slip, corrected:** my parser checks used `python3 -I`, which ignores `PYTHONDONTWRITEBYTECODE`. That created 5 `.pyc` files in `scripts/__pycache__` (gitignored; created 06:09, inside this run). I deleted exactly those files and the empty folder. `test ! -e scripts/__pycache__ && test ! -e tests/__pycache__` exits 0.
+- **Audit:** `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` → `VERIFY OK`, exit 0, before this entry. Live tree clean at `8d870cf`, 1 worktree. No real provider CLI ran; scratch clones, fakes and rehearsal scripts are in the session scratchpad.
+- **Not done:** no dispatch, no acceptance, no change to features, fleet, GOAL, status or tasks/.
+
+Plan: READY — drafts: `parallel-dispatch.md`, `T-040.md`, `T-018.md` (replaces committed T-018), `T-020.md` (replaces committed T-020).
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — ARCHITECT REQUEST: A-2 parallel-dispatch proposal, T-040 docs task, T-018 fixtures check
 **To the Architect (action `review`; planning). Your write scope is this file only; put each document or task as a draft under `.tasks/plans/<your-run-id>/` and the Front Desk commits them unchanged. No dispatch, no change to features, fleet, GOAL or status.**
 1. **A-2 — proposal document `parallel-dispatch.md` (document only, short, 1-2 pages) to pull parallel worktree dispatch forward from mission 2B**, for the owner's decision in the morning. Build on what exists now: T-011's temporary-worktree verifier (`PURRFECT_LIVE_ROOT`), T-007/T-008's scratch-clone smoke, T-012's numbered records, T-015's gate. Cover: disjoint allow-lists as the admission rule; one lock per worktree and what the global lock does today; serial acceptance; how receipts, specs and ledger rows are keyed (run UUID) and where `.tasks/` state lives per worktree; how a worktree's commits reach the mission branch (merge order, conflicts, who merges); quota and the pause logic across seats; what the nightly data says (read `routing-data.jsonl`: 20-odd runs so far — use real numbers: runs per seat, attributable task failures, plan defects); risks (a worker writing outside its worktree, shared `~/` CLI state, two Codex sandboxes); a recommended minimum slice (for example: two disjoint tasks on two seats, one orchestrator merge) and the checks that prove it; and what stays out. End with a clear recommendation and the decision the owner must make.
