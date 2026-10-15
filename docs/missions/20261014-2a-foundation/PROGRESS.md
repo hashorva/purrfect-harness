@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — Architect re-review of T-019-R1 PASS; T-019-R2 (test only) written and dispatched
+- **Architect re-review of T-019-R1:** run `acd0aba9-64f1-4525-99e8-aecf19be40b5`, receipt `.tasks/receipts/acd0aba9-64f1-4525-99e8-aecf19be40b5.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `da59036`. **Verdict: PASS** on `218b9f2`: with a real Draft 2020-12 validator all 76 real UUID receipts, a synthetic v2 all-unknown receipt validate and bad ones are rejected (v1 with the block, v2 without it, unknown extra key, empty-string observed value, `schema_version: 3`); the agreement test detects drift in both directions; `scripts/` has no diff; **it accepts aligning the schema to the code** (observed values are copied exactly as each CLI prints them, so a whitespace rule would reject or alter real evidence); all 101 files under `.tasks/receipts/` load identically before and after, no hash changed; audit `VERIFY OK`. This closes the T-019 schema blocker.
+- **Gap found (my task wording, not the worker's):** the "numeric model" negative sets the receipt's top-level `model` to `7`, so another check rejects it first; weakening the check on `observation.observed_model.value` would go unnoticed. I wrote "the number `7` as the model" without naming the field. The code rejects the bad value today; only the regression test is missing. The Architect called it non-blocking and asked for a test-only follow-up reviewed by `code-reviewer`.
+- **`tasks/T-019-R2.md` (new, F003, receipts, S; code-reviewer):** allow-list `tests/test-execution-receipt.py` and PROGRESS.md; adds a test that sets `observation.observed_model.value` to `7` with the top-level `model` valid and asserts the rejection comes from the observation check; the worker proves once, in a temporary copy of the code, that the test fails when that check is weakened; no code change. Parses with the real parser (2 paths, 7 commands, no leftover braces).
+- **Lesson (L-015 candidate):** a task item that names a value must name the field it goes in.
+- **Seat:** codex.economy (receipts × codex has no data yet; run counts: claude 7, codex 7, cursor 7).
+
 ## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — re-review of T-019-R1 (`218b9f2`)
 
 - **Run:** `acd0aba9-64f1-4525-99e8-aecf19be40b5`; log `.tasks/logs/acd0aba9-64f1-4525-99e8-aecf19be40b5.log`; spec role `brain`, action `review`, base `f31177e`, write scope this file only. The launcher writes the receipt `.tasks/receipts/acd0aba9-64f1-4525-99e8-aecf19be40b5.json` when this run ends; it did not exist while this entry was written.
