@@ -100,6 +100,32 @@ class RegistryTests(unittest.TestCase):
                 with self.assertRaises(registry_module.RegistryError):
                     registry_module.validate_registry(broken)
 
+    def test_sandbox_limits_type_guards(self):
+        cases = (
+            ("prefix without trailing slash", ("write_denied_prefixes", [".agents"])),
+            ("absolute prefix", ("write_denied_prefixes", ["/.agents/"])),
+            ("parent traversal prefix", ("write_denied_prefixes", [".agents/../x/"])),
+            ("non-text prefix", ("write_denied_prefixes", [3])),
+            ("prefixes not an array", ("write_denied_prefixes", ".agents/")),
+            ("text login value other than unknown", ("login_state_visible", "yes")),
+            ("integer login value", ("login_state_visible", 0)),
+            ("empty evidence", ("evidence", "  ")),
+        )
+        for label, (field, value) in cases:
+            with self.subTest(label=label):
+                broken = copy.deepcopy(registry)
+                broken["providers"]["codex"]["sandbox_limits"][field] = value
+                with self.assertRaisesRegex(registry_module.RegistryError, "sandbox_limits"):
+                    registry_module.validate_registry(broken)
+
+    def test_sandbox_limits_accepts_documented_values(self):
+        for login in (True, False, "unknown"):
+            with self.subTest(login=login):
+                valid = copy.deepcopy(registry)
+                valid["providers"]["codex"]["sandbox_limits"]["login_state_visible"] = login
+                valid["providers"]["codex"]["sandbox_limits"]["write_denied_prefixes"] = [".agents/", "docs/x/"]
+                registry_module.validate_registry(valid)
+
     def test_canonical_provider_rejects_unknown_name(self):
         self.assertEqual(registry_module.canonical_provider(registry, "cursor"), "cursor")
         self.assertEqual(registry_module.canonical_provider(registry, "agent"), "cursor")

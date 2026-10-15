@@ -6,7 +6,7 @@ import re
 import sys
 
 REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
-PROVIDER_FIELDS = ("binary", "legacy_names", "probe_command", "list_parser", "identity_check", "identity_pattern", "login_check", "effort_encoding", "fast_encoding", "discovery_directory", "capabilities")
+PROVIDER_FIELDS = ("binary", "legacy_names", "probe_command", "list_parser", "identity_check", "identity_pattern", "login_check", "effort_encoding", "fast_encoding", "discovery_directory", "capabilities", "sandbox_limits")
 DOOR_FIELDS = ("billing_class", "pool", "no_zdr", "priority")
 ROOT_FIELDS = ("schema_version", "providers", "doors", "seat_specs", "fallbacks")
 
@@ -21,6 +21,21 @@ def _require_fields(value, fields, label):
     for field in fields:
         if field not in value:
             raise RegistryError(f"{label} missing required field: {field}")
+
+
+def _validate_sandbox_limits(limits, label):
+    _require_fields(limits, ("write_denied_prefixes", "login_state_visible", "evidence"), label)
+    prefixes = limits["write_denied_prefixes"]
+    if not isinstance(prefixes, list):
+        raise RegistryError(f"{label}.write_denied_prefixes must be an array")
+    for prefix in prefixes:
+        if not isinstance(prefix, str) or not prefix.endswith("/") or prefix.startswith("/") or ".." in prefix:
+            raise RegistryError(f"{label}.write_denied_prefixes entries must be relative paths ending in /: {prefix!r}")
+    login = limits["login_state_visible"]
+    if not (isinstance(login, bool) or login == "unknown"):
+        raise RegistryError(f"{label}.login_state_visible must be true, false or \"unknown\"")
+    if not isinstance(limits["evidence"], str) or not limits["evidence"].strip():
+        raise RegistryError(f"{label}.evidence must be non-empty text")
 
 
 def validate_registry(data):
@@ -61,6 +76,7 @@ def validate_registry(data):
         if not isinstance(provider["capabilities"], dict):
             raise RegistryError(f"{label}.capabilities must be an object")
         _require_fields(provider["capabilities"], ("efforts", "speeds"), label + ".capabilities")
+        _validate_sandbox_limits(provider["sandbox_limits"], label + ".sandbox_limits")
     doors = data["doors"]
     if not isinstance(doors, dict) or not doors:
         raise RegistryError("registry.doors must be a non-empty object")
