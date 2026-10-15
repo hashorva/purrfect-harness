@@ -24,7 +24,7 @@ class WrapperIntegration(unittest.TestCase):
         self.root.mkdir()
         (self.root / "scripts").mkdir()
         for name in ("execution_spec.py", "execution_receipt.py", "execution_runner.py",
-                     "execute_provider.py", "fleet_state.py", "dispatch_policy.py",
+                     "execute_provider.py", "observe_output.py", "fleet_state.py", "dispatch_policy.py",
                      "harness_registry.py",
                      "spawn-worker.sh", "spawn-brain.sh", "verify-mission.sh", "verification_record.py",
                      "accept-feature.sh", "write-receipt.sh"):
@@ -246,6 +246,17 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertEqual(receipt["resolved_configuration"]["env_override_keys"], [])
         self.assertRegex(receipt["resolved_configuration"]["argv_sha256"], r"^[0-9a-f]{64}$")
         self.assertEqual(receipt["observed_configuration"], {"model": "unknown", "effort": "unknown", "speed": "unknown"})
+        self.assertEqual(receipt["schema_version"], 2)
+        self.assertEqual(receipt["observation"], {
+            "observed_model": {"value": None, "source": "unknown"},
+            "usage": {
+                "input": {"value": None, "source": "unknown"},
+                "output": {"value": None, "source": "unknown"},
+                "cache": {"value": None, "source": "unknown"},
+                "reasoning": {"value": None, "source": "unknown"},
+            },
+            "fast_state": {"value": None, "source": "unknown"},
+        })
         self.assertEqual(receipt["outcome"], "completed")
         self.assertEqual(receipt["exit_code"], 0)
         self.assertFalse(receipt["workspace_changed"])

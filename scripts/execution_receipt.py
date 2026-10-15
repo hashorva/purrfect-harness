@@ -12,18 +12,23 @@ import sys
 import tempfile
 
 from execution_spec import artifact_directory, SpecError, load_persisted, receipt_link, spec_sha256
+from observe_output import all_unknown
 
 
 OUTCOMES = {"completed", "failed", "timed_out", "interrupted", "launch_failed"}
 COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
 RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$")
-FIELDS = {
+SOURCES = {"observed", "estimated", "unknown"}
+USAGE_FIELDS = ("input", "output", "cache", "reasoning")
+OBSERVATION_FIELDS = ("observed_model", "usage", "fast_state")
+FIELDS_V1 = {
     "schema_version", "run_id", "mission", "feature", "work_unit", "attempt", "role",
     "provider", "model", "repo", "task", "tier", "started_at", "finished_at",
     "outcome", "exit_code", "log_path", "execution_spec_path", "execution_spec_sha256",
     "requested_configuration", "resolved_configuration", "observed_configuration",
     "git_before", "git_after", "commits", "changed_paths", "workspace_changed", "scope",
 }
+FIELDS = FIELDS_V1 | {"observation"}
 GIT_FIELDS = {"head", "status_porcelain_v1_z_sha256", "status_entry_count", "dirty_paths"}
 
 
@@ -191,8 +196,40 @@ def _log_path(spec, supplied):
     return expected.relative_to(repo).as_posix()
 
 
+def validate_observation(observation):
+    if not isinstance(observation, dict) or set(observation) != set(OBSERVATION_FIELDS):
+        fail("observation block has invalid fields")
+    for name in ("observed_model", "fast_state"):
+        _validate_sourced_scalar(f"observation.{name}", observation[name], "text")
+    usage = observation["usage"]
+    if not isinstance(usage, dict) or set(usage) != set(USAGE_FIELDS):
+        fail("observation.usage has invalid fields")
+    for name in USAGE_FIELDS:
+        _validate_sourced_scalar(f"observation.usage.{name}", usage[name], "count")
+
+
+def _validate_sourced_scalar(label, item, kind):
+    if not isinstance(item, dict) or set(item) != {"value", "source"}:
+        fail(f"{label} has invalid shape")
+    source = item["source"]
+    value = item["value"]
+    if source not in SOURCES:
+        fail(f"{label} source is invalid")
+    if source == "unknown":
+        if value is not None:
+            fail(f"{label} must be null when source is unknown")
+        return
+    if value is None:
+        fail(f"{label} cannot be null when source is {source}")
+    if kind == "text":
+        if not isinstance(value, str) or not value:
+            fail(f"{label} must be non-empty text")
+    elif isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        fail(f"{label} must be a non-negative integer")
+
+
 def build_receipt(*, spec_path, digest, before, started_at, finished_at, outcome,
-                  exit_code, log_path, task=None, tier=None):
+                  exit_code, log_path, task=None, tier=None, observation=None):
     spec, raw = load_persisted(spec_path)
     if spec_sha256(raw) != digest:
         fail("execution spec SHA-256 does not match exact persisted bytes")
@@ -221,8 +258,11 @@ def build_receipt(*, spec_path, digest, before, started_at, finished_at, outcome
         fail("git_before is not the clean authorized base state")
     after, commits, changed, scope = git_delta(spec, before)
     workspace_changed = before["head"] != after["head"] or bool(changed)
+    if observation is None:
+        observation = all_unknown()
+    validate_observation(observation)
     receipt = {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": spec["run_id"],
         "mission": spec["mission"],
         "feature": spec["feature"],
@@ -250,6 +290,7 @@ def build_receipt(*, spec_path, digest, before, started_at, finished_at, outcome
         "changed_paths": changed,
         "workspace_changed": workspace_changed,
         "scope": scope,
+        "observation": observation,
     }
     validate_receipt(receipt, receipt_path=None)
     return receipt
@@ -266,10 +307,18 @@ def write_receipt(**kwargs):
 
 
 def validate_receipt(receipt, receipt_path):
-    if not isinstance(receipt, dict) or set(receipt) != FIELDS:
-        fail("receipt fields must exactly match ExecutionReceipt v1")
-    if receipt["schema_version"] != 1:
-        fail("receipt schema_version must equal 1")
+    if not isinstance(receipt, dict):
+        fail("receipt must be a JSON object")
+    version = receipt.get("schema_version")
+    if version == 1:
+        if set(receipt) != FIELDS_V1:
+            fail("receipt fields must exactly match ExecutionReceipt v1")
+    elif version == 2:
+        if set(receipt) != FIELDS:
+            fail("receipt fields must exactly match ExecutionReceipt v2")
+        validate_observation(receipt["observation"])
+    else:
+        fail("receipt schema_version must be 1 or 2")
     spec_path = receipt.get("execution_spec_path")
     digest = receipt.get("execution_spec_sha256")
     try:

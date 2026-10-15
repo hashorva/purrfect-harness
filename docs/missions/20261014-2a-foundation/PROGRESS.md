@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 — Worker (Cursor Composer 2.5, in-session) — T-019 receipt v2 observation block (F003 slice)
+- **Task:** T-019, feature F003. In-session worker (not `spawn-worker.sh`); receipt to be written by orchestrator if applicable.
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-integration.py` exit 0 (24 tests). Tree had no `__pycache__` at start.
+- **Changed:** `scripts/execution_receipt.py` (schema_version 2, optional `observation` defaulting to `observe_output.all_unknown()`, `validate_observation`, v1 field set unchanged); `schemas/execution-receipt.schema.json` (`oneOf` v1/v2 + observation defs); new `tests/test-execution-receipt.py` (v1 legacy, v2 all-unknown, observation negatives); `tests/run-tests.sh` wiring; `tests/test-execution-integration.py` (copy `observe_output.py`, assert v2 all-unknown observation).
+- **Checks run by this worker (exit codes):** `shellcheck scripts/*.sh tests/*.sh` 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-receipt.py` 0 (3 tests); `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-integration.py` 0 (24 tests); `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verification-record.py` 0 (20 tests); `test ! -e scripts/__pycache__ && test ! -e tests/__pycache__` 0.
+- **Not run here (standing rule / environment):** `bash tests/run-tests.sh`; `verification_record.py audit` (needs `PURRFECT_LIVE_ROOT` outside worktree).
+- **Attempts:** 1 of 2. Slice evidence for F003, not acceptance.
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-018 code-reviewer PASS; T-019 dispatch
 - **`code-reviewer` on `fe6203b`:** Verdict PASS, no blocking issues. Nothing is guessed: `unknown()` and `observed()` are the only value constructors, `estimated` is never produced; `observe()` takes only `(provider, raw)` so it cannot copy a spec or seat value; two models in `modelUsage` give `unknown`; malformed, empty, garbage and wrong-type inputs give all-`unknown` without raising; codex multi-turn usage is summed and any invalid turn makes that field `unknown`; Cursor's model is copied as printed (`Composer 2.5`); agy all `unknown`; expected values in the tests are literal dicts, not computed by the parser; the script and test are wired into the suite and the manifest.
 - **Notes (non-blocking, logged):** (a) the parser's shape has no cost field, so claude's `total_cost_usd`/`costUSD`, which P-2 showed, is not carried (F003 step 1 asks for model, usage and fast state; cost is F005's ledger concern; keep in mind for T-029); (b) there is no privacy test in `tests/test-observe-output.py`: the fixtures are clean (zero UUIDs, `/workspace`, no emails or absolute paths) but the only gate is verification command #4; add a test that applies the scrub patterns to a raw-style string and to the committed fixtures.

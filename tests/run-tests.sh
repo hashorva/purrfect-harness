@@ -90,6 +90,8 @@ check "seat smoke scratch clone and dry-run plan" python3 tests/test-seat-smoke.
 echo "== observed CLI output (F003)"
 check "observed model and usage parser over real CLI samples" python3 tests/test-observe-output.py
 check "observe parser focused test leaves no scripts bytecode" test ! -e "$HARNESS/scripts/__pycache__"
+check "execution receipt v1 and v2 observation validation" python3 tests/test-execution-receipt.py
+check "execution receipt focused test leaves no scripts bytecode" test ! -e "$HARNESS/scripts/__pycache__"
 
 # F006 regressions must use the public propagation/release entry points. Tagged
 # and untagged source state is always isolated so this suite is independent of
