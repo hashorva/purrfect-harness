@@ -4,6 +4,11 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-018 verified; code-reviewer requested
+- **Mechanical review:** run `7e75c8e2-ef0c-4c67-92dd-0655b3acdcf0` (T-018, claude.economy haiku, effort medium, attempt 1), receipt `.tasks/receipts/7e75c8e2-ef0c-4c67-92dd-0655b3acdcf0.json`: outcome `completed`, exit 0, scope pass, commit `fe6203b`, 15 changed paths in the allow-list (`scripts/observe_output.py`, `tests/test-observe-output.py`, 10 fixtures under `tests/fixtures/observe/`, `tests/run-tests.sh`, `harness-manifest.json`, PROGRESS.md). `verify-mission.sh --run-id 7e75c8e2-ef0c-4c67-92dd-0655b3acdcf0` → `VERIFY PASS`, exit 0 (8 commands incl. the fixtures privacy scan for emails/paths and the full suite). Record is slice evidence for F003, not acceptance. Routing line written (parser, M, claude.economy, attempt 1, done).
+- **Worker narrative (L-009 again):** it says it "was not run through a frozen seat or `spawn-worker.sh` and no receipt was written". False: the receipt above exists. The worker cannot see its own launcher run.
+- **Review class:** plain parser + fixtures → `code-reviewer` (routine), per the plan.
+
 ## 2026-10-15 (night 2) — Worker (Claude Haiku 5.5, in-session) — T-018 observation parser (F003 slice)
 - **Task:** T-018, feature F003. Not run through a frozen `fleet.json` seat or `spawn-worker.sh`; no `.tasks/receipts/` entry was written by this run.
 - **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; the three P-2 samples present. Tree clean at start (`b4e7cb0`).
