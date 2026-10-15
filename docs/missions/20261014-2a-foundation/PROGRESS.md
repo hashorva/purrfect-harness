@@ -35,6 +35,8 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-15 — T-042 attempt 1 (cursor.economy, run f87755da-6925-41a0-80e8-bf7ee4d78002): no commit, a test still failing — task failure** Receipt: completed, exit 0, scope pass, 5 paths, but commits [] and a dirty tree (a verifier cannot use it). Work preserved as `.tasks/wip/T-042-a1.patch` (unverified), tree restored. The worker's log shows it read the reference patch from `.tasks/plans/`: incident — reference patches now live outside the repository tree (session scratchpad). Class task (cursor.economy × ledger).
+  Attempt 2 on codex.economy with the wip patch as a starting point and an explicit commit instruction (task-text change recorded).
 - **2026-10-15 — T-042 ready (rule 6 checked, incl. full suite after the patch); dispatch on cursor.economy** Architect plan run 5f1c114d-66d5-410e-b383-06108375ed7e: task text, 23-style mutant list (`reviews/5f1c114d-66d5-410e-b383-06108375ed7e-mutants.md`), reference patch kept local (`.tasks/plans/T-042-reference.patch`). My check: 2 oracle commands fail on base and pass after the patch; the full suite passes after the patch.
 - **2026-10-15 — ARCHITECT PLANNING RUN T-042 (brain run 5f1c114d-66d5-410e-b383-06108375ed7e, log `.tasks/logs/5f1c114d-66d5-410e-b383-06108375ed7e.log`): T-042 delivered complete.** Planning only. No worker ran, no commits were reviewed, and this run wrote only this file. The blocks are at the end …
   Full text: `reviews/entry-0b7c18f9.md`.
