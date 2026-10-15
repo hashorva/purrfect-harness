@@ -4,6 +4,12 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — Architect review of T-016 PASS; T-014 dispatch
+- **Architect review of T-016 (alone):** run `c3bcf571-0550-4bef-b06a-304b7c8cf676`, receipt `.tasks/receipts/c3bcf571-0550-4bef-b06a-304b7c8cf676.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `614084d`. **Verdict: PASS** on `b0608cf` (finding N1 closed): over 50 provider-name combinations 38 behave the same, the 2 intended alias pairs now launch (persisted as `agent`), 10 unknown names now get the registry's "unknown provider" error (still exit 2), real mismatches still refused with no spec/log/receipt/lock/provider call; the 14 accepted cursor specs are byte-identical before/after; no other gate changed; 8 of 8 meaningful mutations caught (the one survivor changes nothing because of `set -e`); `spawn-brain.sh` needs no fix.
+- **Non-blocking test gaps:** the new test does not cover the reverse pair `agent … --provider cursor`, and its rejection cases do not check that no provider was called (the Architect's own runs covered both).
+- **T-016 is slice evidence for F004, not acceptance.**
+- **Next:** T-014 (registry `sandbox_limits`; registry, S; Architect alone) on **claude.economy** (worker runs: claude 4, codex 4, cursor 4).
+
 ## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-016 (`b0608cf`)
 
 - **Run:** `c3bcf571-0550-4bef-b06a-304b7c8cf676`; log `.tasks/logs/c3bcf571-0550-4bef-b06a-304b7c8cf676.log`; spec role `brain`, action `review`, base `8d530a7`, write scope this file only. The launcher writes the receipt `.tasks/receipts/c3bcf571-0550-4bef-b06a-304b7c8cf676.json` when this run ends; it did not exist while this entry was written. Worker evidence I read: receipt `10314806-…` (completed, exit 0, scope pass, `4d0f87b` → `b0608cf`, 3 allow-listed paths, clean `git_after`) and its VerificationRecord (`pass`, 5 of 5 commands exit 0).
