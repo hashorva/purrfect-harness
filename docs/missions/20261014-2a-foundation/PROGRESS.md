@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-022-R1 verified; code-reviewer requested
+- **Mechanical review:** run `9f3b0974-ddc9-4e44-905e-0afb134464d1` (T-022-R1, codex.economy gpt-6-luna, effort medium, attempt 1), receipt `.tasks/receipts/9f3b0974-ddc9-4e44-905e-0afb134464d1.json`: outcome `completed`, exit 0, scope pass, commit `9d75e55`, 3 changed paths (`scripts/fleet_state.py`, `tests/test-fleet-v2.py`, PROGRESS.md), all in the allow-list. `verify-mission.sh --run-id 9f3b0974-ddc9-4e44-905e-0afb134464d1` → `VERIFY PASS`, exit 0 (7 commands incl. `validate-fleet` on the frozen fleet and the full suite). Routing line written (fleet, S, codex.economy, attempt 1 of the R1, done). Receipt observation: Codex reports no model (`unknown`, as designed) and output tokens 7337 observed.
+- **Review:** `code-reviewer` (per the Architect). Then T-023 (fleet v2 resolver; Architect alone).
+
 ## 2026-10-15 — T-022-R1 worker — fleet v2 negatives and clean refusals
 
 - **Did:** Added a real unsupported-effort negative; every v2 CLI negative asserts its specific `ERROR:` text. Added coverage for `no_zdr`, empty/duplicate billing classes, duplicate doors, extra policy/seat keys, empty seats, versions 3/missing/`"2"`, draft approval, and non-text billing/door entries. `validate_fleet` now rejects non-object documents cleanly, and `resolve` gives the designed `fleet v2 is not resolvable yet` refusal. No valid v1/v2 validation behavior changed.
