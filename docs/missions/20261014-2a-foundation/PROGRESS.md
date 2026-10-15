@@ -4,6 +4,150 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Brain / Architect (claude/opus, effort high) — redesign of the `--after-run` extractor (answer to the request below)
+
+- **Run:** `99addddc-0d02-4375-8c27-431fc999c287`; log `.tasks/logs/99addddc-0d02-4375-8c27-431fc999c287.log`; spec role `brain`, work unit `review`, base `c1a7d4f`, write scope this file only. The launcher writes `.tasks/receipts/99addddc-0d02-4375-8c27-431fc999c287.json` when this run ends; it did not exist while this entry was written. No worker or provider CLI was run.
+- **Method:** prototypes in this session's scratchpad (`design/proto2.py`, `mut2.py`), Python 3.14.6, `-I`, `PYTHONDONTWRITEBYTECODE=1`. Live tree untouched (`git status --short` empty, no `__pycache__`). Audit `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` → `VERIFY OK` before this entry.
+- **Root cause of all four rounds (measured):** two costs nobody bounded, so each worker added a skip-ahead guess that lost a valid start.
+  1. Every failed `raw_decode` builds a `JSONDecodeError`, which runs `doc.count('\n', 0, pos)` and `doc.rfind` over the whole prefix: O(pos) per failure. That is why runs of `{` were quadratic.
+  2. On 3.14 the C decoder's depth limit is set by the stack (50 000 levels decode in 6 ms), so a chain like `{"a":{"a":…x` makes each start re-scan the chain: O(n × depth). Measured rates on this machine: decode about 72 M chars/s; `count`+`rfind` about 1.9 G chars/s; a failed attempt about 0.8 µs; scanning an unterminated string about 2 G chars/s.
+
+### (1) Design: correct by construction, bounded by a counted budget
+
+Replace `_top_level_spans` (and the body of `_last_object`) in `scripts/validate_verdict.py` with exactly this; `final_answer_text`, `extract_last_json_object`, `read_bounded_text`, `main` stay as they are:
+
+```python
+SCAN_BUDGET = 16 * MAX_OUTPUT_BYTES
+ATTEMPT_COST = 64
+# A JSON object can begin only at "{", JSON whitespace, then '"' or '}' (RFC 8259; json.decoder.WHITESPACE).
+OBJECT_START = re.compile(r'\{[ \t\n\r]*["}]')
+_DECODER = json.JSONDecoder()
+
+
+def top_level_objects(text):
+    """Return every top-level JSON object in text, left to right, or raise ValueError."""
+    objects = []
+    pos = 0
+    spent = 0
+    while True:
+        match = OBJECT_START.search(text, pos)
+        if match is None:
+            return objects
+        start = match.start()
+        try:
+            value, end = _DECODER.raw_decode(text, start)
+        except RecursionError:
+            raise ValueError("JSON nests too deeply to read") from None
+        except json.JSONDecodeError as exc:
+            if exc.msg.startswith("Unterminated string"):
+                scanned = len(text) - start
+            else:
+                scanned = exc.pos - start
+            spent += ATTEMPT_COST + scanned + exc.pos // 16
+            pos = start + 1
+        else:
+            spent += ATTEMPT_COST + (end - start)
+            objects.append(value)
+            pos = end
+        if spent > SCAN_BUDGET:
+            raise ValueError("output is too costly to scan for a JSON object")
+
+
+def _last_object(text, accept=lambda value: True):
+    """Return the last top-level JSON object in text that accept() takes, or None."""
+    for value in reversed(top_level_objects(text)):
+        if accept(value):
+            return value
+    return None
+```
+
+- **Rule (G):** `p₀ = 0`. `sᵢ` = the least index ≥ `pᵢ` where an object can begin. If `raw_decode` succeeds at `sᵢ` with end `e`, the object is top-level and `pᵢ₊₁ = e`. If it fails, `pᵢ₊₁ = sᵢ + 1`. The verdict is the last object of G in the final-answer text; the envelope is the last object of G in the whole output that has `type == "result"` and a string `result`.
+- **Proof sketch that no valid start is lost:**
+  - (a) By the grammar (`begin-object = ws %x7B ws`; a member begins with `"`; `ws = *(%x20/%x09/%x0A/%x0D)`, which is exactly `json.decoder.WHITESPACE`), an object can begin at `s` only if `OBJECT_START` matches at `s`. `OBJECT_START.search(text, pos)` therefore returns the least possible start ≥ `pos`, and every `{` it passes over cannot begin an object. This is a grammar fact, not a heuristic, and it costs one C regex pass.
+  - (b) `pos` is assigned only `end` (after a success) and `start + 1` (after a failure). A position ≥ `pos` is never skipped unless it lies inside an object already accepted. So every possible start outside accepted objects is tried, in order. Each earlier hole was a third kind of `pos` update: run-skip, bracket matching, or jump-to-error.
+  - (c) Termination: `pos` strictly increases.
+  - (d) The result is G's list exactly, or a `ValueError` that refuses the whole output (budget, `RecursionError`, Python's 4300-digit integer limit). A partial list is never returned.
+  - (e) Cost: each iteration adds ≥ 64 to `spent`, so there are at most 1 Mi attempts. The charge is at least the decoder's work:
+    - success: `end − start`;
+    - failure: work up to `exc.pos`, or to the end of the text for an unterminated string;
+    - building the error object: `count` + `rfind` over `exc.pos` characters, charged at 1/16 (measured 1/27).
+    The regex searches cover disjoint regions, so they cost O(n) in total. The budget is about 0.9 s of decoding per scan here, and there are two scans.
+- **Accepted semantics (not defects; the tests pin them):**
+  - A truncated outer object makes its complete inner objects top-level. Schema validation then refuses them: row R6.
+  - Wrapper text such as `{"note": <plan>` is accepted, because the wrapper fails to decode and the plan is the next start: row A8.
+  - The last object wins even when it is `{}`: row R3.
+
+### (2) Pass/fail table (cursor, `schemas/task-plan.schema.json` unless noted; every input built at run time in a temp dir; every refusal asserts exit 1, `ERROR: verdict:`, no `Traceback`, and the substring shown)
+
+`PLAN` = `good-task-plan.json` text. `BAD` = `PLAN` with `"tasks": []`. `env(t)` = `{"type":"result","result":t}`. N = 4 MiB.
+
+| id | input | expected | prototype |
+|---|---|---|---|
+| A1 | `PLAN` bare | 0, `mode=after-run` | ✓ |
+| A2 | review verdict bare (review schema) | 0 | existing |
+| A3 | `env("Here is the plan:\n"+PLAN)` | 0 | ✓ |
+| A4 | `env` of PLAN in a ```` ```json ```` fence | 0 | existing |
+| A5 | `env("Note: {"+PLAN)` (no space) | 0 | ✓ (R2 hole) |
+| A6 | `"{{"+PLAN` | 0 | ✓ (R2 hole) |
+| A7 | `"[{"+PLAN` | 0 | ✓ (R2 hole) |
+| A8 | `'{"note": '+PLAN` (unclosed wrapper) | 0 | ✓ |
+| A9 | `Step [1 of 2: ` / `Note: {unclosed ` / `stray } and ] ` + PLAN | 0 | existing |
+| A10 | `'{ \n\t"x":1} '` + PLAN whose first `{"plan_id"` is `{ \r\n "plan_id"` | 0 | ✓ |
+| R1 | `PLAN+"\n"+BAD` | 1, `at least 1 item` | ✓ |
+| R2 | `BAD+"\n"+PLAN` | 0 | ✓ |
+| R3 | `PLAN+" and {}"` | 1, `$.plan_id: required property is missing` | ✓ |
+| R4 | `{"type":"tool_result","text":PLAN}` then `env("I could not produce a plan.")` | 1, `no JSON object` | existing |
+| R5 | `env("no plan")` | 1, `no JSON object` | existing |
+| R6 | `"prose "+PLAN[:-1]` (truncated) | 1, `$.plan_id: required property is missing` | ✓ |
+| R7 | `'{"draft": '+PLAN+'}'` (closed wrapper) | 1, `$.plan_id: required property is missing` | new |
+| H1 | 1 MiB of `{` | 1, `no JSON object`, < 5 s | ✓ 0.03 s |
+| H2 | N−64 of `{` | 1, `no JSON object`, < 5 s | ✓ 0.10 s |
+| H3 | `'{"' * ((N-64)//2)` | 1, `too costly to scan`, < 5 s | ✓ 0.57 s |
+| H4 | `'{ "' * ((N-64)//3)` | 1, `too costly to scan`, < 5 s | ✓ 0.57 s |
+| H5 | `('{"a":'*500+'x')` repeated to N−64 | 1, `too costly to scan`, < 5 s | ✓ 0.55 s |
+| H6 | `'{"a":'*5000+'"'+'x'` filling to N−64 (unterminated tail) | 1, `too costly to scan`, < 5 s | ✓ 0.05 s |
+| H7 | `'{'+'"k":"{",'*((N-64)//8)` (string-phase shift) | 1, `too costly to scan`, < 5 s | ✓ 0.55 s |
+| H8 | `'{"a":'*800000+'x'` | 1, `nests too deeply` **or** `too costly to scan` (depends on Python's stack), < 5 s | ✓ nests, 0.01 s |
+| H9 | valid depth 200000 `{"a":…1…}` | 1, no traceback, < 5 s (reason depends on Python) | ✓ nests |
+| H10 | `'{"n": '+'1'*5000+'} '+PLAN` | 1, `Exceeds the limit` | new |
+| H11 | 17000 lines `{"type":"assistant","text":"x{"*90}` + `env("ok "+PLAN)` (< 4 MiB) | 0, < 5 s | ✓ 0.01 s |
+| H12 | 4000 × `"word { "+"w"*1000+"\n"` + PLAN | 0, < 5 s | ✓ 0.00 s |
+| H13 | 300 × `'see {"key" here '+"w"*13000+"\n"` + PLAN | 0, < 5 s | ✓ 0.33 s |
+| H14 | non-UTF-8 bytes `b"\xff\xfe"+PLAN` | 1, no traceback | new |
+| H15 | 4 MiB + 1 bytes; existing depth-5000, 2 000 000-array and 200000-bracket tests | unchanged | existing |
+
+Every time-bounded test runs the validator with `subprocess.run(..., timeout=30)`, and a `TimeoutExpired` is a test failure, so a quadratic mutant cannot hang the suite.
+
+### (3) Split: two S tasks (Front Desk writes them; same allow-list style as T-034-R2)
+
+- **T-034-R3 (S, code + semantic rows).**
+  - **Allow-list:** `scripts/validate_verdict.py`, `tests/test-verdict.py`, PROGRESS.md.
+  - **Objective:** paste the design above verbatim (the names, constants and messages are binding); add tests for A5–A8, A10, R1–R3, R6 and R7; keep every existing test green.
+  - **Verification:** focused test, both `--check-schema`, shellcheck, `git diff --check`, no `__pycache__`, full `bash tests/run-tests.sh` (verifier).
+  - **Mutations** (temporary copy only; the worker reports each line as printed by `grep -nF '<original>' scripts/validate_verdict.py`, and the Front Desk re-runs that grep):
+    - M1 `pos = end` → `pos = start + 1`: A1 must fail.
+    - M2 `pos = start + 1` → `pos = max(start + 1, exc.pos)`: A8 must fail.
+    - M3 `r'\{[ \t\n\r]*["}]'` → `r'\{[ \t\n\r]*"'`: R3 must fail.
+    - M4 `r'\{[ \t\n\r]*["}]'` → `r'\{"'`: A10 must fail.
+    - M5 `return output if envelope is None else envelope["result"]` → `return output`: A3 must fail.
+- **T-034-R4 (S, tests only, depends on R3).**
+  - **Allow-list:** `tests/test-verdict.py`, PROGRESS.md. **No change to `scripts/`.** If a row fails, stop and escalate.
+  - **Objective:** add H1–H14 with `timeout=30`.
+  - **Mutations** (temporary copy of the validator; same grep rule):
+    - M6 `if spent > SCAN_BUDGET:` → `if False:`: H5 must fail (timeout; measured > 20 s).
+    - M7 `scanned = len(text) - start` → `scanned = exc.pos - start`: H6 must fail (measured 11.8 s).
+    - M8 `+ exc.pos // 16` removed: H3 must fail (measured > 20 s).
+    - M9 `except RecursionError:` branch removed: H8 must fail (traceback).
+- **Seats:**
+  - R3: **codex.economy** (`gpt-6-luna`). The code is given verbatim, so this is transcription plus small tests and economy fits. R3 does not edit `.agents/`, so the Codex sandbox limit does not apply.
+  - R4: **cursor.economy** (`composer-2.5`). A different family from R3 checks R3's cost claims independently. Tests only, under 5 MiB of temp data, no sandbox limit.
+  - Avoid claude.economy for both: its R1 attempt replaced the requested scan with its own design.
+- **Review:** R3 → code-reviewer, plus the Front Desk re-running the mutation greps. R4 → code-reviewer. No further Architect pass is needed unless a row in (2) fails against the verbatim design. That would be my defect: class `plan`, `attributable:false`.
+
+- **Not done:** no `accept-feature.sh`, no change to features.json, fleet.json, a gate or the status, no task file written, no worker dispatched.
+
+Verdict: PASS (design delivered; T-034 continues as T-034-R3 → T-034-R4)
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — code-reviewer FAIL on T-034-R2 (reproduced); T-034 goes back to the Architect to re-split
 - **Mechanical review earlier:** run `ad73d861-078e-4cff-b290-db2fbd61f653` (T-034-R2), commit `92b44bb`, `VERIFY PASS`. **code-reviewer FAIL**, reproduced by me: (1) the linear "skip the run of `{`" shortcut in `_top_level_spans` drops a valid start: `Note: {<plan>`, `{{<plan>` and `[{<plan>` (no separator before the verdict) give `$.plan_id: required property is missing` with `--after-run cursor` (a wrong object is validated, a real answer refused); (2) the worker's mutation evidence cites wrong line numbers for two of four mutants (254 and 270, not 260 and 276). Routing line amended to `verify-passed-review-failed`, class `task` (codex.economy).
 - **Standing rule applied:** T-034 has now failed three times for task reasons (T-034, T-034-R1, T-034-R2: each time a different hole in the same extractor). I do **not** write a fourth patch task. It goes back to the Architect with a request to re-split or redesign the extractor (decomposition miss).
