@@ -53,6 +53,9 @@ def validate_registry(data):
         for field in ("binary", "list_parser", "effort_encoding", "fast_encoding", "discovery_directory"):
             if not isinstance(provider[field], str) or not provider[field].strip():
                 raise RegistryError(f"{label}.{field} must be non-empty text")
+        for field in ("effort_encoding", "fast_encoding"):
+            if provider[field] not in ("flag", "model-name", "unsupported"):
+                raise RegistryError(f"{label}.{field} invalid")
         for field in ("probe_command", "identity_check"):
             if not isinstance(provider[field], list) or not provider[field] or not all(isinstance(x, str) and x for x in provider[field]):
                 raise RegistryError(f"{label}.{field} must be a non-empty command array")
@@ -76,6 +79,13 @@ def validate_registry(data):
         if not isinstance(provider["capabilities"], dict):
             raise RegistryError(f"{label}.capabilities must be an object")
         _require_fields(provider["capabilities"], ("efforts", "speeds"), label + ".capabilities")
+        for field, allowed in (("efforts", {"none", "minimal", "low", "medium", "high", "xhigh", "max"}),
+                               ("speeds", {"unknown", "standard", "fast"})):
+            values = provider["capabilities"][field]
+            if (not isinstance(values, list) or not values
+                    or any(not isinstance(value, str) or value not in allowed for value in values)
+                    or len(values) != len(set(values))):
+                raise RegistryError(f"{label}.capabilities.{field} must be a non-empty list of distinct supported values")
         _validate_sandbox_limits(provider["sandbox_limits"], label + ".sandbox_limits")
     doors = data["doors"]
     if not isinstance(doors, dict) or not doors:
@@ -93,6 +103,14 @@ def validate_registry(data):
             raise RegistryError(f"{label}.priority must be an integer")
     if not isinstance(data["seat_specs"], dict) or not isinstance(data["fallbacks"], dict):
         raise RegistryError("registry.seat_specs and registry.fallbacks must be objects")
+    for seat, spec in data["seat_specs"].items():
+        if (not isinstance(spec, list) or len(spec) != 2
+                or not isinstance(spec[0], str) or spec[0] not in providers
+                or not isinstance(spec[1], str) or not spec[1].strip()):
+            raise RegistryError(f"registry.seat_specs.{seat} must be [provider key, non-empty family]")
+    for key, value in data["fallbacks"].items():
+        if not isinstance(key, str) or not key.strip() or not isinstance(value, str) or not value.strip():
+            raise RegistryError("registry.fallbacks keys and values must be non-empty text")
     return data
 
 

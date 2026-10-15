@@ -3,6 +3,7 @@
 
 This module intentionally has no third-party dependencies.  The shell inventory
 entry point delegates here so all consumers get the same validator and policy.
+Importing it exits with status 1 on a registry error and puts `scripts/` on `sys.path`.
 """
 import argparse
 import hashlib

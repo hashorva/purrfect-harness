@@ -37,7 +37,7 @@
       "sandbox_limits": {
         "write_denied_prefixes": [],
         "login_state_visible": true,
-        "evidence": "T-006 attempt 3 (claude.economy) wrote .agents/skills/dispatch-worker/SKILL.md under the claude seat; T-005 (claude.economy) wrote .agents/skills/mission-init/SKILL.md and dispatch-worker SKILL.md. No write limit observed for claude."
+        "evidence": "T-006 attempt 3 (claude.economy) wrote .agents/skills/dispatch-worker/SKILL.md under the claude seat; T-005 (claude.economy) wrote .agents/skills/mission-init/SKILL.md and dispatch-worker SKILL.md. T-008 (claude.economy) login check passed. No write limit observed for claude."
       }
     },
     "codex": {

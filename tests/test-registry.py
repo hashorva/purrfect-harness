@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import copy
 import importlib.util
+import json
 import shutil
 import subprocess
 import sys
@@ -91,6 +92,66 @@ class RegistryTests(unittest.TestCase):
                 target[path[-1]] = value
                 with self.assertRaises(registry_module.RegistryError):
                     registry_module.validate_registry(broken)
+
+    def test_encodings_capabilities_seat_specs_and_fallbacks(self):
+        cases = (
+            ("effort encoding", ("providers", "claude", "effort_encoding"), "effort-flag"),
+            ("fast encoding", ("providers", "claude", "fast_encoding"), "fast-flag"),
+            ("empty efforts", ("providers", "claude", "capabilities", "efforts"), []),
+            ("non-list efforts", ("providers", "claude", "capabilities", "efforts"), "low"),
+            ("unsupported effort", ("providers", "claude", "capabilities", "efforts"), ["turbo"]),
+            ("unsupported speed", ("providers", "claude", "capabilities", "speeds"), ["warp"]),
+            ("empty speeds", ("providers", "claude", "capabilities", "speeds"), []),
+            ("duplicate effort", ("providers", "claude", "capabilities", "efforts"), ["low", "low"]),
+            ("duplicate speed", ("providers", "claude", "capabilities", "speeds"), ["fast", "fast"]),
+            ("seat spec wrong length", ("seat_specs", "brain"), ["claude"]),
+            ("seat provider missing", ("seat_specs", "brain"), ["missing", "opus"]),
+            ("seat family empty", ("seat_specs", "brain"), ["claude", " "]),
+            ("fallback key empty", ("fallbacks", ""), "model"),
+            ("fallback value empty", ("fallbacks", "opus"), " "),
+        )
+        for label, path, value in cases:
+            with self.subTest(label=label):
+                broken = copy.deepcopy(registry)
+                target = broken
+                for key in path[:-1]:
+                    target = target[key]
+                target[path[-1]] = value
+                with self.assertRaises(registry_module.RegistryError):
+                    registry_module.validate_registry(broken)
+
+    def test_sandbox_limits_architect_followup_regressions(self):
+        cases = (
+            ("required sandbox_limits", lambda broken: broken["providers"]["codex"].pop("sandbox_limits")),
+            ("required sandbox subfield", lambda broken: broken["providers"]["codex"]["sandbox_limits"].pop("evidence")),
+            ("empty prefix string", lambda broken: broken["providers"]["codex"]["sandbox_limits"].update(write_denied_prefixes="")),
+            ("non-text evidence", lambda broken: broken["providers"]["codex"]["sandbox_limits"].update(evidence=7)),
+        )
+        for label, mutate in cases:
+            with self.subTest(label=label):
+                broken = copy.deepcopy(registry)
+                mutate(broken)
+                with self.assertRaises(registry_module.RegistryError):
+                    registry_module.validate_registry(broken)
+
+    def test_import_fails_closed_on_broken_registry(self):
+        with tempfile.TemporaryDirectory(prefix="fleet-state-broken-registry-") as temp_dir:
+            temp_root = Path(temp_dir)
+            scripts = temp_root / "scripts"
+            scripts.mkdir()
+            for name in ("fleet_state.py", "harness_registry.py"):
+                shutil.copy2(ROOT / "scripts" / name, scripts / name)
+            broken = copy.deepcopy(registry)
+            broken["schema_version"] = 99
+            (temp_root / "harness-registry.json").write_text(
+                json.dumps(broken), encoding="utf-8"
+            )
+            result = subprocess.run(
+                ["python3", "-c", "import sys; sys.path.insert(0, 'scripts'); import fleet_state"],
+                cwd=temp_root, text=True, capture_output=True,
+            )
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("ERROR: registry:", result.stderr)
 
     def test_identity_pattern_and_login_check_validation(self):
         for field, value in (("identity_pattern", "["), ("login_check", [])):
