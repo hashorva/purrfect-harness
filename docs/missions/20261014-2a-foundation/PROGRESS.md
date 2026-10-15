@@ -4,6 +4,52 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — re-review of T-024-R1 (`b007ff7`)
+
+- **Run:** `c208dfad-4185-4921-bb7a-f42be61bdeca`; log `.tasks/logs/c208dfad-4185-4921-bb7a-f42be61bdeca.log`; spec role `brain`, action `review`, base `1b51061`, write scope this file only, provider contract 6. The launcher writes the receipt `.tasks/receipts/c208dfad-4185-4921-bb7a-f42be61bdeca.json` when this run ends; it did not exist while this entry was written. The worker run under review is `f003b56d-01a4-4ffb-afd0-09e66fb356b6`. Its receipt exists (completed, exit 0, scope pass, clean `git_after`) and its VerificationRecord has `result: pass`.
+- **Test rules followed:**
+  - Fake `claude`, `codex`, `cursor-agent`, `agent`, `agy` and `grok` were first on PATH. Each exits 97 and logs its calls. The call log is empty, so no provider CLI (fake or real) was reached by my harness; the integration tests use their own internal fake. No `-fast` model was used.
+  - All Python ran with `PYTHONDONTWRITEBYTECODE=1`.
+  - Trees: new = `b007ff7`, old = `159cf57`; each is a `git clone` in the session scratchpad. `jsonschema` 4.26.0 was installed in a scratchpad venv only.
+  - Live tree: `git status --short` is empty and there is no `__pycache__` in `scripts/` or `tests/`. `.tasks/drift/` is still the pre-existing empty directory (mtime 09:26).
+- **(1) With `jsonschema`, the gated check runs and passes — confirmed.**
+  - `test-fleet-v2.py` under the venv: `b007ff7` prints `fleet v2 validation tests passed`, exit 0, no SKIP line.
+  - The same run on `159cf57`: exit 1 at `assert code_ok == schema_ok` with `(True, False, …)`.
+  - System Python on `b007ff7` prints `SKIP schema/code agreement: jsonschema is not installed`, exit 0. This is the verifier's case, now backed by the new dependency-free test.
+  - **Wider check (beyond the in-repo gate, which tests only `good_v2()`):** I wrapped `run_cli` so that each of the 26 `validate-fleet` calls in `test-fleet-v2.py` also ran a real `Draft202012Validator` (the schema itself passes `check_schema`). Results:
+    - 4 documents are valid for both. They cover v1 and v2, including the real `freeze-v2` output.
+    - 17 are rejected by both.
+    - **0 are valid for the code but rejected by the schema.**
+    - 5 are accepted only by the schema. These are registry rules JSON Schema cannot express: unknown door, effort or speed unsupported for a door, fast without policy, family not on its doors.
+  - **`approved_resolution` shape:** code and schema agree in 7 of 7 structural cases (missing, extra key, missing `model`, empty `model`, non-text `model`, non-object, valid). Two cross-field rules are enforced by the code only: capability mismatch, and provider not among the seat's doors. The worker reported this limit.
+  - **v1:** the frozen 2A fleet (v1) validates against both the old and the new schema.
+- **(2) The dependency-free agreement test catches schema and code drift — confirmed.** Each mutation was made in a fresh scratch clone and run under the system Python (no `jsonschema`):
+  - Dropping the `approved_resolution` property, with or without its `required` entry, fails with `('seat codex.economy', 'written but undeclared', ['approved_resolution'])`. My first attempt left a trailing comma and failed only on a JSON parse error; I redid it.
+  - Dropping `model` from `approvedResolution` fails with `written but undeclared ['model']`.
+  - Code writing an undeclared seat key (`frozen_at`, also accepted by the validator) fails with `written but undeclared ['frozen_at']`.
+  - Code writing an undeclared `approved_resolution` key (`door`) fails first at the existing exact-equality assertion. With that assertion disabled, the agreement test alone fails with `written but undeclared ['door']`.
+- **(3) The two launcher refusals are tested at the real entry point — confirmed.** I mutated `scripts/fleet_state.py` in scratch clones and ran `test-execution-integration.py -k v2_worker` (4 tests; the unmutated control is OK):
+  - All equality assertions skipped: 3 of 3 subtests fail.
+  - Model assertion only skipped: caught.
+  - Effort assertion only skipped: caught.
+  - Speed assertion only skipped: caught. Without it the request falls through to a different refusal, which the exact-text assertion rejects.
+  - `unavailable` refusal dropped: caught.
+  - Unavailable falling back to the approved binding: caught.
+  - The tests assert the exact `ERROR: fleet {model|effort|speed} assertion failed` and `ERROR: fleet seat resolved as unavailable`. `assert_no_run_artifacts` covers `invoked.json` (the provider call), specs, logs, receipts and locks; the unavailable test also asserts there is no drift log.
+- **(4) Scope and existing tests — confirmed.** `git diff --numstat eb6416a b007ff7` shows exactly the 4 allowed files. Test files have 0 deleted lines; the only 2 deletions are in the schema (the `required` line and the `}` that gained a comma). No existing test was weakened. The receipt's `scope.result` is `pass`.
+- **(5) The T-024 surviving mutations — 2 of 7 are now caught.** Both are the ones that mattered: skipping the v2 equality assertions, and unavailable falling back to the binding.
+  - Still surviving: dropping the write-bit pre-checks, calling `drift` after `print`, and matching prior events by seat only. All three are equivalent or harmless, as classified in the T-024 review.
+  - Also still surviving: the two `approved_resolution` cross-field validation lines (capability mismatch; provider not among its doors). They were optional in T-024-R1, and the worker flagged them.
+- **Non-blocking notes for a later slice (no correction task needed):**
+  - (a) Making `approved_resolution` optional in the schema (removing it from `required` only) is not caught. The agreement test checks `required ⊆ written`, not that the schema requires what the code requires. The schema would then be looser, never stricter. A one-line `assert set(node["required"]) == <code exact keys>` would close it.
+  - (b) The two cross-field validation lines from (5) have no negative test.
+  - (c) The flags test does not also assert that no drift log exists, as the unavailable test does. Today the assertions run before `drift`, so nothing is written.
+  - (d) The `jsonschema`-gated check in `test-fleet-v2.py` covers only `good_v2()`. A wrapper like mine over every `validate-fleet` call would cover the invalid cases too.
+- **Still an owner decision (L-020 candidate):** install `jsonschema` where the verifier runs, or make the skip count as a failure. The new dependency-free test removes the blind spot for key drift, but not for value shapes, which only `jsonschema` checks.
+- **Not done:** no feature accepted, no gate or status change, no worker dispatched, no file outside this entry changed.
+
+Verdict: PASS. T-024-R1 closes both blocking items from the T-024 review. No blocking issues.
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-024-R1 verified; Architect re-review requested (with jsonschema)
 - **Mechanical review:** run `f003b56d-01a4-4ffb-afd0-09e66fb356b6` (T-024-R1, claude.economy haiku, effort medium, attempt 1), receipt `.tasks/receipts/f003b56d-01a4-4ffb-afd0-09e66fb356b6.json`: outcome `completed`, exit 0, scope **pass**, `git_after` clean, commit `b007ff7`, 4 changed paths (`schemas/mission-fleet.schema.json`, `tests/test-fleet-v2.py`, `tests/test-execution-integration.py`, PROGRESS.md), all in the allow-list (the explicit "touch only these files" step worked: no stray edits). `verify-mission.sh --run-id f003b56d-01a4-4ffb-afd0-09e66fb356b6` → `VERIFY PASS`, exit 0 (8 commands incl. the integration tests, `validate-fleet` and the full suite). Routing line written (fleet, S, claude.economy, done). Slice evidence for F004, not acceptance.
 - **Correction recorded:** I fixed the Architect run id in my earlier T-024 entry (it is `571fbabb-69b2-4391-81a9-81e33c9abd54`).
