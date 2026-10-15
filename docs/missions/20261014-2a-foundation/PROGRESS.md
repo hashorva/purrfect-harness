@@ -8,7 +8,7 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 - Mission 2A Foundation, branch `mission/2a-foundation`, status in-progress. Gate 0 passed. **Gate 1 target:** F001–F006 accepted and the deterministic suite green (prepare, do not advance).
 - **Accepted:** F001, F003, F006. **Waiting on one task (ledger fixes):** F005. **F004** and **F007** wait for the agy amendment (agy dropped from the mission by owner decision; T-026 and T-039 deferred).
 - Full history before this reset: `progress-archive/2026-10-14_15.md` (717 KB, kept verbatim). Routing data: `routing-data.jsonl`. Receipts/records: `.tasks/receipts/`, `verification/`.
-- Seats: usable claude.economy, claude.premium, codex.economy, codex.premium, cursor.economy; **cursor.premium** frozen as unusable (`grok-4.7-xhigh` with effort medium) pending the approved re-freeze to `grok-4.7-high`/standard; **agy.economy unusable** (every turn hangs; evidence in the archive, entry "day 3 / agy re-smoke").
+- Seats: usable claude.economy, claude.premium, codex.economy, codex.premium, cursor.economy, **cursor.premium** (re-frozen grok-4.7-high/high/standard, smoke passed 2026-10-16); **agy.economy unusable** (every turn hangs; evidence in the archive, entry "day 3 / agy re-smoke").
 
 ## Owner decisions in force (2026-10-16 message)
 1. Order: archive PROGRESS.md; accept F003 and F006; re-freeze cursor.premium to grok-4.7-high standard (drift event); ledger task (Architect review) then fold + accept F005; two small tasks (verifier: a skipped check is a failure; privacy near misses); drop agy (amend F004/F007, defer T-026/T-039, T-037 uses claude, codex, cursor); stop at Gate 1 prepared.
@@ -35,6 +35,8 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-16 — cursor.premium re-frozen to grok-4.7-high (drift event, owner approved); smoke passed** `fleet.json` cursor.premium: model `grok-4.7-xhigh`/effort medium → `grok-4.7-high`/effort high, speed standard (never fast); `validate-fleet` exit 0. The file was chmod'd writable for this one edit and set back to 444. Drift event written locally to `.tasks/drift/20261014-2a-foundation.jsonl` (folded into the committed drift.jsonl by the T-030 fold at F005 acceptance).
+  Seat smoke (`fleet-doctor.sh --smoke --seat cursor.premium`, two runs; the first with --keep): completed, "both smoke files in HEAD", run d240aeaf-5a16-4621-aeb4-37460a329b25. The kept scratch clone was removed. cursor.premium joins rotation, used first for routine reviews.
 - **2026-10-16 — F003 and F006 accepted (owner approved)** F003: run 86a9c529-95d9-42b3-9e23-b24c18fec0ff, record sha a85b3ac1…, `ACCEPT OK`; F006: run db01ac53-00de-4d30-9230-05894b952ebe, sha recomputed d652eeea… before running, `ACCEPT OK`.
   `verify-mission.sh --require-workers` after each: `VERIFY OK`, exit 0. Accepted by "Front Desk (claude-sonnet-5-5), owner-approved by Zamir (2026-10-16)". features.json committed.
 - **2026-10-16 — PROGRESS.md reset (owner step 0)** Moved all 250 entries (717 KB) verbatim to `progress-archive/2026-10-14_15.md`; PROGRESS.md now holds status, decisions in force, open decisions, active lessons and recent entries (5.4 KB).
