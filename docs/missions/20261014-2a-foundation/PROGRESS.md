@@ -4,6 +4,55 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-024 (`159cf57`)
+
+- **Run:** `571fbabb-69b2-4391-81a9-81e33c9abd54`; log `.tasks/logs/571fbabb-69b2-4391-81a9-81e33c9abd54.log`; spec role `brain`, action `review`, base `d9cc2a9`, write scope this file only, provider contract 6. The launcher writes the receipt `.tasks/receipts/571fbabb-69b2-4391-81a9-81e33c9abd54.json` when this run ends; it did not exist while this entry was written.
+- **Test rules followed:** fake `claude`, `codex`, `cursor-agent`, `agent`, `agy` and `grok` were first on PATH. They exit 97 and log each call. Every hit was a fake (`codex`, `claude`, `agy`, `cursor-agent`); no real provider CLI was launched and no `-fast` model was used. All Python ran with `PYTHONDONTWRITEBYTECODE=1`. Old tree = `951cc62` (`159cf57^`), new tree = `159cf57`, each a `git clone` in the session scratchpad. `jsonschema` was installed only in a scratchpad venv. Live tree: `git status --short` empty; no `__pycache__`. An empty, gitignored `.tasks/drift/` (mtime 09:26, inside the T-024 worker's window) was already in the live tree; it is not from this run and I left it alone.
+- **(1) v1 is unchanged — confirmed.** The real `spawn-worker.sh` and `spawn-brain.sh review` ran 54 cases in both trees: 4 providers × 2 tiers × {frozen values, wrong effort, `--speed fast`, wrong `--model`, no `--speed`, `--repo /tmp`}, plus 6 brain flag sets. I normalised run ids, SHAs, timestamps and temp paths. All 54 matched on exit code, stderr, stdout and persisted spec bytes: 38 designed refusals, 14 fake-provider launches (rc 97), and 2 with rc 125. Neither tree created `.tasks/drift`, and both trees stayed clean.
+- **(2) Per-spawn v2 resolution and drift — confirmed through the real `spawn-worker.sh`.** Setup: a scratch clone with the 2A fleet replaced by a `freeze-v2` fleet (codex.economy, binding `gpt-6-luna`). Results:
+  - Spawn 1, same inventory: spec `model` `gpt-6-luna`, 0 events.
+  - `gpt-6.1-luna` added: spawn 2 has spec `gpt-6.1-luna` and writes exactly 1 event. Its `from` is the binding, its `to` is the new resolution, and it carries the inventory SHA-256.
+  - Spawn 3: still 1 event.
+  - Back to the binding: a second event, `gpt-6.1-luna → gpt-6-luna`. The comparison is with the last event, not with the binding.
+- **(3) Never silent — confirmed.** Each case gave exit 1 with no new lock, spec, log or receipt:
+  - `.tasks/drift` at mode 500: `ERROR: drift event could not be written`.
+  - drift log at mode 400: same error.
+  - corrupt drift log: `ERROR: invalid drift log: …`.
+  - missing inventory: `ERROR: invalid inventory: …`.
+- **(4) Assertions and unavailable seats — the behaviour is correct, but no test covers it.**
+  - A stale `--model gpt-6-luna` after the inventory moved: `fleet model assertion failed`, 0 events.
+  - A wrong `--effort`: refused the same way.
+  - Luna removed from the inventory: `fleet seat resolved as unavailable`, exit 1, no artifacts, no event.
+- **(5) Gate order unchanged:** `resolve` still runs after `validate-worker` / `validate-brain` (lifecycle, Gate 0, clean tree, `--repo`) and before `validate-capability` and the lock. The grid's cross-repo and assertion refusals match the old tree byte for byte.
+- **(6) Where the drift log lives.** It is `.tasks/drift/<slug>.jsonl`, which is gitignored. Nothing in T-024 puts it into Git; T-030 folds it into `<mission>/drift.jsonl`, keyed by the sha256 of each canonical line. Until then, deleting the file loses the history: event times, intermediate models and inventory hashes. The next spawn then compares with `approved_resolution` again. If the current resolution differs from the binding, a new `from=binding` event is written. If it equals the binding, the earlier drift leaves no trace. Per-run specs still record each run's model, but they are also machine-local. Note for T-030: each event line is `json.dumps(sort_keys=True, separators=(",",":"))`, so the fold must hash exactly that form.
+- **(7) Confirmed.** The `fleet v2 is not resolvable yet` refusal is gone from the code. Its test in `tests/test-fleet-v2.py` was turned into a positive `resolve` check, not deleted.
+- **(8) Mutations:** I ran 14 mutations against `test-fleet-v2.py` plus `test-execution-integration.py -k v2_worker`. The unmutated copy passes both. 7 mutations were caught:
+  - always appending an event;
+  - ignoring earlier events;
+  - swallowing a failed drift write;
+  - dropping the provider canonicalisation;
+  - `freeze-v2` keeping the placeholder binding;
+  - an event without `inventory_sha256`;
+  - the worker launcher passing the wrong `--root`.
+- **The 7 surviving mutations:**
+  - *Matter:* **skip the v2 equality assertions** and **unavailable falls back to the approved binding**. Either one would let the launcher run a model the Front Desk did not assert, or one the inventory no longer has.
+  - *Equivalent or harmless:* dropping the write-bit pre-checks (as a non-root user the OS refuses the write anyway); calling `drift` after `print` (the launcher still exits non-zero); matching earlier events by seat only (the log file is already per mission).
+  - *Untested validation lines:* the two `approved_resolution` validation lines (capability mismatch; provider not among the seat's doors).
+- **Blocking 1 — the schema and the code disagree (a regression).** `schemas/mission-fleet.schema.json` `v2Seat` has `additionalProperties: false` and no `approved_resolution`, but the code now requires that field. So every v2 fleet that `validate-fleet` accepts and `freeze-v2` writes is rejected by the published schema, which ships to consumers. With `jsonschema` installed, `tests/test-fleet-v2.py` exits 1 at the schema/code agreement assertion (`code_ok=True, schema_ok=False`); on `951cc62` it exits 0. The verifier passed only because `jsonschema` is missing there and the check is skipped. The worker reported that skip. The schema file was not in T-024's allow-list, so this is a task-authoring gap, not a worker scope fault.
+- **Blocking 2 — two authorization refusals have no test at the launcher's entry point.** These are the v2 `--model/--effort/--speed` equality assertions and "unavailable → refuse, never guess" (Gate 0 decision 2). Both behave correctly today, as shown in (4), but deleting either one leaves every T-024 test green.
+- **Proposed T-024-R1 (F004, fleet, S; code-reviewer):**
+  - Add `approved_resolution` (`provider`, `model`, `effort`, `speed`; exact keys) to `v2Seat`.
+  - Add tests through `fleet_state.py resolve` (or `spawn-worker.sh`):
+    - a stale `--model` and a wrong `--effort` on a v2 fleet are refused with the exact message and write no drift event;
+    - an inventory without the seat's family gives `fleet seat resolved as unavailable` with no event;
+    - optional: the two `approved_resolution` validation errors.
+  - Allow-list: `schemas/mission-fleet.schema.json`, `tests/test-fleet-v2.py`, `tests/test-execution-integration.py`, PROGRESS.md. No code change is expected in `scripts/`.
+  - Review evidence must include `test-fleet-v2.py` run under a Python that has `jsonschema`, because the verifier's Python lacks it.
+- **L-020 candidate:** the verifier silently skipped a check, and the skip hid a regression. A schema/code agreement check must either run in the verifier's environment or be reported as missing evidence. Owner decision: install `jsonschema` for the verifier, or make the skip fail.
+- **Not done:** no feature accepted, no gate or status change, no worker dispatched, no T-024-R1 file written (the Front Desk writes it).
+
+Verdict: FAIL. The T-024 code works; the two blocking issues above need a correction task (T-024-R1), not a rework of the code.
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-024 verified; Architect review requested
 - **Mechanical review:** run `24399250-ebd3-47bd-af6a-dc714c135aed` (T-024, codex.economy gpt-6-luna, effort medium, attempt 1), receipt `.tasks/receipts/24399250-ebd3-47bd-af6a-dc714c135aed.json`: outcome `completed`, exit 0, scope pass, `git_after` clean, commit `159cf57`, 6 changed paths (`scripts/fleet_state.py`, `scripts/spawn-worker.sh`, `scripts/spawn-brain.sh`, `tests/test-execution-integration.py`, `tests/test-fleet-v2.py`, PROGRESS.md), all in the allow-list. `verify-mission.sh --run-id 24399250-ebd3-47bd-af6a-dc714c135aed` → `VERIFY PASS`, exit 0 (7 commands incl. the integration tests, `validate-fleet` on the frozen fleet and the full suite). Routing line written (launcher, M, codex.economy, attempt 1, done). Slice evidence for F004, not acceptance.
 - **ARCHITECT REVIEW REQUEST, T-024 alone (commit `159cf57`; both launchers = dispatch authority; this implements the Gate 0 amendment "a probe may change a fleet, never silently").** Run `git show 159cf57`. Confirm with evidence you produced: (1) **v1 fleets behave exactly as before**: the real launchers over a grid of provider/tier/flag combinations in a scratch clone (fake providers first on PATH), old tree vs new tree: same exit code, same stderr, same persisted spec bytes (normalising run ids), and a v1 fleet never creates a drift file; (2) for a v2 fleet the launcher resolves per spawn from the inventory, records the resolved model in the spec, and appends **exactly one** drift event when the resolved `(provider, model, effort, speed)` differs from the last event for that seat (first spawn without a previous event compares with the binding; a third spawn with the same inventory adds none); (3) **never silent**: if the drift append fails the launcher prints `ERROR: drift event could not be written` and exits non-zero **before** any lock, spec, log, receipt or provider call (test it with a read-only `.tasks/drift`); (4) `--model/--effort/--speed` remain equality assertions against the resolved seat; a v2 fleet never lets an unavailable family run (unavailable → refuse, never guess a model); (5) every other gate unchanged and in order (clean tree, `--repo`, frozen-seat equality for v1, lock); (6) the drift log lives under `.tasks/drift/` (gitignored): say how the event reaches Git (the plan folds it with the ledger in T-030) and whether anything is lost if the machine-local file is deleted; (7) the `resolve` refusal "fleet v2 is not resolvable yet" was replaced and its test updated, not deleted; (8) mutate the new logic in scratch copies and confirm tests fail. **RULES FOR YOUR TESTS:** a fake `cursor-agent`, `codex`, `claude` and `agy` first on PATH before any test or mutation; never launch a real provider CLI; no `-fast` model; `PYTHONDONTWRITEBYTECODE=1`; avoid `python3 -I` for anything that writes bytecode into the repo; leave nothing in the live tree (incl. `.tasks/drift`). End with `Verdict: PASS` or `Verdict: FAIL` and blocking issues only.
