@@ -19,7 +19,7 @@ LEDGER = ROOT / "scripts/ledger.py"
 SCHEMA = ROOT / "schemas/ledger-row.schema.json"
 FIXTURES = ROOT / "tests/fixtures/ledger"
 sys.path.insert(0, str(ROOT / "scripts"))
-from ledger import FIELDS, SECRET_PATTERNS, UUID_SHAPE, HIDDEN_CHARS, canonical_drift_line
+from ledger import FIELDS, SECRET_PATTERNS, UUID_SHAPE, HIDDEN_CHARS, canonical_drift_line, canonical_row_line
 
 
 SECTION_8_FIELDS = [
@@ -40,7 +40,7 @@ TEXT_FLAG_FIELDS = ["cli_version", "requested_model", "resolved_model", "observe
 GOOD = FIXTURES / "good-completed.json"
 
 
-def run_cli(*args, ledger=LEDGER, cwd=None):
+def run_cli(*args, ledger=LEDGER, cwd=None, timeout=None):
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     return subprocess.run(
         [sys.executable, str(ledger), *args],
@@ -48,6 +48,7 @@ def run_cli(*args, ledger=LEDGER, cwd=None):
         text=True,
         env=env,
         cwd=cwd or ROOT,
+        timeout=timeout,
     )
 
 
@@ -629,8 +630,8 @@ class LedgerFoldTests(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.parent)
 
-    def fold(self, *extra):
-        return run_cli("fold", self.mission_path, ledger=self.root / "scripts/ledger.py", cwd=self.root, *extra)
+    def fold(self, *extra, timeout=None):
+        return run_cli("fold", self.mission_path, ledger=self.root / "scripts/ledger.py", cwd=self.root, timeout=timeout, *extra)
 
     def write_row(self, row, *, run_id=None):
         run_id = run_id or row["run_id"]
@@ -660,6 +661,37 @@ class LedgerFoldTests(unittest.TestCase):
         self.assertEqual(second.stdout.strip(), "folded rows=0 drift=0")
         self.assertEqual(len((self.root / "docs/missions/ledger.jsonl").read_text().splitlines()), 2)
 
+    def test_fold_appends_to_existing_history_and_rows_are_canonical(self):
+        first = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        second = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        row1 = self.write_row(load(GOOD), run_id=first)
+        result = self.fold()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        ledger = self.root / "docs/missions/ledger.jsonl"
+        old = ledger.read_bytes()
+        row2 = self.write_row(load(GOOD), run_id=second)
+        event = self.good_drift()
+        source = self.root / ".tasks/drift/fixture.jsonl"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(canonical_drift_line(event), encoding="utf-8")
+        result = self.fold()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        after = ledger.read_bytes()
+        self.assertTrue(after.startswith(old))
+        self.assertEqual(after[len(old):], canonical_row_line(row2).encode())
+        self.assertEqual(ledger.read_text().splitlines()[0] + "\n", canonical_row_line(row1))
+        self.assertEqual((self.root / self.mission_path / "drift.jsonl").read_text(), canonical_drift_line(event))
+        self.assertEqual(self.fold().stdout.strip(), "folded rows=0 drift=0")
+
+    @staticmethod
+    def good_drift():
+        return {
+            "at": "2026-08-21T00:00:00Z", "mission": "docs/missions/fixture", "seat": "codex.economy",
+            "from": {"provider": "codex", "door": "codex", "model": "gpt-5.6-luna", "effort": "medium", "speed": "unknown", "source": "observed"},
+            "to": {"provider": "codex", "door": "codex", "model": "gpt-5.7-luna", "effort": "medium", "speed": "unknown", "source": "observed"},
+            "inventory_sha256": "0" * 64,
+        }
+
     def test_fold_refuses_invalid_row(self):
         base = load(GOOD)
         run_id = str(uuid.uuid4())
@@ -673,14 +705,7 @@ class LedgerFoldTests(unittest.TestCase):
         self.assertFalse((self.root / "docs/missions/ledger.jsonl").exists())
 
     def test_fold_appends_drift_events_once(self):
-        event = {
-            "at": "2026-08-21T00:00:00Z",
-            "mission": self.mission_path,
-            "seat": "codex.economy",
-            "from": {"provider": "codex", "model": "gpt-5.6-luna", "effort": "medium", "speed": "unknown"},
-            "to": {"provider": "codex", "model": "gpt-5.7-luna", "effort": "medium", "speed": "unknown"},
-            "inventory_sha256": "0" * 64,
-        }
+        event = self.good_drift()
         drift_dir = self.root / ".tasks/drift"
         drift_dir.mkdir(parents=True, exist_ok=True)
         (drift_dir / "fixture.jsonl").write_text(canonical_drift_line(event), encoding="utf-8")
@@ -691,6 +716,112 @@ class LedgerFoldTests(unittest.TestCase):
         self.assertEqual(committed, canonical_drift_line(event))
         again = self.fold()
         self.assertEqual(again.stdout.strip(), "folded rows=0 drift=0")
+
+    def test_fold_dedupes_drift_within_batch_and_skips_other_mission(self):
+        event = self.good_drift()
+        other = dict(event, mission="docs/missions/other")
+        source = self.root / ".tasks/drift/fixture.jsonl"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(canonical_drift_line(event) + canonical_drift_line(event) + canonical_drift_line(other), encoding="utf-8")
+        result = self.fold()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "folded rows=0 drift=1")
+
+    def test_fold_enforces_run_id_identity_and_canonical_duplicates(self):
+        row = self.write_row(load(GOOD), run_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        other = dict(row, feature="F004")
+        (self.root / ".tasks/ledger/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.json").write_text(json.dumps(other), encoding="utf-8")
+        result = self.fold()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("run_id", result.stderr)
+        (self.root / ".tasks/ledger/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.json").unlink()
+        duplicate = self.root / ".tasks/ledger/cccccccc-cccc-4ccc-8ccc-cccccccccccc.json"
+        duplicate.write_text(json.dumps(row), encoding="utf-8")
+        result = self.fold()
+        self.assertEqual(result.returncode, 1, "filename/run_id mismatch must be refused")
+
+    def test_fold_skips_only_byte_identical_existing_run_id(self):
+        row = self.write_row(load(GOOD), run_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        ledger = self.root / "docs/missions/ledger.jsonl"
+        ledger.write_text(canonical_row_line(row), encoding="utf-8")
+        result = self.fold()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "folded rows=0 drift=0")
+        ledger.write_text(json.dumps(dict(row, feature="F004"), separators=(",", ":")) + "\n", encoding="utf-8")
+        result = self.fold()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("run_id", result.stderr)
+
+    def test_fold_rejects_malformed_objects_without_tracebacks(self):
+        row_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        (self.root / ".tasks/ledger").mkdir(parents=True, exist_ok=True)
+        (self.root / ".tasks/ledger" / f"{row_id}.json").write_text("[]", encoding="utf-8")
+        result = self.fold()
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn("Traceback", result.stderr)
+        (self.root / ".tasks/ledger" / f"{row_id}.json").unlink()
+        source = self.root / ".tasks/drift/fixture.jsonl"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text("[]\n", encoding="utf-8")
+        result = self.fold()
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn("Traceback", result.stderr)
+        source.unlink()
+        committed = self.root / "docs/missions/ledger.jsonl"
+        committed.write_text("{}\n", encoding="utf-8")
+        result = self.fold()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("run_id", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_fold_validates_drift_privacy_keys_and_paths_without_echoing_values(self):
+        variants = []
+        secret = "ghp_" + "A" * 36
+        variants.append((lambda event: event["to"].__setitem__("model", secret), secret))
+        variants.append((lambda event: event.__setitem__("unrecognized", "safe"), "unrecognized"))
+        path_value = "/Users/" + "private/project"
+        variants.append((lambda event: event["to"].__setitem__("model", path_value), path_value))
+        for edit, hidden in variants:
+            source = self.root / ".tasks/drift/fixture.jsonl"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            event = self.good_drift()
+            edit(event)
+            source.write_text(json.dumps(event) + "\n", encoding="utf-8")
+            result = self.fold()
+            self.assertEqual(result.returncode, 1, result.stdout)
+            self.assertNotIn(hidden, result.stdout + result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+            source.unlink()
+
+    def test_fold_refuses_unsafe_input_files_and_target_symlinks(self):
+        directory = self.root / ".tasks/ledger"
+        directory.mkdir(parents=True, exist_ok=True)
+        huge = directory / "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.json"
+        huge.write_bytes(b" " * (1024 * 1024 + 1))
+        result = self.fold()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("size limit", result.stderr)
+        huge.unlink()
+        if hasattr(os, "mkfifo"):
+            fifo = directory / "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.json"
+            os.mkfifo(fifo)
+            result = self.fold(timeout=3)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("regular file", result.stderr)
+            fifo.unlink()
+        link = directory / "cccccccc-cccc-4ccc-8ccc-cccccccccccc.json"
+        outside = self.parent / "outside.json"
+        outside.write_text("{}", encoding="utf-8")
+        link.symlink_to(outside)
+        result = self.fold()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("symlink", result.stderr)
+        link.unlink()
+        target = self.root / "docs/missions/ledger.jsonl"
+        target.symlink_to(outside)
+        result = self.fold()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("symlink", result.stderr)
 
     def test_fold_skips_other_missions(self):
         base = load(GOOD)

@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — T-030-R1 worker — implementation complete; awaiting verifier
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` exit 0 (47 tests).
+- **Change:** `scripts/ledger.py` now keys source rows by their `run_id`, checks file-stem identity, rejects conflicting duplicate IDs, skips byte-identical rows, validates drift structure/privacy, dedupes drift within a batch, and uses bounded regular-file reads that reject symlinks and unsafe targets. `tests/test-ledger.py` adds temporary-repository coverage for append preservation, canonical output, drift filtering, hostile drift, malformed objects, duplicate identity, FIFO/symlink/oversize refusal.
+- **Load-bearing mutation evidence (temporary copies of `scripts/ledger.py`; each regression failed at the fold entry point):** (a) ledger append changed to truncating write — history-preservation test failed; (b) mission filter removed — other-mission drift test failed; (c) canonical row writer removed — canonical-output test failed; (d) stem identity check removed — renamed-row test failed; (e) drift validator call removed — hostile drift test failed; (f) non-object row guard removed — malformed-object test caught the traceback; (g) symlink/regular-file/size guards removed — unsafe-input test failed on the size-limit assertion. No mutant touched the live tree.
+- **Checks:** focused ledger test exit 0 (54 tests); execution integration exit 0 (45 tests); `shellcheck scripts/*.sh tests/*.sh` exit 0; no `__pycache__` directories, secret-shaped literal grep clean, and `git diff --check` exit 0. `bash tests/run-tests.sh` remains for the verifier, as required by the standing 2A worker rule.
+- **Result:** no feature acceptance or gate/status change. Scoped change and this entry are committed as `fix(ledger): fold once per run_id, validate drift events, harden file reads`.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — Architect verdict on T-030: FAIL (3 blocking); T-030-R1 written; open owner decision before T-032
 - **Architect review** (commit `c61949e`): T-030 (`451aa2c`) FAIL: (1) exactly-once is keyed on the file name, not `run_id` (duplicates and renamed rows get appended); (2) drift events reach the committed file unvalidated (a secret-shaped value was folded in its replay); (3) no test catches a fold that truncates committed history. Routing line for T-030 amended to `verify-passed-review-failed`, class `task` (cursor.economy).
 - **T-030-R1** written from the Architect's follow-up (ledger.py + test-ledger.py + PROGRESS only). Dispatching on codex.economy.

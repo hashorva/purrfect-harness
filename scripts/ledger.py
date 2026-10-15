@@ -15,6 +15,7 @@ import math
 import re
 import subprocess
 import sys
+import stat
 from pathlib import Path
 
 SCHEMA_VERSION = 1
@@ -38,6 +39,9 @@ PROMPT_PREFIXES = re.compile(r"^\s*(?:Read \S*[/\\.]|You are |Follow AGENTS\.md)
 OUTCOMES = ("completed", "failed", "timed_out", "interrupted", "launch_failed")
 SCOPE_RESULTS = ("pass", "fail", "not_checked")
 RUN_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+MAX_INPUT_BYTES = 1024 * 1024
+DRIFT_KEYS = ("at", "mission", "seat", "from", "to", "inventory_sha256")
+RESOLUTION_KEYS = ("provider", "door", "model", "effort", "speed", "source")
 
 FIELDS = (
     "schema_version", "mission", "feature", "task", "run_id", "parent_run", "group_id",
@@ -271,6 +275,58 @@ def canonical_drift_line(event):
     return json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"
 
 
+def safe_read(path, label, *, optional=False):
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        if optional:
+            return None
+        raise LedgerError(label, "file does not exist")
+    except OSError as error:
+        raise LedgerError(label, f"file cannot be inspected: {error.strerror}") from error
+    if stat.S_ISLNK(info.st_mode):
+        raise LedgerError(label, "symlink refused")
+    if not stat.S_ISREG(info.st_mode):
+        raise LedgerError(label, "not a regular file")
+    if info.st_size > MAX_INPUT_BYTES:
+        raise LedgerError(label, "file exceeds size limit")
+    try:
+        with path.open("rb") as handle:
+            data = handle.read(MAX_INPUT_BYTES + 1)
+    except OSError as error:
+        raise LedgerError(label, f"file cannot be read: {error.strerror}") from error
+    if len(data) > MAX_INPUT_BYTES:
+        raise LedgerError(label, "file exceeds size limit")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise LedgerError(label, "file is not UTF-8") from error
+
+
+def validate_drift(event):
+    check_object("drift", event, DRIFT_KEYS)
+    def check_drift_strings(path, value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                check_drift_strings(f"{path}.{key}", item)
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                check_drift_strings(f"{path}[{index}]", item)
+        elif isinstance(value, str):
+            if path != "drift.inventory_sha256":
+                check_privacy(path, value)
+    check_drift_strings("drift", event)
+    for name in ("at", "mission", "seat"):
+        check_text(f"drift.{name}", event[name])
+    for name in ("from", "to"):
+        resolution = event[name]
+        check_object(f"drift.{name}", resolution, RESOLUTION_KEYS)
+        for key in RESOLUTION_KEYS:
+            check_text(f"drift.{name}.{key}", resolution[key])
+    if not isinstance(event["inventory_sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", event["inventory_sha256"]):
+        fail("drift.inventory_sha256", "must be 64 lowercase hexadecimal characters")
+
+
 def drift_line_id(line):
     if not line.endswith("\n"):
         line = f"{line}\n"
@@ -297,21 +353,34 @@ def normalize_mission_path(mission):
 
 
 def existing_run_ids(ledger_jsonl):
-    ids = set()
-    if not ledger_jsonl.is_file():
+    ids = {}
+    content = safe_read(ledger_jsonl, "ledger.jsonl", optional=True)
+    if content is None:
         return ids
-    for line in ledger_jsonl.read_text(encoding="utf-8").splitlines():
+    for line in content.splitlines(keepends=True):
         if not line.strip():
             continue
-        ids.add(json.loads(line)["run_id"])
+        try:
+            row = json.loads(line)
+        except ValueError as error:
+            raise LedgerError("ledger.jsonl", "line is not valid JSON") from error
+        if not isinstance(row, dict):
+            raise LedgerError("ledger.jsonl", "line must be an object")
+        if "run_id" not in row:
+            raise LedgerError("ledger.jsonl.run_id", "is required")
+        run_id = row["run_id"]
+        if run_id in ids and ids[run_id] != line:
+            raise LedgerError("ledger.jsonl.run_id", "already exists with different content")
+        ids[run_id] = line
     return ids
 
 
 def existing_drift_ids(drift_jsonl):
     ids = set()
-    if not drift_jsonl.is_file():
+    content = safe_read(drift_jsonl, "drift.jsonl", optional=True)
+    if content is None:
         return ids
-    for line in drift_jsonl.read_text(encoding="utf-8").splitlines():
+    for line in content.splitlines():
         if not line.strip():
             continue
         ids.add(drift_line_id(line))
@@ -331,35 +400,61 @@ def fold_mission(root, mission_path):
     pending_rows = []
     if ledger_dir.is_dir():
         for path in ledger_dir.glob("*.json"):
-            run_id = path.stem
-            if run_id in known_run_ids:
-                continue
+            label = path.stem if UUID_SHAPE.fullmatch(path.stem) else "row"
             try:
-                row = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError) as error:
-                raise LedgerError("row", f"document not readable as JSON: {error}") from error
+                content = safe_read(path, label)
+                row = json.loads(content)
+            except ValueError as error:
+                raise LedgerError(label, "document not readable as JSON") from error
+            if not isinstance(row, dict):
+                raise LedgerError("row", "must be an object")
+            if row.get("run_id") != path.stem:
+                raise LedgerError("row.run_id", "must match file name")
             if row.get("mission") != slug:
                 continue
             validate_row(row)
+            run_id = row["run_id"]
+            canonical = canonical_row_line(row)
+            if run_id in known_run_ids:
+                if known_run_ids[run_id] == canonical:
+                    continue
+                raise LedgerError("run_id", "already exists with different content")
+            known_run_ids[run_id] = canonical
             pending_rows.append((run_id, row))
     pending_rows.sort(key=lambda item: item[0])
 
     pending_drift = []
-    if drift_source.is_file():
-        for line in drift_source.read_text(encoding="utf-8").splitlines():
+    drift_content = safe_read(drift_source, "drift", optional=True)
+    seen_drift_ids = set(known_drift_ids)
+    if drift_content is not None:
+        for line in drift_content.splitlines():
             if not line.strip():
                 continue
             try:
                 event = json.loads(line)
-            except json.JSONDecodeError as error:
-                raise LedgerError("drift", f"document not readable as JSON: {error}") from error
-            if event.get("mission") != mission_path:
+            except ValueError as error:
+                raise LedgerError("drift", "document not readable as JSON") from error
+            if not isinstance(event, dict):
+                raise LedgerError("drift", "must be an object")
+            validate_drift(event)
+            if event["mission"] != mission_path:
                 continue
             canonical = canonical_drift_line(event)
             event_id = drift_line_id(canonical)
-            if event_id in known_drift_ids:
+            if event_id in seen_drift_ids:
                 continue
+            seen_drift_ids.add(event_id)
             pending_drift.append(canonical)
+
+    for target, label in ((ledger_jsonl, "ledger.jsonl"), (drift_jsonl, "drift.jsonl")):
+        try:
+            info = target.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(info.st_mode):
+            raise LedgerError(label, "symlink refused")
+        if not stat.S_ISREG(info.st_mode):
+            raise LedgerError(label, "not a regular file")
 
     if pending_rows:
         ledger_jsonl.parent.mkdir(parents=True, exist_ok=True)
