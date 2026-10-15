@@ -4,6 +4,9 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-033 verified; code-reviewer requested
+- **Mechanical review:** run `25a94e52-d046-41f6-9fae-89c9996ff59a` (T-033, codex.economy gpt-6-luna, effort medium, attempt 1): completed, exit 0, scope pass, commit `38dbe40`, changed paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (7 commands incl. full suite). Routing line written.
+
 ## 2026-10-15 (day 3) — T-033 worker — verdict schemas and subset validator implemented; awaiting verifier
 - **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0. `python3 -c 'import jsonschema'` succeeded in this environment (the task expected the module might be missing); no package was installed or used.
 - **Change:** added task-plan and review-verdict schemas, the dependency-free `scripts/validate_verdict.py` with explicit unsupported-keyword refusal and `--check-schema`, good/bad fixture JSON, focused tests, suite wiring, and manifest ownership entries.
