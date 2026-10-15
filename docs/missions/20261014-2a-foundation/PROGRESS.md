@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — P-2 recorded; T-034 task text changed (values named); T-034 dispatch
+- **Probe P-2 (help text only):** claude `--json-schema`; codex `exec --output-schema <FILE>`; cursor none; agy `--json-schema` (unproven, agy hangs). Evidence: `evidence/P-2-json-schema-flags.md`.
+- **Task-text change (recorded):** T-034 item 1 now names those values and points to the evidence file (the task depended on "P-2 recorded"). T-034 edits the registry and `validate_verdict.py`; Architect review after. Seat: codex.economy.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — code-reviewer on T-033-R1: FAIL only for missing mutation proofs; Front Desk ran them (evidence, no code change)
 - **code-reviewer FAIL on `c6fe231`**: code and tests meet objective items 1–4; the only blocking point is that the worker's entry records mutation proofs for 5 of the groups, not for the `items`, `if` and `then` recursion, the data-mode refusal, or the reason assertions.
 - **I ran the missing mutants myself** (scratch copies of `validate_verdict.py`, `tests/test-verdict.py`, fixtures and schemas in the session scratchpad; the live tree untouched; running mutants is evidence, not a quality judgement): `items` dropped from the recursion → `test-verdict.py` exit 1; `if` dropped → exit 1; `then` dropped → exit 1; data-mode `check_schema(schema)` call removed → exit 1; boolean accepted as integer → exit 1; `object` type always true (non-object top level) → exit 1; `string` type always true (kills `expected string`) → exit 1; message `required property is missing` changed → exit 1; message `at least 1 item` changed → exit 1. All 9 caught, so no new test is needed.
