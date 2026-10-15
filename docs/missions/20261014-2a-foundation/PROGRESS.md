@@ -4,6 +4,13 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Worker (cursor.economy) — T-016 N1: provider disagreement after persisted-name conversion
+- **Change:** `spawn-worker.sh` converts positional provider and `--provider` with `harness_registry.py persisted-name` before comparing; unknown names still exit 2 with the registry error. `spawn-brain.sh` unchanged — it has no positional/`--provider` pair to disagree (only a single optional `--provider`, already converted once at parse time).
+- **Tests:** `test_cursor_provider_flags_compare_after_persisted_name_conversion` — `cursor … --provider agent` launches with persisted provider `agent`; `cursor … --provider codex` exits 2 (`disagree`) with no spec/log/lock/receipt; `cursor … --provider grok` exits 2 (`ERROR: registry:`) with no artifacts.
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-integration.py` exit 0 (23 tests).
+- **Verification (this session):** integration test exit 0; `test-registry.py` exit 0; shellcheck exit 0; `bash tests/run-tests.sh` exit 0 (`ALL TESTS PASSED`); no `__pycache__` under `scripts/` or `tests/`.
+- **Commit:** `fix(launcher): compare provider names after legacy conversion` (allow-list only). No feature acceptance or gate/status change.
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — S-CODEX RE-SMOKE: Codex seats now usable for .agents/ edits; T-016 dispatch
 - **S-codex:** `bash scripts/fleet-doctor.sh --smoke --mission docs/missions/20261014-2a-foundation --seat codex.economy --seat codex.premium --timeout 300 --keep --dest <scratchpad>/smoke-s-codex` → exit 0. Summary `.tasks/smoke/20261015T013501Z.json` (local). Live tree clean, no bytecode.
   | seat | status | model | reason |

@@ -108,12 +108,23 @@ while [ $# -gt 0 ]; do
   esac
 done
 EXTRA="${EXTRA_ARGS[*]:-}"
-[ -n "${PROVIDER_FLAG:-}" ] && {
-  [ -z "$WORKER" ] || [ "$WORKER" = "$PROVIDER_FLAG" ] || { echo "ERROR: positional provider and --provider disagree" >&2; exit 2; }
-  WORKER="$PROVIDER_FLAG"
+_REGISTRY_PY="$(pwd -P)/scripts/harness_registry.py"
+_persisted_provider_name() {
+  PYTHONDONTWRITEBYTECODE=1 python3 "$_REGISTRY_PY" persisted-name "$1"
 }
-[ -n "$WORKER" ] || usage
-WORKER="$(PYTHONDONTWRITEBYTECODE=1 python3 "$(pwd -P)/scripts/harness_registry.py" persisted-name "$WORKER")" || exit $?
+if [ -n "${PROVIDER_FLAG:-}" ]; then
+  if [ -n "$WORKER" ]; then
+    WORKER_PERSISTED="$(_persisted_provider_name "$WORKER")" || exit $?
+    FLAG_PERSISTED="$(_persisted_provider_name "$PROVIDER_FLAG")" || exit $?
+    [ "$WORKER_PERSISTED" = "$FLAG_PERSISTED" ] || { echo "ERROR: positional provider and --provider disagree" >&2; exit 2; }
+    WORKER="$WORKER_PERSISTED"
+  else
+    WORKER="$(_persisted_provider_name "$PROVIDER_FLAG")" || exit $?
+  fi
+else
+  [ -n "$WORKER" ] || usage
+  WORKER="$(_persisted_provider_name "$WORKER")" || exit $?
+fi
 case "$WORKER" in codex|claude|agent|agy) ;; *) echo "ERROR: provider must be codex, cursor, agent, agy, or claude" >&2; exit 2 ;; esac
 case "$ATTEMPT" in *[!0-9]*|'') echo "ERROR: --attempt must be positive" >&2; exit 2 ;; esac
 [ "$ATTEMPT" -gt 0 ] || { echo "ERROR: --attempt must be positive" >&2; exit 2; }

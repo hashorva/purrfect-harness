@@ -343,6 +343,40 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         )
         self.assertEqual(invoked["argv"], self.expected_argv("agent", model, "high", speed, spec["prompt"]))
 
+    def test_cursor_provider_flags_compare_after_persisted_name_conversion(self):
+        model, speed = "cursor-model-fast", "fast"
+        self.write_fleet("agent", model, "high", speed)
+        task = "docs/missions/fixture/tasks/T-001.md"
+        common = ["--model", model, "--effort", "high", "--speed", speed, "--feature", "F001"]
+        result = self.invoke(["bash", "scripts/spawn-worker.sh", "cursor", task, "--provider", "agent", *common])
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        spec, _, _, invoked = self.linked(
+            role="worker", provider="agent", model=model, effort="high", speed=speed,
+            work_unit="T-001", feature="F001",
+        )
+        self.assertEqual(spec["provider"], "agent")
+        self.assertEqual(invoked["argv"], self.expected_argv("agent", model, "high", speed, spec["prompt"]))
+        self.clean_runs()
+
+        result = self.invoke(["bash", "scripts/spawn-worker.sh", "cursor", task, "--provider", "codex", *common])
+        self.assertEqual(result.returncode, 2, result.stderr + result.stdout)
+        self.assertIn("disagree", result.stderr)
+        tasks = self.root / ".tasks"
+        self.assertFalse(list(tasks.glob("specs/*.json")) if tasks.exists() else [])
+        self.assertFalse(list(tasks.glob("logs/*.log")) if tasks.exists() else [])
+        self.assertFalse(list(tasks.glob("receipts/*.json")) if tasks.exists() else [])
+        self.assertFalse(list(tasks.glob("locks/*.lock")) if (tasks / "locks").exists() else [])
+        self.clean_runs()
+
+        result = self.invoke(["bash", "scripts/spawn-worker.sh", "cursor", task, "--provider", "grok", *common])
+        self.assertEqual(result.returncode, 2, result.stderr + result.stdout)
+        self.assertIn("ERROR: registry:", result.stderr)
+        tasks = self.root / ".tasks"
+        self.assertFalse(list(tasks.glob("specs/*.json")) if tasks.exists() else [])
+        self.assertFalse(list(tasks.glob("logs/*.log")) if tasks.exists() else [])
+        self.assertFalse(list(tasks.glob("receipts/*.json")) if tasks.exists() else [])
+        self.assertFalse(list(tasks.glob("locks/*.lock")) if (tasks / "locks").exists() else [])
+
     def test_unknown_provider_stops_before_persisting_run_artifacts(self):
         result = self.invoke([
             "bash", "scripts/spawn-worker.sh", "docs/missions/fixture/tasks/T-001.md",
