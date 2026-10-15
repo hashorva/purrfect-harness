@@ -1,6 +1,141 @@
 {
-  "$schema":"https://json-schema.org/draft/2020-12/schema",
-  "type":"object","additionalProperties":false,"required":["schema_version","mission","inventory","approval","seats"],
-  "properties":{"schema_version":{"const":1},"mission":{"type":"object","additionalProperties":false,"required":["path"],"properties":{"path":{"$ref":"#/$defs/text"}}},"inventory":{"type":"object","additionalProperties":false,"required":["sha256","probed_at"],"properties":{"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"probed_at":{"$ref":"#/$defs/timestamp"}}},"approval":{"type":"object","additionalProperties":false,"required":["status","approved_by","approved_at"],"properties":{"status":{"const":"approved"},"approved_by":{"$ref":"#/$defs/text"},"approved_at":{"$ref":"#/$defs/timestamp"}}},"seats":{"type":"object","minProperties":1,"additionalProperties":{"$ref":"#/$defs/seat"}}},
-  "$defs":{"text":{"type":"string","minLength":1,"pattern":".*\\S.*"},"timestamp":{"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"},"caps":{"type":"object","additionalProperties":false,"required":["efforts","speeds"],"properties":{"efforts":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/text"}},"speeds":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/text"}}}},"seat":{"type":"object","additionalProperties":false,"required":["provider","model","family","effort","speed","health","source","capabilities"],"properties":{"provider":{"enum":["claude","codex","agent","agy"]},"model":{"$ref":"#/$defs/text"},"family":{"$ref":"#/$defs/text"},"effort":{"$ref":"#/$defs/text"},"speed":{"$ref":"#/$defs/text"},"health":{"enum":["healthy","degraded","unknown"]},"source":{"enum":["observed","alias","last_good","fallback"]},"capabilities":{"$ref":"#/$defs/caps"}},"allOf":[{"if":{"properties":{"provider":{"const":"claude"}}},"then":{"properties":{"family":{"enum":["opus","fable","sonnet","haiku"]},"effort":{"enum":["low","medium","high","xhigh","max"]},"speed":{"const":"unknown"},"capabilities":{"const":{"efforts":["low","medium","high","xhigh","max"],"speeds":["unknown"]}}}}},{"if":{"properties":{"provider":{"const":"codex"}}},"then":{"properties":{"family":{"enum":["sol","terra","luna"]},"effort":{"enum":["low","medium","high","xhigh"]},"speed":{"const":"unknown"},"capabilities":{"const":{"efforts":["low","medium","high","xhigh"],"speeds":["unknown"]}}}}},{"if":{"properties":{"provider":{"const":"agent"}}},"then":{"properties":{"family":{"enum":["grok","composer"]},"effort":{"enum":["low","medium","high","xhigh"]},"speed":{"enum":["standard","fast"]},"capabilities":{"const":{"efforts":["low","medium","high","xhigh"],"speeds":["standard","fast"]}}}}},{"if":{"properties":{"provider":{"const":"agy"}}},"then":{"properties":{"family":{"enum":["pro","flash"]},"effort":{"enum":["low","medium","high"]},"speed":{"const":"unknown"},"capabilities":{"const":{"efforts":["low","medium","high"],"speeds":["unknown"]}}}}},{"if":{"properties":{"source":{"enum":["observed","alias"]}}},"then":{"properties":{"health":{"const":"healthy"}}}},{"if":{"properties":{"source":{"enum":["last_good","fallback"]}}},"then":{"properties":{"health":{"const":"degraded"}}}},{"if":{"properties":{"source":{"const":"alias"}}},"then":{"properties":{"provider":{"const":"claude"}}}},{"if":{"properties":{"source":{"const":"observed"}}},"then":{"properties":{"provider":{"enum":["codex","agent","agy"]}}}}]}}
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    { "$ref": "#/$defs/fleetV1" },
+    { "$ref": "#/$defs/fleetV2" }
+  ],
+  "$defs": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": ".*\\S.*"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "caps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["efforts", "speeds"],
+      "properties": {
+        "efforts": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/text" } },
+        "speeds": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/text" } }
+      }
+    },
+    "mission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": { "path": { "$ref": "#/$defs/text" } }
+    },
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "probed_at"],
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "probed_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "approved_by", "approved_at"],
+      "properties": {
+        "status": { "const": "approved" },
+        "approved_by": { "$ref": "#/$defs/text" },
+        "approved_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["billing_classes", "fast", "no_zdr"],
+      "properties": {
+        "billing_classes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["included", "credits", "api"] }
+        },
+        "fast": { "type": "boolean" },
+        "no_zdr": { "enum": ["allow", "forbid"] }
+      }
+    },
+    "fleetV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "mission", "inventory", "approval", "seats"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "mission": { "$ref": "#/$defs/mission" },
+        "inventory": { "$ref": "#/$defs/inventory" },
+        "approval": { "$ref": "#/$defs/approval" },
+        "seats": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/seat" }
+        }
+      }
+    },
+    "fleetV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "mission", "inventory", "approval", "policy", "seats"],
+      "properties": {
+        "schema_version": { "const": 2 },
+        "mission": { "$ref": "#/$defs/mission" },
+        "inventory": { "$ref": "#/$defs/inventory" },
+        "approval": { "$ref": "#/$defs/approval" },
+        "policy": { "$ref": "#/$defs/policy" },
+        "seats": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/v2Seat" }
+        }
+      }
+    },
+    "v2Seat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "effort", "doors", "speed"],
+      "properties": {
+        "family": { "$ref": "#/$defs/text" },
+        "effort": { "$ref": "#/$defs/text" },
+        "speed": { "$ref": "#/$defs/text" },
+        "doors": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/text" }
+        }
+      }
+    },
+    "seat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model", "family", "effort", "speed", "health", "source", "capabilities"],
+      "properties": {
+        "provider": { "enum": ["claude", "codex", "agent", "agy"] },
+        "model": { "$ref": "#/$defs/text" },
+        "family": { "$ref": "#/$defs/text" },
+        "effort": { "$ref": "#/$defs/text" },
+        "speed": { "$ref": "#/$defs/text" },
+        "health": { "enum": ["healthy", "degraded", "unknown"] },
+        "source": { "enum": ["observed", "alias", "last_good", "fallback"] },
+        "capabilities": { "$ref": "#/$defs/caps" }
+      },
+      "allOf": [
+        { "if": { "properties": { "provider": { "const": "claude" } } }, "then": { "properties": { "family": { "enum": ["opus", "fable", "sonnet", "haiku"] }, "effort": { "enum": ["low", "medium", "high", "xhigh", "max"] }, "speed": { "const": "unknown" }, "capabilities": { "const": { "efforts": ["low", "medium", "high", "xhigh", "max"], "speeds": ["unknown"] } } } } },
+        { "if": { "properties": { "provider": { "const": "codex" } } }, "then": { "properties": { "family": { "enum": ["sol", "terra", "luna"] }, "effort": { "enum": ["low", "medium", "high", "xhigh"] }, "speed": { "const": "unknown" }, "capabilities": { "const": { "efforts": ["low", "medium", "high", "xhigh"], "speeds": ["unknown"] } } } } },
+        { "if": { "properties": { "provider": { "const": "agent" } } }, "then": { "properties": { "family": { "enum": ["grok", "composer"] }, "effort": { "enum": ["low", "medium", "high", "xhigh"] }, "speed": { "enum": ["standard", "fast"] }, "capabilities": { "const": { "efforts": ["low", "medium", "high", "xhigh"], "speeds": ["standard", "fast"] } } } } },
+        { "if": { "properties": { "provider": { "const": "agy" } } }, "then": { "properties": { "family": { "enum": ["pro", "flash"] }, "effort": { "enum": ["low", "medium", "high"] }, "speed": { "const": "unknown" }, "capabilities": { "const": { "efforts": ["low", "medium", "high"], "speeds": ["unknown"] } } } } },
+        { "if": { "properties": { "source": { "enum": ["observed", "alias"] } } }, "then": { "properties": { "health": { "const": "healthy" } } } },
+        { "if": { "properties": { "source": { "enum": ["last_good", "fallback"] } } }, "then": { "properties": { "health": { "const": "degraded" } } } },
+        { "if": { "properties": { "source": { "const": "alias" } } }, "then": { "properties": { "provider": { "const": "claude" } } } },
+        { "if": { "properties": { "source": { "const": "observed" } } }, "then": { "properties": { "provider": { "enum": ["codex", "agent", "agy"] } } } }
+      ]
+    }
+  }
 }

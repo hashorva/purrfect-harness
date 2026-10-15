@@ -24,6 +24,9 @@ if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 from harness_registry import RegistryError, legacy_view, load_registry
 
+BILLING_CLASSES = frozenset({"included", "credits", "api"})
+NO_ZDR_POLICY = frozenset({"allow", "forbid"})
+
 try:
     PROVIDERS, CAPABILITIES, SEAT_SPECS, EXECUTABLES = legacy_view(load_registry())
 except RegistryError as exc:
@@ -219,9 +222,7 @@ def inventory(out, json_only):
     if json_only: print(raw.decode(),end="")
     else: print(f"Fleet inventory @ {doc['probed_at']}\nWrote {out}")
     return doc
-def validate_fleet(doc):
-    exact_keys(doc,{"schema_version","mission","inventory","approval","seats"},"fleet")
-    if doc["schema_version"]!=1: fail("fleet schema_version must be 1")
+def validate_fleet_header(doc):
     exact_keys(doc["mission"],{"path"},"fleet.mission"); text(doc["mission"]["path"],"fleet.mission.path")
     exact_keys(doc["inventory"],{"sha256","probed_at"},"fleet.inventory");
     if not re.fullmatch(r"[0-9a-f]{64}",doc["inventory"]["sha256"]): fail("fleet inventory hash invalid")
@@ -229,6 +230,33 @@ def validate_fleet(doc):
     exact_keys(doc["approval"],{"status","approved_by","approved_at"},"fleet.approval")
     if doc["approval"]["status"]!="approved": fail("fleet is not approved")
     text(doc["approval"]["approved_by"],"fleet.approval.approved_by"); timestamp(doc["approval"]["approved_at"],"fleet.approval.approved_at")
+def validate_fleet_policy(value):
+    exact_keys(value,{"billing_classes","fast","no_zdr"},"fleet.policy")
+    classes=value["billing_classes"]
+    if not isinstance(classes,list) or not classes: fail("fleet.policy.billing_classes must be a non-empty array")
+    if len(classes)!=len(set(classes)): fail("fleet.policy.billing_classes must be distinct")
+    for item in classes:
+        if item not in BILLING_CLASSES: fail("fleet.policy.billing_classes invalid")
+    if not isinstance(value["fast"],bool): fail("fleet.policy.fast must be boolean")
+    if value["no_zdr"] not in NO_ZDR_POLICY: fail("fleet.policy.no_zdr invalid")
+def validate_fleet_v2_seat(name,value,registry):
+    label="fleet.seats."+name
+    exact_keys(value,{"family","effort","doors","speed"},label)
+    text(value["family"],label+".family"); text(value["effort"],label+".effort"); text(value["speed"],label+".speed")
+    doors=value["doors"]
+    if not isinstance(doors,list) or not doors: fail(f"{label}.doors must be a non-empty array")
+    if len(doors)!=len(set(doors)): fail(f"{label}.doors must be distinct")
+    door_map=registry["doors"]; providers=registry["providers"]
+    for door in doors:
+        if not isinstance(door,str) or not door.strip(): fail(f"{label}.doors entries must be non-empty text")
+        if door not in door_map: fail(f"{label} unknown door {door!r}")
+        caps=providers[door_map[door]["provider"]]["capabilities"]
+        if value["effort"] not in caps["efforts"]: fail(f"{label} effort unsupported for door {door!r}")
+        if value["speed"] not in caps["speeds"]: fail(f"{label} speed unsupported for door {door!r}")
+def validate_fleet_v1(doc):
+    exact_keys(doc,{"schema_version","mission","inventory","approval","seats"},"fleet")
+    if doc["schema_version"]!=1: fail("fleet schema_version must be 1")
+    validate_fleet_header(doc)
     obj(doc["seats"],"fleet.seats")
     if not doc["seats"]: fail("fleet requires seats")
     for name,v in doc["seats"].items():
@@ -244,6 +272,20 @@ def validate_fleet(doc):
         if v["family"] not in {family for p,family in SEAT_SPECS.values() if p == v["provider"]}: fail("fleet seat provider/family mismatch")
         if v["effort"] not in caps["efforts"] or v["speed"] not in caps["speeds"]: fail("fleet seat unsupported capability")
     return doc
+def validate_fleet_v2(doc):
+    exact_keys(doc,{"schema_version","mission","inventory","approval","policy","seats"},"fleet")
+    if doc["schema_version"]!=2: fail("fleet schema_version must be 2")
+    validate_fleet_header(doc); validate_fleet_policy(doc["policy"])
+    obj(doc["seats"],"fleet.seats")
+    if not doc["seats"]: fail("fleet requires seats")
+    registry=load_registry()
+    for name,seat in doc["seats"].items(): validate_fleet_v2_seat(name,seat,registry)
+    return doc
+def validate_fleet(doc):
+    version=doc.get("schema_version")
+    if version==1: return validate_fleet_v1(doc)
+    if version==2: return validate_fleet_v2(doc)
+    fail("fleet schema_version must be 1 or 2")
 def freeze(args):
     inv,raw=read_json(args.inventory,"inventory",require_canonical=True); validate_inventory(inv)
     try: binds=json.loads(Path(args.bindings).read_text())

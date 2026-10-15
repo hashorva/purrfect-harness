@@ -83,6 +83,7 @@ check "ExecutionSpec focused test leaves no scripts bytecode" test ! -e "$HARNES
 
 echo "== frozen fleet policy"
 check "fleet inventory retention and frozen resolution" python3 tests/test-fleet-state.py
+check "fleet v2 policy seat validation" python3 tests/test-fleet-v2.py
 check "registry and fleet-state legacy parity" python3 tests/test-registry.py
 check "fleet doctor identity and login checks" python3 tests/test-fleet-doctor.py
 check "seat smoke scratch clone and dry-run plan" python3 tests/test-seat-smoke.py

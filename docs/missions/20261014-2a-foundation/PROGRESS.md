@@ -4,6 +4,12 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 — Worker (cursor.economy) — T-022 (F004): fleet v2 policy-seat validation; v1 unchanged
+- **Change:** `validate_fleet` dispatches on `schema_version` (1 unchanged, 2 validates shared header plus `policy` and policy seats with registry doors and per-door capability checks); `freeze` still writes v1. `schemas/mission-fleet.schema.json` uses `oneOf` for v1/v2 (`$defs/seat` preserved for existing schema policy tests). New `tests/test-fleet-v2.py`; wired in `tests/run-tests.sh`.
+- **Baseline (before edits):** `shellcheck scripts/*.sh tests/*.sh` exit 0; `test-fleet-state.py` exit 0.
+- **Verification (exit codes):** `test-fleet-v2.py` 0; `test-fleet-state.py` 0; `test-registry.py` 0 (26 tests); `validate-fleet` on frozen 2A `fleet.json` 0; `shellcheck` 0; `bash tests/run-tests.sh` 0; no `__pycache__` under `scripts/` or `tests/` 0.
+- **Status:** no feature acceptance or gate change; F004 slice evidence for orchestrator/`verify-mission.sh`.
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-021-R1 code-reviewer PASS; T-022 dispatch
 - **`code-reviewer` on `cd9ac15`:** Verdict PASS. `encode_model` refuses an already-encoded base via `_is_encoded` (model-name providers through `decode_model`; flag providers when the base ends in `-<token>` of `capabilities.efforts`), with a clear "already encoded" `RegistryError`; plain bases unchanged; eight tests for H, I, J, K, L, M, O, P each fail if their check is removed (reasoned from code); test count 17 → 26 (nothing removed); `harness-registry.json` untouched. T-021-R1 is slice evidence for F004, not acceptance.
 - **Note for T-023 (carried):** a plain flag-provider base that happens to end in `-low|-medium|-high|-xhigh|-max` is now refused; no frozen base does this, and failing closed is the safe direction.
