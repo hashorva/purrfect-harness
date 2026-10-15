@@ -4,6 +4,11 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-032 verified; code-reviewer FAIL on wording; T-032-R1 written
+- **Mechanical review:** run `7a6ab77f-c55a-4a7a-96ea-015697f3ae32` (T-032, cursor.economy composer-2.5, effort medium, speed standard, attempt 1): completed, exit 0, scope pass, commit `751bd96`, 3 changed paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (8 commands, all seven F005 steps covered incl. the full suite). Routing line written (`verify-passed-review-failed`).
+- **code-reviewer: FAIL, one wording issue**: the privacy sentence in the skill and in ORCHESTRATION.md omits absolute paths, which `ledger.py` enforces. (That "absolute paths" must appear came from my review brief, not from the T-032 task text, so I mark the routing line `attributable:false`.) Everything else matched: the fold command, the acceptance-commit files, rows staying under `.tasks/ledger/` until fold, no worker authority to fold or accept.
+- **T-032-R1** (docs only, S) written and dispatched on claude.economy.
+
 ## 2026-10-15 (day 3) — T-032 worker (cursor.economy) — ledger fold documented in acceptance loop; awaiting verifier
 - **Baseline (before edits):** `shellcheck scripts/*.sh tests/*.sh` exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` exit 0 (67 tests).
 - **Change:** `.agents/skills/dispatch-worker/SKILL.md` section 4 — after `accept-feature.sh`, run `python3 scripts/ledger.py fold "$MISSION"`; commit `docs/missions/ledger.jsonl` and `$MISSION/drift.jsonl` with verification/acceptance; rows stay under `.tasks/ledger/` until fold; one-sentence privacy rule (summaries only, no transcript/prompt/secrets). `docs/missions/ORCHESTRATION.md` — same fold in the acceptance command block plus one sentence on what the committed ledger holds.
