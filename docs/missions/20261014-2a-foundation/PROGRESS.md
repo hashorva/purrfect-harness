@@ -4,6 +4,50 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-014 (`01b136c`)
+
+- **Run:** `05f78029-3faf-488a-8c72-7a02faa0f37f`; log `.tasks/logs/05f78029-3faf-488a-8c72-7a02faa0f37f.log`; spec role `brain`, action `review`, base `ebbe122`, write scope this file only. The launcher writes the receipt `.tasks/receipts/05f78029-3faf-488a-8c72-7a02faa0f37f.json` when this run ends; it did not exist while this entry was written.
+- **Worker evidence I read:** receipt `fcecf8e3-…` (claude/haiku, outcome `completed`, exit 0, scope pass, `5293147` → `01b136c`, 4 allow-listed paths, clean `git_after`) and its VerificationRecord (`pass`).
+- **Method:** effects only.
+  - Three scratch `git clone`s in the session scratchpad, origin removed: `old` at `5293147`, `new` and `mut` at `01b136c`. `git diff 5293147 01b136c -- scripts schemas harness-registry.json` touches only `harness-registry.json` and `scripts/harness_registry.py`.
+  - Fake `claude`, `codex`, `cursor-agent`, `agy`, `agent` and `grok` were first on PATH (each logs and exits 97); `PYTHONDONTWRITEBYTECODE=1`.
+  - **No real provider CLI ran.** The fake log holds only `cursor-agent models` / `agy models` calls from `test-fleet-state.py`'s inventory probe. No `-fast` model was launched.
+- **(1) The change only adds: PASS.**
+  - I loaded both registries through each tree's own loader. The new registry with `sandbox_limits` removed from each provider equals the old registry exactly (deep equality). Provider key order, `schema_version`, `doors`, `seat_specs` and `fallbacks` are equal.
+  - `legacy_view` is equal: providers `('claude','codex','agent','agy')`, plus capabilities, seat specs and executables. `canonical_provider` gives the same result for `cursor`, `agent`, `codex`, `claude` and `agy`.
+  - The `fleet_state` constants (`PROVIDERS`, `CAPABILITIES`, `SEAT_SPECS`, `FALLBACKS`, `EXECUTABLES`), dumped as JSON from each tree, are byte-identical. `validate-fleet` on this mission's frozen `fleet.json` exits 0 in both trees.
+  - As intended, the new loader rejects the old registry (`providers.claude missing required field: sandbox_limits`). The field is required, and the registry and loader ship together under the manifest.
+- **(2) The data is correct, and nothing is invented: PASS.** Each value checks out against evidence:
+  - `codex` `[]` / `false`. T-004 a1 (`62c719f6`): the doctor in workspace-write printed `ERROR claude/agy: not logged in`. T-006 a2 (`60930f35`): no commit, `.agents/` write denied. Probe P-1 (`evidence/codex-add-dir-agents.md`): PASS with `--add-dir`. T-013 was verified (`19700ad2`) with an Architect PASS, so `[]` is right.
+  - `claude` `[]` / `true`. Receipts `e240fd2a` (T-006 a3) and `f1824d4b` (T-005) show `.agents/skills/...` in the changed paths, committed.
+  - `cursor` `[]` / `"unknown"`. Smoke `.tasks/smoke/20261014T232111Z.json`: cursor.economy `usable`, "both smoke files in HEAD", and the smoke writes `.agents/smoke/…`.
+  - `agy` `[]` / `"unknown"`. Smoke `20261014T222833Z.json`: agy.economy `failed`, so there is no observation, and the evidence text says so.
+- **(3) The loader validates the field: PASS.**
+  - In clone `new`, `test-registry.py` exits 0 (10 tests). `test-fleet-state.py`, the loader CLI and shellcheck each exit 0, and `persisted-name cursor` prints `agent`.
+  - Mutations (clone `mut`, one exact-string change each to `harness_registry.py`, then `tests/test-registry.py`; byte-exact restore checked with `git diff --quiet`). **10 of 14 killed:** call removed; str check; trailing slash; absolute; traversal; login always passes; login accepts any string; login `int` instead of `bool`; evidence `.strip()` removed; evidence check removed.
+  - **4 survived, all test gaps, not code defects.** With no mutation, the loader rejects every input these mutations would let through, each with a `RegistryError`: `sandbox_limits` missing or not an object, a sub-field missing, `write_denied_prefixes` as `""` or `{}`, and `evidence` as an integer. The survivors:
+    - (a) dropping `sandbox_limits` from `PROVIDER_FIELDS`: the required-field loop is built from that same tuple;
+    - (b) dropping the sub-field `_require_fields`;
+    - (c) dropping the array check: a string value still fails per character, except `""`;
+    - (d) dropping the evidence type check.
+- **(4) Nothing consumes the field yet: PASS.**
+  - `git grep` for `sandbox_limits`, `write_denied_prefixes` and `login_state_visible` hits only the registry, the loader, `test-registry.py` and task text: T-015 (the planned consumer), T-032 and T-035.
+  - The other registry readers use other parts of the registry. `fleet_state.py` uses `legacy_view` (identical). `fleet_doctor.py` iterates providers but reads only binary, identity and login fields. `seat_smoke.py` uses `canonical_provider` (identical). Dispatch behaviour is unchanged.
+- **Non-blocking notes (backlog; fold into T-015, which consumes the field and edits these tests):**
+  - (a) Add negatives for the 4 survivors. Two of them should be hard-coded: a missing `sandbox_limits` and a missing sub-field.
+  - (b) `"./"` is accepted as a prefix. T-015 should reject it, or normalise it before matching.
+  - (c) codex `[]` hides a condition: the limit is lifted only when the allow-list names `.agents/…` paths. A codex task with a broad pattern still cannot write `.agents/`. T-015 or the docs must keep the rule for task authors, because the data cannot express it.
+  - (d) claude `login_state_visible: true` is correct, but its evidence text cites only writes. The login observation is T-008's accidental `fleet-doctor.sh --help` under claude.economy (`OK claude: … login check passed`); cite it in the next registry edit.
+  - (e) The worker's PROGRESS entry says it ran `bash scripts/fleet-doctor.sh` and `bash tests/run-tests.sh` itself, which T-014's Iteration policy forbids. The worker log has only the summary line, so this cannot be confirmed (L-009). Both commands passed again in the verifier.
+- **Audit:** `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` → `VERIFY OK`, exit 0, before this entry. Live tree clean at `ebbe122`, 1 worktree, no `__pycache__`.
+- **Not done:**
+  - no acceptance (T-014 is slice evidence for F004);
+  - no change to features, fleet, GOAL or status;
+  - no dispatch.
+  - Scratch clones, fakes, the comparison, mutation and probe scripts stay in the session scratchpad.
+
+Verdict: PASS
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-014 verified; Architect review requested
 - **Mechanical review:** run `fcecf8e3-6217-4297-9df8-0748b53b0f20` (T-014, claude.economy haiku, effort medium, attempt 1), receipt `.tasks/receipts/fcecf8e3-6217-4297-9df8-0748b53b0f20.json`: outcome `completed`, exit 0, scope pass, commit `01b136c`, 4 changed paths (`harness-registry.json`, `scripts/harness_registry.py`, `tests/test-registry.py`, PROGRESS.md), all in the allow-list. `verify-mission.sh --run-id fcecf8e3-6217-4297-9df8-0748b53b0f20` → `VERIFY PASS`, exit 0 (8 commands incl. `validate-fleet` on the frozen fleet, the real `fleet-doctor.sh`, and the full suite). Record is slice evidence for F004, not acceptance. Routing line written (registry, S, claude.economy, attempt 1, done).
 - **ARCHITECT REVIEW REQUEST, T-014 alone (commit `01b136c`; registry data that controls dispatch — your finding N2).** Run `git show 01b136c`. Confirm with evidence you produced: (1) the registry change only ADDS: every provider, capability, seat spec, fallback, door, ordering and the identity/login fields are unchanged (compare the loaded legacy view of old and new trees value by value, and `validate-fleet` on this mission's frozen `fleet.json`); (2) the new `sandbox_limits` data is correct and complete for the limits proven so far (Codex: `.agents/` write unless the contract-5 flag applies — T-013 lifted it for allow-lists naming `.agents/…`; Codex cannot see Claude or agy login state; any limit recorded for other seats must be backed by evidence in `evidence/` or `PROGRESS.md`, none invented); (3) the loader validates the new field (rejects a malformed entry), and the tests are not vacuous (mutate in scratch copies); (4) nothing consumes the new field yet, so no dispatch behaviour changed (grep). **RULES FOR YOUR TESTS:** a fake `cursor-agent`, `codex`, `claude` and `agy` first on PATH before any test or mutation; never launch a real provider CLI; no `-fast` model; `PYTHONDONTWRITEBYTECODE=1`; leave nothing in the live tree. End with `Verdict: PASS` or `Verdict: FAIL` and blocking issues only.
