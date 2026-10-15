@@ -85,6 +85,29 @@ Use the exact receipt, scoped Git diff/commits, PROGRESS entry, and a short log
 tail. Do not stream full transcripts into review context. Apply the project's
 code-reviewer procedure and guard-verification for guards or safety tests.
 
+### Brain `review` action (structured verdict)
+
+`spawn-brain.sh … review` judges worker effects by diff and log; when the brain
+records a structured review verdict as JSON, that document must validate against
+`schemas/review-verdict.schema.json`. Check a saved verdict file:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_verdict.py \
+  schemas/review-verdict.schema.json /path/to/verdict.json
+```
+
+When the verdict JSON is taken from a provider transcript saved to a file, read
+each provider's `structured_output.json_schema_flag` in `harness-registry.json`.
+If the flag is set, validate the saved file with the command above. If the
+provider has no structured-output flag (for example cursor), use `--after-run`:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_verdict.py --after-run \
+  <provider> schemas/review-verdict.schema.json /path/to/output.txt
+```
+
+On success the script prints `mode=flag` or `mode=after-run`.
+
 Receipt fields include `outcome`, `exit_code`, `git_before`, `git_after`,
 `commits`, `changed_paths`, `workspace_changed`, and `scope`. Check that:
 

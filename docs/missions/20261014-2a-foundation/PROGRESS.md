@@ -4,6 +4,15 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — T-035 worker (Cursor, owner session) — name plan and review schemas in the skills
+
+- **Worker / run:** Cursor Composer in the owner session (not `spawn-worker.sh`); no `.tasks/receipts/` record unless the Front Desk requires one.
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verdict.py` exit 0 (40 tests).
+- **Change:** documentation only. `.agents/skills/mission-init/SKILL.md` — new "Task planning (structured plan)" subsection names `schemas/task-plan.schema.json` and `python3 scripts/validate_verdict.py` (direct file validation and `--after-run` when the registry flag is null). `.agents/skills/dispatch-worker/SKILL.md` — new "Brain `review` action (structured verdict)" subsection names `schemas/review-verdict.schema.json`, registry `structured_output.json_schema_flag`, and `validate_verdict.py --after-run` for providers without a structured-output flag.
+- **Checks (run by me):** both `--check-schema` exit 0; `test-verdict.py` exit 0; `test-registry.py` exit 0; skill greps exit 0; `shellcheck` exit 0; no `scripts/__pycache__` or `tests/__pycache__`.
+- **Not run:** `bash tests/run-tests.sh` (verifier command per standing 2A rule).
+- **Result:** F006 step 4 satisfied; no feature acceptance or gate/status change; `features.json` untouched. Commit: `docs(verdicts): name the plan and review schemas in the skills`.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-034-R4 verified and reviewed; T-034 chain closed; T-035 dispatch
 - **Mechanical review:** run `50aa5128-88bb-4841-b5a0-10a43d0b11b2` (T-034-R4, claude.economy haiku, effort medium, attempt 1): completed, exit 0, scope pass, commit `983d9e3`, changed paths = `tests/test-verdict.py` and PROGRESS.md only (the validator is unchanged); `verify-mission.sh --run-id` → `VERIFY PASS` (7 commands). I re-ran the M6–M9 greps: lines 64, 55, 58, 51 match the worker's entry. **Correction of the worker's narrative (L-009):** its entry says it was "invoked directly by the owner" and that no receipt exists; both are false: the run has a launcher receipt (`.tasks/receipts/50aa5128-88bb-4841-b5a0-10a43d0b11b2.json`, completed, scope pass). **code-reviewer: PASS** (H1–H14 present with the table's inputs and expectations, timeouts treated as failures, no test removed). Routing line written.
 - **T-034 chain closed** (T-034 → R1 → R2 → Architect redesign → R3 → R4). The worker's M9 note is worth keeping: removing the inner `except RecursionError` does not give a traceback because `main` also catches it; the inner branch is defence in depth.

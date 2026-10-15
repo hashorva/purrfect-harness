@@ -72,6 +72,22 @@ Example command bullet:
 Commit the finalized task before dispatch: verification reads its authorized
 commands from the receipt's base commit, not from a later edited task.
 
+### Task planning (structured plan)
+
+When the brain decomposes work into a structured task plan (a JSON document,
+not only committed `tasks/T-*.md` files), that plan must validate against
+`schemas/task-plan.schema.json`. Check a saved plan file:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_verdict.py \
+  schemas/task-plan.schema.json /path/to/plan.json
+```
+
+When the plan JSON is taken from a provider transcript saved to a file, use
+`validate_verdict.py --after-run` as documented in dispatch-worker for
+providers whose registry `structured_output.json_schema_flag` is null; otherwise
+validate the saved JSON file directly with the command above.
+
 ### Bootstrap is an authoring decision
 
 Keep a `bootstrap` boolean on every feature. Use `"bootstrap": false` for worker
