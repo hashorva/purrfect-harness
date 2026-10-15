@@ -4,6 +4,55 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-012 (`e7da71e`)
+
+- **Run:** `33d61a64-ec57-47f5-ade5-c82d629934ff`; log `.tasks/logs/33d61a64-ec57-47f5-ade5-c82d629934ff.log`; spec role `brain`, action `review`, base `891f6a7`, write scope this file only. The launcher writes the receipt `.tasks/receipts/33d61a64-ec57-47f5-ade5-c82d629934ff.json` when this run ends; it did not exist while this entry was written. Worker evidence I read: receipt `a1c5720c-…` (completed, exit 0, scope pass, `a8180e2` → `e7da71e`, 4 allow-listed paths, clean `git_after`) and its VerificationRecord (`fail`; only command 3, the in-worktree mission audit, exit 1; the other 6 exit 0).
+- **Method:** effects only. Three scratch `git clone`s at `e7da71e` (origin removed) in the session scratchpad: baseline, mutations, probes. Fake `cursor-agent`, `codex`, `claude`, `agy`, `agent` and `grok` were first on PATH (each logs and exits 97), with `PYTHONDONTWRITEBYTECODE=1` and no `python3 -I`. **No real provider CLI ran.** The fake log holds 34 calls, all `agy models` / `cursor-agent models` from the suite's inventory probe. No `-fast` model. Live tree: still `891f6a7`, clean, 1 worktree, no `__pycache__`. `scripts/` and `tests/` at `891f6a7` are identical to `e7da71e`.
+- **Baseline (clone):** `test-verification-record.py` 20 tests OK; `test-execution-integration.py` 22 tests OK; `bash tests/run-tests.sh` exit 0 (`ALL TESTS PASSED`); shellcheck exit 0; afterwards 0 status entries, 1 worktree, no bytecode.
+- **(1) Record names and immutability: PASS.**
+  - `verify` still writes `<run_id>.json` first. When that exists, it picks the lowest free `<run_id>.<n>.json`, n ≥ 2, and writes through the unchanged `atomic_create` (temp file, `os.link` no-clobber, mode 0400). No code path modifies or deletes a record.
+  - Probe in the real fixture: verify #1 `fail` → `<id>.json`, verify #2 `pass` → `<id>.2.json`, verify #3 → `<id>.3.json`. Record 1 stayed byte-identical through all three; all records have mode 0400.
+- **(2) `accept`: PASS.** `record_for_hash` loads every record of the run (any malformed one fails closed) and requires exactly one with the cited sha256. `accept` then requires `run_id` and `pass` and runs the unchanged `revalidate_record`, feature-state and lock checks.
+  - A fail record's hash is refused: `verification record hash does not name a passing record`.
+  - An unknown hash is refused: `verification hash must identify exactly one record`.
+  - Accepting by record 2's hash works.
+  - A run B record copied into `<A>.2.json` and cited for run A is refused.
+- **(3) `audit`: PASS.** The accepted hash must match a record of the accepted run, and numbers must be contiguous from 1. A renamed `.2`→`.3` fails with `not contiguous`. Stray names (`.02`, `.1`, `.bak`) fail closed with `invalid number`.
+  - **Historical evidence through the real entry point:** `verify-mission.sh` for this mission → `VERIFY OK` (F001, single record). For `20260821-execution-truth` → `VERIFY OK` (7 accepted single-record features).
+- **(4) Mutations: every rule the task requires is caught.** Each mutation was a single exact-string change in the clone, with only the named targets run, then a byte-exact restore (`git diff --exit-code` clean after each). Killed, each on an `AssertionError`:
+  - numbering → `destination = base`: `VERIFY FAIL: … already exists`.
+  - hash selection → `if True:`: `0 == 0 : ACCEPT OK` on the wrong-hash test.
+  - accept pass check removed: `ACCEPT OK` for a fail record.
+  - audit contiguity removed: `VERIFY OK` with a gap.
+  - base record dropped from `run_records`: `not contiguous`.
+- **Survivors (extra hardening beyond the task, all checked on the real code by my probes; no test of their own, non-blocking):**
+  - the `while … exists()` next-free loop (no test verifies a third time; mutated, a third verify fails closed with "already exists");
+  - the new `record["run_id"] != run_id` checks in `accept` and `audit` (probe P2 shows the real code refuses);
+  - the suffix validation in `run_records` (mutated, `int("bak")` would crash, which still fails closed);
+  - `!= 1` → `== 0` (several identical records cannot happen in practice: each record carries microsecond command timestamps).
+- **(5) ORCHESTRATION.md: PASS.** The new sentences match the code. The dropped clause "It does not change feature acceptance" is still implied by "Only the orchestrator then runs".
+- **(6) `accept-feature.sh` and `verify-mission.sh` need no change: confirmed.** Both only pass arguments to `verification_record.py`; neither builds a record path. The main test drives both wrappers through a second verify, acceptance by the `.2` hash and `--require-workers`. `tests/run-tests.sh:322` hashes `<run_id>.json` after a single verify, which is still correct.
+- **Non-blocking notes (backlog; no correction task needed for T-012):**
+  - (a) **Docs still name only the first record.** These still name only `<run_id>.json` or hash `"$MISSION/verification/$RUN_ID.json"`:
+    - `ORCHESTRATION.md:130` and `:157-158`;
+    - `README.md:180` and `:195`;
+    - `.agents/skills/dispatch-worker/SKILL.md:123` and `:130` (deny-listed for T-012).
+    - Following the snippet after a fail-then-pass re-verify (the T-004 case this feature exists for) hashes the **fail** record, and acceptance is refused. That fails closed but blocks the intended use. Fix: hash the path printed by `verify-mission.sh --run-id` (`VERIFY PASS: <path>`). Do this before the first real re-verification. Do not route it to codex while `.agents/` is a sandbox limit.
+  - (b) **Worker's `acceptance-hash` mutation label proves less than its name.** `!= 1` → `!= 0` makes `accept` crash with `IndexError` and still refuse. The focused test goes red only because the message assertion fails. Retarget the label to `if digest(raw) == expected_hash:` → `if True:`, which I confirmed is killed with `ACCEPT OK`.
+  - (c) **Tests to add:** a third verify (`.3.json`), a foreign record copied into a run's numbered slot (accept and audit), and a stray-suffix name.
+  - (d) **`isdecimal()` accepts non-ASCII digits.** `<id>.٣.json` audited `VERIFY OK` as record 3, though the docstring says noncanonical suffixes are rejected. Use an ASCII `[1-9][0-9]*` match.
+  - (e) **Numbering does not detect a removed highest record** (probe: `VERIFY OK`). Only committed history (the `--diff-filter=MDR` check) protects it, so commit records promptly. `accept` does not check contiguity; the audit that follows acceptance does.
+- **Audit:** `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` → `VERIFY OK`, exit 0, before this entry.
+- **Not done:**
+  - no acceptance (T-012 is an F007 carrier slice);
+  - no `verify-mission.sh --run-id` in the live repo;
+  - no change to features, fleet, GOAL or status;
+  - no dispatch.
+  - The T-012 attempt 2 qualification run (no code change) can proceed as the Front Desk planned. Scratch clones, fakes and logs stay in the session scratchpad.
+- **L-012 candidate:** a guard mutation must make the real entry point *admit* the violation. A mutation that only changes the error path (crash instead of message) proves the message, not the guard.
+
+Verdict: PASS
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-012 attempt 1: VERIFY FAIL (plan defect); T-012 text changed; Architect review requested
 - **Run `a1c5720c-e010-468e-9d70-9d5ed7f2b3be`** (T-012, codex.economy gpt-6-luna, effort medium, attempt 1), receipt `.tasks/receipts/a1c5720c-e010-468e-9d70-9d5ed7f2b3be.json`: outcome `completed`, exit 0, scope pass, commit `e7da71e`, 4 changed paths in the allow-list (`scripts/verification_record.py`, `tests/test-verification-record.py`, `docs/missions/ORCHESTRATION.md`, PROGRESS.md). `verify-mission.sh --run-id a1c5720c-e010-468e-9d70-9d5ed7f2b3be` → **VERIFY FAIL**; record `verification/a1c5720c-e010-468e-9d70-9d5ed7f2b3be.json` kept as history (first record of this run; a numbered record can now follow). 6 of 7 commands pass (`test-verification-record.py`, `test-execution-integration.py`, the "no verification record ever modified/deleted" git check, shellcheck, the full suite, no-bytecode). The one failure is `bash scripts/verify-mission.sh docs/missions/...`, which ran inside the temporary worktree (no live `.tasks/`). Run by hand from the live root with the new code: `VERIFY OK`.
 - **Classification:** failure class `task`, **plan defect, not model-attributable** (`attributable:false`): the same defect T-011 had in its own list, repeated in T-012's list although the Architect's T-011 revision showed the fix. Decomposition miss (task class: verification): every verification list must run the mission audit from `PURRFECT_LIVE_ROOT`.
