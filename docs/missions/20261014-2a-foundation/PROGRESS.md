@@ -4,6 +4,11 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — code-reviewer FAIL on T-034-R1 (reproduced); T-034-R2 written
+- **Mechanical review of T-034-R1:** run `ec7f2ef2-63c2-49d7-9c3e-24b1601def3f` (claude.economy haiku, attempt 1): completed, exit 0, scope pass, commit `bff503a`, 3 paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS`. My replay of the Architect's hostile cases (bare, prose, fenced, envelope, both two-object orders, fail-open, depth 5000, 1 MiB of `{`, 5 MB text) all behaved correctly.
+- **code-reviewer FAIL**, two points I reproduced myself: (1) a 200000-bracket file gives a `RecursionError` traceback in the flag path (`--after-run claude`) and in data mode (the guard covers only the extraction branch); (2) the worker's custom bracket matcher fails on a stray `[` in prose before a valid verdict (`Step [1 of 2: <plan>` is refused as "no JSON object"); the task had asked for a `raw_decode` scan. Third point: mutation evidence names no line numbers. Routing line for T-034-R1: `verify-passed-review-failed`, class `task` (claude.economy).
+- **T-034-R2** written (clean refusal in every branch, `raw_decode` scan, stray-bracket tests, mutation evidence with file:line:expression). Dispatching on codex.economy.
+
 ## 2026-10-15 (day 3) — T-034-R1 worker (claude.economy, Haiku 5.5) — after-run takes the final answer's last top-level object; hostile input refused
 
 - **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `python3 -c 'import jsonschema'` exit 0 (installed; not used, no third-party module added). Tree clean at start.
