@@ -33,7 +33,6 @@ except RegistryError as exc:
     print(f"ERROR: registry: {exc}", file=sys.stderr)
     raise SystemExit(1) from exc
 
-FALLBACKS = {"grok":"cursor-grok-4.5-high", "composer":"composer-2.5", "sol":"gpt-5.6-sol", "terra":"gpt-5.6-terra", "luna":"gpt-5.6-luna", "pro":"gemini-3.1-pro-high", "flash":"gemini-3.6-flash-high"}
 RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$")
 
 class PolicyError(ValueError): pass
@@ -148,7 +147,7 @@ def seat_source_is_truthful(value, current, retained, seat, name):
     elif source == "last_good":
         if current["status"] == "success" or retained is None or model not in provider_models(retained,provider) or health != "degraded": fail(f"{name} invalid retained source")
     elif source == "fallback":
-        if current["status"] == "unavailable" or retained is not None or FALLBACKS.get(family) != model or health != "degraded": fail(f"{name} invalid fallback source")
+        if current["status"] == "unavailable" or retained is not None or health != "degraded": fail(f"{name} invalid fallback source")
     elif source == "unavailable":
         if model != "unavailable" or health != "unknown": fail(f"{name} invalid unavailable source")
     else: fail(f"{name} source invalid")
@@ -199,9 +198,7 @@ def make_seats(providers,last_good):
                 # A missing executable must never advertise a viable binding.
                 result[seat]={"provider":provider,"model":"unavailable","family":family,"health":"unknown","source":"unavailable","capabilities":CAPABILITIES[provider]}; continue
             else:
-                model=FALLBACKS.get(family)
-                if not model: result[seat]={"provider":provider,"model":"unavailable","family":family,"health":"unknown","source":"unavailable","capabilities":CAPABILITIES[provider]}; continue
-                result[seat]={"provider":provider,"model":model,"family":family,"health":"degraded","source":"fallback","capabilities":CAPABILITIES[provider]}; continue
+                result[seat]={"provider":provider,"model":"unavailable","family":family,"health":"unknown","source":"unavailable","capabilities":CAPABILITIES[provider]}; continue
         values=record.get("aliases",[]) if provider=="claude" else record.get("observed_models",[])
         model=choose(values,family)
         if not model:

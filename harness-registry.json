@@ -249,14 +249,5 @@
       "claude",
       "haiku"
     ]
-  },
-  "fallbacks": {
-    "grok": "cursor-grok-4.5-high",
-    "composer": "composer-2.5",
-    "sol": "gpt-5.6-sol",
-    "terra": "gpt-5.6-terra",
-    "luna": "gpt-5.6-luna",
-    "pro": "gemini-3.1-pro-high",
-    "flash": "gemini-3.6-flash-high"
   }
 }

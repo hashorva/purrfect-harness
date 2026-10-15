@@ -92,8 +92,11 @@ def main():
     run('/bin/bash',str(public),'--json','--out',str(inv),env=env); second=json.loads(inv.read_text())
     assert second['providers']['codex']['status']=='failure' and second['last_good']['codex']==old
     assert second['seats']['codex.premium']['source']=='last_good' and second['seats']['codex.premium']['health']=='degraded'
-    # First-run failure only permits degraded fallback; no empty model can validate.
-    fresh=d/'fresh.json'; run('/bin/bash',str(public),'--json','--out',str(fresh),env=env); f=json.loads(fresh.read_text()); assert f['seats']['codex.premium']['source']=='fallback'
+    # First-run failure must not guess a model; no empty model can validate.
+    fresh=d/'fresh.json'; run('/bin/bash',str(public),'--json','--out',str(fresh),env=env); f=json.loads(fresh.read_text())
+    assert f['seats']['codex.premium']['source']=='unavailable' and f['seats']['codex.premium']['model']=='unavailable'
+    historical=json.loads(fresh.read_text()); historical['seats']['codex.premium'].update(model='gpt-5.6-terra',health='degraded',source='fallback')
+    write(d/'historical-fallback-inventory.json',historical); run('python3',str(ROOT/'scripts/fleet_state.py'),'validate-inventory',str(d/'historical-fallback-inventory.json'))
     bad=json.loads(fresh.read_text()); bad['seats']['codex.premium']['model']=''; reject(('python3',str(ROOT/'scripts/fleet_state.py'),'validate-inventory'),d/'bad.json',bad)
     # Exact nested inventory shape and provenance: this reproduces the formerly accepted forgery.
     for label, mutate in (

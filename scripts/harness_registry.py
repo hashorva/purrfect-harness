@@ -8,7 +8,7 @@ import sys
 REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
 PROVIDER_FIELDS = ("binary", "legacy_names", "probe_command", "list_parser", "identity_check", "identity_pattern", "login_check", "effort_encoding", "fast_encoding", "model_name_encoding", "discovery_directory", "capabilities", "sandbox_limits")
 DOOR_FIELDS = ("provider", "billing_class", "pool", "no_zdr", "priority")
-ROOT_FIELDS = ("schema_version", "providers", "doors", "seat_specs", "fallbacks")
+ROOT_FIELDS = ("schema_version", "providers", "doors", "seat_specs")
 
 
 class RegistryError(ValueError):
@@ -126,16 +126,13 @@ def validate_registry(data):
             raise RegistryError(f"{label}.no_zdr must be boolean")
         if not isinstance(door["priority"], int) or isinstance(door["priority"], bool):
             raise RegistryError(f"{label}.priority must be an integer")
-    if not isinstance(data["seat_specs"], dict) or not isinstance(data["fallbacks"], dict):
-        raise RegistryError("registry.seat_specs and registry.fallbacks must be objects")
+    if not isinstance(data["seat_specs"], dict):
+        raise RegistryError("registry.seat_specs must be an object")
     for seat, spec in data["seat_specs"].items():
         if (not isinstance(spec, list) or len(spec) != 2
                 or not isinstance(spec[0], str) or spec[0] not in providers
                 or not isinstance(spec[1], str) or not spec[1].strip()):
             raise RegistryError(f"registry.seat_specs.{seat} must be [provider key, non-empty family]")
-    for key, value in data["fallbacks"].items():
-        if not isinstance(key, str) or not key.strip() or not isinstance(value, str) or not value.strip():
-            raise RegistryError("registry.fallbacks keys and values must be non-empty text")
     return data
 
 

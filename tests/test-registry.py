@@ -36,9 +36,6 @@ GOLDEN_SEAT_SPECS = {
     "agy.economy": ("agy", "flash"), "claude.premium": ("claude", "sonnet"),
     "claude.economy": ("claude", "haiku"),
 }
-GOLDEN_FALLBACKS = {"grok":"cursor-grok-4.5-high", "composer":"composer-2.5", "sol":"gpt-5.6-sol", "terra":"gpt-5.6-terra", "luna":"gpt-5.6-luna", "pro":"gemini-3.1-pro-high", "flash":"gemini-3.6-flash-high"}
-
-
 class RegistryTests(unittest.TestCase):
     def test_model_encoding_and_door_provider_validation(self):
         for name, provider in registry["providers"].items():
@@ -142,8 +139,6 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(fleet.CAPABILITIES, GOLDEN_CAPABILITIES)
         self.assertEqual(fleet.SEAT_SPECS, GOLDEN_SEAT_SPECS)
         self.assertEqual(fleet.EXECUTABLES, executables)
-        self.assertEqual(registry["fallbacks"], GOLDEN_FALLBACKS)
-        self.assertEqual(fleet.FALLBACKS, GOLDEN_FALLBACKS)
 
     def test_each_required_field_is_checked(self):
         cases = [("root." + key, (key,)) for key in registry_module.ROOT_FIELDS]
@@ -187,7 +182,7 @@ class RegistryTests(unittest.TestCase):
                 with self.assertRaises(registry_module.RegistryError):
                     registry_module.validate_registry(broken)
 
-    def test_encodings_capabilities_seat_specs_and_fallbacks(self):
+    def test_encodings_capabilities_and_seat_specs(self):
         cases = (
             ("effort encoding", ("providers", "claude", "effort_encoding"), "effort-flag"),
             ("fast encoding", ("providers", "claude", "fast_encoding"), "fast-flag"),
@@ -201,8 +196,6 @@ class RegistryTests(unittest.TestCase):
             ("seat spec wrong length", ("seat_specs", "brain"), ["claude"]),
             ("seat provider missing", ("seat_specs", "brain"), ["missing", "opus"]),
             ("seat family empty", ("seat_specs", "brain"), ["claude", " "]),
-            ("fallback key empty", ("fallbacks", ""), "model"),
-            ("fallback value empty", ("fallbacks", "opus"), " "),
         )
         for label, path, value in cases:
             with self.subTest(label=label):
