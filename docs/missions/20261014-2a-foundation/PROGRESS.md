@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — Architect re-review of T-030-R1: FAIL (3 blocking); T-030-R2 written
+- **Architect re-review** (run `255f268e-d039-425b-88b2-427791553746`, commit `9ea37cb`): file hardening, run_id identity, once-only and the earlier drift cases are fixed (13 of 19 mutants caught). Blocking: (1) the validator wants 6 keys in drift `from`/`to` but `fleet_state.py` writes 4, so every real drift event is refused and the refusal stops the whole fold; (2) the 1 MiB cap also applies to the committed `ledger.jsonl` (breaks after ~647 rows); (3) a secret-shaped nested key name is printed. **The first is a plan defect of mine** (task said "the resolution keys" without naming them): routing line for T-030-R1 amended to `verify-passed-review-failed`, class `task`, `attributable:false`.
+- **T-030-R2** written from the Architect's follow-up (4-key shape decision, cap only on `.tasks/` inputs, survivor tests, extended integration test). Dispatching on cursor.economy.
+
 ## 2026-10-15 (day 3) — Brain / Architect (claude/opus, effort high) — re-review of T-030-R1 (`d53f9b4`)
 
 - **Run:** `255f268e-d039-425b-88b2-427791553746`; log `.tasks/logs/255f268e-d039-425b-88b2-427791553746.log`; spec role `brain`, action `review`, base `ec740ab`, write scope this file only. The launcher writes `.tasks/receipts/255f268e-….json` when this run ends; it did not exist while this entry was written.
