@@ -4,6 +4,11 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-017 qualified and verified
+- **Mechanical review:** run `cd188179-1ba3-4d12-9d09-367a2b1bc334` (T-017 attempt 2, qualification, cursor.economy composer-2.5, effort medium, speed standard), receipt `.tasks/receipts/cd188179-1ba3-4d12-9d09-367a2b1bc334.json`: outcome `completed`, exit 0, scope pass, commit `f148ab1`, PROGRESS.md only. `verify-mission.sh --run-id cd188179-1ba3-4d12-9d09-367a2b1bc334` → `VERIFY PASS`, exit 0 (8 commands incl. the corrected "registry equals `38ed10f` except Claude's evidence" check and the full suite). Record `verification/cd188179-1ba3-4d12-9d09-367a2b1bc334.json`. **Slice evidence for F004, not acceptance.** Code `a9eb86b` has the Architect's PASS (run `caaf837d-…`). Routing line written (registry, S, cursor.economy, attempt 2, done, qualification).
+- **Backlog status (owner's order):** 1 clean-worktree verifier + numbered records + bytecode: T-010, T-011, T-012 done (PASS). 2 Cursor model fix: T-009 done (PASS). 3 Codex `--add-dir .agents`: P-1 PASS + T-013 done (PASS). 4 per-seat limits refused before launch: T-014, T-015 done (PASS). 5 N1/N3 and negative tests: T-016, T-017 done (PASS). **Blocked:** T-039 (agy contract; agy hangs, F004 step 7). Remaining F004: T-021..T-026 (T-021 needs T-039 only through the contract number; see ordering note).
+- **Next (time 05:55):** probe P-2 (JSON output per CLI, scratch dir), then an Architect request for the parallel-dispatch proposal (A-2) and one small docs task (stale sandbox row (b) in the skill and template, plus the rule that a Codex task editing `.agents/` must name `.agents/…` paths). The brain-seat move plan (A-1) needs F004 done, and agy is unusable, so it stays blocked.
+
 ## 2026-10-15 — Worker (cursor.economy) — T-017 attempt 2 qualification (`a9eb86b`)
 
 - **Attempt 2 qualification:** no code or test edits. Validator, registry evidence text, `fleet_state` docstring pin, and tests remain as committed in `a9eb86b`; this session re-ran the focused checks and prepended this entry so the verifier can run the corrected command list from `tasks/T-017.md`.
