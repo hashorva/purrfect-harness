@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-023-R1 verified; code-reviewer requested
+- **Mechanical review:** run `240d0bb4-66c2-4963-9523-eabe81724906` (T-023-R1, cursor.economy composer-2.5, effort medium, speed standard, attempt 1), receipt `.tasks/receipts/240d0bb4-66c2-4963-9523-eabe81724906.json`: outcome `completed`, exit 0, scope **pass**, `git_after` clean, commit `0303b57`, 3 changed paths (`scripts/fleet_state.py`, `tests/test-fleet-v2.py`, PROGRESS.md). `verify-mission.sh --run-id 240d0bb4-66c2-4963-9523-eabe81724906` → `VERIFY PASS`, exit 0 (7 commands incl. `validate-fleet` on the frozen fleet and the full suite). Because the verifier runs at this commit, which contains `7293de6`, **the T-023 resolver code is now covered by a passing record**. Routing line written (fleet, S, cursor.economy, done). Slice evidence for F004, not acceptance. Cursor stays clean on the explicit "touch only the allowed files" instruction.
+- **Review:** `code-reviewer`, per the Architect. Next: T-024 (per-spawn resolution + drift log; launcher; Architect alone).
+
 ## 2026-10-15 — T-023-R1 worker — v2 resolver seat-level fast; door fallback and resolve-v2 refusals
 
 - **Did:** `resolve_v2` now passes `allow_fast=fast` (seat speed × `policy.fast`) so a `standard` seat never picks `-fast` inventory names when the mission enables fast. Added regression tests: S1 standard seat under `policy.fast: true` with both `grok-4.8-high` and `grok-4.8-high-fast` (and fast-only inventory → unavailable) via `resolve_v2` and `resolve-v2`; S2 healthy first door with no family model falls through to the next door; S3 fast-seat and unsupported-family refusals at `resolve-v2` with exact `ERROR:` text and matching `resolve_v2` `PolicyError` messages.
