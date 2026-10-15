@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — Architect redesign of the extractor received; T-034-R3 and T-034-R4 written; T-034-R3 dispatch
+- **Architect redesign** (run `99addddc-0d02-4375-8c27-431fc999c287`, commit `592257d`): root cause of all four rounds: two unbounded costs (error-object construction is O(position) per failed `raw_decode`; deep chains re-scanned per start), so each worker added a skip-ahead guess that lost a valid start. Design: `OBJECT_START` regex (grammar-exact start positions), `pos` moves only to `end` or `start + 1`, and a counted work budget that refuses cleanly. Pass/fail table of 14 hostile and ~15 semantic rows; prototype timings measured by the Architect.
+- **T-034-R3** (code + semantic rows) and **T-034-R4** (tests only, no `scripts/` change) written verbatim from the Architect's design, including the five and four mutation lines as `grep -nF` instructions so the worker cannot misreport line numbers. R3 dispatching on cursor.economy; R4 after R3 is verified and reviewed.
+
 ## 2026-10-15 (day 3) — Brain / Architect (claude/opus, effort high) — redesign of the `--after-run` extractor (answer to the request below)
 
 - **Run:** `99addddc-0d02-4375-8c27-431fc999c287`; log `.tasks/logs/99addddc-0d02-4375-8c27-431fc999c287.log`; spec role `brain`, work unit `review`, base `c1a7d4f`, write scope this file only. The launcher writes `.tasks/receipts/99addddc-0d02-4375-8c27-431fc999c287.json` when this run ends; it did not exist while this entry was written. No worker or provider CLI was run.
