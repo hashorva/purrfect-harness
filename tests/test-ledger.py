@@ -38,9 +38,9 @@ TEXT_FLAG_FIELDS = ["cli_version", "requested_model", "resolved_model", "observe
 GOOD = FIXTURES / "good-completed.json"
 
 
-def run_cli(*args):
+def run_cli(*args, ledger=LEDGER):
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
-    return subprocess.run([sys.executable, str(LEDGER), *args], capture_output=True, text=True, env=env)
+    return subprocess.run([sys.executable, str(ledger), *args], capture_output=True, text=True, env=env)
 
 
 def load(path):
@@ -328,6 +328,65 @@ class LedgerMutations(unittest.TestCase):
 
     def test_row_must_be_an_object(self):
         self.expect_invalid([], "row: must be an object")
+
+
+    def assert_rule_is_load_bearing(self, rule, hostile, field="task"):
+        """Remove one rule in a temporary validator copy and prove its negative fails."""
+        source = LEDGER.read_text(encoding="utf-8")
+        if rule == "paths":
+            mutant = source.replace(" or SENSITIVE_PATH.search(value)", "")
+        elif rule == "bidi":
+            mutant = source.replace("\\u202a-\\u202e", "").replace("\\u2066-\\u2069", "")
+        else:
+            mutant = source.replace('r"(?i:Bearer)[ \\t]\\S"', 'r"Bearer \\S"')
+        self.assertNotEqual(mutant, source, rule)
+        with tempfile.TemporaryDirectory() as temp:
+            copy = Path(temp) / "ledger.py"
+            copy.write_text(mutant, encoding="utf-8")
+            row_path = Path(temp) / "row.json"
+            row = json.loads(json.dumps(load(GOOD)))
+            row[field] = hostile
+            row_path.write_text(json.dumps(row), encoding="utf-8")
+            result = run_cli("validate", str(row_path), ledger=copy)
+            self.assertEqual(result.returncode, 0, f"{rule} mutant did not admit hostile value: {result.stderr}")
+
+    def test_added_sensitive_paths_are_rejected_in_two_fields_and_load_bearing(self):
+        values = ("/" + "tmp/" + "x", "~" + "/x", "$" + "HOME/x", "/" + "etc/" + "passwd")
+        for hostile in values:
+            for field in ("task", "failure_class"):
+                with self.subTest(value=hostile, field=field):
+                    self.expect_privacy_rejection(
+                        self.mutated(lambda row, n=field, v=hostile: row.__setitem__(n, v)),
+                        f"{field}: privacy", hostile,
+                    )
+        self.assert_rule_is_load_bearing("paths", values[0])
+
+    def test_added_bidi_controls_are_rejected_in_two_fields_and_load_bearing(self):
+        controls = tuple(chr(codepoint) for codepoint in (*range(0x202A, 0x202F), *range(0x2066, 0x206A)))
+        for control in controls:
+            hostile = "left" + control + "right"
+            for field in ("task", "failure_class"):
+                with self.subTest(codepoint=ord(control), field=field):
+                    self.expect_privacy_rejection(
+                        self.mutated(lambda row, n=field, v=hostile: row.__setitem__(n, v)),
+                        f"{field}: privacy", hostile,
+                    )
+        self.assert_rule_is_load_bearing("bidi", "left" + controls[0] + "right")
+
+    def test_bearer_case_and_tab_are_rejected_in_two_fields_and_load_bearing(self):
+        values = ("bearer " + "abc", "BEARER " + "abc", "BeArEr " + "abc", "bearer\t" + "abc")
+        for hostile in values:
+            for field in ("task", "failure_class"):
+                with self.subTest(value=hostile, field=field):
+                    self.expect_privacy_rejection(
+                        self.mutated(lambda row, n=field, v=hostile: row.__setitem__(n, v)),
+                        f"{field}: privacy", hostile,
+                    )
+        self.assert_rule_is_load_bearing("bearer", values[0])
+
+    def test_relative_repository_path_is_allowed_in_check_label(self):
+        row = self.mutated(lambda r: r["checks"][0].__setitem__("name", "scripts/ledger.py"))
+        self.assertEqual(self.check_row(row).returncode, 0)
 
     def test_privacy_rules_reject_long_or_multiline_text(self):
         self.expect_invalid(self.mutated(lambda row: row.__setitem__("task", "x" * 201)), "task: privacy")

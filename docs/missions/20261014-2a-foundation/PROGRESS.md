@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 — Worker — T-028-R4 (F005 ledger privacy extension)
+
+- Extended ledger privacy checks to refuse `/tmp/`, `/etc/`, `~/`, and `$HOME` path fragments; added U+202A–U+202E and U+2066–U+2069 to the hidden-character rule; made bearer matching case-insensitive and accepted a tab separator. Added two-field refusal coverage for each requested path and bidi value, bearer capitalization/tab cases, and an allowed `scripts/ledger.py` check label. Error reporting continues to name only the field and privacy reason.
+- Temporary-copy mutation evidence (never changed the live validator for these probes): removing the new sensitive-path check let `/tmp/x` validate; removing both new bidi ranges let U+202A validate; restoring case-sensitive space-only bearer matching let `bearer abc` validate. Each was rejected by the live validator tests.
+- Baseline: `shellcheck scripts/*.sh tests/*.sh` exit 0; focused `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` exit 0 (39 tests). Final focused suite exit 0 (43 tests); final shellcheck exit 0; secret-shaped literal grep exit 0; no `scripts/__pycache__` or `tests/__pycache__`. Per task policy, `bash tests/run-tests.sh` is reserved for the verifier and was not run by this worker.
+- Scope: only `scripts/ledger.py`, `tests/test-ledger.py`, and this progress entry. No feature acceptance or gate/status change.
+
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — owner decisions applied; probes: agy still hangs, Cursor Opus is credit-only
 - **Owner decisions received** (message after the usage reset): push allowed; jsonschema installed; agy re-smoke; cursor.premium re-freeze after smoke (Opus only); reviews move to cursor.premium; privacy rule extension folded into T-028-R1 work; order T-029-R1, F005, T-026/T-039 if agy works, F006, F007.
 - **1. Push:** `git push origin mission/2a-foundation` succeeded (`cfdac8e..690e68d`); remote HEAD equals local HEAD `690e68d`. The fake Slack token is already built at run time in `tests/test-ledger.py` (lines 69 and 414 concatenate fragments); `grep` finds no secret-shaped literal in `tests/` or `scripts/`, so no fixture fix commit is needed. New standing rule: tests build secret-shaped strings at runtime; history is never rewritten.

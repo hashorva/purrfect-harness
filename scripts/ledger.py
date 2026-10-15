@@ -20,13 +20,14 @@ SOURCES = ("observed", "estimated", "unknown")
 SECRET_PATTERNS = tuple(re.compile(pattern) for pattern in (
     r"sk-[A-Za-z0-9_-]{20,}", r"ghp_[A-Za-z0-9]{20,}", r"github_pat_",
     r"AKIA[0-9A-Z]{16}", r"xox[abpr]-", r"-----BEGIN", r"eyJ[A-Za-z0-9_-]{20,}\.",
-    r"Bearer \S", r"[0-9A-Fa-f]{32,}", r"[A-Za-z0-9+/=]{40,}",
+    r"(?i:Bearer)[ \t]\S", r"[0-9A-Fa-f]{32,}", r"[A-Za-z0-9+/=]{40,}",
 ))
 EMAIL = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+")
 ABSOLUTE_PATH = re.compile(r"/Users/|/private/|/var/folders/|/home/|[A-Za-z]:\\")
+SENSITIVE_PATH = re.compile(r"/tmp/|/etc/|~/|\$HOME")
 UUID_SHAPE = re.compile(r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
-# Zero-width characters, full-width @ and /, and the line and paragraph separators.
-HIDDEN_CHARS = re.compile("[\u200b-\u200f\u2060\ufeff\uff20\uff0f\u2028\u2029]")
+# Hidden format characters, bidi controls, full-width @ and /, and line separators.
+HIDDEN_CHARS = re.compile("[\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff\uff20\uff0f\u2028\u2029]")
 PROMPT_PREFIX = "Read docs/missions/"
 PROMPT_PREFIXES = re.compile(r"^\s*(?:Read \S*[/\\.]|You are |Follow AGENTS\.md)")
 OUTCOMES = ("completed", "failed", "timed_out", "interrupted", "launch_failed")
@@ -100,7 +101,7 @@ def check_privacy(path, value, id_field=False):
     elif isinstance(value, str):
         if (len(value) > 200 or "\n" in value or "\r" in value
                 or PROMPT_PREFIX in value or PROMPT_PREFIXES.search(value) or EMAIL.search(value)
-                or ABSOLUTE_PATH.search(value) or HIDDEN_CHARS.search(value)
+                or ABSOLUTE_PATH.search(value) or SENSITIVE_PATH.search(value) or HIDDEN_CHARS.search(value)
                 or (not id_field and UUID_SHAPE.search(value))
                 or any(pattern.search(value) for pattern in SECRET_PATTERNS)):
             fail(path or "row", "privacy")
