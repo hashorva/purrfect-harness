@@ -6,7 +6,7 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 
 ## Current status (2026-10-16)
 - Mission 2A Foundation, branch `mission/2a-foundation`, status in-progress. Gate 0 passed. **Gate 1 target:** F001–F006 accepted and the deterministic suite green (prepare, do not advance).
-- **Accepted:** F001, F003, F006. **Waiting on one task (ledger fixes):** F005. **F004** and **F007** wait for the agy amendment (agy dropped from the mission by owner decision; T-026 and T-039 deferred).
+- **Accepted:** F001, F003, F005, F006 (F005 with the first ledger fold). **F004** and **F007** wait for the agy amendment (agy dropped from the mission by owner decision; T-026 and T-039 deferred).
 - Full history before this reset: `progress-archive/2026-10-14_15.md` (717 KB, kept verbatim). Routing data: `routing-data.jsonl`. Receipts/records: `.tasks/receipts/`, `verification/`.
 - Seats: usable claude.economy, claude.premium, codex.economy, codex.premium, cursor.economy, **cursor.premium** (re-frozen grok-4.7-high/high/standard, smoke passed 2026-10-16); **agy.economy unusable** (every turn hangs; evidence in the archive, entry "day 3 / agy re-smoke").
 
@@ -35,6 +35,9 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-16 — F005 accepted with the first real ledger fold (one commit)** Record: run fdf5dd38-1433-45eb-972b-823493f9e671 (T-042 attempt 2), sha 9aaa357b…, `ACCEPT OK`; `ledger.py fold` → rows=8 drift=1, a second fold rows=0 drift=0; `verify-mission.sh --require-workers` → `VERIFY OK`. Committed together: features.json, docs/missions/ledger.jsonl (8 v2 rows), 20261014-2a-foundation/drift.jsonl (the cursor.premium re-freeze).
+  The 31 local v1 rows (all runs before T-041, incl. the F003/F006 runs) were set aside, not folded: `.tasks/ledger-v1-set-aside/` (their receipts and records are the evidence; the Architect advised no migration). Derived view on the folded rows: `first_try_rate 0/4` (too few rows to mean anything yet).
+  Accepted so far: F001, F003, F005, F006.
 - **2026-10-16 — T-042 reviewed by Opus: PASS (calibration 2 of 3: same blocking verdict; grok missed 3 surviving mutants and a NUL base_commit ValueError, one grok point did not reproduce)** Opus run 983ac285-bf93-4096-bedf-1a038df9dd89, full text `reviews/983ac285-bf93-4096-bedf-1a038df9dd89.md`. Non-blocking: N2 a NUL in `base_commit` raises an uncaught ValueError (WARN, no leak); N3 every read path validates against the working-tree registry, so retiring/renaming a door later would break fold/view of historical rows (needs a decision before any door change); N5 launcher lock release still reads the working-tree registry.
   Next: set the v1 rows aside, fold, accept F005 in one commit.
 - **2026-10-16 — BRAIN review (Opus) of T-042 / commit 0e3ceba — calibration review 2, Opus side. Run 983ac285-bf93-4096-bedf-1a038df9dd89, log `.tasks/logs/983ac285-bf93-4096-bedf-1a038df9dd89.log`. Verdict PASS, no blocking issues.** Attribution: receipt fdf5dd38 (codex.economy, attempt 2): comple …

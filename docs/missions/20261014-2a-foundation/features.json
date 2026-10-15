@@ -78,7 +78,11 @@
         "A fold command appends the rows from `.tasks/ledger/` to docs/missions/ledger.jsonl exactly once per run id (a second run of the command adds nothing); an integration test shows the runner write keeps the next launch's clean-tree check and verify-mission.sh snapshot check passing, and the fold lands in the orchestrator's acceptance commit",
         "shellcheck and bash tests/run-tests.sh exit 0"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "fdf5dd38-1433-45eb-972b-823493f9e671",
+      "accepted_verification_sha256": "9aaa357b990a6f1bdb56bd07506de1164b99d8f0c87409175544ebe0d3667fd2",
+      "accepted_at": "2026-10-15T23:00:05.832609Z",
+      "accepted_by": "Front Desk (claude-sonnet-5-5), owner-approved by Zamir (2026-10-16)"
     },
     {
       "id": "F006",
