@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — T-033-R1 worker (cursor.economy) — validator fails closed; specific refusal reasons; awaiting verifier
+- **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `python3 -c 'import jsonschema'` succeeded (unused).
+- **Change:** `scripts/validate_verdict.py` shape-checks every supported keyword, recurses through `properties`/`items`/`if`/`then`, refuses non-boolean `additionalProperties`, and uses `ERROR: verdict:` for schema refusals in both `--check-schema` and data mode. `tests/test-verdict.py` asserts specific stderr reasons, BLOCKED+`blocking_question` acceptance, top-level non-object and boolean-for-integer refusals, and temp-dir schema refusal cases (nested unknown keywords, bad `enum`/`minItems`/`pattern`, schema `additionalProperties`). Added `tests/fixtures/verdicts/bad-task-plan-string-field.json`.
+- **Load-bearing mutation evidence (scratch copies of `validate_verdict.py`; each mutant passed `--check-schema` where the live script exits 1):** (a) `additionalProperties` object allowed when the boolean-only guard removed; (b) nested `properties` child not recursed when the loop removed; (c) scalar `enum` allowed when the list guard removed; (d) boolean `minItems` allowed when the integer guard removed; (e) invalid `pattern` allowed when the compile guard removed.
+- **Checks:** `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verdict.py` exit 0 (9 tests); both `--check-schema` commands exit 0; suite/manifest grep exit 0; `shellcheck scripts/*.sh tests/*.sh` exit 0; no `__pycache__` exit 0.
+- **Not run by this worker:** `bash tests/run-tests.sh` (verifier command, outside sandbox per task).
+- **Result:** no feature acceptance or gate/status change; `features.json` untouched. Scoped change committed as `fix(verdicts): validator never fails open; tests assert specific reasons`.
+
 ## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — code-reviewer FAIL on T-033; T-033-R1 written
 - **code-reviewer FAIL on `38dbe40`** (three blocking points, all in the validator and its tests): (1) the validator fails open: `--check-schema` does not recurse into `additionalProperties` or other schema-valued keywords, and keyword values (`enum`, `minItems`, `pattern`...) are not shape-checked, so an unsupported construct is silently dropped or a traceback occurs; (2) the refusal test covers only a top-level unknown keyword; (3) the bad-fixture tests assert only exit 1, and no fixture exercises the `type` keyword. The routing line for T-033 is amended to `verify-passed-review-failed`, class `task` (codex.economy).
 - **T-033-R1** (S) written from those points and dispatched on cursor.economy.

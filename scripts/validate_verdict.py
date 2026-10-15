@@ -7,6 +7,7 @@ import sys
 
 KEYWORDS = {"$schema", "title", "type", "required", "properties", "additionalProperties",
             "items", "enum", "minItems", "minLength", "pattern", "if", "then"}
+KNOWN_TYPES = frozenset({"object", "array", "string", "integer", "number", "boolean", "null"})
 
 
 class SchemaError(Exception):
@@ -18,33 +19,80 @@ def read_json(path):
         return json.load(stream)
 
 
+def check_non_negative_int(value, path, keyword):
+    if type(value) is not int or value < 0:
+        raise SchemaError(f"{path}.{keyword}: must be a non-negative integer")
+
+
+def check_type_keyword(value, path):
+    if isinstance(value, str):
+        if value not in KNOWN_TYPES:
+            raise SchemaError(f"{path}.type: unsupported type")
+        return
+    if isinstance(value, list):
+        if not value:
+            raise SchemaError(f"{path}.type: must be a non-empty array of type names")
+        for item in value:
+            if not isinstance(item, str) or item not in KNOWN_TYPES:
+                raise SchemaError(f"{path}.type: unsupported type")
+        return
+    raise SchemaError(f"{path}.type: must be a type name or array of type names")
+
+
 def check_schema(schema, path="$schema"):
     if not isinstance(schema, dict):
         raise SchemaError(f"{path}: schema must be an object")
     unknown = set(schema) - KEYWORDS
     if unknown:
         raise SchemaError(f"{path}: unsupported keyword {sorted(unknown)[0]}")
-    for key in ("properties",):
-        if key in schema:
-            if not isinstance(schema[key], dict):
-                raise SchemaError(f"{path}.{key}: must be an object")
-            for name, child in schema[key].items():
-                check_schema(child, f"{path}.{key}.{name}")
+    if "type" in schema:
+        check_type_keyword(schema["type"], path)
+    if "enum" in schema:
+        enum_value = schema["enum"]
+        if not isinstance(enum_value, list) or not enum_value:
+            raise SchemaError(f"{path}.enum: must be a non-empty array")
+    if "minItems" in schema:
+        check_non_negative_int(schema["minItems"], path, "minItems")
+    if "minLength" in schema:
+        check_non_negative_int(schema["minLength"], path, "minLength")
+    if "required" in schema:
+        required = schema["required"]
+        if not isinstance(required, list) or not all(isinstance(item, str) for item in required):
+            raise SchemaError(f"{path}.required: must be an array of strings")
+    if "additionalProperties" in schema:
+        extra = schema["additionalProperties"]
+        if extra is not True and extra is not False:
+            raise SchemaError(f"{path}.additionalProperties: must be boolean true or false")
+    if "pattern" in schema:
+        pattern = schema["pattern"]
+        if not isinstance(pattern, str):
+            raise SchemaError(f"{path}.pattern: must be a string")
+        try:
+            re.compile(pattern)
+        except re.error:
+            raise SchemaError(f"{path}.pattern: invalid regular expression")
+    if "properties" in schema:
+        props = schema["properties"]
+        if not isinstance(props, dict):
+            raise SchemaError(f"{path}.properties: must be an object")
+        for name, child in props.items():
+            check_schema(child, f"{path}.properties.{name}")
     for key in ("items", "if", "then"):
         if key in schema:
             check_schema(schema[key], f"{path}.{key}")
-    if "type" in schema and schema["type"] not in ("object", "array", "string", "integer", "number", "boolean", "null"):
-        raise SchemaError(f"{path}.type: unsupported type")
-    if "required" in schema and (not isinstance(schema["required"], list) or not all(isinstance(x, str) for x in schema["required"])):
-        raise SchemaError(f"{path}.required: must be an array of strings")
 
 
 def type_matches(value, expected):
+    if isinstance(expected, list):
+        return any(type_matches(value, item) for item in expected)
     return {
-        "object": lambda: isinstance(value, dict), "array": lambda: isinstance(value, list),
-        "string": lambda: isinstance(value, str), "integer": lambda: isinstance(value, int) and not isinstance(value, bool),
+        "object": lambda: isinstance(value, dict),
+        "array": lambda: isinstance(value, list),
+        "string": lambda: isinstance(value, str),
+        "integer": lambda: isinstance(value, int) and not isinstance(value, bool),
         "number": lambda: isinstance(value, (int, float)) and not isinstance(value, bool),
-        "boolean": lambda: isinstance(value, bool), "null": lambda: value is None,
+        "boolean": lambda: isinstance(value, bool),
+        "null": lambda: value is None,
     }[expected]()
 
 
@@ -55,7 +103,10 @@ def validate(value, schema, path="$", errors=None):
         if not condition_errors and "then" in schema:
             validate(value, schema["then"], path, errors)
     if "type" in schema and not type_matches(value, schema["type"]):
-        errors.append(f"{path}: expected {schema['type']}")
+        expected = schema["type"]
+        if isinstance(expected, list):
+            expected = " or ".join(expected)
+        errors.append(f"{path}: expected {expected}")
         return errors
     if "enum" in schema and value not in schema["enum"]:
         errors.append(f"{path}: value is not an allowed enum member")
@@ -71,17 +122,23 @@ def validate(value, schema, path="$", errors=None):
             for name in value.keys() - props.keys():
                 errors.append(f"{path}.{name}: additional property is not allowed")
     if isinstance(value, list):
-        if len(value) < schema.get("minItems", 0):
-            errors.append(f"{path}: must contain at least {schema['minItems']} item(s)")
+        min_items = schema.get("minItems", 0)
+        if len(value) < min_items:
+            errors.append(f"{path}: must contain at least {min_items} item(s)")
         if "items" in schema:
             for index, item in enumerate(value):
                 validate(item, schema["items"], f"{path}[{index}]", errors)
     if isinstance(value, str):
-        if len(value) < schema.get("minLength", 0):
-            errors.append(f"{path}: must contain at least {schema['minLength']} character(s)")
+        min_length = schema.get("minLength", 0)
+        if len(value) < min_length:
+            errors.append(f"{path}: must contain at least {min_length} character(s)")
         if "pattern" in schema and re.search(schema["pattern"], value) is None:
             errors.append(f"{path}: does not match required pattern")
     return errors
+
+
+def report_schema_error(exc):
+    print(f"ERROR: verdict: $: {exc}", file=sys.stderr)
 
 
 def main(argv):
@@ -89,7 +146,7 @@ def main(argv):
         try:
             check_schema(read_json(argv[2]))
         except (OSError, json.JSONDecodeError, SchemaError) as exc:
-            print(f"ERROR: schema: $: {exc}", file=sys.stderr)
+            report_schema_error(exc)
             return 1
         return 0
     if len(argv) != 3:
@@ -100,7 +157,7 @@ def main(argv):
         check_schema(schema)
         value = read_json(argv[2])
     except (OSError, json.JSONDecodeError, SchemaError) as exc:
-        print(f"ERROR: verdict: $: {exc}", file=sys.stderr)
+        report_schema_error(exc)
         return 1
     errors = validate(value, schema)
     if errors:
