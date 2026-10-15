@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-030-R2 verified; code-reviewer requested
+- **Mechanical review:** run `98ef63d5-4bae-4c92-a502-11ed20e5a9fd` (T-030-R2, cursor.economy composer-2.5, effort medium, speed standard, attempt 1), receipt: completed, exit 0, scope pass, commit `787cc15`, 4 changed paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (6 commands incl. the extended integration test). Routing line written.
+- Review: `code-reviewer` plus the integration test, as the Architect judged proportional.
+
 ## 2026-10-15 (day 3) — T-030-R2 worker (cursor.economy) — implementation complete; awaiting verifier
 - **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` exit 0 (54 tests).
 - **Change:** `scripts/ledger.py` uses the real 4-key drift resolution shape (`provider`, `model`, `effort`, `speed`) with `check_object` on `from`/`to` before any privacy walk; `MAX_INPUT_BYTES` applies only to `.tasks/ledger/*.json` and `.tasks/drift/<slug>.jsonl` (committed `ledger.jsonl` / mission `drift.jsonl` read with `max_bytes=None`). Tests extend drift fold preservation, resolution-key and `inventory_sha256` refusals, secret-shaped nested key name absent from output, large committed ledger fold, and integration fold after two worker runs.
