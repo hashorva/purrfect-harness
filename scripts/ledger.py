@@ -14,12 +14,21 @@ import sys
 
 SCHEMA_VERSION = 1
 SOURCES = ("observed", "estimated", "unknown")
+# Privacy rule, applied to every text value at every nesting level (lists included).
+# Not covered, on purpose: a secret split across several fields. Each part alone looks harmless,
+# and the validator checks one value at a time.
 SECRET_PATTERNS = tuple(re.compile(pattern) for pattern in (
     r"sk-[A-Za-z0-9_-]{20,}", r"ghp_[A-Za-z0-9]{20,}", r"github_pat_",
     r"AKIA[0-9A-Z]{16}", r"xox[abpr]-", r"-----BEGIN", r"eyJ[A-Za-z0-9_-]{20,}\.",
+    r"Bearer \S", r"[0-9A-Fa-f]{32,}", r"[A-Za-z0-9+/=]{40,}",
 ))
 EMAIL = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+")
+ABSOLUTE_PATH = re.compile(r"/Users/|/private/|/var/folders/|/home/|[A-Za-z]:\\")
+UUID_SHAPE = re.compile(r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
+# Zero-width characters, full-width @ and /, and the line and paragraph separators.
+HIDDEN_CHARS = re.compile("[\u200b-\u200f\u2060\ufeff\uff20\uff0f\u2028\u2029]")
 PROMPT_PREFIX = "Read docs/missions/"
+PROMPT_PREFIXES = re.compile(r"^\s*(?:Read \S*[/\\.]|You are |Follow AGENTS\.md)")
 OUTCOMES = ("completed", "failed", "timed_out", "interrupted", "launch_failed")
 SCOPE_RESULTS = ("pass", "fail", "not_checked")
 RUN_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
@@ -35,6 +44,10 @@ FIELDS = (
     "tokens_reasoning", "cost", "quota_share", "checks", "diff_size", "scope_result",
     "anti_gaming_flags", "failure_class", "escalation_reason", "outcome",
 )
+# The row's own id fields: the only text fields that may hold a UUID shape.
+ID_FIELDS = ("run_id", "parent_run", "group_id")
+# Key names the privacy walk may print. Any other key is shown as "<unknown key>".
+KNOWN_KEYS = frozenset(FIELDS) | {"value", "source", "currency", "name", "exit_code", "files", "lines"}
 
 
 class LedgerError(Exception):
@@ -68,20 +81,27 @@ def check_object(path, value, keys):
             fail(sub(path, key), "is required")
     for key in value:
         if key not in keys:
-            fail(sub(path, key), "unknown key")
+            # The key name is not printed: it could itself be an email address or a secret.
+            fail(path or "row", "unknown key; name not printed")
 
 
-def check_privacy(path, value):
-    """Reject raw prompt, transcript, contact, or secret-like string values."""
+def check_privacy(path, value, id_field=False):
+    """Reject raw prompt, transcript, contact, path, or secret-like string values.
+
+    Unknown key names are not printed either: they are shown as "<unknown key>".
+    """
     if isinstance(value, dict):
         for key, item in value.items():
-            check_privacy(sub(path, key), item)
+            name = key if key in KNOWN_KEYS else "<unknown key>"
+            check_privacy(sub(path, name), item, id_field=(path == "" and key in ID_FIELDS))
     elif isinstance(value, list):
         for index, item in enumerate(value):
             check_privacy(f"{path}[{index}]", item)
     elif isinstance(value, str):
         if (len(value) > 200 or "\n" in value or "\r" in value
-                or PROMPT_PREFIX in value or EMAIL.search(value)
+                or PROMPT_PREFIX in value or PROMPT_PREFIXES.search(value) or EMAIL.search(value)
+                or ABSOLUTE_PATH.search(value) or HIDDEN_CHARS.search(value)
+                or (not id_field and UUID_SHAPE.search(value))
                 or any(pattern.search(value) for pattern in SECRET_PATTERNS)):
             fail(path or "row", "privacy")
 
