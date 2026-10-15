@@ -4,6 +4,9 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-033-R1 verified; code-reviewer requested
+- **Mechanical review:** run `744b3e51-e647-43cc-9696-bc4a182e8226` (T-033-R1, cursor.economy composer-2.5, effort medium, speed standard, attempt 1): completed, exit 0, scope pass, commit `c6fe231`, 4 changed paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (7 commands). Routing line written.
+
 ## 2026-10-15 (day 3) — T-033-R1 worker (cursor.economy) — validator fails closed; specific refusal reasons; awaiting verifier
 - **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `python3 -c 'import jsonschema'` succeeded (unused).
 - **Change:** `scripts/validate_verdict.py` shape-checks every supported keyword, recurses through `properties`/`items`/`if`/`then`, refuses non-boolean `additionalProperties`, and uses `ERROR: verdict:` for schema refusals in both `--check-schema` and data mode. `tests/test-verdict.py` asserts specific stderr reasons, BLOCKED+`blocking_question` acceptance, top-level non-object and boolean-for-integer refusals, and temp-dir schema refusal cases (nested unknown keywords, bad `enum`/`minItems`/`pattern`, schema `additionalProperties`). Added `tests/fixtures/verdicts/bad-task-plan-string-field.json`.
