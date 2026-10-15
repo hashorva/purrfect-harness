@@ -4,6 +4,11 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-036-R1 verified; code-reviewer FAIL on test gaps; T-036-R2 written
+- **Mechanical review:** run `1ed3c51e-184b-4481-87e6-29657ce14087` (T-036-R1, cursor.economy composer-2.5, attempt 1): completed, exit 0, scope pass, commit `ff98f71`, 3 paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS`. I checked the entry point myself: `../x`, `X` and an empty id each exit 2.
+- **code-reviewer FAIL, tests only** (the code was judged correct): only the first of two VerificationRecords is asserted for result/sha256; the ledger line is barely asserted; no test for `--all` with an invalid id or with a symlinked receipt; mutation evidence covers 2 groups of ~10. Routing line `verify-passed-review-failed`, class `task` (cursor.economy). The first failure (T-036) was not attributable (my brief), so a tests-only R2 is allowed under the two-failure rule.
+- **T-036-R2** (tests only; ten named mutants as `grep -nF` instructions) written and dispatched on codex.economy. Task-text error noted: the earlier text said `<id>.1.json`; `run_records` names the second record `.2.json`.
+
 ## 2026-10-15 (day 3) — T-036-R1 worker (Cursor) — reconstruct-run hostile ids and real-fixture tests
 
 - **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` exit 0 (67 tests).
