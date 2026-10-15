@@ -4,6 +4,11 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Worker — T-013 attempt 2 qualification
+- **Qualification for `0ef0359`:** no code changed. `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-execution-spec.py` exited **0** (11 tests passed). Baseline `shellcheck scripts/*.sh tests/*.sh` exited **0**.
+- Only this progress entry is included in the qualification commit; no feature acceptance or gate/status change.
+
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — Architect review of T-013 PASS; T-013 qualification dispatch
 - **Architect review of T-013 (alone):** run `31c3a37a-1a88-409f-82af-6d1b9966660d`, receipt `.tasks/receipts/31c3a37a-1a88-409f-82af-6d1b9966660d.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `72bdf81`. **Verdict: PASS** on `0ef0359`: contract 5 adds `--add-dir <repo>/.agents` for Codex only when a `write_scope` pattern starts with `.agents/`; contracts 1-4 unchanged; all 66 saved specs load; schema and code agree on 2-5; 12 single-line mutations, 9 caught. Fake providers only; live tree clean.
 - **Worker's open question answered:** an allow-list entry of exactly `.agents` or `**` correctly does not trigger the flag (widening it would give every broad task write access to all of `.agents/`). **Rule to record for task authors: a Codex task that edits `.agents/` must name `.agents/…` paths in its allow-list.** Add to the sandbox-limit table text in a later docs task (row (b) of the Sandbox limits section).
