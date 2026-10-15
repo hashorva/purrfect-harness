@@ -4,6 +4,47 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-013 (`0ef0359`)
+
+- **Run:** `31c3a37a-1a88-409f-82af-6d1b9966660d`; log `.tasks/logs/31c3a37a-1a88-409f-82af-6d1b9966660d.log`; spec role `brain`, action `review`, base `2cf167f`, write scope this file only, provider contract 5 (the run itself uses the new code). The launcher writes the receipt `.tasks/receipts/31c3a37a-1a88-409f-82af-6d1b9966660d.json` when this run ends; it did not exist while this entry was written. Worker evidence I read: receipt `0fa0cb6b-…` (completed, exit 0, scope pass, `99651f7` → `0ef0359`, 6 allow-listed paths, clean `git_after`) and its VerificationRecord (`fail`; commands 3 and 4, the live-state spec glob and the in-worktree audit, exit 1; the other 5 exit 0, including the full suite).
+- **Method:** effects only. Two scratch `git clone`s in the session scratchpad (origin removed): `new` at `0ef0359`, `old` at `99651f7`. `scripts/`, `tests/` and `schemas/` at `2cf167f` equal `0ef0359`. Fake `cursor-agent`, `codex`, `claude`, `agy`, `agent` and `grok` were first on PATH (each logs and exits 97), with `PYTHONDONTWRITEBYTECODE=1`. **No real provider CLI ran.** The fake log holds 34 calls, all `agy models` / `cursor-agent models` from the suite's inventory probe. No `-fast` model was launched. The live tree stayed clean (0 status entries, 1 worktree, no `__pycache__`).
+- **Baseline (clone `new`):** `test-execution-spec.py` 11 tests OK; `test-execution-integration.py` 22 tests OK; shellcheck exit 0; `bash tests/run-tests.sh` exit 0 (`ALL TESTS PASSED`). This answers the worker's open note: the codex argv assertions in `run-tests.sh` (scopes without `.agents/`) still pass.
+- **(1) Contract 5 adds the flag only for Codex with a `.agents/` pattern; contracts 1-4 are byte for byte unchanged: PASS.**
+  - Grid: I called `provider_contract` from the old and new trees over 19,440 specs. That covers 4 providers × 6 models (including `-fast` and bracketed names) × 6 efforts × 3 speeds × contract absent/1/2/3/4 × 9 write scopes (absent, `allowed.txt`, `.agents/skills/x/SKILL.md`, `docs/x.md`, `.agents`, `**`, mixed, `.agents/**`, `**/SKILL.md`). Result and error text: **0 differences**.
+  - Contract 4 against contract 5 in the new code over 3,888 specs: 72 differ. All 72 are Codex specs with an `.agents/` pattern, and the only difference is `--add-dir <repo>/.agents` inserted right after `--add-dir <repo>/.git`. Claude, agy and cursor argv are identical under 4 and 5.
+- **(2) Old specs still load: PASS.** New code loads all 66 persisted specs under `.tasks/specs/`: v1 6, v2 23, v3/c2 2, v3/c3 22, v3/c4 12, v3/c5 1. Old code loads the same 65 and refuses only this run's contract-5 spec (`provider_contract_version must equal 2, 3 or 4`).
+- **(3) Exact Codex argv, contract 5** (`<R>` = repo, model `gpt-6-luna`, effort medium):
+  - `[".agents/skills/x/SKILL.md"]` → `codex exec -C <R> -s workspace-write --add-dir <R>/.git --add-dir <R>/.agents -m gpt-6-luna -c model_reasoning_effort="medium" P`
+  - `["docs/x.md"]`, `[".agents"]`, `["**"]`, `[]` → the same argv **without** `--add-dir <R>/.agents`. `[]` cannot occur, because `validate_write_scope` refuses an empty scope.
+- **Answer to the worker's open question: the literal `.agents/` prefix rule is safe and right; do not widen it.**
+  - In this glob language (`execution_receipt.glob_regex`), a pattern that starts with the literal `.agents/` can only match paths under `.agents/`, and `..`/`.` segments are refused. The flag therefore never mounts anything the scope does not already aim at.
+  - Exactly `.agents` matches only a *file* named `.agents`, never anything under it, so it authorizes no `.agents/` write. No flag is correct.
+  - `**`, `**/SKILL.md` or `*/…` *can* match `.agents/…` (`*`/`**` match dot names). Without the flag, Codex gets `operation not permitted` there (probe P-1 control). That fails closed: the task fails visibly and nothing is widened. Widening the trigger to "any pattern that could match `.agents/`" would mount all of `.agents/` for every broad-scope task. That is less safe.
+  - **Rule to record (not changed here):** a Codex task that must edit `.agents/` names literal `.agents/…` paths in its allow-list. After the S2 re-smoke, the Sandbox-limits row in the dispatch-worker skill should say this instead of "route to another seat".
+  - The flag mounts all of `.agents/`, not only the named file. Extra writes are caught by the Git-visible scope check, the same guarantee as the rest of the workspace. No `.gitignore` rule matches under `.agents/` (`git check-ignore` exit 1), so every write there is Git-visible.
+- **(4) Mutations (clone `new`, one exact-string change each, only the named targets run, byte-exact restore checked with `git diff --quiet`):**
+  - **Killed** (each with an `AssertionError` from `test-execution-spec.py`): flag also on contract 4; flag ignores scope; flag dropped from argv; mount order swapped; mount the repo root instead of `.agents`; `any` → `all`; `CURRENT_PROVIDER_CONTRACT` back to 4 (`4 != 5`; `test-execution-integration.py` alone also kills it); 5 removed from `PROVIDER_CONTRACTS_V3`; 6 added.
+  - **Survived (test gaps; the code is correct, non-blocking):**
+    - `startswith(".agents/")` → `startswith(".agents")`. This would wrongly mount for `.agents` or `.agentsX/…`.
+    - → `".agents/" in pattern`. This would mount for `docs/.agents/x`.
+    - Schema enum `[2, 3, 4, 5]` → `[2, 3, 4]`. No test ties the schema to `PROVIDER_CONTRACTS_V3`, and there is no runtime JSON-Schema validation (`jsonschema` is not installed).
+- **(5) Schema and constants are consistent: PASS.** The schema's only `provider_contract_version` is `{"enum": [2, 3, 4, 5]}`. `PROVIDER_CONTRACTS_V3 = (2, 3, 4, 5)`, `CURRENT_PROVIDER_CONTRACT = 5`, and the error text names 2, 3, 4 or 5. `construct` emits 5. The only other consumer, `execute_provider.py`, reads the number with `>=`.
+- **Non-blocking notes (backlog; no correction task needed for T-013):**
+  - (a) **Test gaps:** add no-flag cases `[".agents"]`, `["**"]`, `["docs/.agents/x.md"]` and `[".agentsx/y"]` to the new test, and assert that the schema enum equals `list(PROVIDER_CONTRACTS_V3)`. These kill the three survivors.
+  - (b) **The `.agents` mount target is not checked.** The adapter passes `<repo>/.agents` without checking that it is a real directory inside the repo. If a consumer's `.agents` were a symlink, Codex might mount its target outside the repo. I did not reproduce this, and Codex's path resolution is untested. If `.agents` is missing, Codex's behavior is also unknown. Here `.agents` is a real directory. Hardening: refuse before launch (`SpecError`) when `.agents` is a symlink or not a directory.
+  - (c) **Rollback constraint:** live evidence already holds a contract-5 spec (this run's). Any revert of `0ef0359` must keep 5 in `PROVIDER_CONTRACTS_V3`, or spec loading and the audit refuse it.
+  - The worker said its mutation check was "attempted, not completed". (4) above completes it.
+- **Audit:** `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` → `VERIFY OK`, exit 0, before this entry.
+- **Not done:**
+  - no acceptance (attempt 1's record is `fail`, and the T-013 attempt 2 qualification run is still to be dispatched and verified);
+  - no `verify-mission.sh --run-id` in the live repo;
+  - no change to features, fleet, GOAL or status;
+  - no dispatch.
+  - Scratch clones, fakes and logs stay in the session scratchpad.
+- **L-013 candidate:** when a pattern test decides a sandbox mount, its tests must include near-miss patterns (exact directory name, prefix without `/`, the same name deeper in the path, wildcards). Here two surviving mutations would have widened the mount silently.
+
+Verdict: PASS
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-013 attempt 1: VERIFY FAIL (plan defect, third repeat); task texts fixed; Architect review requested
 - **Run `0fa0cb6b-7760-4ad7-ac16-02d3fc007ed0`** (T-013, claude.economy haiku, effort medium, attempt 1), receipt `.tasks/receipts/0fa0cb6b-7760-4ad7-ac16-02d3fc007ed0.json`: outcome `completed`, exit 0, scope pass, commit `0ef0359`, 6 changed paths in the allow-list. `verify-mission.sh --run-id 0fa0cb6b-7760-4ad7-ac16-02d3fc007ed0` → **VERIFY FAIL**; record `verification/0fa0cb6b-7760-4ad7-ac16-02d3fc007ed0.json` kept as history. 5 of 7 commands pass (`test-execution-spec.py`, `test-execution-integration.py`, shellcheck, the full suite, no-bytecode). 2 fail: the "every persisted spec still loads" check (`assert paths` on `.tasks/specs/*.json`) and the mission audit, both run inside the temporary worktree which has no live `.tasks/`. From the live root with this commit's code: 65 specs load, audit `VERIFY OK`.
 - **Classification:** failure class `task`, **plan defect, not model-attributable** (`attributable:false`). Third repetition of the same defect (T-011, T-012, T-013): verification lists that need live `.tasks/` state were written before the clean-worktree verifier existed and were not all updated.
