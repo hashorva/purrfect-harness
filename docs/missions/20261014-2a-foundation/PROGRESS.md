@@ -4,6 +4,57 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Brain / Architect (claude/opus, effort high) — review of T-023 code (`7293de6`)
+
+- **Run:** `1f8ce066-e279-401f-b312-e872404bf08a`; log `.tasks/logs/1f8ce066-e279-401f-b312-e872404bf08a.log`; spec role `brain`, action `review`, base `15dd828`, write scope this file only, provider contract 6. The launcher writes the receipt `.tasks/receipts/1f8ce066-e279-401f-b312-e872404bf08a.json` when this run ends; it did not exist while this entry was written.
+- **Worker receipt `bc69e063…` (re-checked):** outcome `completed`, exit 0, scope `fail` (violation `GOAL.md`), `git_after` dirty, commit `7293de6`. No VerificationRecord exists for the run (0 files). The receipt has `git_before` clean (0 status entries) at 06:51:38Z and `GOAL.md` dirty at 06:55:52Z, so the stray `****` was written during this run's lock window. The worker's report says the edit "is not from this worker"; the receipt contradicts that. The Front Desk's attribution stands.
+- **Test rules followed:** fake `claude`, `codex`, `cursor-agent`, `agent`, `agy` and `grok` were first on PATH for every scratch run. They exit 97, and none was called (0 hits). No real provider CLI was launched, and no `-fast` model was used. All Python ran with `PYTHONDONTWRITEBYTECODE=1` and stdin `/dev/null`. I exported `7293de6^` (`d522015`) and `7293de6` with `git archive` into the session scratchpad. I installed `jsonschema` only in a scratchpad venv. The launcher test ran in a scratch `git clone`. Live tree: `git status --short` was empty and there was no `__pycache__` after all checks. (The permission layer declined one batched command; I re-ran it as a scratch script.)
+- **(6) Scope of the commit — confirmed.** `git show --stat 7293de6` lists `scripts/fleet_state.py`, `tests/test-fleet-v2.py` and PROGRESS.md (160+/8−).
+- **(1) v1 is unchanged — confirmed byte-for-byte.** Both trees ran 73 CLI cases with the same exit code, stdout and stderr in every case:
+  - `validate-fleet` on the 2A and Phase-1 fleets;
+  - `resolve` for every seat of both fleets: bare, with all assertion flags, with a wrong `--model`, with `--speed fast`, and with an unknown seat;
+  - `validate-inventory` on the real inventory.
+  `make_seats` gives identical results in both trees on the real inventory and on a variant with a `-fast` twin for every model. So does `choose` on 12 family/list cases. `choose`'s new `allow_fast` defaults to false, `resolve()` is unchanged, and the new validation lines are in the v2 seat path only.
+- **(2) The v2 resolver follows the T-023 carried notes — confirmed.** Results from the focused test, plus direct probes:
+  - Doors are walked in order. Skipped doors: billing class not in `policy.billing_classes`, `no_zdr` under `forbid`, and inventory status not `success`.
+  - Families: a seat whose family belongs to none of its doors' providers is refused (`family 'opus' unsupported for its doors`).
+  - Fast: a `fast` seat under `policy.fast: false` is refused by `validate-fleet` and by `resolve_v2`/`resolve-v2`. `resolve_v2` re-validates, giving `ERROR: fleet.seats.cursor.economy speed fast requires fleet.policy.fast`, exit 1. With `fast: false`, a newest `-fast` model is never chosen.
+  - Encoded names are decoded to their base before `encode_model`. An inventory with only encoded names works: cursor `grok-4.7-low` gives `grok-4.7-medium`; agy `gemini-3.8-flash-high/low` gives `gemini-3.8-flash-high`.
+  - An absent family, or all doors unhealthy, gives `model: null`, `source: unavailable` and CLI exit 1. No `FALLBACKS` or guessed ID is used.
+  - Clean refusals with no traceback: a v1 fleet into `resolve-v2`, a non-canonical inventory, an invalid inventory, and an unknown seat.
+  - With `jsonschema` 4.x installed, the schema/code agreement branch passes. Both focused tests exit 0 in the new tree.
+- **(3) Launchers on a v2 fleet — explicit; executed, but not in the suite.** In a scratch clone, I committed a valid canonical v2 2A fleet (seats `brain` opus/claude and `cursor.economy`):
+  - `dispatch_policy.py validate-worker` (T-023, F004, agent) **exit 0**; `validate-brain --action review` **exit 0**;
+  - `spawn-worker.sh cursor … --effort medium --speed standard`, `spawn-brain.sh <mission> review`, and `spawn-brain.sh … review --provider claude` each **exit 1** with `ERROR: fleet v2 is not resolvable yet`, the designed refusal, not the earlier `KeyError`;
+  - no `.tasks/`, lock, spec, log or receipt was created; the tree stayed clean; no fake CLI was called.
+  The `mission-init` and `gate0` brain actions do not read the fleet. The worker's statement of this behaviour is accurate, though it only read the scripts. No test asserts that the two gates accept a v2 fleet.
+- **(4) The `resolve` refusal from T-022-R1 was kept, not replaced — correct for this task.** T-023 says "no launcher change yet". `tasks/T-024.md` item 1 is the planned replacement ("`resolve`: for a v2 fleet, call `resolve_v2`"). The refusal and its test are intact: the mutation that deletes the refusal fails `test-fleet-v2.py` on the expected message.
+- **(5) Mutations (19; scratch copies of `7293de6`; every mutated file compiles; `test-fleet-v2.py` and `test-fleet-state.py` run for each):**
+  - **Killed (15), each by a test failure on its own assertion or message:**
+    - door-walk filters removed (billing skip, `no_zdr` skip);
+    - the door walk reversed;
+    - fast handling: `allow_fast` always true, `choose` ignoring `allow_fast`, the encode `fast` flag forced false;
+    - decoding removed, or the seat effort replaced by the inventory effort;
+    - validation removed (fast-seat check, family check);
+    - outputs changed: the unavailable result returns a guessed model, CLI exit always 0, `source` always `observed`;
+    - the v1 `resolve` refusal deleted;
+    - health skip removed. This one is killed only by a `KeyError: 'aliases'` crash on the fixture failure record, not by an assertion; acceptable, but weak.
+  - **Survived (4). In each case the code is correct today (probes above); the regression test is missing:**
+    - **S1 `fast=policy["fast"]`, ignoring the seat speed.** The resolver also passes `allow_fast=policy["fast"]`, not the seat-level `fast`. Probe: with `policy.fast: true`, a `standard` grok seat and inventory `[grok-4.8-high-fast, grok-4.7-high]`, the result is `grok-4.8-high`. That name is not in the inventory; its base was observed only as `-fast`. The task's literal rule is met (the mission enabled fast). But a standard seat should pick from non-fast observed names (`allow_fast=fast`). No test covers a standard seat under `fast: true`.
+    - **S2 `if raw is None: continue` changed to `break`.** No test covers a healthy first door with no model of the family falling through. Probe: `[claude-alt, codex]` with family luna and claude aliases `[opus]` resolves to codex.
+    - **S3 the `resolve_v2` re-validation removed.** The fast-seat and family refusals are tested only through `validate-fleet`, not at the resolver entry point (L-018).
+    - **S4 a `RegistryError` from encoding skipped instead of refused.** This path is likely unreachable with the real registry, because validation already checks effort against capabilities. Low priority.
+- **Notes (not blocking):**
+  - The family rule is "any door", so `opus` on `[codex, claude]` is accepted and resolves on claude. That is defensible. Neither "any" nor "all" lets the F004 step 9 chair (`opus` on the agy door) validate yet; T-024/T-026 must decide that.
+  - The fall-through test uses a fixture claude door with family `luna`, which only the "any" rule allows.
+  - `choose`'s substring family match (`luna` matches `lunar-x-1`) predates T-023 and also applies to v1.
+- **Recommendation:** fix S1–S3 before T-024 wires `resolve_v2` into the launchers. Changing `allow_fast=policy["fast"]` to `allow_fast=fast` takes one line, and each fix needs a negative test at `resolve_v2`/`resolve-v2`. Write them as `T-023-R1` (F004, fleet, S; allow-list `scripts/fleet_state.py`, `tests/test-fleet-v2.py`, PROGRESS.md; `code-reviewer` review). The verifier runs at the R1 commit, which contains `7293de6`. So a passing R1 VerificationRecord also covers this code, and makes the separate qualification-only T-023 attempt 2 unnecessary. The Front Desk may still choose the qualification run; either path needs one clean, in-scope, verified receipt.
+- **Audit:** `bash scripts/verify-mission.sh docs/missions/20261014-2a-foundation` → `VERIFY OK`, exit 0, with this entry the only change in the tree. I did not run `verify-mission.sh --run-id bc69e063…`: the Front Desk already recorded `VERIFY FAIL` for the dirty receipt, and re-running it would only add a failed record.
+- **Not done:** no `accept-feature.sh`, no features.json/fleet/gate/status change, no task file written, no worker dispatched.
+- **L-019 candidate:** a worker report that disowns a change must agree with the receipt's `git_before`/`git_after`; the receipt decides attribution.
+
+Verdict: PASS
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-023 attempt 1: SCOPE FAILURE (worker edited GOAL.md); verifier refused; Architect review requested
 - **Run `bc69e063-57e1-467c-be37-0f39a4c05bd9`** (T-023, claude.economy haiku, effort medium, attempt 1), receipt `.tasks/receipts/bc69e063-57e1-467c-be37-0f39a4c05bd9.json`: outcome `completed`, exit 0, commit `7293de6` (`scripts/fleet_state.py`, `tests/test-fleet-v2.py`, PROGRESS.md, all in the allow-list), **scope = fail: violation `docs/missions/20261014-2a-foundation/GOAL.md`** (on the deny-list) left **uncommitted**; the receipt's `git_after` is dirty. The change: one stray `****` appended to a table separator row (`|---|---|---|****`), an accidental edit. The worker's observed model: `claude-haiku-5-5`.
 - **Guard behaviour:** `verify-mission.sh --run-id bc69e063-…` → `VERIFY FAIL: receipt is not completed, changed, in-scope worker evidence`; **no VerificationRecord was created** (refused before). The scope guard and the clean-receipt rule worked as designed.
