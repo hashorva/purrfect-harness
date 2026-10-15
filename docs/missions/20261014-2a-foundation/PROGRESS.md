@@ -4,6 +4,11 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — T-040 verified (Codex wrote .agents/ under a real task)
+- **Mechanical review:** run `fd3cb89a-44ff-4f69-b074-a05666bbb56c` (T-040, codex.economy gpt-6-luna, effort medium), receipt `.tasks/receipts/fd3cb89a-44ff-4f69-b074-a05666bbb56c.json`: outcome `completed`, exit 0, scope pass, commit `3930f02`, 3 changed paths (`.agents/skills/dispatch-worker/SKILL.md`, `docs/missions/templates/WORKER_TASK.template.md`, PROGRESS.md), all in the allow-list. `verify-mission.sh --run-id fd3cb89a-44ff-4f69-b074-a05666bbb56c` → `VERIFY PASS`, exit 0 (7 commands incl. the wording assertions, the shipped-template test, the changed-files scope check and the full suite). Record is slice evidence for F004, not acceptance. Routing line written (docs, S, codex.economy, attempt 1, done).
+- **Real-conditions proof for the Codex flag:** a Codex worker, under a task whose allow-list names `.agents/skills/dispatch-worker/SKILL.md`, wrote that file (the receipt's changed paths include it). This is the first real task use of contract 5 / `--add-dir <repo>/.agents`; the earlier proof was the P-1 probe and the smoke. The `.agents/` limit is lifted for Codex when the allow-list names `.agents/…`.
+- **Review:** docs diff → `code-reviewer` subagent (routine). Next after that: the morning report (due 07:00), then T-018 (observation parser, F003).
+
 ## 2026-10-15 (night 2) — Worker (codex.economy) — T-040 F004 wording update
 - Replaced the stale Codex `.agents/` sandbox row in `.agents/skills/dispatch-worker/SKILL.md` and the matching `(b)` text in `docs/missions/templates/WORKER_TASK.template.md` with the contract 5 allow-list rule. No other content in either file was changed.
 - Baseline passed: `shellcheck scripts/*.sh tests/*.sh` (exit 0) and `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verification-record.py ShippedWorkerTemplateIntegration` (exit 0). Task checks passed: skill rule assertions, template rule assertions, and `ShippedWorkerTemplateIntegration` (exit 0).
