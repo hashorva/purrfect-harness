@@ -9,12 +9,16 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from unittest import mock
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import execution_receipt
 from execution_receipt import ReceiptError, canonical_bytes, load_receipt
+
+SCHEMA_PATH = ROOT / "schemas" / "execution-receipt.schema.json"
 
 ALL_UNKNOWN = {
     "observed_model": {"value": None, "source": "unknown"},
@@ -26,6 +30,25 @@ ALL_UNKNOWN = {
     },
     "fast_state": {"value": None, "source": "unknown"},
 }
+
+
+def schema_drift(schema):
+    """Return how the JSON Schema disagrees with execution_receipt.py's field lists (empty when they agree)."""
+    drift = []
+    body = schema["$defs"]["receiptBody"]
+    if set(body["properties"]) != execution_receipt.FIELDS:
+        drift.append("receiptBody.properties != FIELDS")
+    if len(body["required"]) != len(set(body["required"])) or set(body["required"]) != execution_receipt.FIELDS_V1:
+        drift.append("receiptBody.required != FIELDS_V1")
+    observation = schema["$defs"]["observation"]
+    if set(observation["required"]) != set(execution_receipt.OBSERVATION_FIELDS):
+        drift.append("observation.required != OBSERVATION_FIELDS")
+    if set(observation["properties"]) != set(execution_receipt.OBSERVATION_FIELDS):
+        drift.append("observation.properties != OBSERVATION_FIELDS")
+    usage = observation["properties"]["usage"]
+    if set(usage["properties"]) != set(execution_receipt.USAGE_FIELDS):
+        drift.append("usage.properties != USAGE_FIELDS")
+    return drift
 
 
 class ExecutionReceiptObservation(unittest.TestCase):
@@ -148,6 +171,68 @@ raise SystemExit(0)
                 load_receipt(path)
             self.write_canonical(path, receipt)
         self.assertEqual(receipt["observation"], base_obs)
+
+    def assert_rejected(self, path, receipt, label):
+        self.write_canonical(path, receipt)
+        with self.assertRaises(ReceiptError, msg=label):
+            load_receipt(path)
+
+    def test_schema_agrees_with_code(self):
+        schema = json.loads(SCHEMA_PATH.read_text())
+        self.assertEqual(schema_drift(schema), [])
+
+    def test_schema_and_code_drift_is_detected(self):
+        base = json.loads(SCHEMA_PATH.read_text())
+        schema_mutations = {
+            "receipt property removed": lambda s: s["$defs"]["receiptBody"]["properties"].pop("observation"),
+            "receipt property added": lambda s: s["$defs"]["receiptBody"]["properties"].update({"bogus": {"type": "string"}}),
+            "required field removed": lambda s: s["$defs"]["receiptBody"]["required"].remove("scope"),
+            "required field added": lambda s: s["$defs"]["receiptBody"]["required"].append("observation"),
+            "observation property added": lambda s: s["$defs"]["observation"]["properties"].update({"extra": {}}),
+            "usage property removed": lambda s: s["$defs"]["observation"]["properties"]["usage"]["properties"].pop("reasoning"),
+        }
+        for label, mutate in schema_mutations.items():
+            mutated = copy.deepcopy(base)
+            mutate(mutated)
+            self.assertTrue(schema_drift(mutated), msg=f"schema drift not detected: {label}")
+        for name, mutated in (
+            ("FIELDS", execution_receipt.FIELDS | {"bogus"}),
+            ("FIELDS_V1", execution_receipt.FIELDS_V1 - {"scope"}),
+            ("OBSERVATION_FIELDS", tuple(execution_receipt.OBSERVATION_FIELDS) + ("extra",)),
+            ("USAGE_FIELDS", tuple(execution_receipt.USAGE_FIELDS)[:-1]),
+        ):
+            with mock.patch.object(execution_receipt, name, mutated):
+                self.assertTrue(schema_drift(base), msg=f"code drift not detected: {name}")
+
+    def test_guessed_source_with_value_rejected(self):
+        path, receipt = self.spawn_receipt()
+        bad = copy.deepcopy(receipt)
+        bad["observation"]["observed_model"] = {"source": "guessed", "value": "x"}
+        self.assert_rejected(path, bad, "guessed source")
+
+    def test_v1_receipt_with_observation_rejected(self):
+        path, receipt = self.spawn_receipt()
+        legacy = copy.deepcopy(receipt)
+        legacy["schema_version"] = 1
+        self.assert_rejected(path, legacy, "v1 with observation")
+
+    def test_true_usage_count_rejected(self):
+        path, receipt = self.spawn_receipt()
+        bad = copy.deepcopy(receipt)
+        bad["observation"]["usage"]["input"] = {"value": True, "source": "observed"}
+        self.assert_rejected(path, bad, "boolean usage count")
+
+    def test_numeric_model_rejected(self):
+        path, receipt = self.spawn_receipt()
+        bad = copy.deepcopy(receipt)
+        bad["model"] = 7
+        self.assert_rejected(path, bad, "numeric model")
+
+    def test_v2_without_observation_rejected(self):
+        path, receipt = self.spawn_receipt()
+        bad = copy.deepcopy(receipt)
+        bad.pop("observation")
+        self.assert_rejected(path, bad, "v2 without observation")
 
 
 if __name__ == "__main__":

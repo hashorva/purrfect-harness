@@ -71,7 +71,7 @@
         },
         {
           "if": { "properties": { "source": { "enum": ["observed", "estimated"] } }, "required": ["source"] },
-          "then": { "properties": { "value": { "$ref": "#/$defs/nonempty" } } }
+          "then": { "properties": { "value": { "type": "string", "minLength": 1 } } }
         }
       ]
     },
@@ -124,6 +124,8 @@
         "git_before", "git_after", "commits", "changed_paths", "workspace_changed", "scope"
       ],
       "properties": {
+        "schema_version": { "enum": [1, 2] },
+        "observation": { "$ref": "#/$defs/observation" },
         "run_id": { "type": "string", "format": "uuid", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
         "mission": { "$ref": "#/$defs/nonempty" },
         "feature": { "type": ["string", "null"] },
@@ -177,7 +179,8 @@
         {
           "type": "object",
           "properties": { "schema_version": { "const": 1 } },
-          "required": ["schema_version"]
+          "required": ["schema_version"],
+          "not": { "required": ["observation"] }
         }
       ]
     },
