@@ -234,6 +234,7 @@ def validate_fleet_policy(value):
     exact_keys(value,{"billing_classes","fast","no_zdr"},"fleet.policy")
     classes=value["billing_classes"]
     if not isinstance(classes,list) or not classes: fail("fleet.policy.billing_classes must be a non-empty array")
+    if not all(isinstance(item,str) and item.strip() for item in classes): fail("fleet.policy.billing_classes entries must be non-empty text")
     if len(classes)!=len(set(classes)): fail("fleet.policy.billing_classes must be distinct")
     for item in classes:
         if item not in BILLING_CLASSES: fail("fleet.policy.billing_classes invalid")
@@ -245,6 +246,7 @@ def validate_fleet_v2_seat(name,value,registry):
     text(value["family"],label+".family"); text(value["effort"],label+".effort"); text(value["speed"],label+".speed")
     doors=value["doors"]
     if not isinstance(doors,list) or not doors: fail(f"{label}.doors must be a non-empty array")
+    if not all(isinstance(door,str) and door.strip() for door in doors): fail(f"{label}.doors entries must be non-empty text")
     if len(doors)!=len(set(doors)): fail(f"{label}.doors must be distinct")
     door_map=registry["doors"]; providers=registry["providers"]
     for door in doors:
@@ -282,6 +284,7 @@ def validate_fleet_v2(doc):
     for name,seat in doc["seats"].items(): validate_fleet_v2_seat(name,seat,registry)
     return doc
 def validate_fleet(doc):
+    obj(doc,"fleet")
     version=doc.get("schema_version")
     if version==1: return validate_fleet_v1(doc)
     if version==2: return validate_fleet_v2(doc)
@@ -303,6 +306,7 @@ def freeze(args):
     validate_fleet(doc); atomic_write_new(fleet,canonical(doc).encode(),no_clobber=True,read_only=True); print(canonical(doc),end="")
 def resolve(args):
     doc,_=read_json(args.fleet,"fleet",require_canonical=True); validate_fleet(doc)
+    if doc["schema_version"] == 2: fail("fleet v2 is not resolvable yet")
     if args.mission_path is not None and doc["mission"]["path"] != args.mission_path: fail("fleet mission path assertion failed")
     seat=doc["seats"].get(args.seat)
     if seat is None: fail("fleet seat not found")
