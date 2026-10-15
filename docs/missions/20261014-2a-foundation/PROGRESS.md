@@ -4,6 +4,14 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 — T-012 worker (cursor.economy, attempt 2, qualification) — numbered VerificationRecords (`e7da71e` unchanged)
+
+- **Attempt 2 qualification:** no code or test edits. Numbered immutable VerificationRecords remain as committed in `e7da71e` (ancestor of current `HEAD`); this session only re-ran focused sandbox checks and prepended this entry so the verifier can run the corrected command list from `tasks/T-012.md`.
+- **Slice evidence for F007 carrier only; not F007 acceptance.** No `features.json`, fleet, GOAL, gate, or acceptance changes.
+- **Focused checks (exit codes):** `shellcheck scripts/*.sh tests/*.sh` → 0; `bash -n` on every `scripts/*.sh` and `tests/*.sh` → 0; `env PYTHONDONTWRITEBYTECODE=1 python3 tests/test-verification-record.py` → 0 (20 tests, ~88 s); no `scripts/__pycache__` or `tests/__pycache__` → 0.
+- **Orchestrator-only (not run here):** `test-execution-integration.py`, mission audit via `PURRFECT_LIVE_ROOT`, git history check for verification records, `bash tests/run-tests.sh`, and `verify-mission.sh --run-id` for this worker run.
+- **Allow-list:** `docs/missions/20261014-2a-foundation/PROGRESS.md` only.
+
 ## 2026-10-15 (night 2) — Front Desk (Sonnet 5.5) — Architect review of T-012 PASS; T-012 qualification dispatch
 - **Architect review of T-012 (alone):** run `33d61a64-ec57-47f5-ade5-c82d629934ff`, receipt `.tasks/receipts/33d61a64-ec57-47f5-ade5-c82d629934ff.json`: outcome `completed`, exit 0, scope pass (PROGRESS.md only), commit `0cfa466`. **Verdict: PASS** on `e7da71e`: first record stays `<run_id>.json`, later `<run_id>.<n>.json`, never overwritten; acceptance refuses a fail-record hash, an unknown hash and a record copied from another run; audit fails on gaps and odd suffixes; five rule mutations all caught; this mission and the Phase-1 mission still audit OK; `accept-feature.sh` and `verify-mission.sh` need no change. Fake providers only; the live tree stayed clean.
 - **Backlog from this review (non-blocking):** (1) **Docs:** ORCHESTRATION.md, README.md and the dispatch-worker skill still say to hash `<run_id>.json`; in the intended case (first verify fails, re-verify passes) that cites the failed record and acceptance is refused. Fix before the first real re-verification: cite the path `verify-mission.sh --run-id` prints. (2) The worker's `acceptance-hash` mutation test proves only the error message; it should target the hash comparison. (3) Four extra checks have no own test (third verify, record from another run, odd suffixes, duplicate hashes). (4) A record number in non-ASCII digits is accepted, and deleting the highest-numbered record goes unnoticed (committed git history is the only protection, so commit records promptly — which I do).
