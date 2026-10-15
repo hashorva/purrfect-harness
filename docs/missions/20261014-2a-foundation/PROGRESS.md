@@ -4,6 +4,10 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-15 (day 3) — Front Desk (Sonnet 5.5) — T-030-R1 verified; short Architect re-review requested
+- **Mechanical review:** run `88d7ef67-912d-429e-9885-09a153cfb81c` (T-030-R1, codex.economy gpt-6-luna, effort medium, attempt 1 of this task), receipt: completed, exit 0, scope pass, commit `d53f9b4`, 3 changed paths in the allow-list; `verify-mission.sh --run-id` → `VERIFY PASS` (6 commands). Routing line written (task attempt counted as 2 for T-030).
+- **ARCHITECT RE-REVIEW REQUEST, T-030-R1 (commit `d53f9b4`), SHORT and limited to the hostile cases of your T-030 review.** Replay your three blocking cases on this tree: (1) same run_id in two files, renamed row, in-batch duplicate rows and drift; (2) a drift line with a secret-shaped value, extra key, absolute path, non-object; (3) the truncating-fold mutant (`"w"` for `"a"`) and the drift mission filter now fail a test; plus FIFO, symlink and oversize files in `.tasks/ledger/`, and the refusal messages never printing a value. Mutate each new check once in a scratch copy and report how many are caught. **RULES:** temporary repos only, fake provider CLIs on PATH, never a real provider, PYTHONDONTWRITEBYTECODE=1, nothing in the live tree, no secret-shaped literal in repo files. End with Verdict: PASS or FAIL and blocking issues only.
+
 ## 2026-10-15 (day 3) — T-030-R1 worker — implementation complete; awaiting verifier
 - **Baseline:** `shellcheck scripts/*.sh tests/*.sh` exit 0; `PYTHONDONTWRITEBYTECODE=1 python3 tests/test-ledger.py` exit 0 (47 tests).
 - **Change:** `scripts/ledger.py` now keys source rows by their `run_id`, checks file-stem identity, rejects conflicting duplicate IDs, skips byte-identical rows, validates drift structure/privacy, dedupes drift within a batch, and uses bounded regular-file reads that reject symlinks and unsafe targets. `tests/test-ledger.py` adds temporary-repository coverage for append preservation, canonical output, drift filtering, hostile drift, malformed objects, duplicate identity, FIFO/symlink/oversize refusal.
