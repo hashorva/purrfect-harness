@@ -334,6 +334,13 @@ def main():
         v1_root.mkdir()
         v1_doc = json.loads(MISSION_FLEET.read_text())
         v1_doc["mission"]["path"] = "docs/missions/fixture"
+        argon_doc = copy.deepcopy(v1_doc)
+        argon_doc["seats"]["agy.premium"] = copy.deepcopy(argon_doc["seats"]["agy.economy"])
+        argon_doc["seats"]["agy.premium"].update(
+            family="argon", model="gemini-4-argon-high", effort="high")
+        import jsonschema
+        validator = jsonschema.Draft202012Validator(json.loads(SCHEMA.read_text()))
+        assert validator.is_valid(argon_doc), "frozen v1 fleet with agy Argon premium seat must satisfy schema"
         v1_path = v1_root / "fleet.json"
         write(v1_path, v1_doc)
         v1_resolve = run_cli("resolve", "--fleet", v1_path, "--seat", "codex.economy",
