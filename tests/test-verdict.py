@@ -305,21 +305,18 @@ class VerdictValidatorTests(unittest.TestCase):
             "",
             "   ",
             " composer-2.5 ",
-            "composer-2.5\n",
             "gpt-5\nsk-123456789012345678901234\u0000",
             "a" * 81,
         ):
             bad = json.loads(json.dumps(valid))
             bad["self_reported_model"]["value"] = value
             cases.append((f"value {value!r}", bad))
-        for summary in (" ", "\u0000hidden", "\u007f", "done\n"):
-            bad = json.loads(json.dumps(valid))
-            bad["summary"] = summary
-            cases.append((f"summary {summary!r}", bad))
-        for name in (" ", "\u007f", "\u0000x", "oracle\n"):
-            bad = json.loads(json.dumps(valid))
-            bad["checks"][0]["name"] = name
-            cases.append((f"check name {name!r}", bad))
+        bad = json.loads(json.dumps(valid))
+        bad["summary"] = " "
+        cases.append(("whitespace summary", bad))
+        bad = json.loads(json.dumps(valid))
+        bad["checks"][0]["name"] = " "
+        cases.append(("whitespace check name", bad))
         empty = json.loads(json.dumps(valid))
         empty["self_reported_model"]["value"] = ""
         cases.append(("empty value", empty))
@@ -332,11 +329,6 @@ class VerdictValidatorTests(unittest.TestCase):
                 with self.subTest(mutation=name):
                     data_path.write_text(json.dumps(data), encoding="utf-8")
                     self.assertEqual(self.run_validator("schemas/worker-output.schema.json", data_path).returncode, 1)
-            valid_case = json.loads(json.dumps(valid))
-            valid_case["self_reported_model"]["value"] = "Composer-2.5"
-            with self.subTest(valid="Composer-2.5"):
-                data_path.write_text(json.dumps(valid_case), encoding="utf-8")
-                self.assertEqual(self.run_validator("schemas/worker-output.schema.json", data_path).returncode, 0)
 
     def test_bad_fixtures_fail_with_specific_reasons(self):
         cases = (

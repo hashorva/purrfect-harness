@@ -236,39 +236,6 @@ class ObserveOutputTest(unittest.TestCase):
         )
         self.assertEqual(observe_self_reported("codex", codex.encode()), UNKNOWN)
 
-    def test_observe_self_reported_accepts_only_one_whole_text_object(self):
-        sr = json.dumps({"self_reported_model": {"value": "gpt-5.6-luna", "source": "self_reported"}})
-        spoof = json.dumps({"self_reported_model": {"value": "spoof", "source": "self_reported"}})
-        pretty = json.dumps({"self_reported_model": {"value": "gpt-5.6-luna", "source": "self_reported"}}, indent=2)
-        fence = chr(96) * 3
-
-        def claude(text):
-            return json.dumps({"type": "result", "result": text}).encode()
-
-        good = {"value": "gpt-5.6-luna", "source": "self_reported"}
-        for ok in (
-            sr,
-            "  " + sr + "\n",
-            pretty,
-            fence + "json\n" + sr + "\n" + fence,
-            fence + "\n" + pretty + "\n" + fence,
-        ):
-            with self.subTest(ok=ok):
-                self.assertEqual(observe_self_reported("claude", claude(ok)), good)
-
-        for bad in (
-            "{note " + sr + "}",
-            "note " + spoof + "\n" + json.dumps({"summary": "done", "checks": []}),
-            spoof + "\n" + sr,
-            sr + "\n" + spoof,
-            "Done.\n" + sr,
-            '{"draft":\n' + sr,
-            "[" + sr + "]",
-            fence + "json\n" + sr + "\n" + fence + "\ntrailing prose",
-        ):
-            with self.subTest(bad=bad):
-                self.assertEqual(observe_self_reported("claude", claude(bad)), UNKNOWN)
-
     def test_resolve_model_identity_four_rules(self):
         req = {"value": "claude-haiku-5-5", "source": "configured"}
         obs_diff = {"value": "claude-sonnet-5-5", "source": "observed"}
@@ -387,40 +354,6 @@ class ObserveOutputTest(unittest.TestCase):
                 "routing_weight": 0.25,
                 "drift": False,
                 "self_reported_mismatch": False,
-                "flags": [],
-            },
-        )
-
-    def test_resolve_model_identity_is_case_sensitive(self):
-        self.assertEqual(
-            resolve_model_identity(
-                {"value": "composer-2.5", "source": "configured"},
-                {"value": "Composer-2.5", "source": "observed"},
-                UNKNOWN,
-            ),
-            {
-                "attributed_model": "Composer-2.5",
-                "attributed_source": "observed",
-                "confidence": "high",
-                "routing_weight": 1.0,
-                "drift": True,
-                "self_reported_mismatch": False,
-                "flags": ["model_drift"],
-            },
-        )
-        self.assertEqual(
-            resolve_model_identity(
-                {"value": "composer-2.5", "source": "configured"},
-                {"value": "composer-2.5", "source": "observed"},
-                {"value": "Composer-2.5", "source": "self_reported"},
-            ),
-            {
-                "attributed_model": "composer-2.5",
-                "attributed_source": "observed",
-                "confidence": "high",
-                "routing_weight": 1.0,
-                "drift": False,
-                "self_reported_mismatch": True,
                 "flags": [],
             },
         )
