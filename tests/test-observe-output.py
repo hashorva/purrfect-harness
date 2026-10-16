@@ -146,7 +146,6 @@ class ObserveOutputTest(unittest.TestCase):
             ("cursor", {"type": "result", "result": "```json\n" + json.dumps(payload) + "\n```"}),
             ("agy", {"event": "result", "result": {"response": json.dumps(payload)}}),
             ("codex", {"type": "item.completed", "item": {"type": "agent_message", "text": json.dumps(payload)}}),
-            ("codex", payload),
         ):
             with self.subTest(provider=provider):
                 raw = json.dumps(event).encode()
@@ -168,6 +167,74 @@ class ObserveOutputTest(unittest.TestCase):
         empty = {"self_reported_model": {"value": "", "source": "self_reported"}}
         raw = json.dumps({"type": "result", "result": json.dumps(empty)}).encode()
         self.assertEqual(observe_self_reported("claude", raw), UNKNOWN)
+        self.assertEqual(
+            observe_self_reported("codex", json.dumps(payload).encode()),
+            UNKNOWN,
+        )
+        for bad_model in (
+            {"value": "gpt-5.6-luna", "source": "self_reported", "extra": 1},
+            {"value": "gpt-5.6-luna"},
+            123,
+            True,
+            None,
+            ["gpt-5.6-luna"],
+        ):
+            with self.subTest(bad_model=bad_model):
+                wrapped = {"self_reported_model": bad_model}
+                raw = json.dumps({"type": "result", "result": json.dumps(wrapped)}).encode()
+                self.assertEqual(observe_self_reported("claude", raw), UNKNOWN)
+
+    def test_observe_self_reported_rejects_whitespace_control_and_secret_values(self):
+        bad_values = (
+            "   ",
+            " composer-2.5 ",
+            "gpt-5\nsk-123456789012345678901234\u0000",
+            "gpt-5\r\n",
+            "a" * 81,
+        )
+        for value in bad_values:
+            with self.subTest(value=value):
+                payload = {"self_reported_model": {"value": value, "source": "self_reported"}}
+                raw = json.dumps({"type": "result", "result": json.dumps(payload)}).encode()
+                result = observe_self_reported("claude", raw)
+                self.assertEqual(result, UNKNOWN)
+                self.assertNotIn("sk-", json.dumps(result))
+
+    def test_observe_self_reported_validates_only_final_top_level_json_object(self):
+        prose = (
+            "example: "
+            + json.dumps({"self_reported_model": {"value": "gpt-5.6-luna", "source": "self_reported"}})
+            + "\n"
+            + json.dumps(
+                {
+                    "self_reported_model": {"value": "gpt-5.6-luna", "source": "observed"},
+                    "summary": "done",
+                    "checks": [],
+                }
+            )
+        )
+        raw = json.dumps({"type": "result", "result": prose}).encode()
+        self.assertEqual(observe_self_reported("claude", raw), UNKNOWN)
+
+        nested_unclosed = (
+            '{"draft": {"self_reported_model": {"value": "gpt-5.6-luna", "source": "self_reported"}}'
+        )
+        raw = json.dumps({"type": "result", "result": nested_unclosed}).encode()
+        self.assertEqual(observe_self_reported("claude", raw), UNKNOWN)
+
+        nested_closed = json.dumps(
+            {"draft": {"self_reported_model": {"value": "gpt-5.6-luna", "source": "self_reported"}}}
+        )
+        raw = json.dumps({"type": "result", "result": nested_closed}).encode()
+        self.assertEqual(observe_self_reported("claude", raw), UNKNOWN)
+
+        codex = (
+            json.dumps({"type": "thread.started", "thread_id": "11111111-2222-4333-8444-555555555555"})
+            + "\n"
+            + 'prompt {"self_reported_model":{"value":"gpt-5.6-luna","source":"self_reported"}}'
+            + "\n"
+        )
+        self.assertEqual(observe_self_reported("codex", codex.encode()), UNKNOWN)
 
     def test_resolve_model_identity_four_rules(self):
         req = {"value": "claude-haiku-5-5", "source": "configured"}
@@ -180,6 +247,45 @@ class ObserveOutputTest(unittest.TestCase):
             "attributed_model": "claude-sonnet-5-5", "attributed_source": "observed",
             "confidence": "high", "routing_weight": 1.0, "drift": True,
             "self_reported_mismatch": False, "flags": ["model_drift"]})
+        self.assertEqual(
+            resolve_model_identity(req, obs_same, {"value": "claude-haiku-5-5", "source": "self_reported"}),
+            {
+                "attributed_model": "claude-haiku-5-5",
+                "attributed_source": "observed",
+                "confidence": "high",
+                "routing_weight": 1.0,
+                "drift": False,
+                "self_reported_mismatch": False,
+                "flags": [],
+            },
+        )
+        self.assertEqual(resolve_model_identity(req, obs_same, sr), {
+            "attributed_model": "claude-haiku-5-5",
+            "attributed_source": "observed",
+            "confidence": "high",
+            "routing_weight": 1.0,
+            "drift": False,
+            "self_reported_mismatch": True,
+            "flags": [],
+        })
+        self.assertEqual(resolve_model_identity(req, obs_diff, sr), {
+            "attributed_model": "claude-sonnet-5-5",
+            "attributed_source": "observed",
+            "confidence": "high",
+            "routing_weight": 1.0,
+            "drift": True,
+            "self_reported_mismatch": True,
+            "flags": ["model_drift"],
+        })
+        self.assertEqual(resolve_model_identity(unk, unk, unk), {
+            "attributed_model": None,
+            "attributed_source": "unknown",
+            "confidence": "unknown",
+            "routing_weight": 0.25,
+            "drift": False,
+            "self_reported_mismatch": False,
+            "flags": [],
+        })
         self.assertEqual(resolve_model_identity(req, unk, sr), {
             "attributed_model": "gpt-5.6-luna", "attributed_source": "self_reported",
             "confidence": "low", "routing_weight": 0.5, "drift": False,
@@ -188,14 +294,69 @@ class ObserveOutputTest(unittest.TestCase):
             "attributed_model": "claude-haiku-5-5", "attributed_source": "configured",
             "confidence": "unknown", "routing_weight": 0.25, "drift": False,
             "self_reported_mismatch": False, "flags": []})
-        mismatch = resolve_model_identity(req, obs_same, sr)
-        self.assertEqual(mismatch["attributed_model"], "claude-haiku-5-5")
-        self.assertEqual(mismatch["confidence"], "high")
-        self.assertEqual(mismatch["routing_weight"], 1.0)
-        self.assertFalse(mismatch["drift"])
-        self.assertTrue(mismatch["self_reported_mismatch"])
-        self.assertEqual(mismatch["flags"], [])
         self.assertEqual([req, obs_diff, obs_same, unk, sr], inputs)
+
+    def test_resolve_model_identity_rejects_unvalidated_sources_and_values(self):
+        unk = dict(UNKNOWN)
+        unknown_attr = {
+            "attributed_model": None,
+            "attributed_source": "unknown",
+            "confidence": "unknown",
+            "routing_weight": 0.25,
+            "drift": False,
+            "self_reported_mismatch": False,
+            "flags": [],
+        }
+        self.assertEqual(
+            resolve_model_identity({"value": "gpt-5.6-luna", "source": "observed"}, unk, unk),
+            unknown_attr,
+        )
+        self.assertEqual(
+            resolve_model_identity({"value": "gpt-5.6-luna", "source": "self_reported"}, unk, unk),
+            unknown_attr,
+        )
+        req = {"value": "claude-haiku-5-5", "source": "configured"}
+        sr = {"value": "gpt-5.6-luna", "source": "self_reported"}
+        self.assertEqual(
+            resolve_model_identity(req, {"value": None, "source": "observed"}, sr),
+            {
+                "attributed_model": "gpt-5.6-luna",
+                "attributed_source": "self_reported",
+                "confidence": "low",
+                "routing_weight": 0.5,
+                "drift": False,
+                "self_reported_mismatch": False,
+                "flags": ["low_confidence_model"],
+            },
+        )
+        self.assertEqual(
+            resolve_model_identity(
+                {"value": "composer-2.5", "source": "configured"},
+                {"value": " composer-2.5 ", "source": "observed"},
+                unk,
+            ),
+            {
+                "attributed_model": "composer-2.5",
+                "attributed_source": "configured",
+                "confidence": "unknown",
+                "routing_weight": 0.25,
+                "drift": False,
+                "self_reported_mismatch": False,
+                "flags": [],
+            },
+        )
+        self.assertEqual(
+            resolve_model_identity(req, unk, {"value": "   ", "source": "self_reported"}),
+            {
+                "attributed_model": "claude-haiku-5-5",
+                "attributed_source": "configured",
+                "confidence": "unknown",
+                "routing_weight": 0.25,
+                "drift": False,
+                "self_reported_mismatch": False,
+                "flags": [],
+            },
+        )
 
     def test_agy_is_all_unknown_on_every_fixture(self):
         for name in ALL_FIXTURES:

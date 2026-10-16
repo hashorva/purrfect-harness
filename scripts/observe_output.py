@@ -59,10 +59,7 @@ def observe_self_reported(provider, raw):
     else:
         matches = [e for e in stream if e.get("type") == "item.completed"
                    and dig(e, "item", "type") == "agent_message"]
-        if matches:
-            final_text = dig(matches[-1], "item", "text")
-        elif len(stream) == 1:
-            final_text = raw.decode("utf-8", errors="replace")
+        final_text = dig(matches[-1], "item", "text") if matches else None
     if not isinstance(final_text, str):
         return unknown()
     decoder = json.JSONDecoder()
@@ -72,47 +69,88 @@ def observe_self_reported(provider, raw):
         start = final_text.find("{", pos)
         if start < 0:
             break
+        if re.search(r'["\[:,]\s*\Z', final_text[:start]):
+            return unknown()
         try:
             value, end = decoder.raw_decode(final_text, start)
-        except (json.JSONDecodeError, RecursionError):
-            pos = start + 1
+        except RecursionError:
+            return unknown()
+        except json.JSONDecodeError as exc:
+            pos = max(start + 1, exc.pos)
             continue
         if isinstance(value, dict):
-            candidates.append(value)
+            candidates.append((value, end))
         pos = end
-    for candidate in reversed(candidates):
-        model = candidate.get("self_reported_model")
-        if (isinstance(model, dict) and set(model) == {"value", "source"}
-                and model.get("source") == "self_reported"
-                and isinstance(model.get("value"), str) and model["value"]):
-            return self_reported(model["value"])
+    if not candidates:
+        return unknown()
+    candidate, last_end = candidates[-1]
+    if "{" in final_text[last_end:]:
+        return unknown()
+    model = candidate.get("self_reported_model")
+    if (
+        isinstance(model, dict)
+        and set(model) == {"value", "source"}
+        and model.get("source") == "self_reported"
+    ):
+        valid = model_id(model.get("value"))
+        if valid is not None:
+            return self_reported(valid)
     return unknown()
 
 
+def _validated_model(entry, allowed_source):
+    if (
+        not isinstance(entry, dict)
+        or set(entry) != {"value", "source"}
+        or entry.get("source") != allowed_source
+    ):
+        return None
+    return model_id(entry.get("value"))
+
+
 def resolve_model_identity(requested_model, observed_model, self_reported_model):
-    requested_value = text(requested_model.get("value")) if isinstance(requested_model, dict) else None
-    observed_value = text(observed_model.get("value")) if isinstance(observed_model, dict) else None
-    reported_value = text(self_reported_model.get("value")) if isinstance(self_reported_model, dict) else None
-    requested_source = requested_model.get("source", "unknown") if isinstance(requested_model, dict) else "unknown"
-    observed_source = observed_model.get("source") if isinstance(observed_model, dict) else None
-    reported_source = self_reported_model.get("source") if isinstance(self_reported_model, dict) else None
-    drift = observed_source == "observed" and observed_value is not None and requested_source == "configured" and requested_value is not None and observed_value != requested_value
-    mismatch = observed_source == "observed" and observed_value is not None and reported_source == "self_reported" and reported_value is not None and observed_value != reported_value
-    flags = []
-    if observed_source == "observed" and observed_value is not None:
-        attributed_model, attributed_source, confidence, routing_weight = observed_value, "observed", "high", 1.0
-        if drift:
-            flags.append("model_drift")
-    elif observed_source == "unknown" and reported_source == "self_reported" and reported_value is not None:
-        attributed_model, attributed_source, confidence, routing_weight = reported_value, "self_reported", "low", 0.5
-        flags.append("low_confidence_model")
-    else:
-        attributed_model = requested_value
-        attributed_source = requested_source if requested_value else "unknown"
-        confidence, routing_weight, drift, mismatch = "unknown", 0.25, False, False
-    return {"attributed_model": attributed_model, "attributed_source": attributed_source,
-            "confidence": confidence, "routing_weight": routing_weight, "drift": drift,
-            "self_reported_mismatch": mismatch, "flags": flags}
+    requested_value = _validated_model(requested_model, "configured")
+    observed_value = _validated_model(observed_model, "observed")
+    reported_value = _validated_model(self_reported_model, "self_reported")
+    drift = (
+        observed_value is not None
+        and requested_value is not None
+        and observed_value != requested_value
+    )
+    mismatch = (
+        observed_value is not None
+        and reported_value is not None
+        and observed_value != reported_value
+    )
+    if observed_value is not None:
+        return {
+            "attributed_model": observed_value,
+            "attributed_source": "observed",
+            "confidence": "high",
+            "routing_weight": 1.0,
+            "drift": drift,
+            "self_reported_mismatch": mismatch,
+            "flags": ["model_drift"] if drift else [],
+        }
+    if reported_value is not None:
+        return {
+            "attributed_model": reported_value,
+            "attributed_source": "self_reported",
+            "confidence": "low",
+            "routing_weight": 0.5,
+            "drift": False,
+            "self_reported_mismatch": False,
+            "flags": ["low_confidence_model"],
+        }
+    return {
+        "attributed_model": requested_value,
+        "attributed_source": "configured" if requested_value is not None else "unknown",
+        "confidence": "unknown",
+        "routing_weight": 0.25,
+        "drift": False,
+        "self_reported_mismatch": False,
+        "flags": [],
+    }
 
 
 def dig(obj, *keys):
@@ -124,7 +162,15 @@ def dig(obj, *keys):
 
 
 def text(value):
-    return value if isinstance(value, str) and value else None
+    if (
+        isinstance(value, str)
+        and value.strip()
+        and "\n" not in value
+        and "\r" not in value
+        and not any(ord(ch) < 32 or ord(ch) == 127 for ch in value)
+    ):
+        return value
+    return None
 
 
 def count(value):

@@ -290,10 +290,33 @@ class VerdictValidatorTests(unittest.TestCase):
     def test_worker_output_schema_requires_self_reported_source_and_rejects_observed(self):
         valid = json.loads((FIXTURES / "good-worker-output.json").read_text())
         cases = []
-        for source in ("observed", "configured"):
+        for source in ("observed", "configured", "estimated", "unknown"):
             bad = json.loads(json.dumps(valid))
             bad["self_reported_model"]["source"] = source
-            cases.append((source, bad))
+            cases.append((f"source {source}", bad))
+        for label, mutator in (
+            ("root extra", lambda d: {**d, "extra": 1}),
+            ("self_reported_model extra", lambda d: {**d, "self_reported_model": {**d["self_reported_model"], "extra": 1}}),
+            ("checks extra", lambda d: {**d, "checks": [{**d["checks"][0], "extra": 1}]}),
+        ):
+            bad = mutator(json.loads(json.dumps(valid)))
+            cases.append((label, bad))
+        for value in (
+            "",
+            "   ",
+            " composer-2.5 ",
+            "gpt-5\nsk-123456789012345678901234\u0000",
+            "a" * 81,
+        ):
+            bad = json.loads(json.dumps(valid))
+            bad["self_reported_model"]["value"] = value
+            cases.append((f"value {value!r}", bad))
+        bad = json.loads(json.dumps(valid))
+        bad["summary"] = " "
+        cases.append(("whitespace summary", bad))
+        bad = json.loads(json.dumps(valid))
+        bad["checks"][0]["name"] = " "
+        cases.append(("whitespace check name", bad))
         empty = json.loads(json.dumps(valid))
         empty["self_reported_model"]["value"] = ""
         cases.append(("empty value", empty))
