@@ -282,9 +282,30 @@ class VerdictValidatorTests(unittest.TestCase):
         for schema, fixture in (
             ("schemas/task-plan.schema.json", "good-task-plan.json"),
             ("schemas/review-verdict.schema.json", "good-review-verdict.json"),
+            ("schemas/worker-output.schema.json", "good-worker-output.json"),
         ):
             with self.subTest(fixture=fixture):
                 self.assertEqual(self.run_validator(schema, fixture).returncode, 0)
+
+    def test_worker_output_schema_requires_self_reported_source_and_rejects_observed(self):
+        valid = json.loads((FIXTURES / "good-worker-output.json").read_text())
+        cases = []
+        for source in ("observed", "configured"):
+            bad = json.loads(json.dumps(valid))
+            bad["self_reported_model"]["source"] = source
+            cases.append((source, bad))
+        empty = json.loads(json.dumps(valid))
+        empty["self_reported_model"]["value"] = ""
+        cases.append(("empty value", empty))
+        missing = json.loads(json.dumps(valid))
+        del missing["self_reported_model"]
+        cases.append(("missing self_reported_model", missing))
+        with tempfile.TemporaryDirectory() as directory:
+            data_path = Path(directory) / "worker-output.json"
+            for name, data in cases:
+                with self.subTest(mutation=name):
+                    data_path.write_text(json.dumps(data), encoding="utf-8")
+                    self.assertEqual(self.run_validator("schemas/worker-output.schema.json", data_path).returncode, 1)
 
     def test_bad_fixtures_fail_with_specific_reasons(self):
         cases = (
@@ -421,7 +442,8 @@ class VerdictValidatorTests(unittest.TestCase):
             self.assert_refused(self.run_validator(schema_path, data_path), "unsupported keyword")
 
     def test_schema_checks_and_usage_exit(self):
-        for schema in ("schemas/task-plan.schema.json", "schemas/review-verdict.schema.json"):
+        for schema in ("schemas/task-plan.schema.json", "schemas/review-verdict.schema.json",
+                       "schemas/worker-output.schema.json"):
             with self.subTest(schema=schema):
                 result = self.run_check_schema(ROOT / schema)
                 self.assertEqual(result.returncode, 0)

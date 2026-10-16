@@ -12,7 +12,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests/fixtures/observe"
 sys.path.insert(0, str(ROOT / "scripts"))
-from observe_output import no_turn, observe
+from observe_output import no_turn, observe, observe_self_reported, resolve_model_identity
 
 
 UNKNOWN = {"value": None, "source": "unknown"}
@@ -138,6 +138,64 @@ class ObserveOutputTest(unittest.TestCase):
         for (provider, name), expected in EXPECTED.items():
             with self.subTest(provider=provider, fixture=name):
                 self.assertEqual(observe(provider, read(name)), expected)
+
+    def test_observe_self_reported_never_accepts_observed_source(self):
+        payload = {"self_reported_model": {"value": "gpt-5.6-luna", "source": "self_reported"}}
+        for provider, event in (
+            ("claude", {"type": "result", "result": json.dumps(payload)}),
+            ("cursor", {"type": "result", "result": "```json\n" + json.dumps(payload) + "\n```"}),
+            ("agy", {"event": "result", "result": {"response": json.dumps(payload)}}),
+            ("codex", {"type": "item.completed", "item": {"type": "agent_message", "text": json.dumps(payload)}}),
+            ("codex", payload),
+        ):
+            with self.subTest(provider=provider):
+                raw = json.dumps(event).encode()
+                self.assertEqual(observe_self_reported(provider, raw),
+                                 {"value": "gpt-5.6-luna", "source": "self_reported"})
+                for source in ("observed", "configured", "estimated", "unknown"):
+                    bad = json.loads(json.dumps(payload))
+                    bad["self_reported_model"]["source"] = source
+                    wrapped = dict(event)
+                    if provider in ("claude", "cursor"):
+                        wrapped["result"] = json.dumps(bad)
+                    elif provider == "agy":
+                        wrapped["result"]["response"] = json.dumps(bad)
+                    elif provider == "codex" and "item" in wrapped:
+                        wrapped["item"]["text"] = json.dumps(bad)
+                    else:
+                        wrapped = bad
+                    self.assertEqual(observe_self_reported(provider, json.dumps(wrapped).encode()), UNKNOWN)
+        empty = {"self_reported_model": {"value": "", "source": "self_reported"}}
+        raw = json.dumps({"type": "result", "result": json.dumps(empty)}).encode()
+        self.assertEqual(observe_self_reported("claude", raw), UNKNOWN)
+
+    def test_resolve_model_identity_four_rules(self):
+        req = {"value": "claude-haiku-5-5", "source": "configured"}
+        obs_diff = {"value": "claude-sonnet-5-5", "source": "observed"}
+        obs_same = {"value": "claude-haiku-5-5", "source": "observed"}
+        unk = dict(UNKNOWN)
+        sr = {"value": "gpt-5.6-luna", "source": "self_reported"}
+        inputs = json.loads(json.dumps([req, obs_diff, obs_same, unk, sr]))
+        self.assertEqual(resolve_model_identity(req, obs_diff, unk), {
+            "attributed_model": "claude-sonnet-5-5", "attributed_source": "observed",
+            "confidence": "high", "routing_weight": 1.0, "drift": True,
+            "self_reported_mismatch": False, "flags": ["model_drift"]})
+        self.assertEqual(resolve_model_identity(req, unk, sr), {
+            "attributed_model": "gpt-5.6-luna", "attributed_source": "self_reported",
+            "confidence": "low", "routing_weight": 0.5, "drift": False,
+            "self_reported_mismatch": False, "flags": ["low_confidence_model"]})
+        self.assertEqual(resolve_model_identity(req, unk, unk), {
+            "attributed_model": "claude-haiku-5-5", "attributed_source": "configured",
+            "confidence": "unknown", "routing_weight": 0.25, "drift": False,
+            "self_reported_mismatch": False, "flags": []})
+        mismatch = resolve_model_identity(req, obs_same, sr)
+        self.assertEqual(mismatch["attributed_model"], "claude-haiku-5-5")
+        self.assertEqual(mismatch["confidence"], "high")
+        self.assertEqual(mismatch["routing_weight"], 1.0)
+        self.assertFalse(mismatch["drift"])
+        self.assertTrue(mismatch["self_reported_mismatch"])
+        self.assertEqual(mismatch["flags"], [])
+        self.assertEqual([req, obs_diff, obs_same, unk, sr], inputs)
 
     def test_agy_is_all_unknown_on_every_fixture(self):
         for name in ALL_FIXTURES:

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Worker output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["self_reported_model", "summary", "checks"],
+  "properties": {
+    "self_reported_model": {
+      "type": "object",
+      "required": ["value", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {"type": "string", "minLength": 1},
+        "source": {"enum": ["self_reported"]}
+      }
+    },
+    "summary": {"type": "string", "minLength": 1},
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "exit_code"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "exit_code": {"type": "integer"}
+        }
+      }
+    }
+  }
+}

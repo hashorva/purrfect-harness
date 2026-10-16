@@ -27,6 +27,82 @@ def observed(value):
     return {"value": value, "source": "observed"}
 
 
+def self_reported(value):
+    return {"value": value, "source": "self_reported"}
+
+
+def observe_self_reported(provider, raw):
+    """Read only a well-formed self_reported_model from the final CLI answer."""
+    name = ALIASES.get(provider, provider) if isinstance(provider, str) else None
+    if name not in PARSERS or not isinstance(raw, bytes):
+        return unknown()
+    stream = events(raw)
+    final_text = None
+    if name in ("claude", "cursor"):
+        matches = [e for e in stream if e.get("type") == "result"]
+        final_text = matches[-1].get("result") if matches else None
+    elif name == "agy":
+        matches = [e for e in stream if e.get("event") == "result"]
+        final_text = dig(matches[-1], "result", "response") if matches else None
+    else:
+        matches = [e for e in stream if e.get("type") == "item.completed"
+                   and dig(e, "item", "type") == "agent_message"]
+        if matches:
+            final_text = dig(matches[-1], "item", "text")
+        elif len(stream) == 1:
+            final_text = raw.decode("utf-8", errors="replace")
+    if not isinstance(final_text, str):
+        return unknown()
+    decoder = json.JSONDecoder()
+    candidates = []
+    pos = 0
+    while True:
+        start = final_text.find("{", pos)
+        if start < 0:
+            break
+        try:
+            value, end = decoder.raw_decode(final_text, start)
+        except (json.JSONDecodeError, RecursionError):
+            pos = start + 1
+            continue
+        if isinstance(value, dict):
+            candidates.append(value)
+        pos = end
+    for candidate in reversed(candidates):
+        model = candidate.get("self_reported_model")
+        if (isinstance(model, dict) and set(model) == {"value", "source"}
+                and model.get("source") == "self_reported"
+                and isinstance(model.get("value"), str) and model["value"]):
+            return self_reported(model["value"])
+    return unknown()
+
+
+def resolve_model_identity(requested_model, observed_model, self_reported_model):
+    requested_value = text(requested_model.get("value")) if isinstance(requested_model, dict) else None
+    observed_value = text(observed_model.get("value")) if isinstance(observed_model, dict) else None
+    reported_value = text(self_reported_model.get("value")) if isinstance(self_reported_model, dict) else None
+    requested_source = requested_model.get("source", "unknown") if isinstance(requested_model, dict) else "unknown"
+    observed_source = observed_model.get("source") if isinstance(observed_model, dict) else None
+    reported_source = self_reported_model.get("source") if isinstance(self_reported_model, dict) else None
+    drift = observed_source == "observed" and observed_value is not None and requested_source == "configured" and requested_value is not None and observed_value != requested_value
+    mismatch = observed_source == "observed" and observed_value is not None and reported_source == "self_reported" and reported_value is not None and observed_value != reported_value
+    flags = []
+    if observed_source == "observed" and observed_value is not None:
+        attributed_model, attributed_source, confidence, routing_weight = observed_value, "observed", "high", 1.0
+        if drift:
+            flags.append("model_drift")
+    elif observed_source == "unknown" and reported_source == "self_reported" and reported_value is not None:
+        attributed_model, attributed_source, confidence, routing_weight = reported_value, "self_reported", "low", 0.5
+        flags.append("low_confidence_model")
+    else:
+        attributed_model = requested_value
+        attributed_source = requested_source if requested_value else "unknown"
+        confidence, routing_weight, drift, mismatch = "unknown", 0.25, False, False
+    return {"attributed_model": attributed_model, "attributed_source": attributed_source,
+            "confidence": confidence, "routing_weight": routing_weight, "drift": drift,
+            "self_reported_mismatch": mismatch, "flags": flags}
+
+
 def dig(obj, *keys):
     for key in keys:
         if not isinstance(obj, dict):
