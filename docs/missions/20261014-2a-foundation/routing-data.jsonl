@@ -123,3 +123,6 @@
 {"type":"review","task":"T-054-R1","reviewer":"grok-4.7-high (cursor.premium)","rung":"1 (vendor flagship)","verdict":"PASS"}
 {"type":"plan-reformat","plan":"T-055-R1","planner":"grok-4.7-high (cursor.premium, ask mode)","rung":"2 (Argon quota out)"}
 {"run_id":"5e4fea39-d0cc-4284-a899-94bc04612531","task":"T-055-R1","category":"schema-and-attribution","size":"M","seat":"cursor.economy","model":"composer-2.5","effort":"medium","attempt":2,"outcome":"done","failure_class":"none","duration_s":68,"tokens_or_cost":"unknown"}
+{"type":"architect-run","plan":"T-055-R2,T-056-R1","seat":"agy.brain","model":"claude-opus-5-5-high","rung":"2 (agy Opus; Argon out)","input_tokens":110323,"output_tokens":45280,"cache_read_tokens":1429407,"outcome":"done"}
+{"type":"review","task":"T-057","reviewer":"claude-opus-5-5-high (agy)","rung":"2 (escalation: dispatch code)","verdict":"PASS","input_tokens":64685,"output_tokens":7661,"cache_read_tokens":407473}
+{"type":"review","task":"T-055-R1","reviewer":"grok-4.7-high (cursor.premium)","rung":"1 (vendor flagship)","verdict":"FAIL","findings":4}
