@@ -13,7 +13,7 @@ intake: docs/proposals/20261014-phase-2.md (sections 13 and 14)
 Mission 2A "Foundation" builds the data layer for Phase 2 ("yield per token").
 It moves provider, door and pool facts into one registry, records the observed model and usage in every receipt, adds fleet v2
 (policy seats and visible drift), adds the ledger and structured verdicts, and
-proves it with a real smoke run through four doors on the owner's Mac.
+proves it with a real smoke run through three doors (claude, codex, cursor) on the owner's Mac. (Amended 2026-10-16 by the owner: agy is dropped from this mission; its hang evidence is in progress-archive/.)
 
 ## Why now / forcing function
 

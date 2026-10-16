@@ -48,17 +48,16 @@
       "category": "functional",
       "priority": 4,
       "bootstrap": false,
-      "description": "Fleet v2: policy seats, per-spawn resolution recorded in the spec, drift events, door priority, fast and credits opt-in. Cursor and Antigravity effort through the model name. Resolves the unproven `model[effort=…,fast=…]` format. Needs Gate 0 decision 2 (frozen-fleet amendment).",
+      "description": "Fleet v2: policy seats, per-spawn resolution recorded in the spec, drift events, door priority, fast and credits opt-in. Cursor effort through the model name. Resolves the unproven `model[effort=…,fast=…]` format. Needs Gate 0 decision 2 (frozen-fleet amendment).",
       "steps": [
         "A fleet v2 seat names a family and a policy; a v1 fleet.json still validates",
         "Each spawn records the resolved model in the spec and the observed model in the receipt",
         "A fixture with a model change between two runs writes exactly one drift event to the drift log; a test shows the spawn exits non-zero if the drift event cannot be written",
         "Door priority picks the first included, healthy door; a credits or api door is skipped unless the mission approves it",
         "A `-fast` model is never chosen unless the mission enables fast",
-        "Cursor and agy effort is encoded in the model name from the registry; a test lists the encoding for each",
+        "Cursor effort is encoded in the model name from the registry; a test lists the encoding for each",
         "The unproven `model[effort=…,fast=…]` format is either proven by a recorded probe or removed; no unproven format ships",
         "The FALLBACKS constant is deleted from scripts/fleet_state.py (`grep -nE '^FALLBACKS *= *[({]' scripts/*.py` exits 1); an unavailable family stays `unavailable`, never a guessed model",
-        "the chair seat can resolve to agy claude-opus-5-5-high, and the change is logged as a drift event.",
         "shellcheck and bash tests/run-tests.sh exit 0"
       ],
       "passes": false
@@ -108,11 +107,11 @@
       "category": "functional",
       "priority": 7,
       "bootstrap": false,
-      "description": "Real smoke on the Mac: one small mission through 4 doors and 5 runs: `claude`, `codex`, `cursor-agent` (Composer and Grok) and `agy`, with ledger rows and reconstructable evidence.",
+      "description": "Real smoke on the Mac: one small mission through 3 doors and 4 runs: `claude`, `codex` and `cursor-agent` (Composer and Grok), with ledger rows and reconstructable evidence.",
       "steps": [
-        "A smoke mission exists with one tiny task per run: claude, codex, cursor-agent with Composer, cursor-agent with Grok, and agy",
-        "Five receipts exist under .tasks/receipts/, one per run; each has a non-unknown observed model, except cursor-agent runs may stay `unknown` when the CLI does not report the model",
-        "Five ledger rows exist, one per receipt, and each validates against the ledger schema",
+        "A smoke mission exists with one tiny task per run: claude, codex, cursor-agent with Composer, and cursor-agent with Grok",
+        "Four receipts exist under .tasks/receipts/, one per run; each has a non-unknown observed model, except cursor-agent runs may stay `unknown` when the CLI does not report the model",
+        "Four ledger rows exist, one per receipt, and each validates against the ledger schema",
         "bash scripts/verify-mission.sh exits 0 for the smoke mission",
         "A reconstruct command prints, per smoke run id, its spec, receipt, VerificationRecord and ledger row, and exits non-zero if any of the four is missing; the human reads that output at Gate 2"
       ],
