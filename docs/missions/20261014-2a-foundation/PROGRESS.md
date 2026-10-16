@@ -4,6 +4,9 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 
 # Progress
 
+- **2026-10-16 — T-044 complete (privacy near-misses):** case-insensitive sensitive/absolute paths, expanded path roots, Unicode whitespace after Bearer, and U+061C now reject; runtime near-miss and rule mutation tests added.
+- Verification: Oracle G passed (23 hostile, 16 legitimate, 10 committed rows/fixtures); `tests/test-ledger.py` passed (81); shellcheck, JSON validation, full suite, and bytecode check passed.
+- Mutation evidence: `tests/test-ledger.py` exercises every named near-miss mutant, including lookbehind punctuation and relative-path over-refusal; scoped commit f08a615.
 ## Current status (2026-10-16)
 - Mission 2A Foundation, branch `mission/2a-foundation`, status in-progress. Gate 0 passed. **Gate 1 target:** F001–F006 accepted and the deterministic suite green (prepare, do not advance).
 - **Accepted:** F001, F003, F005, F006 (F005 with the first ledger fold). **F004** and **F007** wait for the agy amendment (agy dropped from the mission by owner decision; T-026 and T-039 deferred).

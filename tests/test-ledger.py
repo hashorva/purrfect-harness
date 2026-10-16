@@ -40,6 +40,44 @@ NUMBER_FIELDS = [
 TEXT_FLAG_FIELDS = ["cli_version", "requested_model", "resolved_model", "observed_model", "effort", "fast_state"]
 GOOD = FIXTURES / "good-completed.json"
 
+# Values are assembled at runtime so hostile paths and controls are not source literals.
+S = "/"
+T = "~"
+D = "$"
+B = "Bearer"
+NEAR_MISSES = (
+    "cd " + S + "tmp", S + "etc", "x=" + S + "tmp", "(" + S + "etc)",
+    S + "TMP/x", S + "Etc/hosts", S + "Tmp", D + "home/x", S + "USERS/x",
+    S + "users/x", S + "HOME/x", S + "Private/var", S + "VAR/Folders/x",
+    D + "{HOME}/x", D + "{home}", T + "root/x", T + "alice.b/x", T + "svc-1/.ssh",
+    B + "\u00a0abc", B + "  abc", "bearer\u2003abc", B + " \tabc",
+    "left\u061cright",
+)
+NEAR_MISS_MUTANTS = {
+    "bare": (r"(?<![\w.-])/(?:tmp|etc)\b", "NEVER"),
+    "lookbehind-paren": (r"(?<![\w.-])/(?:tmp|etc)\b", r"(?<![^\w.-])/(?:tmp|etc)\b"),
+    "lookbehind-equals": (r"(?<![\w.-])/(?:tmp|etc)\b", r"(?<![^\w.-])/(?:tmp|etc)\b"),
+    "case-sensitive": (
+        'SENSITIVE_PATH = re.compile(r"/tmp/|/etc/|(?<![\\w.-])/(?:tmp|etc)\\b|~[\\w.-]*/|\\$\\{?HOME", re.I)',
+        'SENSITIVE_PATH = re.compile(r"/tmp/|/etc/|(?<![\\w.-])/(?:tmp|etc)\\b|~[\\w.-]*/|\\$\\{?HOME")',
+    ),
+    "case-absolute": (
+        'ABSOLUTE_PATH = re.compile(r"/Users/|/private/|/var/folders/|/home/|[A-Za-z]:\\\\", re.I)',
+        'ABSOLUTE_PATH = re.compile(r"/Users/|/private/|/var/folders/|/home/|[A-Za-z]:\\\\")',
+    ),
+    "brace": (r"\$\{?HOME", r"\$HOME"),
+    "tilde": (r"~[\w.-]*/", r"~/"),
+    "tilde-ascii": (r"~[\w.-]*/", r"~\w*/"),
+    "space": (r"(?i:Bearer)\s+\S", r"(?i:Bearer)[ \t]\S"),
+    "single-space": (r"(?i:Bearer)\s+\S", r"(?i:Bearer)\s\S"),
+    "ascii-bearer": (r"(?i:Bearer)\s+\S", r"(?a:(?i:Bearer)\s+\S)"),
+    "alm": (r"\u061c", ""),
+    "alm-substitute": (r"\u061c", r"\u061b"),
+    "sensitive-call": (" or SENSITIVE_PATH.search(value)", ""),
+    "paths": (" or SENSITIVE_PATH.search(value)", ""),
+    "bidi": (r"\u202a-\u202e", ""),
+}
+
 
 def run_cli(*args, ledger=LEDGER, cwd=None, timeout=None):
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
@@ -373,14 +411,13 @@ class LedgerMutations(unittest.TestCase):
 
 
     def assert_rule_is_load_bearing(self, rule, hostile, field="task"):
-        """Remove one rule in a temporary validator copy and prove its negative fails."""
+        """Mutate one source expression and prove the real CLI admits its near miss."""
         source = LEDGER.read_text(encoding="utf-8")
-        if rule == "paths":
-            mutant = source.replace(" or SENSITIVE_PATH.search(value)", "")
-        elif rule == "bidi":
-            mutant = source.replace("\\u202a-\\u202e", "").replace("\\u2066-\\u2069", "")
+        if rule == "bearer":
+            old, replacement = r'r"(?i:Bearer)\s+\S"', r'r"Bearer \S"'
         else:
-            mutant = source.replace('r"(?i:Bearer)[ \\t]\\S"', 'r"Bearer \\S"')
+            old, replacement = NEAR_MISS_MUTANTS[rule]
+        mutant = source.replace(old, replacement, 1)
         self.assertNotEqual(mutant, source, rule)
         with tempfile.TemporaryDirectory() as temp:
             scripts = Path(temp) / "scripts"
@@ -394,6 +431,65 @@ class LedgerMutations(unittest.TestCase):
             row_path.write_text(json.dumps(row), encoding="utf-8")
             result = run_cli("validate", str(row_path), ledger=copy)
             self.assertEqual(result.returncode, 0, f"{rule} mutant did not admit hostile value: {result.stderr}")
+
+    def test_owner_near_misses_are_rejected_in_two_fields_and_load_bearing(self):
+        for hostile in NEAR_MISSES:
+            for field in ("task", "failure_class"):
+                with self.subTest(value=repr(hostile), field=field):
+                    row = self.mutated(lambda current, n=field, v=hostile: current.__setitem__(n, v))
+                    self.expect_privacy_rejection(row, f"{field}: privacy", hostile)
+        mutant_cases = {
+            "bare": ("/" + "tmp",),
+            "lookbehind-paren": (("(" + "/etc)"),),
+            "lookbehind-equals": (("x=" + "/tmp"),),
+            "case-sensitive": ("/" + "TMP/x",),
+            "case-absolute": ("/" + "USERS/x",),
+            "brace": ("$" + "{home}",),
+            "tilde": ("~" + "root/x",),
+            "tilde-ascii": ("~" + "svc-1/.ssh",),
+            "space": ("Bearer" + "  abc",),
+            "single-space": ("Bearer" + "  abc",),
+            "ascii-bearer": ("Bearer" + "\u00a0abc",),
+            "alm": ("left" + "\u061c" + "right",),
+            "alm-substitute": ("left" + "\u061c" + "right",),
+            "sensitive-call": ("/" + "tmp/x",),
+        }
+        for rule, values in mutant_cases.items():
+            for value in values:
+                with self.subTest(mutant=rule):
+                    self.assert_rule_is_load_bearing(rule, value)
+
+    def test_near_miss_rules_admit_relative_paths_and_labels(self):
+        legitimate = (
+            "build/tmp", "src/etc", "docs/tmp-notes", "tmpfile", "etcd", "users",
+            "scripts/ledger.py", "HEAD~1", "foo~bar", "home dir", "bearer-token-check",
+            "Bearer:", "tmp/etc", "claude.economy", "grok-4.7-high",
+            "tests/fixtures/ledger/good-completed.json",
+        )
+        for value in legitimate:
+            with self.subTest(value=value):
+                row = json.loads(json.dumps(self.base))
+                row["failure_class"] = value
+                row["checks"][0]["name"] = value
+                self.assertEqual(self.check_row(row).returncode, 0)
+
+    def test_dropping_sensitive_path_lookbehind_refuses_relative_path(self):
+        source = LEDGER.read_text(encoding="utf-8")
+        mutant = source.replace(r"(?<![\w.-])/(?:tmp|etc)\b", r"/(?:tmp|etc)\b", 1)
+        self.assertNotEqual(mutant, source)
+        with tempfile.TemporaryDirectory() as temp:
+            scripts = Path(temp) / "scripts"
+            scripts.mkdir()
+            copy = scripts / "ledger.py"
+            copy.write_text(mutant, encoding="utf-8")
+            shutil.copy2(ROOT / "harness-registry.json", Path(temp) / "harness-registry.json")
+            row = json.loads(json.dumps(load(GOOD)))
+            row["failure_class"] = "build/tmp"
+            path = Path(temp) / "row.json"
+            path.write_text(json.dumps(row), encoding="utf-8")
+            result = run_cli("validate", str(path), ledger=copy)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stderr.strip(), "ERROR: ledger: failure_class: privacy")
 
     def test_added_sensitive_paths_are_rejected_in_two_fields_and_load_bearing(self):
         values = ("/" + "tmp/" + "x", "~" + "/x", "$" + "HOME/x", "/" + "etc/" + "passwd")

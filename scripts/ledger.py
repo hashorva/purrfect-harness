@@ -31,14 +31,17 @@ CONFIGURED_SOURCES = ("observed", "configured", "estimated", "unknown")
 SECRET_PATTERNS = tuple(re.compile(pattern) for pattern in (
     r"sk-[A-Za-z0-9_-]{20,}", r"ghp_[A-Za-z0-9]{20,}", r"github_pat_",
     r"AKIA[0-9A-Z]{16}", r"xox[abpr]-", r"-----BEGIN", r"eyJ[A-Za-z0-9_-]{20,}\.",
-    r"(?i:Bearer)[ \t]\S", r"[0-9A-Fa-f]{32,}", r"[A-Za-z0-9+/=]{40,}",
+    r"(?i:Bearer)\s+\S", r"[0-9A-Fa-f]{32,}", r"[A-Za-z0-9+/=]{40,}",
 ))
 EMAIL = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+")
-ABSOLUTE_PATH = re.compile(r"/Users/|/private/|/var/folders/|/home/|[A-Za-z]:\\")
-SENSITIVE_PATH = re.compile(r"/tmp/|/etc/|~/|\$HOME")
+# macOS and Windows paths are case-insensitive, including their conventional path roots.
+ABSOLUTE_PATH = re.compile(r"/Users/|/private/|/var/folders/|/home/|[A-Za-z]:\\", re.I)
+# The lookbehind lets relative build/tmp and src/etc labels pass while catching path roots.
+SENSITIVE_PATH = re.compile(r"/tmp/|/etc/|(?<![\w.-])/(?:tmp|etc)\b|~[\w.-]*/|\$\{?HOME", re.I)
 UUID_SHAPE = re.compile(r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
 # Hidden format characters, bidi controls, full-width @ and /, and line separators.
-HIDDEN_CHARS = re.compile("[\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff\uff20\uff0f\u2028\u2029]")
+# U+061C is the Arabic letter mark, a bidi control.
+HIDDEN_CHARS = re.compile("[\u061c\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff\uff20\uff0f\u2028\u2029]")
 PROMPT_PREFIX = "Read docs/missions/"
 PROMPT_PREFIXES = re.compile(r"^\s*(?:Read \S*[/\\.]|You are |Follow AGENTS\.md)")
 OUTCOMES = ("completed", "failed", "timed_out", "interrupted", "launch_failed")
