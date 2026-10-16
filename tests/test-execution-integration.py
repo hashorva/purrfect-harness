@@ -1404,7 +1404,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                 receipt = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())
                 self.assertEqual(receipt["observation"], expected)
                 if fixture_name == "cursor.jsonl":
-                    self.assertEqual(receipt["observation"]["observed_model"]["value"], "Composer 2.5")
+                    self.assertEqual(receipt["observation"]["observed_model"]["value"], "composer-2.5")
                     self.assertNotEqual(receipt["model"], "Composer 2.5")
                 if fixture_name == "codex.jsonl":
                     self.assertEqual(receipt["observation"]["observed_model"]["source"], "unknown")

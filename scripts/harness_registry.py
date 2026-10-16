@@ -11,6 +11,7 @@ DOOR_FIELDS = ("provider", "billing_class", "pool", "no_zdr", "priority")
 POOL_FIELDS = ("windows", "evidence")
 POOL_WINDOWS = ("5h", "weekly")
 ROOT_FIELDS = ("schema_version", "providers", "doors", "pools", "seat_specs")
+DISPLAY_MODEL_PROVIDERS = frozenset({"cursor", "agy"})
 
 
 class RegistryError(ValueError):
@@ -23,6 +24,22 @@ def _require_fields(value, fields, label):
     for field in fields:
         if field not in value:
             raise RegistryError(f"{label} missing required field: {field}")
+
+
+def _validate_display_models(display_models):
+    if not isinstance(display_models, dict):
+        raise RegistryError("registry.display_models must be an object")
+    for provider, table in display_models.items():
+        label = f"registry.display_models.{provider}"
+        if provider not in DISPLAY_MODEL_PROVIDERS:
+            raise RegistryError(f"{label} has unknown provider key")
+        if not isinstance(table, dict) or not table:
+            raise RegistryError(f"{label} must be a non-empty object")
+        for display_name, model_id in table.items():
+            if not isinstance(display_name, str) or not display_name:
+                raise RegistryError(f"{label} keys must be non-empty text")
+            if not isinstance(model_id, str) or not model_id:
+                raise RegistryError(f"{label} values must be non-empty text")
 
 
 def _validate_sandbox_limits(limits, label):
@@ -160,6 +177,8 @@ def validate_registry(data):
                 or not isinstance(spec[0], str) or spec[0] not in providers
                 or not isinstance(spec[1], str) or not spec[1].strip()):
             raise RegistryError(f"registry.seat_specs.{seat} must be [provider key, non-empty family]")
+    if "display_models" in data:
+        _validate_display_models(data["display_models"])
     return data
 
 

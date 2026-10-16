@@ -2,9 +2,11 @@
 """Observed model, usage and fast state: expected results are literal, not computed by the parser."""
 import inspect
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,7 +68,7 @@ CODEX_TWO_TURNS = {
 }
 
 CURSOR = {
-    "observed_model": {"value": "Composer 2.5", "source": "observed"},
+    "observed_model": {"value": "composer-2.5", "source": "observed"},
     "usage": {
         "input": {"value": 8961, "source": "observed"},
         "output": {"value": 23, "source": "observed"},
@@ -118,6 +120,20 @@ def read(name):
 
 
 class ObserveOutputTest(unittest.TestCase):
+    def setUp(self):
+        self._codex_sessions_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._codex_sessions_dir.cleanup)
+        prev_codex_sessions_dir = os.environ.get("CODEX_SESSIONS_DIR")
+        os.environ["CODEX_SESSIONS_DIR"] = self._codex_sessions_dir.name
+
+        def restore_codex_sessions_dir():
+            if prev_codex_sessions_dir is None:
+                os.environ.pop("CODEX_SESSIONS_DIR", None)
+            else:
+                os.environ["CODEX_SESSIONS_DIR"] = prev_codex_sessions_dir
+
+        self.addCleanup(restore_codex_sessions_dir)
+
     def test_provider_fixtures_match_literal_expectations(self):
         for (provider, name), expected in EXPECTED.items():
             with self.subTest(provider=provider, fixture=name):
@@ -269,12 +285,141 @@ class ObserveOutputTest(unittest.TestCase):
         completed = subprocess.run(
             [sys.executable, str(ROOT / "scripts/observe_output.py"), "cursor", str(FIXTURES / "cursor.jsonl")],
             capture_output=True, text=True, check=False,
+            env={**os.environ, "CODEX_SESSIONS_DIR": self._codex_sessions_dir.name},
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(
             completed.stdout,
             json.dumps(CURSOR, sort_keys=True, separators=(",", ":")) + "\n",
         )
+
+    def test_codex_session_record_reads_only_model_from_fake_sessions_dir(self):
+        tid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        raw = (
+            json.dumps({"type": "thread.started", "thread_id": tid})
+            + "\n"
+            + json.dumps(
+                {
+                    "type": "turn.completed",
+                    "usage": {
+                        "input_tokens": 1,
+                        "output_tokens": 1,
+                        "cached_input_tokens": 0,
+                        "reasoning_output_tokens": 0,
+                    },
+                }
+            )
+            + "\n"
+        ).encode()
+        sessions = Path(self._codex_sessions_dir.name)
+        sub = sessions / "2026" / "10" / "16"
+        sub.mkdir(parents=True)
+        rollout = sub / f"rollout-{tid}.jsonl"
+        rollout.write_text(
+            json.dumps(
+                {
+                    "type": "turn_context",
+                    "payload": {
+                        "model": "gpt-5.6-luna",
+                        "cwd": "/Users/secret",
+                        "instructions": "do not leak",
+                        "rollout_path": "/secret/path",
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        obs = observe("codex", raw)
+        self.assertEqual(obs["observed_model"], {"value": "gpt-5.6-luna", "source": "observed"})
+        self.assertNotIn("/Users/secret", json.dumps(obs))
+        self.assertNotIn("do not leak", json.dumps(obs))
+
+        top_level = sub / f"session-{tid}.jsonl"
+        top_level.write_text(json.dumps({"model": "gpt-5.6-luna"}) + "\n", encoding="utf-8")
+        rollout.unlink()
+        self.assertEqual(
+            observe("codex", raw)["observed_model"],
+            {"value": "gpt-5.6-luna", "source": "observed"},
+        )
+
+        top_level.unlink()
+        self.assertEqual(observe("codex", raw)["observed_model"], UNKNOWN)
+
+        other = sub / f"other-{tid}-copy.jsonl"
+        rollout.write_text(
+            json.dumps({"payload": {"model": "gpt-5.6-luna"}}) + "\n", encoding="utf-8"
+        )
+        other.write_text(json.dumps({"payload": {"model": "gpt-5.6-luna"}}) + "\n", encoding="utf-8")
+        self.assertEqual(observe("codex", raw)["observed_model"], UNKNOWN)
+        other.unlink()
+
+        rollout.write_text(
+            json.dumps({"payload": {"model": "gpt-5.6-luna"}})
+            + "\n"
+            + json.dumps({"payload": {"model": "gpt-5.6-other"}})
+            + "\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(observe("codex", raw)["observed_model"], UNKNOWN)
+
+        rollout.unlink()
+        other.unlink(missing_ok=True)
+        backing = sub / "backing.jsonl"
+        backing.write_text(json.dumps({"payload": {"model": "gpt-5.6-luna"}}) + "\n", encoding="utf-8")
+        rollout.symlink_to(backing)
+        self.assertEqual(observe("codex", raw)["observed_model"], UNKNOWN)
+
+        bad_tid = (
+            json.dumps({"type": "thread.started", "thread_id": "not-a-uuid"})
+            + "\n"
+            + json.dumps(
+                {
+                    "type": "turn.completed",
+                    "usage": {
+                        "input_tokens": 1,
+                        "output_tokens": 1,
+                        "cached_input_tokens": 0,
+                        "reasoning_output_tokens": 0,
+                    },
+                }
+            )
+            + "\n"
+        ).encode()
+        rollout.unlink(missing_ok=True)
+        backing.unlink(missing_ok=True)
+        self.assertEqual(observe("codex", bad_tid)["observed_model"], UNKNOWN)
+
+    def test_cursor_and_agy_map_display_names_and_refuse_unknown_display_names(self):
+        cursor_ok = json.dumps(
+            {"type": "system", "subtype": "init", "model": "Composer 2.5"}
+        ).encode()
+        self.assertEqual(
+            observe("cursor", cursor_ok)["observed_model"],
+            {"value": "composer-2.5", "source": "observed"},
+        )
+        grok_ok = json.dumps(
+            {"type": "system", "subtype": "init", "model": "Grok 4.7 256K High"}
+        ).encode()
+        self.assertEqual(
+            observe("cursor", grok_ok)["observed_model"],
+            {"value": "grok-4.7-high", "source": "observed"},
+        )
+        for unknown_name in ("Composer 9.9", "Grok Mystery"):
+            raw = json.dumps(
+                {"type": "system", "subtype": "init", "model": unknown_name}
+            ).encode()
+            self.assertEqual(observe("cursor", raw)["observed_model"], UNKNOWN)
+
+        agy_ok = json.dumps(
+            {"event": "init", "init": {"model": "Gemini 4 Argon (High)"}}
+        ).encode()
+        self.assertEqual(
+            observe("agy", agy_ok)["observed_model"],
+            {"value": "gemini-4-argon-high", "source": "observed"},
+        )
+        agy_unk = json.dumps({"event": "init", "init": {"model": "Unknown Agy Display"}}).encode()
+        self.assertEqual(observe("agy", agy_unk)["observed_model"], UNKNOWN)
 
 
 if __name__ == "__main__":

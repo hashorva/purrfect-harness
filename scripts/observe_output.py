@@ -5,11 +5,18 @@ Only values the CLI printed are reported as observed. Everything else is unknown
 nothing is estimated, copied from the spec, or normalized between providers.
 """
 import json
+import os
+import re
 import sys
+from pathlib import Path
 
 PROVIDERS = ("claude", "codex", "cursor", "agy")
 ALIASES = {"agent": "cursor"}
 USAGE_FIELDS = ("input", "output", "cache", "reasoning")
+REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
+CODEX_THREAD_ID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 
 
 def unknown():
@@ -69,6 +76,96 @@ def all_unknown():
     return result(unknown(), {name: unknown() for name in USAGE_FIELDS}, unknown())
 
 
+def _display_models_table(provider):
+    try:
+        data = json.loads(REGISTRY_PATH.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    tables = data.get("display_models")
+    if not isinstance(tables, dict):
+        return {}
+    table = tables.get(provider)
+    return table if isinstance(table, dict) else {}
+
+
+def _map_display_model(provider, raw_model):
+    if raw_model is None:
+        return unknown()
+    canonical = _display_models_table(provider).get(raw_model)
+    return observed(canonical) if canonical is not None else unknown()
+
+
+def _codex_sessions_dir():
+    if "CODEX_SESSIONS_DIR" in os.environ:
+        value = os.environ["CODEX_SESSIONS_DIR"]
+        if value == "":
+            return None
+        return Path(value)
+    return Path.home() / ".codex/sessions"
+
+
+def _codex_thread_id(stream):
+    thread_ids = []
+    for event in stream:
+        if event.get("type") != "thread.started":
+            continue
+        thread_id = text(event.get("thread_id"))
+        if thread_id and CODEX_THREAD_ID_RE.match(thread_id):
+            thread_ids.append(thread_id)
+    if len(thread_ids) != 1:
+        return None
+    return thread_ids[0]
+
+
+def _codex_session_file(thread_id):
+    root = _codex_sessions_dir()
+    if root is None or not root.is_dir():
+        return None
+    matches = []
+    for path in root.rglob("*"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        if path.suffix not in (".jsonl", ".json"):
+            continue
+        if thread_id in path.name:
+            matches.append(path)
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
+def _codex_model_from_session(path):
+    models = set()
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        try:
+            obj = json.loads(line)
+        except (ValueError, RecursionError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        model = text(obj.get("model")) or text(dig(obj, "payload", "model"))
+        if model:
+            models.add(model)
+    if len(models) == 1:
+        return next(iter(models))
+    return None
+
+
+def _codex_observed_model(stream):
+    thread_id = _codex_thread_id(stream)
+    if thread_id is None:
+        return unknown()
+    session_file = _codex_session_file(thread_id)
+    if session_file is None:
+        return unknown()
+    model = _codex_model_from_session(session_file)
+    return observed(model) if model else unknown()
+
+
 def claude(stream):
     results = [e for e in stream if e.get("type") == "result"]
     if not results:
@@ -107,7 +204,7 @@ def codex(stream):
         "cache": total("cached_input_tokens"),
         "reasoning": total("reasoning_output_tokens"),
     }
-    return result(unknown(), usage, unknown())
+    return result(_codex_observed_model(stream), usage, unknown())
 
 
 def cursor(stream):
@@ -115,7 +212,7 @@ def cursor(stream):
     models = {text(e.get("model")) for e in inits}
     model = unknown()
     if inits and len(models) == 1 and None not in models:
-        model = observed(models.pop())
+        model = _map_display_model("cursor", models.pop())
     results = [e for e in stream if e.get("type") == "result"]
     last = results[-1] if results else {}
     usage = {
@@ -132,7 +229,7 @@ def agy(stream):
     models = {text(dig(e, "init", "model")) for e in inits}
     model = unknown()
     if inits and len(models) == 1 and None not in models:
-        model = observed(models.pop())
+        model = _map_display_model("agy", models.pop())
     results = [e for e in stream if e.get("event") == "result"]
     last = results[-1] if results else {}
     usage = {

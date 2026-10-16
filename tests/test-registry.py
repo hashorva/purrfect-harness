@@ -488,6 +488,30 @@ class RegistryTests(unittest.TestCase):
                 with self.assertRaisesRegex(registry_module.RegistryError, "model"):
                     registry_module.decode_model(registry, "cursor", model)
 
+    def test_display_models_validates_and_rejects_invalid_entries(self):
+        self.assertIn("display_models", registry)
+        registry_module.validate_registry(registry)
+
+        broken = copy.deepcopy(registry)
+        broken["display_models"] = []
+        with self.assertRaisesRegex(registry_module.RegistryError, "display_models must be an object"):
+            registry_module.validate_registry(broken)
+
+        broken = copy.deepcopy(registry)
+        broken["display_models"]["cursor"][""] = "composer-2.5"
+        with self.assertRaisesRegex(registry_module.RegistryError, "keys must be non-empty text"):
+            registry_module.validate_registry(broken)
+
+        broken = copy.deepcopy(registry)
+        broken["display_models"]["agy"]["Gemini 4 Argon (High)"] = ""
+        with self.assertRaisesRegex(registry_module.RegistryError, "values must be non-empty text"):
+            registry_module.validate_registry(broken)
+
+        broken = copy.deepcopy(registry)
+        broken["display_models"]["gemini"] = {"x": "y"}
+        with self.assertRaisesRegex(registry_module.RegistryError, "unknown provider key"):
+            registry_module.validate_registry(broken)
+
 
 if __name__ == "__main__":
     unittest.main()
