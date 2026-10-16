@@ -495,6 +495,8 @@ def run(argv):
                 "skipped": skipped,
                 "started_at": started.strftime("%Y-%m-%dT%H:%M:%SZ"),
             }
+        if live_state(root) != before:
+            fail("live tree changed during seat smoke")
         print(write_summary(root, stamp, summary))
         return 0 if passed else 1
     finally:

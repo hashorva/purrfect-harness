@@ -46,6 +46,8 @@ if brain:
     GIT = ["git", "-c", "user.name=fake", "-c", "user.email=fake@invalid"]
     subprocess.run([*GIT, "add", str(progress)], check=True)
     subprocess.run([*GIT, "commit", "-q", "-m", "smoke: brain"], check=True)
+    if json.loads(os.environ.get("SMOKE_MODES", "{}")).get("brain") == "live-touch":
+        pathlib.Path(os.environ["SMOKE_LIVE"], "TRACKED.txt").write_text("live touched by brain\n")
     raise SystemExit(0)
 seat = re.search(r"T-SMOKE-([a-z]+-[a-z]+)", prompt).group(1).replace("-", ".", 1)
 probe = pathlib.Path(os.environ["SMOKE_PROBE"])
@@ -419,6 +421,14 @@ class SeatSmoke(unittest.TestCase):
         reconstruct = (dest / "reconstruct.out").read_text()
         for run_id in worker_ids:
             self.assertIn(f"RUN {run_id}", reconstruct)
+
+    def test_f007_live_tree_touched_by_the_brain_fails(self):
+        dest = self.parent / "f007-live-brain"
+        modes = {seat: "both" for seat in F007_SEATS}
+        modes["brain"] = "live-touch"
+        result = self.f007("--dest", str(dest), "--keep", modes=modes)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("live tree changed during seat smoke", result.stderr)
 
     def test_f007_failed_seat_exits_1(self):
         dest = self.parent / "f007-fail"
