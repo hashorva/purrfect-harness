@@ -18,6 +18,7 @@ CODEX_THREAD_ID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
 MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}\Z")
+FENCED_JSON_RE = re.compile(r"```(?:json)?\n(.*)\n```", re.S)
 
 
 def model_id(value):
@@ -62,29 +63,15 @@ def observe_self_reported(provider, raw):
         final_text = dig(matches[-1], "item", "text") if matches else None
     if not isinstance(final_text, str):
         return unknown()
-    decoder = json.JSONDecoder()
-    candidates = []
-    pos = 0
-    while True:
-        start = final_text.find("{", pos)
-        if start < 0:
-            break
-        if re.search(r'["\[:,]\s*\Z', final_text[:start]):
-            return unknown()
-        try:
-            value, end = decoder.raw_decode(final_text, start)
-        except RecursionError:
-            return unknown()
-        except json.JSONDecodeError as exc:
-            pos = max(start + 1, exc.pos)
-            continue
-        if isinstance(value, dict):
-            candidates.append((value, end))
-        pos = end
-    if not candidates:
+    body = final_text.strip()
+    fenced = FENCED_JSON_RE.fullmatch(body)
+    if fenced:
+        body = fenced.group(1)
+    try:
+        candidate = json.loads(body)
+    except (ValueError, RecursionError):
         return unknown()
-    candidate, last_end = candidates[-1]
-    if "{" in final_text[last_end:]:
+    if not isinstance(candidate, dict):
         return unknown()
     model = candidate.get("self_reported_model")
     if (
