@@ -105,3 +105,4 @@
 {"type":"architect-run","plan":"T-064","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1 (Argon planner)","input_tokens":30129,"output_tokens":5133,"thinking_tokens":3303,"cache_read_tokens":77409,"outcome":"done"}
 {"run_id":"b043fff4-5201-4935-a895-f05229393441","task":"T-064","category":"tests","size":"XS","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":1,"outcome":"done","failure_class":"none","duration_s":38,"tokens_or_cost":"unknown"}
 {"type":"architect-run","plan":"T-064 oracle repair","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1 (Argon planner)","input_tokens":24426,"output_tokens":2130,"cache_read_tokens":37144,"outcome":"done"}
+{"run_id":"55f6341f-6916-494e-965e-f32ba698811f","task":"T-064-R1","category":"tests","size":"XS","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":2,"outcome":"done","failure_class":"none","duration_s":40,"tokens_or_cost":"unknown"}
