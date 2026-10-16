@@ -17,6 +17,10 @@
   "requested_model": {"value": "claude-haiku-5-5", "source": "configured"},
   "resolved_model": {"value": "claude-haiku-5-5", "source": "configured"},
   "observed_model": {"value": "claude-haiku-5-5", "source": "observed"},
+  "self_reported_model": {
+    "value": null,
+    "source": "unknown"
+  },
   "effort": {"value": "medium", "source": "configured"},
   "fast_state": {"value": "off", "source": "observed"},
   "task_class_tags": ["ledger", "validator"],

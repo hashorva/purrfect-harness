@@ -15,7 +15,7 @@ from datetime import datetime
 
 from execute_provider import provider_contract
 from execution_receipt import ReceiptError, all_unknown, canonical_bytes, capture_before, now, write_receipt
-from observe_output import no_turn, observe
+from observe_output import no_turn, observe, observe_self_reported, resolve_model_identity
 from execution_spec import artifact_directory, SpecError, load_persisted, spec_sha256
 
 # Imported before any provider runs, so a worker's later edit to scripts/ledger.py
@@ -119,14 +119,26 @@ def wall_time_seconds(started_at, finished_at):
     return max(0.0, (finished - started).total_seconds())
 
 
-def build_ledger_row(spec, receipt, *, tier):
+def build_ledger_row(spec, receipt, *, tier, self_reported_model=None):
     observation = receipt["observation"]
     usage = observation["usage"]
     resolved_configuration = receipt.get("resolved_configuration") or {}
     requested_configuration = receipt.get("requested_configuration") or {}
     resolved_model = resolved_configuration.get("model")
+    requested_model_flag = configured_text(requested_configuration.get("model"))
+    observed_model_flag = observation["observed_model"]
+    reported = self_reported_model if self_reported_model is not None else receipt.get("self_reported_model")
+    if (not isinstance(reported, dict) or set(reported) != {"value", "source"}
+            or reported.get("source") != "self_reported" or not isinstance(reported.get("value"), str)
+            or not reported["value"].strip()):
+        reported = unknown_text()
+    self_reported_model_flag = {"value": reported["value"], "source": reported["source"]}
+    identity = resolve_model_identity(requested_model_flag, observed_model_flag, self_reported_model_flag)
+    attributed_model = identity["attributed_model"] or resolved_model
     doors = base_registry_doors(spec["repo"], spec["base_commit"])
-    door, pool, billing_class = registry_door_pool_and_billing(doors, spec["provider"], resolved_model)
+    door, pool, billing_class = registry_door_pool_and_billing(doors, spec["provider"], attributed_model)
+    if ledger_cli_name(spec["provider"]) == "cursor" and door == "unknown" and resolved_model:
+        door, pool, billing_class = registry_door_pool_and_billing(doors, spec["provider"], resolved_model)
     mission = Path(spec["mission"]).name
     feature = receipt["feature"] if receipt.get("feature") else "unknown"
     return {
@@ -145,12 +157,10 @@ def build_ledger_row(spec, receipt, *, tier):
         "tier": tier if tier in ("economy", "premium") else None,
         "pool": pool,
         "billing_class": billing_class,
-        "requested_model": configured_text(requested_configuration.get("model")),
+        "requested_model": requested_model_flag,
         "resolved_model": configured_text(resolved_model),
-        "observed_model": {
-            "value": observation["observed_model"]["value"],
-            "source": observation["observed_model"]["source"],
-        },
+        "observed_model": {"value": observed_model_flag["value"], "source": observed_model_flag["source"]},
+        "self_reported_model": self_reported_model_flag,
         "effort": configured_text(requested_configuration.get("effort")),
         "fast_state": {
             "value": observation["fast_state"]["value"],
@@ -189,7 +199,7 @@ def build_ledger_row(spec, receipt, *, tier):
             "lines": unknown_number(),
         },
         "scope_result": receipt["scope"]["result"],
-        "anti_gaming_flags": [],
+        "anti_gaming_flags": list(identity["flags"]),
         "failure_class": None,
         "escalation_reason": None,
         "outcome": receipt["outcome"],
@@ -232,12 +242,12 @@ def warn_ledger(log, message):
         pass
 
 
-def write_ledger_row(spec, receipt, *, tier, log):
+def write_ledger_row(spec, receipt, *, tier, log, self_reported_model=None):
     if validate_row is None:
         warn_ledger(log, "ledger: module unavailable")
         return
     try:
-        row = build_ledger_row(spec, receipt, tier=tier)
+        row = build_ledger_row(spec, receipt, tier=tier, self_reported_model=self_reported_model)
         # Door names also come from the base commit, so a worker-edited registry cannot reject the row.
         validate_row(row, door_names=frozenset(base_registry_doors(spec["repo"], spec["base_commit"])))
         destination = artifact_directory(spec["repo"], "ledger") / f"{spec['run_id']}.json"
@@ -403,12 +413,17 @@ def run(args):
             pass
 
     finished_at = now()
+    self_reported_model = unknown_text()
     try:
         with log.open("rb") as handle:
             handle.seek(log_offset)
             raw_output = handle.read()
         observe_provider = "cursor" if spec["provider"] == "agent" else spec["provider"]
         observation = observe(observe_provider, raw_output)
+        try:
+            self_reported_model = observe_self_reported(observe_provider, raw_output)
+        except Exception:
+            self_reported_model = unknown_text()
         if outcome == "completed" and no_turn(observe_provider, raw_output):
             outcome = "failed"
             exit_code = NO_TURN_EXIT
@@ -439,7 +454,7 @@ def run(args):
     except (OSError, json.JSONDecodeError):
         warn_ledger(log, "ledger: receipt unreadable")
     else:
-        write_ledger_row(spec, receipt_doc, tier=args.tier, log=log)
+        write_ledger_row(spec, receipt_doc, tier=args.tier, log=log, self_reported_model=self_reported_model)
     try:
         display = receipt.relative_to(Path.cwd())
     except ValueError:

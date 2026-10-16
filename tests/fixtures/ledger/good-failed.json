@@ -17,6 +17,10 @@
   "requested_model": {"value": "gemini-3-pro", "source": "estimated"},
   "resolved_model": {"value": null, "source": "unknown"},
   "observed_model": {"value": null, "source": "unknown"},
+  "self_reported_model": {
+    "value": null,
+    "source": "unknown"
+  },
   "effort": {"value": null, "source": "unknown"},
   "fast_state": {"value": null, "source": "unknown"},
   "task_class_tags": ["agy-seat"],

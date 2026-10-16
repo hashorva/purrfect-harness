@@ -28,7 +28,7 @@ import execution_runner
 SECTION_8_FIELDS = [
     "mission", "feature", "task", "run_id", "parent_run", "group_id", "attempt", "repair_round",
     "cli", "cli_version", "door", "pool", "billing_class",
-    "requested_model", "resolved_model", "observed_model", "effort", "fast_state",
+    "requested_model", "resolved_model", "observed_model", "self_reported_model", "effort", "fast_state",
     "task_class_tags", "allow_list_size", "task_text_tokens", "ste_flag", "active_lesson_ids",
     "experiment_id", "wall_time_s", "turns", "tool_calls", "tokens_input", "tokens_output",
     "tokens_cache", "tokens_reasoning", "cost", "quota_share", "checks", "diff_size",
@@ -39,7 +39,7 @@ NUMBER_FIELDS = [
     "allow_list_size", "task_text_tokens", "wall_time_s", "turns", "tool_calls",
     "tokens_input", "tokens_output", "tokens_cache", "tokens_reasoning", "quota_share",
 ]
-TEXT_FLAG_FIELDS = ["cli_version", "requested_model", "resolved_model", "observed_model", "effort", "fast_state"]
+TEXT_FLAG_FIELDS = ["cli_version", "requested_model", "resolved_model", "observed_model", "self_reported_model", "effort", "fast_state"]
 GOOD = FIXTURES / "good-completed.json"
 
 # Values are assembled at runtime so hostile paths and controls are not source literals.
@@ -178,6 +178,7 @@ def hostile_locations():
         ("requested_model.value", lambda row, v: row["requested_model"].__setitem__("value", v)),
         ("resolved_model.value", lambda row, v: row["resolved_model"].__setitem__("value", v)),
         ("observed_model.value", lambda row, v: row["observed_model"].__setitem__("value", v)),
+        ("self_reported_model.value", lambda row, v: row["self_reported_model"].__setitem__("value", v)),
         ("effort.value", lambda row, v: row["effort"].__setitem__("value", v)),
         ("cli_version.value", lambda row, v: row["cli_version"].__setitem__("value", v)),
     ]
@@ -202,11 +203,13 @@ class LedgerContract(unittest.TestCase):
         for name in NUMBER_FIELDS:
             self.assertEqual(properties[name]["$ref"], "#/$defs/numberFlag", name)
         for name in TEXT_FLAG_FIELDS:
-            expected = "#/$defs/configuredTextFlag" if name in ("requested_model", "resolved_model", "effort") else "#/$defs/textFlag"
+            expected = ("#/$defs/configuredTextFlag" if name in ("requested_model", "resolved_model", "effort") else
+                        "#/$defs/selfReportedTextFlag" if name == "self_reported_model" else "#/$defs/textFlag")
             self.assertEqual(properties[name]["$ref"], expected, name)
         self.assertEqual(properties["cost"]["required"], ["value", "source", "currency"])
         self.assertEqual(load(SCHEMA)["$defs"]["configuredTextFlag"]["properties"]["source"]["enum"], ["observed", "configured", "estimated", "unknown"])
         self.assertEqual(load(SCHEMA)["$defs"]["textFlag"]["properties"]["source"]["enum"], ["observed", "estimated", "unknown"])
+        self.assertEqual(load(SCHEMA)["$defs"]["selfReportedTextFlag"]["properties"]["source"]["enum"], ["self_reported", "unknown"])
 
     def test_good_fixtures_are_valid_through_the_cli(self):
         good = sorted(FIXTURES.glob("good-*.json"))
@@ -388,6 +391,18 @@ class LedgerMutations(unittest.TestCase):
         for name in ("cli_version", "observed_model", "fast_state"):
             with self.subTest(field=name, direction="configured refused"):
                 self.expect_invalid(self.mutated(lambda r, n=name: r[n].update(source="configured")), f"{name}.source: must be one of observed, estimated, unknown")
+
+    def test_self_reported_model_accepts_only_self_reported_or_unknown(self):
+        for source in ("self_reported", "unknown"):
+            row = self.mutated(lambda r, src=source: r["self_reported_model"].update(
+                value="reported-model" if src == "self_reported" else None, source=src))
+            path = Path(self.tmp.name) / f"self-reported-{source}.json"
+            path.write_text(json.dumps(row), encoding="utf-8")
+            self.assertEqual(run_cli("validate", str(path)).returncode, 0)
+        for source in ("observed", "configured", "estimated"):
+            self.expect_invalid(
+                self.mutated(lambda r, src=source: r["self_reported_model"].update(value="m", source=src)),
+                "self_reported_model.source: must be one of self_reported, unknown")
 
     def test_tier_accepts_only_economy_premium_or_null(self):
         for value in ("", "gold", "Economy", 1, True, [], {}):
@@ -925,6 +940,34 @@ class LedgerBuilderTests(unittest.TestCase):
         from ledger import validate_row
         validate_row(row)
         return row
+
+    def test_four_model_columns_never_merge_and_attribution_rules_apply(self):
+        unknown = {"value": None, "source": "unknown"}
+        spec = {"repo": str(ROOT), "base_commit": "HEAD", "mission": "docs/missions/x", "work_unit": "T-1",
+                "run_id": str(uuid.uuid4()), "attempt": 1, "provider": "agy", "write_scope": ["file"]}
+        receipt = {"feature": "F008", "observation": {"observed_model": {"value": "gemini-4-argon-high", "source": "observed"},
+            "fast_state": unknown, "usage": {k: unknown for k in ("input", "output", "cache", "reasoning")}},
+            "started_at": "2026-10-15T00:00:00Z", "finished_at": "2026-10-15T00:00:01Z", "changed_paths": [],
+            "scope": {"result": "pass"}, "outcome": "completed",
+            "requested_configuration": {"model": "gemini-3.8-flash-low", "effort": "high"},
+            "resolved_configuration": {"model": "gemini-3.8-flash-low"}}
+        row = execution_runner.build_ledger_row(spec, receipt, tier="premium",
+            self_reported_model={"value": "claude-opus-5-5-high", "source": "self_reported"})
+        self.assertEqual(row["requested_model"], {"value": "gemini-3.8-flash-low", "source": "configured"})
+        self.assertEqual(row["resolved_model"], {"value": "gemini-3.8-flash-low", "source": "configured"})
+        self.assertEqual(row["observed_model"], {"value": "gemini-4-argon-high", "source": "observed"})
+        self.assertEqual(row["self_reported_model"], {"value": "claude-opus-5-5-high", "source": "self_reported"})
+        self.assertEqual((row["door"], row["pool"]), ("agy-argon", "agy-argon"))
+        self.assertEqual(row["anti_gaming_flags"], ["model_drift"])
+        receipt["observation"]["observed_model"] = unknown
+        receipt["requested_configuration"]["model"] = "gemini-3.8-flash-low"
+        row = execution_runner.build_ledger_row(spec, receipt, tier="premium",
+            self_reported_model={"value": "claude-opus-5-5-high", "source": "self_reported"})
+        self.assertEqual(row["anti_gaming_flags"], ["low_confidence_model"])
+        self.assertEqual((row["door"], row["pool"]), ("agy", "google"))
+        receipt["self_reported_model"] = unknown
+        row = execution_runner.build_ledger_row(spec, receipt, tier="premium")
+        self.assertEqual(row["anti_gaming_flags"], [])
 
     def test_agy_runs_book_the_door_of_their_model_family(self):
         cases = (

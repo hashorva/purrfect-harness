@@ -25,6 +25,7 @@ SCHEMA_VERSION = 2
 REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
 SOURCES = ("observed", "estimated", "unknown")
 CONFIGURED_SOURCES = ("observed", "configured", "estimated", "unknown")
+SELF_REPORTED_SOURCES = ("self_reported", "unknown")
 # Privacy rule, applied to every text value at every nesting level (lists included).
 # Not covered, on purpose: a secret split across several fields. Each part alone looks harmless,
 # and the validator checks one value at a time.
@@ -58,7 +59,7 @@ FIELDS = (
     "schema_version", "mission", "feature", "task", "run_id", "parent_run", "group_id",
     "attempt", "repair_round",
     "cli", "cli_version", "door", "tier", "pool", "billing_class",
-    "requested_model", "resolved_model", "observed_model", "effort", "fast_state",
+    "requested_model", "resolved_model", "observed_model", "self_reported_model", "effort", "fast_state",
     "task_class_tags", "allow_list_size", "task_text_tokens", "ste_flag", "active_lesson_ids",
     "experiment_id",
     "wall_time_s", "turns", "tool_calls", "tokens_input", "tokens_output", "tokens_cache",
@@ -181,6 +182,17 @@ def text_flag(path, value):
     check_flag(path, value, check_text)
 
 
+def self_reported_text_flag(path, value):
+    check_object(path, value, ("value", "source"))
+    if value["source"] not in SELF_REPORTED_SOURCES:
+        fail(sub(path, "source"), "must be one of self_reported, unknown")
+    if value["source"] == "unknown":
+        if value["value"] is not None:
+            fail(sub(path, "value"), "must be null when source is unknown")
+    else:
+        check_text(sub(path, "value"), value["value"])
+
+
 def configured_text_flag(path, value):
     check_object(path, value, ("value", "source"))
     if value["source"] not in CONFIGURED_SOURCES:
@@ -262,6 +274,7 @@ CHECKS = {
     "requested_model": configured_text_flag,
     "resolved_model": configured_text_flag,
     "observed_model": text_flag,
+    "self_reported_model": self_reported_text_flag,
     "effort": configured_text_flag,
     "fast_state": text_flag,
     "task_class_tags": check_text_list,

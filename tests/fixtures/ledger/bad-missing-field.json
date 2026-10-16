@@ -29,6 +29,10 @@
     "value": "claude-haiku-5-5",
     "source": "observed"
   },
+  "self_reported_model": {
+    "value": null,
+    "source": "unknown"
+  },
   "effort": {
     "value": "medium",
     "source": "observed"
