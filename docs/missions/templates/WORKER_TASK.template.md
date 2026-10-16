@@ -11,7 +11,7 @@ max_attempts: 2
 ## Before you write any code
 
 1. Read `AGENTS.md`, this task, `{{MISSION}}/features.json`, and the newest
-   mission `PROGRESS.md` entries. Run `git log --oneline -10`.
+   mission `PROGRESS.md` entries. Run `git log --oneline -10`. Do not read `progress-archive/` (large history, not needed).
 2. Read `{{SKILL_PATH}}` and the other skills required by the task.
 3. Baseline: run `{{BASELINE_CMD}}`. If broken, stop and report.
 4. You are the dispatched worker. Do not launch another worker or brain.
