@@ -55,6 +55,7 @@ Order from the owner: speed rules; 1 (done: F004 accepted, Gate 1 presented); 6,
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-16 — T-050 (claude contract 7: stream-json + --strict-mcp-config) rule 6 checked (focused); dispatch on claude.economy** Architect plan a9e69754: order T-050, T-049, T-048 (T-049's startup watchdog would stop every Claude run at 90 s under contract 6, which prints nothing until the end). Owner decision flagged by the Architect: idle limit = 90 s since launch (no byte at all) and 900 s after the first output, because a silent tool call is normal (one test file alone ran 133 s silently); overrides via SPAWN_*_STALL_SECS / IDLE_SECS. I follow the plan and report it; set the idle value to 90 if you want your literal rule.
 - **2026-10-16 — Architect (Opus brain run a9e69754-3c78-46f6-a040-24b29a630779): probe-seat / stall watchdog / MCP isolation plan (F008) delivered; dispatch order T-050, T-049, T-048** Log `.tasks/logs/a9e69754-3c78-46f6-a040-24b29a630779.log`. Planning only: no diff reviewed, no worker or provider …
   Full text: `reviews/entry-cbb8aaeb.md`.
 - **2026-10-16 — Architect run e08df13d (probe plan) interrupted after 9 s by me (pkill): I launched it before the request was in PROGRESS.md; no change made, tree clean. Request now written; relaunching.**
