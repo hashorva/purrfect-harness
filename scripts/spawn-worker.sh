@@ -28,6 +28,15 @@ fi
 set -euo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 
+# Refuse a bad timing value before any spec is persisted (a bad value would otherwise leave a spec without a receipt).
+for _secs_name in SPAWN_WORKER_TIMEOUT_SECS SPAWN_WORKER_STALL_SECS SPAWN_WORKER_IDLE_SECS; do
+  _secs_value="${!_secs_name:-}"
+  if [ -n "$_secs_value" ] && ! [[ "$_secs_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+    echo "ERROR: $_secs_name must be a non-negative number" >&2
+    exit 2
+  fi
+done
+
 # Delete only the snapshot copy — never the real scripts/spawn-worker.sh. The
 # same EXIT cleanup also owns the workspace lock after it is acquired.
 SNAPSHOT_TO_DELETE=""

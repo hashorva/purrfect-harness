@@ -1472,6 +1472,146 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                               self.log_text(receipt["run_id"]))
                 self.clean_runs()
 
+    def test_runner_and_wrappers_refuse_negative_and_non_finite_timing_values(self):
+        for flag in ("--timeout", "--stall-seconds", "--idle-seconds"):
+            for bad in ("nan", "inf", "-inf"):
+                with self.subTest(flag=flag, bad=bad):
+                    p = self.invoke([
+                        sys.executable, "scripts/execution_runner.py",
+                        "--spec", "s", "--spec-sha256", "h", "--log", "l",
+                        f"{flag}={bad}",
+                    ])
+                    self.assertEqual(p.returncode, 2, p.stderr)
+                    self.assertIn("ERROR: timeout, stall and idle seconds must be finite numbers", p.stderr)
+
+        negative_cases = [
+            ("--timeout", "ERROR: timeout cannot be negative"),
+            ("--stall-seconds", "ERROR: stall and idle seconds cannot be negative"),
+            ("--idle-seconds", "ERROR: stall and idle seconds cannot be negative"),
+        ]
+        for flag, msg in negative_cases:
+            with self.subTest(flag=flag):
+                p = self.invoke([
+                    sys.executable, "scripts/execution_runner.py",
+                    "--spec", "s", "--spec-sha256", "h", "--log", "l",
+                    flag, "-1",
+                ])
+                self.assertEqual(p.returncode, 2, p.stderr)
+                self.assertIn(msg, p.stderr)
+
+        self.write_fleet("codex", "fixture-model", "medium", "unknown", include_brain=True)
+        self.set_status("in-progress")
+        worker_cmd = [
+            "bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+            "--model", "fixture-model", "--feature", "F001",
+        ]
+        brain_cmd = ["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"]
+
+        for cmd, prefix in ((worker_cmd, "SPAWN_WORKER"), (brain_cmd, "SPAWN_BRAIN")):
+            for suffix in ("TIMEOUT_SECS", "STALL_SECS", "IDLE_SECS"):
+                name = f"{prefix}_{suffix}"
+                for bad in ("-1", "nan", "inf", "abc", "1.", ".5"):
+                    with self.subTest(var=name, bad=bad):
+                        p = self.invoke(cmd, env={name: bad})
+                        self.assertEqual(p.returncode, 2, p.stderr + p.stdout)
+                        self.assertIn(f"ERROR: {name} must be a non-negative number", p.stderr)
+                        self.assert_no_run_artifacts()
+                        self.clean_runs()
+
+        for val in ("0", "0.25"):
+            with self.subTest(valid_timeout=val):
+                p = self.invoke(worker_cmd, env={"SPAWN_WORKER_TIMEOUT_SECS": val})
+                self.assertEqual(p.returncode, 0, p.stderr + p.stdout)
+                self.clean_runs()
+
+    def test_non_completed_runs_with_zero_turn_output_are_not_reclassified_as_no_turn(self):
+        fixture = OBSERVE_FIXTURES / "claude-zero-turns.json"
+        path = self.bin / "claude"
+        path.write_text(
+            f"""#!/usr/bin/env python3
+import json, os, pathlib, sys, time
+specs = list(pathlib.Path('.tasks/specs').glob('*.json'))
+pathlib.Path('.tasks/invoked.json').write_text(json.dumps({{
+    'provider': pathlib.Path(sys.argv[0]).name,
+    'argv': sys.argv[1:],
+    'spec_existed': bool(specs),
+    'lock_existed': pathlib.Path(os.environ.get('PURRFECT_DISPATCH_LOCK_PATH', '')).is_dir(),
+    'python_dont_write_bytecode': os.environ.get('PYTHONDONTWRITEBYTECODE'),
+}}))
+sys.stdout.buffer.write(pathlib.Path({json.dumps(str(fixture))}).read_bytes())
+sys.stdout.buffer.flush()
+wait_for = os.environ.get('PROVIDER_WAIT_FOR')
+if wait_for:
+    while not pathlib.Path(wait_for).exists():
+        time.sleep(0.02)
+raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
+"""
+        )
+        path.chmod(0o755)
+
+        self.write_fleet("claude", "claude-model", "medium", "unknown")
+        self.set_status("in-progress")
+        worker_cmd = [
+            "bash", "scripts/spawn-worker.sh", "claude", "docs/missions/fixture/tasks/T-001.md",
+            "--model", "claude-model", "--effort", "medium", "--speed", "unknown", "--feature", "F001",
+        ]
+
+        # 1. failed
+        result = self.invoke(worker_cmd, env={"PROVIDER_EXIT": "7"})
+        self.assertEqual(result.returncode, 7, result.stderr + result.stdout)
+        receipt = self.latest_receipt()
+        self.assertEqual(receipt["outcome"], "failed")
+        self.assertEqual(receipt["exit_code"], 7)
+        self.assertNotIn("NO-TURN:", self.log_text(receipt["run_id"]))
+        self.clean_runs()
+
+        # 2. stalled
+        never = str(self.parent / "never")
+        result = self.invoke(worker_cmd, env={
+            "PROVIDER_WAIT_FOR": never,
+            "SPAWN_WORKER_IDLE_SECS": "0.3",
+            "SPAWN_WORKER_TIMEOUT_SECS": "5",
+        })
+        self.assertEqual(result.returncode, 123, result.stderr + result.stdout)
+        receipt = self.latest_receipt()
+        self.assertEqual(receipt["outcome"], "stalled")
+        self.assertEqual(receipt["exit_code"], 123)
+        self.assertNotIn("NO-TURN:", self.log_text(receipt["run_id"]))
+        self.clean_runs()
+
+        # 3. timed out
+        result = self.invoke(worker_cmd, env={
+            "PROVIDER_WAIT_FOR": never,
+            "SPAWN_WORKER_TIMEOUT_SECS": "0.2",
+            "SPAWN_WORKER_IDLE_SECS": "0",
+            "SPAWN_WORKER_STALL_SECS": "0",
+        })
+        self.assertEqual(result.returncode, 124, result.stderr + result.stdout)
+        receipt = self.latest_receipt()
+        self.assertEqual(receipt["outcome"], "timed_out")
+        self.assertEqual(receipt["exit_code"], 124)
+        self.assertNotIn("NO-TURN:", self.log_text(receipt["run_id"]))
+        self.clean_runs()
+
+    def test_outcome_enums_match_across_runner_receipt_ledger_and_schemas(self):
+        import execution_receipt
+        import ledger
+
+        expected_outcomes = ("completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed")
+        receipt_schema = json.loads((ROOT / "schemas/execution-receipt.schema.json").read_text(encoding="utf-8"))
+        receipt_enum = receipt_schema["$defs"]["receiptBody"]["properties"]["outcome"]["enum"]
+        ledger_schema = json.loads((ROOT / "schemas/ledger-row.schema.json").read_text(encoding="utf-8"))
+        ledger_enum = ledger_schema["properties"]["outcome"]["enum"]
+
+        self.assertEqual(tuple(ledger.OUTCOMES), expected_outcomes)
+        self.assertEqual(tuple(receipt_enum), expected_outcomes)
+        self.assertEqual(tuple(ledger_enum), expected_outcomes)
+
+        runner_code = (ROOT / "scripts/execution_runner.py").read_text(encoding="utf-8")
+        runner_outcomes = set(re.findall(r'"(completed|failed|timed_out|stalled|interrupted|launch_failed)"', runner_code))
+        self.assertEqual(execution_receipt.OUTCOMES, set(ledger.OUTCOMES))
+        self.assertEqual(runner_outcomes, set(ledger.OUTCOMES))
+
     def test_failed_run_still_writes_receipt_observation(self):
         self.install_fixture_emitting_provider("codex", "codex.jsonl")
         self.write_fleet("codex", "codex-model", "medium", "unknown")

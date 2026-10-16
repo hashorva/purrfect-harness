@@ -2,6 +2,7 @@
 """Supervise one authorized provider process and always emit terminal evidence."""
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -458,6 +459,9 @@ def main():
     parser.add_argument("--task")
     parser.add_argument("--tier")
     args = parser.parse_args()
+    if not all(math.isfinite(value) for value in (args.timeout, args.stall_seconds, args.idle_seconds)):
+        print("ERROR: timeout, stall and idle seconds must be finite numbers", file=sys.stderr)
+        return 2
     if args.timeout < 0:
         print("ERROR: timeout cannot be negative", file=sys.stderr)
         return 2

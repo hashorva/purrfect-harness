@@ -202,6 +202,56 @@ class ObserveOutputTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             no_turn("gemini", b"")
 
+    def test_no_turn_zero_tokens_and_turns_combinations(self):
+        raw = read("claude-zero-turns.json")
+        doc = json.loads(raw)
+        self.assertEqual(doc["num_turns"], 0)
+        observed_claude = observe("claude", raw)
+        self.assertEqual(observed_claude["usage"]["input"], {"value": 2, "source": "observed"})
+        self.assertEqual(observed_claude["usage"]["output"], {"value": 33, "source": "observed"})
+        self.assertTrue(no_turn("claude", raw))
+
+        def r(data):
+            return (json.dumps(data) + "\n").encode()
+
+        # claude
+        self.assertTrue(no_turn("claude", r({"type": "result", "num_turns": 1, "usage": {"input_tokens": 0, "output_tokens": 0}})))
+        self.assertTrue(no_turn("claude", r({"type": "result", "num_turns": 0, "usage": {"input_tokens": 2, "output_tokens": 33}})))
+        self.assertFalse(no_turn("claude", r({"type": "result", "num_turns": 1, "usage": {"input_tokens": 0, "output_tokens": 5}})))
+        self.assertFalse(no_turn("claude", r({"type": "result", "num_turns": 1, "usage": {"input_tokens": 5, "output_tokens": 0}})))
+        self.assertFalse(no_turn("claude", r({"type": "result", "num_turns": False, "usage": {"input_tokens": 5, "output_tokens": 5}})))
+
+        # codex
+        self.assertTrue(no_turn("codex", r({"type": "turn.completed", "usage": {"input_tokens": 0, "output_tokens": 0}})))
+        self.assertFalse(no_turn("codex", r({"type": "turn.completed", "usage": {"input_tokens": 0, "output_tokens": 5}})))
+        self.assertFalse(no_turn("codex", r({"type": "turn.completed", "usage": {"input_tokens": 5, "output_tokens": 0}})))
+
+        # cursor and agent
+        for provider in ("cursor", "agent"):
+            with self.subTest(provider=provider):
+                self.assertTrue(no_turn(provider, r({"type": "result", "usage": {"inputTokens": 0, "outputTokens": 0}})))
+                self.assertFalse(no_turn(provider, r({"type": "result", "usage": {"inputTokens": 0, "outputTokens": 5}})))
+                self.assertFalse(no_turn(provider, r({"type": "result", "usage": {"inputTokens": 5, "outputTokens": 0}})))
+
+        # agy
+        def agy_stream(num_turns, inp, out):
+            init = {"event": "init"}
+            res = {
+                "event": "result",
+                "result": {
+                    "status": "SUCCESS",
+                    "num_turns": num_turns,
+                    "response": "OK",
+                    "usage": {"input_tokens": inp, "output_tokens": out},
+                },
+            }
+            return (json.dumps(init) + "\n" + json.dumps(res) + "\n").encode()
+
+        self.assertTrue(no_turn("agy", agy_stream(1, 0, 0)))
+        self.assertFalse(no_turn("agy", agy_stream(1, 0, 1)))
+        self.assertFalse(no_turn("agy", agy_stream(1, 15015, 0)))
+        self.assertTrue(no_turn("agy", agy_stream(0, 15015, 1)))
+
     def test_agent_alias_matches_cursor(self):
         self.assertEqual(observe("agent", read("cursor.jsonl")), CURSOR)
         self.assertEqual(observe("agent", read("cursor.jsonl")), observe("cursor", read("cursor.jsonl")))

@@ -9,6 +9,15 @@
 set -euo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 
+# Refuse a bad timing value before any spec is persisted (a bad value would otherwise leave a spec without a receipt).
+for _secs_name in SPAWN_BRAIN_TIMEOUT_SECS SPAWN_BRAIN_STALL_SECS SPAWN_BRAIN_IDLE_SECS; do
+  _secs_value="${!_secs_name:-}"
+  if [ -n "$_secs_value" ] && ! [[ "$_secs_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+    echo "ERROR: $_secs_name must be a non-negative number" >&2
+    exit 2
+  fi
+done
+
 LOCK_PATH=""
 LOCK_TOKEN=""
 RUNNER_PID=""
