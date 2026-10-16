@@ -20,7 +20,7 @@ fix is behavioral: **keep knowledge on disk, not in the window.**
    for capabilities with no CLI equivalent.
 2. **Query once, persist immediately.** The moment an MCP result matters beyond the
    current thought, write the distilled version to a file:
-   - schema verification → append to the task's PROGRESS.md entry or a `notes/` scratch file
+   - schema verification → append to your final report or a `notes/` scratch file
    - fetched reference data → a file in the repo (with provenance)
    Then work from the file, not from re-querying.
 3. **Batch your questions.** Before calling, list everything you need from that server

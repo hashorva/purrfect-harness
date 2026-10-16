@@ -96,7 +96,7 @@ with `bash scripts/active-mission.sh`.
 │    - Baseline check: the task's project-appropriate checks
 │    - Read the skills the task file names
 │    - Implement ONLY the task. Test end-to-end; report evidence to the orchestrator.
-│    - Commit scoped implementation and PROGRESS.md; leave a clean tree.
+│    - Commit the scoped implementation; leave a clean tree. Do not write PROGRESS.md: the Front Desk records the run from its receipt.
 │
 ├─ 4. REVIEW (orchestrator)
 │    - Read the diff (git diff or PR), PROGRESS.md entry, and verify claims
