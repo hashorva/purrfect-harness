@@ -122,3 +122,4 @@
 {"type":"seat-pause","seat":"agy.premium","model":"gemini-4-argon-high","reason":"weekly quota exhausted (429), resets in about 155 h from 2026-10-16 22:50 CEST","ladder":"planning/review fall to grok (cursor.premium, ask mode for planning) until Argon resets; agy Opus after its pool resets"}
 {"type":"review","task":"T-054-R1","reviewer":"grok-4.7-high (cursor.premium)","rung":"1 (vendor flagship)","verdict":"PASS"}
 {"type":"plan-reformat","plan":"T-055-R1","planner":"grok-4.7-high (cursor.premium, ask mode)","rung":"2 (Argon quota out)"}
+{"run_id":"5e4fea39-d0cc-4284-a899-94bc04612531","task":"T-055-R1","category":"schema-and-attribution","size":"M","seat":"cursor.economy","model":"composer-2.5","effort":"medium","attempt":2,"outcome":"done","failure_class":"none","duration_s":68,"tokens_or_cost":"unknown"}
