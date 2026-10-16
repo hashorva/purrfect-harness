@@ -41,7 +41,11 @@ def provider_contract(spec):
         if speed != "unknown":
             raise SpecError("claude speed must be unknown")
         argv = ["claude", "-p", prompt]
-        if contract_version >= 6:
+        # Contract 7: a stall watchdog needs output before the end;
+        # an unattended run must not wait on an MCP server (--strict-mcp-config starts none).
+        if contract_version >= 7:
+            argv.extend(["--output-format", "stream-json", "--verbose", "--strict-mcp-config"])
+        elif contract_version >= 6:
             argv.extend(["--output-format", "json"])
         argv.extend(["--model", model, "--effort", effort,
                      "--allowedTools", "Read,Write,Edit,Bash"])

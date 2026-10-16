@@ -256,7 +256,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         if provider == "codex":
             return ["exec", "--json", "-C", repo, "-s", "workspace-write", "--add-dir", str(Path(repo) / ".git"), "-m", model, "-c", f'model_reasoning_effort="{effort}"', prompt]
         if provider == "claude":
-            return ["-p", prompt, "--output-format", "json", "--model", model, "--effort", effort, "--allowedTools", "Read,Write,Edit,Bash"]
+            return ["-p", prompt, "--output-format", "stream-json", "--verbose", "--strict-mcp-config", "--model", model, "--effort", effort, "--allowedTools", "Read,Write,Edit,Bash"]
         if provider == "agy":
             return ["--dangerously-skip-permissions", "--print-timeout", "30m", "--model", model, "--effort", effort, "-p", prompt]
         return ["-p", "--force", "--trust", "--output-format", "stream-json", "--workspace", repo, "--model", model, prompt]
@@ -297,7 +297,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertFalse(receipt["workspace_changed"])
         self.assertEqual(receipt["scope"]["result"], "pass")
         self.assertEqual(spec["schema_version"], 3)
-        self.assertEqual(spec["provider_contract_version"], 6)
+        self.assertEqual(spec["provider_contract_version"], 7)
         self.assertEqual(receipt["log_path"], f".tasks/logs/{spec['run_id']}.log")
         self.assertNotIn(spec["prompt"], json.dumps(receipt))
         invoked = json.loads((self.root / ".tasks/invoked.json").read_text())

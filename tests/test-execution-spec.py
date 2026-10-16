@@ -154,7 +154,8 @@ class ExecutionSpecContract(unittest.TestCase):
         self.assertEqual(self.persist(self.spec_v3(provider_contract_version=4), check=False).returncode, 0)
         self.assertEqual(self.persist(self.spec_v3(provider_contract_version=5), check=False).returncode, 0)
         self.assertEqual(self.persist(self.spec_v3(provider_contract_version=6), check=False).returncode, 0)
-        self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=7), check=False).returncode, 0)
+        self.assertEqual(self.persist(self.spec_v3(provider_contract_version=7), check=False).returncode, 0)
+        self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=8), check=False).returncode, 0)
         self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=True), check=False).returncode, 0)
 
     def test_persistence_is_canonical_hashed_and_no_clobber(self):
@@ -265,15 +266,31 @@ class ExecutionSpecContract(unittest.TestCase):
             else:
                 self.assertEqual(result.stdout.strip(), "OK")
 
-    def test_construct_emits_contract_6(self):
+    def test_construct_emits_contract_7(self):
         spec, path, _ = execution_spec.construct(
             role="worker", mission="docs/missions/fixture", feature="F001", work_unit="T-001", attempt=1,
             provider="codex", model="test-model", effort="medium", speed="unknown", repo=str(self.repo),
             prompt="exact prompt", write_scope=["allowed.txt"],
         )
         self.assertEqual(spec["schema_version"], 3)
-        self.assertEqual(spec["provider_contract_version"], 6)
+        self.assertEqual(spec["provider_contract_version"], 7)
         self.assertEqual(json.loads(path.read_text()), spec)
+
+    def test_contract_seven_claude_streams_with_no_mcp_servers_for_every_role(self):
+        tail = ["--model", "test-model", "--effort", "medium", "--allowedTools", "Read,Write,Edit,Bash"]
+        for role in ("worker", "brain"):
+            with self.subTest(role=role):
+                path, digest = self.persisted(self.spec_v3(provider="claude", role=role, provider_contract_version=7))
+                argv = json.loads(self.adapter(path, digest).stdout)["argv"]
+                self.assertEqual(argv, ["claude", "-p", "exact prompt", "--output-format", "stream-json",
+                                        "--verbose", "--strict-mcp-config", *tail])
+        for provider, extra in (("codex", {}), ("agy", {}), ("agent", {"speed": "standard"})):
+            with self.subTest(provider=provider):
+                argvs = []
+                for contract in (6, 7):
+                    path, digest = self.persisted(self.spec_v3(provider=provider, provider_contract_version=contract, **extra))
+                    argvs.append(json.loads(self.adapter(path, digest).stdout)["argv"])
+                self.assertEqual(argvs[0], argvs[1])
 
     def test_contract_six_requests_json_cli_output(self):
         repo = str(self.repo)
