@@ -119,3 +119,6 @@
 {"run_id":"54fb99a8-a84f-4b3a-942b-ed3832332aea","task":"T-054-R1","category":"observation","size":"S","seat":"agy.economy","model":"gemini-3.8-flash-medium","effort":"medium","attempt":2,"outcome":"done","failure_class":"none","duration_s":402,"tokens_or_cost":"unknown"}
 {"type":"architect-run","plan":"T-055-R1","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1 (Argon planner)","input_tokens":52620,"output_tokens":25159,"thinking_tokens":18214,"cache_read_tokens":112602,"outcome":"done"}
 {"type":"review","task":"T-055","reviewer":"gemini-4-argon-high (agy.premium)","rung":"1 (vendor flagship)","verdict":"FAIL","input_tokens":155344,"output_tokens":40250,"cache_read_tokens":1639199}
+{"type":"seat-pause","seat":"agy.premium","model":"gemini-4-argon-high","reason":"weekly quota exhausted (429), resets in about 155 h from 2026-10-16 22:50 CEST","ladder":"planning/review fall to grok (cursor.premium, ask mode for planning) until Argon resets; agy Opus after its pool resets"}
+{"type":"review","task":"T-054-R1","reviewer":"grok-4.7-high (cursor.premium)","rung":"1 (vendor flagship)","verdict":"PASS"}
+{"type":"plan-reformat","plan":"T-055-R1","planner":"grok-4.7-high (cursor.premium, ask mode)","rung":"2 (Argon quota out)"}
