@@ -116,3 +116,6 @@
 {"type":"architect-run","plan":"T-054-R1","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1 (Argon planner)","input_tokens":65166,"output_tokens":13437,"thinking_tokens":8832,"cache_read_tokens":229429,"outcome":"done"}
 {"type":"review","task":"T-054","reviewer":"grok-4.7-high (cursor.premium)","rung":"1 (vendor flagship)","verdict":"FAIL","findings":2}
 {"run_id":"dc14f52f-892b-4537-9fd6-d4fc47cbb117","task":"T-055","category":"schema-and-attribution","size":"M","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":1,"outcome":"done","failure_class":"none","duration_s":63,"tokens_or_cost":"unknown"}
+{"run_id":"54fb99a8-a84f-4b3a-942b-ed3832332aea","task":"T-054-R1","category":"observation","size":"S","seat":"agy.economy","model":"gemini-3.8-flash-medium","effort":"medium","attempt":2,"outcome":"done","failure_class":"none","duration_s":402,"tokens_or_cost":"unknown"}
+{"type":"architect-run","plan":"T-055-R1","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1 (Argon planner)","input_tokens":52620,"output_tokens":25159,"thinking_tokens":18214,"cache_read_tokens":112602,"outcome":"done"}
+{"type":"review","task":"T-055","reviewer":"gemini-4-argon-high (agy.premium)","rung":"1 (vendor flagship)","verdict":"FAIL","input_tokens":155344,"output_tokens":40250,"cache_read_tokens":1639199}
