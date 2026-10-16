@@ -249,7 +249,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
     @staticmethod
     def prompt_worker():
         return ("Read docs/missions/fixture/tasks/T-001.md and complete it exactly. Follow AGENTS.md and the skills "
-                "the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder.")
+                "the task names. Do not touch files outside the allow-list. Do not write PROGRESS.md; the Front Desk records your run from its receipt. End with a short plain-text report: what you changed and the exit code of each check you ran.")
 
     def expected_argv(self, provider, model, effort, speed, prompt):
         repo = self.physical_root

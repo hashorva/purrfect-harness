@@ -400,7 +400,7 @@ CODEX_STUB_PID="$TARGET/.codex-stub-pid"
 printf '#!/usr/bin/env bash\nset -euo pipefail\nprintf "%%s\\n" "$$" > "%s"\nwhile IFS= read -r _codex_stdin_line; do :; done\ntouch "%s"\nprintf "%%s\\n" "$(basename "$0")" "$@" > "%s"\nexit 0\n' "$CODEX_STUB_PID" "$CODEX_EOF_MARK" "$CODEX_OUT" > "$STUBBIN/codex"
 chmod +x "$STUBBIN/codex"
 CODEX_MODEL="codex-test-model"
-CODEX_PROMPT="Read docs/missions/20990101-fixture/tasks/T-001.md and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder."
+CODEX_PROMPT="Read docs/missions/20990101-fixture/tasks/T-001.md and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Do not write PROGRESS.md; the Front Desk records your run from its receipt. End with a short plain-text report: what you changed and the exit code of each check you ran."
 CODEX_EXPECTED="$TARGET/.codex-expected"
 printf '%s\n' codex exec --json -C "$TARGET_CANONICAL" -s workspace-write --add-dir "$TARGET_CANONICAL/.git" -m "$CODEX_MODEL" \
   '-c' 'model_reasoning_effort="medium"' "$CODEX_PROMPT" > "$CODEX_EXPECTED"

@@ -27,13 +27,13 @@ Complete only this feature and stay within the allow-list below.
 ## Files you MAY touch
 
 - `{{ALLOWED_PATH}}`
-- `{{MISSION}}/PROGRESS.md` (prepend one entry only)
 
 ## Files you MUST NOT touch
 
 - `{{DENIED_PATH}}`
 - `{{MISSION}}/features.json`
 - `{{MISSION}}/fleet.json`
+- `{{MISSION}}/PROGRESS.md` (the Front Desk records your run from its receipt)
 - existing execution specs, receipts, and VerificationRecords
 
 ## Verification commands
@@ -45,14 +45,14 @@ Complete only this feature and stay within the allow-list below.
 - [ ] Feature {{F00X}} steps verified with the checks above
 - [ ] Every reproduced failure has a negative regression at its real entry point
 - [ ] Only allow-listed files changed; final Git tree is clean
-- [ ] Mission PROGRESS.md records the result and any missing evidence
-- [ ] Scoped change and progress entry committed as `{{COMMIT_MESSAGE}}`
+- [ ] Your final message reports the result, each check's exit code and any missing evidence (the Front Desk records it)
+- [ ] Scoped change committed as `{{COMMIT_MESSAGE}}`
 - [ ] No feature acceptance or gate/status change made by this worker
 
 ## Iteration policy
 
-Max {{2}} attempts under this task. If exit criteria still fail, stop, record the
-exact failure in PROGRESS.md, and report back for a correction task. Never claim
+Max {{2}} attempts under this task. If exit criteria still fail, stop, state the
+exact failure in your final message, and report back for a correction task. Never claim
 success when a required check's final result is unavailable.
 
 > Run a long check exactly once, e.g. `bash tests/run-tests.sh > /tmp/rt.log 2>&1; echo exit=$?`,

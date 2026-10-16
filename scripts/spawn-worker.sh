@@ -213,7 +213,7 @@ export PURRFECT_DISPATCH_LOCK_PATH="$LOCK_PATH"
 mkdir -p "$ROOT/.tasks/logs" "$ROOT/.tasks/receipts"
 
 PROMPT_TASK="$TASK_REL"
-PROMPT="Read ${PROMPT_TASK} and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder."
+PROMPT="Read ${PROMPT_TASK} and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Do not write PROGRESS.md; the Front Desk records your run from its receipt. End with a short plain-text report: what you changed and the exit code of each check you ran."
 [ -z "$EXTRA" ] || PROMPT+=" $EXTRA"
 
 RUN_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
