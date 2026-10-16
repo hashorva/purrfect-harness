@@ -35,6 +35,7 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-16 — T-043 ready (rule 6 checked incl. full suite); dispatch on claude.economy** Architect plan run 31a836d5-eed3-48ec-bdc5-e7c9e62fb554 (task text in tasks/T-043.md, mutants in reviews/31a836d5-…-mutants.md; the reference patch stays in the Architect's scratchpad, copied to my scratchpad). My check: 2 oracle commands fail on base and pass after the patch; the full suite passes after the patch (353 s).
 - **2026-10-16 — ARCHITECT PLANNING RUN T-043 (brain run 31a836d5-eed3-48ec-bdc5-e7c9e62fb554, log `.tasks/logs/31a836d5-eed3-48ec-bdc5-e7c9e62fb554.log`): T-043 delivered.** Planning only. No worker ran, no commits were reviewed, and this run wrote only this file. The blocks are at the end under "S …
   Full text: `reviews/entry-50b07b45.md`.
 - **2026-10-16 — ARCHITECT PLANNING RUN T-043 ONLY (not a diff review). HARD DEADLINE: write your entry by minute 25, even if incomplete** Design T-043 (verifier: "a skipped check is a failure" enforced in code) with task text, a reference patch against HEAD, and the mutants list, as blocks `=== FIL …
