@@ -42,6 +42,8 @@ UUID_SHAPE = re.compile(r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-
 # Hidden format characters, bidi controls, full-width @ and /, and line separators.
 # U+061C is the Arabic letter mark, a bidi control.
 HIDDEN_CHARS = re.compile("[\u061c\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff\uff20\uff0f\u2028\u2029]")
+# Harness-generated text uses only these characters; patterns below catch what a character set cannot see (token-shaped words, path roots, UUIDs outside id fields, prompt text).
+SAFE_TEXT = re.compile(r"[A-Za-z0-9 ._:/-]{0,200}")
 PROMPT_PREFIX = "Read docs/missions/"
 PROMPT_PREFIXES = re.compile(r"^\s*(?:Read \S*[/\\.]|You are |Follow AGENTS\.md)")
 OUTCOMES = ("completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed")
@@ -117,7 +119,7 @@ def check_privacy(path, value, id_field=False):
         for index, item in enumerate(value):
             check_privacy(f"{path}[{index}]", item)
     elif isinstance(value, str):
-        if (len(value) > 200 or "\n" in value or "\r" in value
+        if (not SAFE_TEXT.fullmatch(value) or len(value) > 200 or "\n" in value or "\r" in value
                 or PROMPT_PREFIX in value or PROMPT_PREFIXES.search(value) or EMAIL.search(value)
                 or ABSOLUTE_PATH.search(value) or SENSITIVE_PATH.search(value) or HIDDEN_CHARS.search(value)
                 or (not id_field and UUID_SHAPE.search(value))

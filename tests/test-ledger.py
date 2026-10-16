@@ -16,6 +16,8 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "scripts/ledger.py"
+ALLOW_RULE = r'SAFE_TEXT = re.compile(r"[A-Za-z0-9 ._:/-]{0,200}")'
+ALLOW_RULE_OFF = 'SAFE_TEXT = re.compile(r".*", re.S)'
 SCHEMA = ROOT / "schemas/ledger-row.schema.json"
 FIXTURES = ROOT / "tests/fixtures/ledger"
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -54,6 +56,7 @@ NEAR_MISSES = (
     "left\u061cright",
 )
 NEAR_MISS_MUTANTS = {
+    "allow-rule": (ALLOW_RULE, ALLOW_RULE_OFF),
     "bare": (r"(?<![\w.-])/(?:tmp|etc)\b", "NEVER"),
     "lookbehind-paren": (r"(?<![\w.-])/(?:tmp|etc)\b", r"(?<![^\w.-])/(?:tmp|etc)\b"),
     "lookbehind-equals": (r"(?<![\w.-])/(?:tmp|etc)\b", r"(?<![^\w.-])/(?:tmp|etc)\b"),
@@ -410,7 +413,7 @@ class LedgerMutations(unittest.TestCase):
         self.expect_invalid([], "row: must be an object")
 
 
-    def assert_rule_is_load_bearing(self, rule, hostile, field="task"):
+    def assert_rule_is_load_bearing(self, rule, hostile, field="task", allow_rule_off=True):
         """Mutate one source expression and prove the real CLI admits its near miss."""
         source = LEDGER.read_text(encoding="utf-8")
         if rule == "bearer":
@@ -419,6 +422,10 @@ class LedgerMutations(unittest.TestCase):
             old, replacement = NEAR_MISS_MUTANTS[rule]
         mutant = source.replace(old, replacement, 1)
         self.assertNotEqual(mutant, source, rule)
+        if allow_rule_off:
+            mutant_with_allow_rule_off = mutant.replace(ALLOW_RULE, ALLOW_RULE_OFF, 1)
+            self.assertNotEqual(mutant_with_allow_rule_off, mutant, "allow rule mutation")
+            mutant = mutant_with_allow_rule_off
         with tempfile.TemporaryDirectory() as temp:
             scripts = Path(temp) / "scripts"
             scripts.mkdir()
@@ -462,7 +469,7 @@ class LedgerMutations(unittest.TestCase):
     def test_near_miss_rules_admit_relative_paths_and_labels(self):
         legitimate = (
             "build/tmp", "src/etc", "docs/tmp-notes", "tmpfile", "etcd", "users",
-            "scripts/ledger.py", "HEAD~1", "foo~bar", "home dir", "bearer-token-check",
+            "scripts/ledger.py", "home dir", "bearer-token-check",
             "Bearer:", "tmp/etc", "claude.economy", "grok-4.7-high",
             "tests/fixtures/ledger/good-completed.json",
         )
@@ -472,6 +479,33 @@ class LedgerMutations(unittest.TestCase):
                 row["failure_class"] = value
                 row["checks"][0]["name"] = value
                 self.assertEqual(self.check_row(row).returncode, 0)
+
+    def test_allow_rule_refuses_every_character_outside_the_safe_set_in_two_fields_and_is_load_bearing(self):
+        hostile_values = (
+            "HEAD" + "~" + "1", "foo" + "~" + "bar", "a" + "@" + "b.example",
+            "x" + "$" + "{HOME}", "~" + "root", "a" + "=" + "b", "q" + "?" + "x",
+            "p" + "#" + "1", "a" + chr(160) + "b", "a" + chr(0x61C) + "b",
+            "a" + chr(0x202E) + "b", chr(27) + "[31mred", "a" + "\t" + "b",
+            "caf" + chr(0xE9), "x" + "%" + "HOME%", "a" + "|" + "b",
+            "a" + ";" + "b", "`" + "x" + "`", "(" + "x" + ")", "a" + "," + "b",
+        )
+        for hostile in hostile_values:
+            for field in ("task", "failure_class"):
+                with self.subTest(value=repr(hostile), field=field):
+                    self.expect_privacy_rejection(
+                        self.mutated(lambda row, n=field, v=hostile: row.__setitem__(n, v)),
+                        f"{field}: privacy", hostile,
+                    )
+        allowed_values = (
+            "claude.economy", "Composer 2.5", "grok-4.7-high", "gemini-3.8-flash-medium",
+            "bash:1", "check:12", "scripts/ledger.py", "a b c", "x_y", "2.1.301",
+        )
+        for value in allowed_values:
+            with self.subTest(allowed=value):
+                row = json.loads(json.dumps(self.base))
+                row["failure_class"] = value
+                self.assertEqual(self.check_row(row).returncode, 0)
+        self.assert_rule_is_load_bearing("allow-rule", "a" + chr(160) + "b", allow_rule_off=False)
 
     def test_dropping_sensitive_path_lookbehind_refuses_relative_path(self):
         source = LEDGER.read_text(encoding="utf-8")

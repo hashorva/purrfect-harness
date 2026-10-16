@@ -2035,10 +2035,10 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         label = check_command_label(long_argv, 0, [long_argv])
         self.assertLess(len(label), 80)
         self.assertNotIn("grep", label)
-        self.assertEqual(label, "bash#1")
+        self.assertEqual(label, "bash:1")
         second = ["bash", "-c", "true"]
         label_two = check_command_label(second, 1, [long_argv, second])
-        self.assertEqual(label_two, "bash#2")
+        self.assertEqual(label_two, "bash:2")
 
         def check():
             probe = self.invoke([
@@ -2049,9 +2049,9 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                 "print(check_command_label(cmds[1], 1, cmds))",
             ])
             self.assertEqual(probe.returncode, 0, probe.stderr)
-            self.assertEqual(probe.stdout.strip(), "bash#2")
+            self.assertEqual(probe.stdout.strip(), "bash:2")
 
-        self.prove_runner_mutation_fails('return f"{base}#{occurrence}"', "return base", check)
+        self.prove_runner_mutation_fails('return f"{base}:{occurrence}"', "return base", check)
         good = json.loads((ROOT / "tests/fixtures/ledger/good-completed.json").read_text())
         good["checks"] = [{"name": label, "exit_code": 0}]
         probe = self.parent / "ledger-label-probe.json"

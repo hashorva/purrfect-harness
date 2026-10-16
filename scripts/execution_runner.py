@@ -54,14 +54,14 @@ def ledger_cli_name(provider):
 def check_command_label(argv, index, commands):
     """Derive a short privacy-safe check name from a verification argv list."""
     if not isinstance(argv, list) or not argv:
-        return f"check#{index + 1}"
+        return f"check:{index + 1}"
     first = argv[0]
     base = Path(first).name if first.endswith((".sh", ".py")) or "/" in first else first
     occurrence = 1
     for prior_index, prior in enumerate(commands[:index]):
         if prior and prior[0] == first:
             occurrence += 1
-    return f"{base}#{occurrence}"
+    return f"{base}:{occurrence}"
 
 
 def configured_text(value):
