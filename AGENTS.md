@@ -26,8 +26,7 @@ When a mission is active, read its task, `PROGRESS.md`, and `features.json` befo
 editing; also inspect `git log --oneline -10` and establish a green baseline.
 Complete one assigned `passes: false` feature per worker session. A worker task's
 allow-list and iteration policy are binding; never edit `features.json` as a worker.
-End cleanly: run the task's checks, commit the scoped change, and append the required
-mission progress record.
+End cleanly: run the task's checks, commit the scoped change, and report the result in your final message. Workers do not write PROGRESS.md; the orchestrator records each run from its receipt.
 
 Local CLI brain and worker runs must leave their receipt under `.tasks/receipts/`.
 Before a feature is accepted or a mission gate/status is advanced, run
