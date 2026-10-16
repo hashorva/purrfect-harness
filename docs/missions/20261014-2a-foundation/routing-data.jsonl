@@ -85,3 +85,4 @@
 {"type":"seeded-calibration","reviewer":"grok-4.7-high","case":"A","task":"T-043","commit":"53fb0f5","planted":"marker pattern without re.M","caught":true,"evidence":".tasks/seeded/grok-A.out (local)"}
 {"type":"seeded-calibration","reviewer":"grok-4.7-high","case":"B","task":"T-042","commit":"0e3ceba","planted":"git read without --no-replace-objects","caught":true,"evidence":".tasks/seeded/grok-B.out (local)"}
 {"type":"seeded-calibration","reviewer":"grok-4.7-high","case":"C","task":"T-044","commit":"eb7e8c7","planted":"~name/ alternative removed from the sensitive-path rule","caught":true,"evidence":".tasks/seeded/grok-C.out (local)"}
+{"run_id":"9ba27d36-cbc8-4fb4-b782-a46829083dc3","task":"T-048","category":"launcher","size":"M","seat":"codex.premium","model":"gpt-5.6-terra","effort":"medium","attempt":1,"outcome":"verify-passed-review-failed","failure_class":"task","duration_s":341,"tokens_or_cost":"unknown"}
