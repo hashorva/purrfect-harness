@@ -281,6 +281,59 @@ class VerificationRecordIntegration(unittest.TestCase):
         self.assertEqual(record["result"], "fail")
         self.assertEqual(record["commands"][0]["exit_code"], 127)
 
+    def assert_skip_fails(self, argv, kind, reason):
+        """A zero-exit check that reports skipped work fails, and its output is never recorded."""
+        run_id = self.make_run_with_check(argv)
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", run_id, self.mission)
+        self.assertNotEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        record_path = self.fixture.mission / "verification" / f"{run_id}.json"
+        record = json.loads(record_path.read_text())
+        self.assertEqual(record["result"], "fail")
+        self.assertEqual(record["commands"][0]["exit_code"], 0)
+        self.assertEqual(record["commands"][0]["skip_detected"], kind)
+        self.assertIn("VERIFY SKIP: command 1 ", verified.stderr)
+        self.assertIn(reason, verified.stderr)
+        self.assertNotIn("CANARY-ab", verified.stdout + verified.stderr + record_path.read_text())
+
+    def test_unittest_skip_fails_the_record(self):
+        self.assert_skip_fails(
+            ["python3", "-c", "import unittest\nclass T(unittest.TestCase):\n    def test_a(self): self.skipTest('CANARY-' + 'ab')\nunittest.main()"],
+            "unittest", "unittest summary reports skipped tests")
+
+    def test_pytest_skip_summary_fails_the_record(self):
+        self.assert_skip_fails(
+            ["python3", "-c", "print('CANARY-' + 'ab'); print('==== 2 passed, 1 skipped in 0.01s ====')"],
+            "pytest", "pytest summary reports skipped tests")
+
+    def test_tap_skip_directive_fails_the_record(self):
+        self.assert_skip_fails(
+            ["python3", "-c", "print('ok 2 - x # skip'); print('CANARY-' + 'ab')"],
+            "tap", "TAP line carries a skip directive")
+
+    def test_stdout_skip_marker_fails_the_record(self):
+        self.assert_skip_fails(
+            ["python3", "-c", "print('SKIP schema/code agreement: ' + 'CANARY-' + 'ab')"],
+            "marker", "output line starts with SKIP")
+
+    def test_stderr_skip_marker_fails_the_record(self):
+        self.assert_skip_fails(
+            ["python3", "-c", "import sys; print('SKIPPED [1] ' + 'CANARY-' + 'ab', file=sys.stderr)"],
+            "marker", "output line starts with SKIP")
+
+    def test_near_miss_skip_text_passes_on_both_streams(self):
+        near = ["  installed=1  identical-skipped=3  conflicts=0", "  ok   : fold skips other missions", "OK",
+                "OK (expected failures=1)", "OK (skipped=0)", "test_fold_skips_other_missions ... ok",
+                " SKIP indented", "SKIPS", "skip: lower case", "===== 3 passed in 0.12s =====",
+                "ok 1 - skip handling works", '{"skipped": {"brain": "not launched"}}']
+        run_id = self.make_run_with_check(
+            ["python3", "-c", "import sys\nfor line in sys.argv[1:]:\n    print(line)\n    print(line, file=sys.stderr)", *near])
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", run_id, self.mission)
+        self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        record = json.loads((self.fixture.mission / "verification" / f"{run_id}.json").read_text())
+        self.assertEqual(record["result"], "pass")
+        self.assertNotIn("skip_detected", record["commands"][0])
+        self.assertNotIn("VERIFY SKIP", verified.stderr)
+
     def test_revalidation_rejects_every_bound_identity_state_and_hash(self):
         """Canonical rehashing cannot turn any weaker record value into authority."""
         verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", self.run_id, self.mission)
@@ -310,10 +363,11 @@ class VerificationRecordIntegration(unittest.TestCase):
             elif label == "argv": doc["commands"][0]["argv"] = ["false"]
             elif label == "outcome": doc["commands"][0]["exit_code"] = 1
             elif label == "timestamp": doc["commands"][0]["finished_at"] = "2000-01-01T00:00:00Z"
+            elif label == "skip": doc["commands"][0]["skip_detected"] = "marker"
             else: raise AssertionError(label)
 
         labels = ("mission", "feature", "work_unit", "attempt", "spec_hash", "receipt_hash", "task_hash",
-                  "task_commit", "receipt_snapshot", "before_snapshot", "after_snapshot", "argv", "outcome", "timestamp")
+                  "task_commit", "receipt_snapshot", "before_snapshot", "after_snapshot", "argv", "outcome", "timestamp", "skip")
         for label in labels:
             with self.subTest(label=label):
                 record_path.chmod(0o600)
@@ -352,6 +406,12 @@ class VerificationRecordIntegration(unittest.TestCase):
         self.assertEqual(set(schema["required"]), policy.RECORD_FIELDS)
         self.assertEqual(schema["properties"]["commands"]["minItems"], 1)
         self.assertEqual(schema["$defs"]["gitState"]["additionalProperties"], False)
+        command_schema = schema["properties"]["commands"]["items"]
+        self.assertNotIn("skip_detected", command_schema["required"])
+        self.assertEqual(command_schema["properties"]["skip_detected"]["enum"], list(policy.SKIP_REASONS))
+        with_skip = json.loads(json.dumps(valid))
+        with_skip["commands"][0]["skip_detected"] = "unittest"
+        self.assertEqual(policy.validate_record(with_skip), with_skip)
         task_pattern = schema["$defs"]["taskLink"]["properties"]["path"]["pattern"]
         receipt_pattern = schema["$defs"]["receiptLink"]["allOf"][1]["properties"]["path"]["pattern"]
         self.assertTrue(re.fullmatch(task_pattern, valid["task"]["path"]))
@@ -367,6 +427,10 @@ class VerificationRecordIntegration(unittest.TestCase):
             ("noncanonical receipt UUID", lambda d: d["execution_receipt"].update(path=".tasks/receipts/not-a-uuid.json")),
             ("negative snapshot count", lambda d: d["receipt_git_after"].update(status_entry_count=-1)),
             ("undeclared property", lambda d: d.update(extra=None)),
+            ("undeclared command property", lambda d: d["commands"][0].update(extra=None)),
+            ("unknown skip kind", lambda d: d["commands"][0].update(skip_detected="other")),
+            ("empty skip kind", lambda d: d["commands"][0].update(skip_detected="")),
+            ("list skip kind", lambda d: d["commands"][0].update(skip_detected=["marker"])),
         )
         for name, change in weakest:
             with self.subTest(name=name):

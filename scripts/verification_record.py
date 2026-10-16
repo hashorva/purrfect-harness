@@ -23,6 +23,16 @@ GIT_FIELDS = {"head", "status_porcelain_v1_z_sha256", "status_entry_count", "dir
 RECORD_FIELDS = {"schema_version", "run_id", "mission", "feature", "work_unit", "attempt",
                  "execution_spec", "execution_receipt", "task", "receipt_git_after",
                  "verification_git_before", "verification_git_after", "commands", "result"}
+COMMAND_FIELDS = {"argv", "started_at", "finished_at", "exit_code", "stdout_sha256", "stderr_sha256"}
+# Each pattern is a runner's own summary or marker anchored at column 0, so prose such as
+# `identical-skipped=3`, "skips other missions" or JSON `"skipped"` never matches.
+SKIP_PATTERNS = (
+    ("unittest", "unittest summary reports skipped tests", re.compile(rb"^OK \(skipped=[1-9][0-9]*", re.M)),
+    ("pytest", "pytest summary reports skipped tests", re.compile(rb"^=+ [^\n]*\b[1-9][0-9]* skipped\b[^\n]* =+[ \t\r]*$", re.M)),
+    ("tap", "TAP line carries a skip directive", re.compile(rb"^(?:not )?ok\b[^\n#]*#[ \t]*skip\b", re.M | re.I)),
+    ("marker", "output line starts with SKIP", re.compile(rb"^SKIP(?:PED)?\b", re.M)),
+)
+SKIP_REASONS = {name: reason for name, reason, _pattern in SKIP_PATTERNS}
 
 
 class VerificationError(ValueError):
@@ -31,6 +41,14 @@ class VerificationError(ValueError):
 
 def fail(message):
     raise VerificationError(message)
+
+
+def skip_kind(data):
+    """Return the first runner skip pattern that matches captured bytes, else None."""
+    for name, _reason, pattern in SKIP_PATTERNS:
+        if pattern.search(data):
+            return name
+    return None
 
 
 def matches(pattern, value):
@@ -216,10 +234,16 @@ def verify(root, mission, run_id):
             except OSError as exc:
                 exit_code, stdout, stderr = 127, b"", str(exc).encode("utf-8", "replace")
             finished = now()
-            outcomes.append({"argv": argv, "started_at": started, "finished_at": finished,
-                             "exit_code": exit_code, "stdout_sha256": digest(stdout),
-                             "stderr_sha256": digest(stderr)})
-            passed = passed and exit_code == 0
+            outcome = {"argv": argv, "started_at": started, "finished_at": finished,
+                       "exit_code": exit_code, "stdout_sha256": digest(stdout),
+                       "stderr_sha256": digest(stderr)}
+            skipped = skip_kind(stdout) or skip_kind(stderr)
+            if skipped:
+                # Report the argv and the reason only; captured output is never printed or stored.
+                outcome["skip_detected"] = skipped
+                print(f"VERIFY SKIP: command {len(outcomes) + 1} {json.dumps(argv)[:200]} reported skipped checks ({SKIP_REASONS[skipped]})", file=sys.stderr)
+            outcomes.append(outcome)
+            passed = passed and exit_code == 0 and not skipped
         after = snapshot(worktree)
         if after != receipt["git_after"]: passed = False
     finally:
@@ -274,9 +298,10 @@ def validate_record(record):
     if not isinstance(record["commands"], list) or not record["commands"]: fail("VerificationRecord commands are invalid")
     for command in record["commands"]:
         if (not isinstance(command, dict) or
-                set(command) != {"argv", "started_at", "finished_at", "exit_code", "stdout_sha256", "stderr_sha256"} or
+                not COMMAND_FIELDS <= set(command) <= COMMAND_FIELDS | {"skip_detected"} or
                 not isinstance(command["argv"], list) or not command["argv"] or
                 not all(isinstance(v, str) and v for v in command["argv"])): fail("VerificationRecord command is invalid")
+        if "skip_detected" in command and (not isinstance(command["skip_detected"], str) or command["skip_detected"] not in SKIP_REASONS): fail("VerificationRecord command skip is invalid")
         if not isinstance(command["exit_code"], int) or isinstance(command["exit_code"], bool) or not matches(RFC3339, command["started_at"]) or not matches(RFC3339, command["finished_at"]) or not matches(HEX, command["stdout_sha256"]) or not matches(HEX, command["stderr_sha256"]): fail("VerificationRecord command evidence is invalid")
         try:
             started = datetime.fromisoformat(command["started_at"].replace("Z", "+00:00"))
@@ -342,7 +367,7 @@ def revalidate_record(root, mission, record):
         fail("VerificationRecord verification snapshots do not equal receipt git_after")
     if [item["argv"] for item in record["commands"]] != commands:
         fail("VerificationRecord commands do not match committed task authorization")
-    command_ok = all(item["exit_code"] == 0 for item in record["commands"])
+    command_ok = all(item["exit_code"] == 0 and "skip_detected" not in item for item in record["commands"])
     if (record["result"] == "pass") != command_ok:
         fail("VerificationRecord result contradicts command outcomes")
     return receipt
