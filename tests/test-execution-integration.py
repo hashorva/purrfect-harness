@@ -75,6 +75,11 @@ if child_path:
     import subprocess
     child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
     pathlib.Path(child_path).write_text(str(child.pid))
+if os.environ.get('PROVIDER_PRINT'):
+    print(os.environ['PROVIDER_PRINT'], flush=True)
+for _ in range(int(os.environ.get('PROVIDER_TICKS', '0'))):
+    print('tick', flush=True)
+    time.sleep(0.1)
 wait_for = os.environ.get('PROVIDER_WAIT_FOR')
 if wait_for:
     while not pathlib.Path(wait_for).exists():
@@ -1288,6 +1293,68 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                     self.assertNotEqual(receipt["model"], "Composer 2.5")
                 if fixture_name == "codex.jsonl":
                     self.assertEqual(receipt["observation"]["observed_model"]["source"], "unknown")
+                self.clean_runs()
+
+    def test_stall_watchdog_stops_silent_providers_for_worker_and_brain(self):
+        self.write_fleet("codex", "stall-model", "medium", "unknown", include_brain=True)
+        self.set_status("in-progress")
+        worker = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                  "--model", "stall-model", "--feature", "F001"]
+        brain = ["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"]
+        silent = {"PROVIDER_WAIT_FOR": str(self.parent / "never")}
+        cases = [
+            ("worker silent since launch", worker, {**silent, "SPAWN_WORKER_STALL_SECS": "0.3",
+                                                     "SPAWN_WORKER_TIMEOUT_SECS": "5"},
+             "STALL: no provider output for 0.3 s since launch; run stopped"),
+            ("worker silent after one line", worker, {**silent, "PROVIDER_PRINT": "hello",
+                                                       "SPAWN_WORKER_IDLE_SECS": "0.3",
+                                                       "SPAWN_WORKER_TIMEOUT_SECS": "5"},
+             "STALL: no provider output for 0.3 s after its last output; run stopped"),
+            ("silent brain", brain, {**silent, "SPAWN_BRAIN_STALL_SECS": "0.3",
+                                     "SPAWN_BRAIN_TIMEOUT_SECS": "5"},
+             "STALL: no provider output for 0.3 s since launch; run stopped"),
+        ]
+        for label, command, env, line in cases:
+            with self.subTest(case=label):
+                result = self.invoke(command, env=env)
+                self.assertEqual(result.returncode, 123, result.stderr + result.stdout)
+                receipt_path = next((self.root / ".tasks/receipts").glob("*.json"))
+                receipt = json.loads(receipt_path.read_text())
+                self.assertEqual(receipt["outcome"], "stalled")
+                valid = self.invoke([sys.executable, "scripts/execution_receipt.py", "validate",
+                                     "--receipt", str(receipt_path)])
+                self.assertEqual(valid.returncode, 0, valid.stderr)
+                self.assertIn(line + "\n", self.log_text(receipt["run_id"]))
+                row = json.loads((self.root / ".tasks/ledger" / f"{receipt['run_id']}.json").read_text())
+                self.assertEqual(row["outcome"], "stalled")
+                self.clean_runs()
+        with self.subTest(case="ticking worker completes"):
+            result = self.invoke(worker, env={"PROVIDER_TICKS": "8", "SPAWN_WORKER_STALL_SECS": "0.3",
+                                              "SPAWN_WORKER_IDLE_SECS": "0.3",
+                                              "SPAWN_WORKER_TIMEOUT_SECS": "5"})
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertEqual(self.latest_receipt()["outcome"], "completed")
+
+    def test_zero_turn_output_turns_a_completed_run_into_a_failure(self):
+        cases = [
+            ("claude", "claude-zero-turns.json"),
+            ("codex", "codex-no-turn.jsonl"),
+            ("agent", "cursor-zero-tokens.jsonl"),
+        ]
+        for provider, fixture_name in cases:
+            with self.subTest(provider=provider):
+                self.install_fixture_emitting_provider(provider, fixture_name)
+                speed = "standard" if provider == "agent" else "unknown"
+                self.write_fleet(provider, "zero-model", "medium", speed)
+                result = self.invoke([
+                    "bash", "scripts/spawn-worker.sh", provider, "docs/missions/fixture/tasks/T-001.md",
+                    "--model", "zero-model", "--effort", "medium", "--speed", speed, "--feature", "F001",
+                ])
+                self.assertEqual(result.returncode, 122, result.stderr + result.stdout)
+                receipt = self.latest_receipt()
+                self.assertEqual(receipt["outcome"], "failed")
+                self.assertIn("NO-TURN: provider output shows 0 turns; completed run recorded as failed\n",
+                              self.log_text(receipt["run_id"]))
                 self.clean_runs()
 
     def test_failed_run_still_writes_receipt_observation(self):

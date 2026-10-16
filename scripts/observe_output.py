@@ -141,6 +141,28 @@ def observe(provider, raw):
     return PARSERS[name](events(raw))
 
 
+def zero_tokens(usage):
+    return usage["input"] == observed(0) and usage["output"] == observed(0)
+
+
+def no_turn(provider, raw):
+    """True only on positive evidence in the CLI's own output that no turn ran."""
+    name = ALIASES.get(provider, provider) if isinstance(provider, str) else None
+    if name not in PARSERS:
+        raise ValueError(f"unknown provider: {provider!r}")
+    if name == "agy":
+        return False
+    stream = events(raw)
+    if name == "claude":
+        results = [e for e in stream if e.get("type") == "result"]
+        turns = results[-1].get("num_turns") if results else None
+        if isinstance(turns, int) and not isinstance(turns, bool) and turns == 0:
+            return True
+    if name == "codex" and stream and not any(e.get("type") == "turn.completed" for e in stream):
+        return True
+    return zero_tokens(PARSERS[name](stream)["usage"])
+
+
 def main(argv):
     if len(argv) != 3:
         print("usage: observe_output.py <provider> <file>", file=sys.stderr)

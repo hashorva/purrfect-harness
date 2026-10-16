@@ -13,7 +13,7 @@ from datetime import datetime
 
 from execute_provider import provider_contract
 from execution_receipt import ReceiptError, all_unknown, canonical_bytes, capture_before, now, write_receipt
-from observe_output import observe
+from observe_output import no_turn, observe
 from execution_spec import artifact_directory, SpecError, load_persisted, spec_sha256
 
 # Imported before any provider runs, so a worker's later edit to scripts/ledger.py
@@ -26,6 +26,8 @@ except Exception:
 
 
 RECEIPT_FAILURE_EXIT = 125
+NO_TURN_EXIT = 122
+STALL_EXIT = 123
 
 
 def unknown_number():
@@ -316,6 +318,7 @@ def run(args):
 
     outcome = "launch_failed"
     exit_code = 127
+    stall_note = None
     log_offset = 0
     try:
         log_offset = log.stat().st_size
@@ -333,6 +336,9 @@ def run(args):
                     start_new_session=True,
                 )
                 deadline = None if args.timeout == 0 else time.monotonic() + args.timeout
+                last_size = os.fstat(output.fileno()).st_size
+                last_growth = time.monotonic()
+                seen_output = False
                 while True:
                     if received_signal is not None:
                         terminate_tree(process)
@@ -344,6 +350,19 @@ def run(args):
                         terminate_tree(process)
                         outcome = "timed_out"
                         exit_code = 124
+                        break
+                    size = os.fstat(output.fileno()).st_size
+                    if size > last_size:
+                        last_size = size
+                        last_growth = time.monotonic()
+                        seen_output = True
+                    stall_limit = args.idle_seconds if seen_output else args.stall_seconds
+                    if stall_limit and time.monotonic() - last_growth >= stall_limit:
+                        terminate_tree(process)
+                        outcome = "stalled"
+                        exit_code = STALL_EXIT
+                        since = "after its last output" if seen_output else "since launch"
+                        stall_note = f"STALL: no provider output for {stall_limit:g} s {since}; run stopped\n"
                         break
                     try:
                         provider_exit = process.wait(timeout=0.1 if remaining is None else min(0.1, remaining))
@@ -366,6 +385,13 @@ def run(args):
         for signum, handler in previous.items():
             signal.signal(signum, handler)
 
+    if stall_note is not None:
+        try:
+            with log.open("a", encoding="utf-8") as handle:
+                handle.write(stall_note)
+        except OSError:
+            pass
+
     finished_at = now()
     try:
         with log.open("rb") as handle:
@@ -373,6 +399,11 @@ def run(args):
             raw_output = handle.read()
         observe_provider = "cursor" if spec["provider"] == "agent" else spec["provider"]
         observation = observe(observe_provider, raw_output)
+        if outcome == "completed" and no_turn(observe_provider, raw_output):
+            outcome = "failed"
+            exit_code = NO_TURN_EXIT
+            with log.open("a", encoding="utf-8") as handle:
+                handle.write("NO-TURN: provider output shows 0 turns; completed run recorded as failed\n")
     except Exception:
         try:
             with log.open("a", encoding="utf-8") as handle:
@@ -413,11 +444,16 @@ def main():
     parser.add_argument("--spec-sha256", required=True)
     parser.add_argument("--log", required=True)
     parser.add_argument("--timeout", type=float, default=2400)
+    parser.add_argument("--stall-seconds", type=float, default=90)
+    parser.add_argument("--idle-seconds", type=float, default=900)
     parser.add_argument("--task")
     parser.add_argument("--tier")
     args = parser.parse_args()
     if args.timeout < 0:
         print("ERROR: timeout cannot be negative", file=sys.stderr)
+        return 2
+    if args.stall_seconds < 0 or args.idle_seconds < 0:
+        print("ERROR: stall and idle seconds cannot be negative", file=sys.stderr)
         return 2
     try:
         return run(args)

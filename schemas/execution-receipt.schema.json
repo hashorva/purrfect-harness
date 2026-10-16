@@ -139,7 +139,7 @@
         "tier": { "type": ["string", "null"] },
         "started_at": { "type": "string", "format": "date-time" },
         "finished_at": { "type": "string", "format": "date-time" },
-        "outcome": { "enum": ["completed", "failed", "timed_out", "interrupted", "launch_failed"] },
+        "outcome": { "enum": ["completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed"] },
         "exit_code": { "type": "integer", "minimum": 0, "maximum": 255 },
         "log_path": { "type": "string", "pattern": "^\\.tasks/logs/[0-9a-f-]+\\.log$" },
         "execution_spec_path": { "$ref": "#/$defs/nonempty" },

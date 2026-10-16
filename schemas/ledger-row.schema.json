@@ -76,7 +76,7 @@
     "anti_gaming_flags": { "$ref": "#/$defs/textList" },
     "failure_class": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
     "escalation_reason": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
-    "outcome": { "enum": ["completed", "failed", "timed_out", "interrupted", "launch_failed"] }
+    "outcome": { "enum": ["completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed"] }
   },
   "$defs": {
     "text": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$" },

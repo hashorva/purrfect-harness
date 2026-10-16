@@ -15,7 +15,7 @@ from execution_spec import artifact_directory, SpecError, load_persisted, receip
 from observe_output import all_unknown
 
 
-OUTCOMES = {"completed", "failed", "timed_out", "interrupted", "launch_failed"}
+OUTCOMES = {"completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed"}
 COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
 RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$")
 SOURCES = {"observed", "estimated", "unknown"}

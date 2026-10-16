@@ -10,7 +10,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests/fixtures/observe"
 sys.path.insert(0, str(ROOT / "scripts"))
-from observe_output import observe
+from observe_output import no_turn, observe
 
 
 UNKNOWN = {"value": None, "source": "unknown"}
@@ -128,6 +128,26 @@ class ObserveOutputTest(unittest.TestCase):
         del doc["modelUsage"]
         raw = json.dumps(doc).encode()
         self.assertEqual(observe("claude", raw), {**CLAUDE, "observed_model": UNKNOWN})
+
+    def test_no_turn_needs_positive_evidence_from_the_cli_output(self):
+        for provider, name in (("claude", "claude-zero-turns.json"), ("codex", "codex-no-turn.jsonl"),
+                               ("cursor", "cursor-zero-tokens.jsonl"), ("agent", "cursor-zero-tokens.jsonl")):
+            with self.subTest(provider=provider, fixture=name):
+                self.assertIs(no_turn(provider, read(name)), True)
+        for provider, name in (("claude", "claude.json"), ("claude", "claude-log.txt"),
+                               ("codex", "codex.jsonl"), ("codex", "codex-two-turns.jsonl"),
+                               ("cursor", "cursor.jsonl")):
+            with self.subTest(provider=provider, fixture=name):
+                self.assertIs(no_turn(provider, read(name)), False)
+        for name in ALL_FIXTURES + ["claude-zero-turns.json", "codex-no-turn.jsonl", "cursor-zero-tokens.jsonl"]:
+            with self.subTest(provider="agy", fixture=name):
+                self.assertIs(no_turn("agy", read(name)), False)
+        for provider in ("claude", "codex", "cursor", "agent", "agy"):
+            for name in HOSTILE:
+                with self.subTest(provider=provider, fixture=name):
+                    self.assertIs(no_turn(provider, read(name)), False)
+        with self.assertRaises(ValueError):
+            no_turn("gemini", b"")
 
     def test_agent_alias_matches_cursor(self):
         self.assertEqual(observe("agent", read("cursor.jsonl")), CURSOR)
