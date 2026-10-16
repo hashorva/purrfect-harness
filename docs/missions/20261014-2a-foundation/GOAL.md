@@ -71,19 +71,19 @@ accepted). `grok` is installed but is not a 2A provider; Grok runs through `curs
 
 ### Proposed seat binds (from inventory — edit only with human GATE 0 approval)
 
-| Seat | CLI | Model | Family | Health | Source |
-|---|---|---|---|---|---|
-| brain | claude | opus | opus | healthy | alias (owner wants agy/claude-opus-5-5-high; no such inventory seat yet) |
-| brain_codex | codex | gpt-6.1-sol | sol | healthy | observed |
-| brain_fable | claude | fable | fable | healthy | alias (named only) |
-| cursor.premium | cursor-agent | grok-4.7-xhigh | grok | healthy | observed |
-| cursor.economy | cursor-agent | composer-2.5 | composer | healthy | observed |
-| codex.premium | codex | gpt-5.6-terra | terra | healthy | observed |
-| codex.economy | codex | gpt-6-luna | luna | healthy | observed |
-| agy.premium | agy | unavailable | pro | unknown | unavailable |
-| agy.economy | agy | gemini-3.8-flash-high | flash | healthy | observed |
-| claude.premium | claude | sonnet | sonnet | healthy | alias |
-| claude.economy | claude | haiku | haiku | healthy | alias |
+| Seat           | CLI          | Model                 | Family   | Health  | Source                                                                   |
+| -------------- | ------------ | --------------------- | -------- | ------- | ------------------------------------------------------------------------ |
+| brain          | claude       | opus                  | opus     | healthy | alias (owner wants agy/claude-opus-5-5-high; no such inventory seat yet) |
+| brain_codex    | codex        | gpt-6.1-sol           | sol      | healthy | observed                                                                 |
+| brain_fable    | claude       | fable                 | fable    | healthy | alias (named only)                                                       |
+| cursor.premium | cursor-agent | grok-4.7-xhigh        | grok     | healthy | observed                                                                 |
+| cursor.economy | cursor-agent | composer-2.5          | composer | healthy | observed                                                                 |
+| codex.premium  | codex        | gpt-5.6-terra         | terra    | healthy | observed                                                                 |
+| codex.economy  | codex        | gpt-6-luna            | luna     | healthy | observed                                                                 |
+| agy.premium    | agy          | unavailable           | pro      | unknown | unavailable                                                              |
+| agy.economy    | agy          | gemini-3.8-flash-high | flash    | healthy | observed                                                                 |
+| claude.premium | claude       | sonnet                | sonnet   | healthy | alias                                                                    |
+| claude.economy | claude       | haiku                 | haiku    | healthy | alias                                                                    |
 
 Degraded or unavailable: `agy.premium` is unavailable (no Pro model on this plan).
 The three `claude` seats and `brain_fable` are alias-sourced: the Claude probe
@@ -95,12 +95,12 @@ acceptance commit and at gates.
 
 Spawn helpers (prefer these so logs land in `.tasks/logs/`):
 
-| Worker | Economy | Premium |
-|---|---|---|
-| cursor (`agent` legacy key) | `bash scripts/spawn-worker.sh agent <task> --tier economy --feature F00X --effort <approved> --speed <approved>` | same flags with `--tier premium` |
-| codex | `bash scripts/spawn-worker.sh codex <task> --tier economy --feature F00X --effort <approved> --speed <approved>` | same flags with `--tier premium` |
-| agy | `bash scripts/spawn-worker.sh agy <task> --tier economy --feature F00X --effort <approved> --speed <approved>` | unavailable |
-| claude | `bash scripts/spawn-worker.sh claude <task> --tier economy --feature F00X --effort <approved> --speed <approved>` | same flags with `--tier premium` |
+| Worker                      | Economy                                                                                                           | Premium                          |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| cursor (`agent` legacy key) | `bash scripts/spawn-worker.sh agent <task> --tier economy --feature F00X --effort <approved> --speed <approved>`  | same flags with `--tier premium` |
+| codex                       | `bash scripts/spawn-worker.sh codex <task> --tier economy --feature F00X --effort <approved> --speed <approved>`  | same flags with `--tier premium` |
+| agy                         | `bash scripts/spawn-worker.sh agy <task> --tier economy --feature F00X --effort <approved> --speed <approved>`    | unavailable                      |
+| claude                      | `bash scripts/spawn-worker.sh claude <task> --tier economy --feature F00X --effort <approved> --speed <approved>` | same flags with `--tier premium` |
 
 In v3.0.0 the spawn scripts still use the key `agent`. F001 renames it to `cursor`
 and keeps `agent` as a legacy name.
