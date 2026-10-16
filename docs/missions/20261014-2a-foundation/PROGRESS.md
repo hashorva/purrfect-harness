@@ -35,6 +35,7 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-16 — T-044 attempt 1 (codex.economy, run ea837ce2-5167-4fe7-8eb2-5825b00890cd): stopped at baseline — environment failure (stray bytecode), not a task failure** A stray `scripts/__pycache__/ledger.cpython-314.pyc` (written 03:15; most likely by a command of mine or a review run that did not set PYTHONDONTWRITEBYTECODE) made `test_no_bytecode_folder_in_the_tree` fail; the worker made no change, as instructed. Deleted the folder (recorded) and retried without using an attempt. Lesson: check for `__pycache__` before every dispatch, not only before verification.
 - **2026-10-16 — T-044 ready (rule 6 checked incl. full suite); dispatch on codex.economy (label F004)** Architect run cd8b0381-28d5-462f-8aa7-c88b24e1f4fa: task text, mutants (`reviews/cd8b0381-…-mutants.md`), reference patch kept in my scratchpad. My check: the oracle fails on base and passes after the patch; the full suite passes after (367 s).
 - **2026-10-16 — ARCHITECT PLANNING RUN T-044 (brain run cd8b0381-28d5-462f-8aa7-c88b24e1f4fa, log `.tasks/logs/cd8b0381-28d5-462f-8aa7-c88b24e1f4fa.log`): T-044 delivered.** Planning only. The spec said action `review`, but no worker diff is waiting; I did the planning request above. No worker ran, …
   Full text: `reviews/entry-917890ce.md`.
