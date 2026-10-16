@@ -351,6 +351,15 @@ def resolve(args):
         if val is not None and seat[key] != val: fail(f"fleet {key} assertion failed")
     print(canonical({"seat":args.seat,**seat}),end="")
 
+def same_resolution(a,b):
+    """Equal after mapping each provider to its canonical name; an unknown provider compares as written."""
+    registry=load_registry()
+    def norm(item):
+        if not isinstance(item,dict) or "provider" not in item: return item
+        try: provider=canonical_provider(registry,item["provider"])
+        except (RegistryError,TypeError): provider=item["provider"]
+        return {**item,"provider":provider}
+    return norm(a)==norm(b)
 def drift(root_path,seat_name,fleet,resolved,inventory,inventory_path):
     seat=fleet["seats"][seat_name]; mission=fleet["mission"]["path"]
     root=Path(root_path).resolve()
@@ -364,7 +373,7 @@ def drift(root_path,seat_name,fleet,resolved,inventory,inventory_path):
                 if event.get("mission")==mission and event.get("seat")==seat_name: prior=event["to"]
         except (OSError,json.JSONDecodeError,KeyError) as exc: fail(f"invalid drift log: {exc}")
     source=prior or seat["approved_resolution"]
-    if source == resolved: return
+    if same_resolution(source,resolved): return
     try:
         if log.parent.exists() and log.parent.stat().st_mode & 0o222 == 0: raise OSError("drift directory has no write bits")
         if log.exists() and log.stat().st_mode & 0o222 == 0: raise OSError("drift log has no write bits")

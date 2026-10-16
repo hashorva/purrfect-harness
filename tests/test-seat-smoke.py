@@ -3,7 +3,8 @@
 
 Every fixture lives in a temporary directory.  The source repository is a copy of
 this harness's scripts, schemas and registry, plus a fixture mission whose fleet is
-the live canonical fleet with only its mission path changed.
+the frozen v1 fixture (tests/fixtures/fleet/v1-2a-foundation.json, not the live mission
+fleet) with only its mission path changed.  The v2 tests rewrite that mission's fleet.
 """
 import json
 import os
@@ -20,6 +21,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from dispatch_policy import worker_write_scope  # noqa: E402
 from execution_receipt import snapshot  # noqa: E402
+import fleet_state  # noqa: E402
 from fleet_state import canonical, validate_fleet  # noqa: E402
 from verification_record import task_at_base  # noqa: E402
 
@@ -100,9 +102,9 @@ class SeatSmoke(unittest.TestCase):
         shutil.copytree(ROOT / "scripts", self.source / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
         shutil.copytree(ROOT / "schemas", self.source / "schemas")
         shutil.copy2(ROOT / "harness-registry.json", self.source / "harness-registry.json")
-        live = json.loads((ROOT / "docs/missions/20261014-2a-foundation/fleet.json").read_text())
+        live = json.loads((ROOT / "tests/fixtures/fleet/v1-2a-foundation.json").read_text())
         live["mission"] = {"path": FIXTURE}
-        # The live agy freeze encodes high while its effort is medium; contract 8 rejects that mismatch.
+        # The frozen agy seat encodes high while its effort is medium; contract 8 rejects that mismatch.
         live["seats"]["agy.economy"].update(model="gemini-3.8-flash-medium", effort="medium")
         validate_fleet(live)
         self.fleet = live
@@ -176,6 +178,79 @@ class SeatSmoke(unittest.TestCase):
         result = self.doctor("--dry-run", "--mission", FIXTURE, *extra)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return json.loads(result.stdout)
+
+    NOW = "2026-10-16T18:00:00Z"
+    V2_MODELS = {"claude": ["opus", "sonnet", "haiku"], "codex": ["gpt-6-luna"], "agent": ["grok-4.7-high"],
+                 "agy": ["gemini-3.8-flash-medium", "claude-opus-5-5-high"]}
+
+    def make_v2(self, failed=()):
+        """Replace the fixture fleet with a v2 fleet and give the live root its inventory."""
+        providers = {}
+        for key in fleet_state.PROVIDERS:
+            base = {"probed_at": self.NOW, "capabilities": fleet_state.CAPABILITIES[key]}
+            if key in failed:
+                providers[key] = {**base, "status": "failure", "path": "/bin/" + key, "error": "fixture failure"}
+            elif key == "claude":
+                providers[key] = {**base, "status": "success", "path": "/bin/claude", "aliases": self.V2_MODELS[key], "observed_models": []}
+            else:
+                providers[key] = {**base, "status": "success", "path": "/bin/" + key, "aliases": [], "observed_models": self.V2_MODELS[key]}
+        inventory = {"schema_version": 1, "probed_at": self.NOW, "providers": providers, "last_good": {},
+                     "seats": fleet_state.make_seats(providers, {})}
+        fleet_state.validate_inventory(inventory)
+        (self.source / ".tasks").mkdir(exist_ok=True)
+        self.inventory_bytes = fleet_state.canonical(inventory).encode()
+        (self.source / ".tasks/fleet-inventory.json").write_bytes(self.inventory_bytes)
+
+        def seat(family, effort, doors, speed, provider, model):
+            return {"family": family, "effort": effort, "speed": speed, "doors": doors,
+                    "approved_resolution": {"provider": provider, "model": model, "effort": effort, "speed": speed}}
+        fleet = {"schema_version": 2, "mission": {"path": FIXTURE}, "inventory": {"sha256": "0" * 64, "probed_at": self.NOW},
+                 "approval": {"status": "approved", "approved_by": "test", "approved_at": self.NOW},
+                 "policy": {"billing_classes": ["included"], "fast": False, "no_zdr": "allow"},
+                 "seats": {"brain": seat("opus", "high", ["agy", "claude"], "unknown", "agy", "claude-opus-5-5-high"),
+                           "agy.economy": seat("flash", "medium", ["agy"], "unknown", "agy", "gemini-3.8-flash-medium"),
+                           "claude.economy": seat("haiku", "medium", ["claude"], "unknown", "claude", "haiku"),
+                           "cursor.premium": seat("grok", "high", ["cursor-grok"], "standard", "cursor", "grok-4.7-high")}}
+        validate_fleet(fleet)
+        (self.source / FIXTURE / "fleet.json").write_text(canonical(fleet))
+        self.git("commit", "-qam", "v2 fleet")
+
+    def test_v2_dry_run_plans_resolved_seats_and_clone_has_inventory(self):
+        self.make_v2()
+        data = self.plan("--dest", str(self.parent / "dest"), "--keep")
+        self.assertEqual(sorted(data["seats"]), ["agy.economy", "claude.economy", "cursor.premium"])
+        argv = data["seats"]["cursor.premium"]["argv"]
+        self.assertEqual((argv[2], argv[argv.index("--effort") + 1], argv[argv.index("--speed") + 1]),
+                         ("cursor", "high", "standard"))
+        self.assertEqual(data["seats"]["agy.economy"]["argv"][2], "agy")
+        clone = Path(data["clone"])
+        self.assertEqual((clone / ".tasks/fleet-inventory.json").read_bytes(), self.inventory_bytes)
+        resolved = subprocess.run(
+            ["python3", str(clone / "scripts/fleet_state.py"), "resolve", "--fleet", str(clone / SMOKE_MISSION / "fleet.json"),
+             "--seat", "cursor.premium", "--inventory", str(clone / ".tasks/fleet-inventory.json"), "--root", str(clone)],
+            cwd=clone, text=True, capture_output=True, env=ENV)
+        self.assertEqual(resolved.returncode, 0, resolved.stderr)
+        self.assertEqual(json.loads(resolved.stdout)["model"], "grok-4.7-high")
+
+    def test_v2_seat_launches_with_resolved_provider_and_model(self):
+        self.make_v2()
+        result = self.launch("--seat", "cursor.premium", "--dest", str(self.parent / "dest"),
+                             modes={"cursor.premium": "both"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        entry = json.loads(result.stdout)["seats"]["cursor.premium"]
+        self.assertEqual(entry["status"], "usable")
+        self.assertEqual((entry["provider"], entry["model"], entry["effort"], entry["speed"]),
+                         ("cursor", "grok-4.7-high", "high", "standard"))
+        self.assertEqual((self.parent / "probe" / "launched.cursor.premium").read_text(), "cursor-agent")
+
+    def test_v2_unavailable_seat_exits_2_before_the_destination_exists(self):
+        self.make_v2(failed=("agy",))
+        dest = self.parent / "dest"
+        for extra in ((), ("--dry-run",)):
+            result = self.doctor(*extra, "--mission", FIXTURE, "--seat", "agy.economy", "--dest", str(dest))
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn("seat agy.economy resolves as unavailable", result.stderr)
+            self.assertFalse(dest.exists())
 
     def test_dry_run_lists_every_non_brain_seat(self):
         dest = self.parent / "dest"

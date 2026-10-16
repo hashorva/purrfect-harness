@@ -26,7 +26,7 @@ if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 from dispatch_policy import mission_path
 from execution_receipt import load_receipt, snapshot
-from fleet_state import canonical, read_json, validate_fleet
+from fleet_state import PolicyError, canonical, read_json, resolve_v2, validate_fleet, validate_inventory
 from harness_registry import canonical_provider, load_registry
 
 FIXTURE_DIR = "docs/missions/00000000-seat-smoke"
@@ -189,6 +189,23 @@ def smoke_argv(seat, seat_spec, task, *, feature="SMOKE"):
     return ["bash", "scripts/spawn-worker.sh", provider, task, "--tier", tier,
             "--feature", feature, "--attempt", "1",
             "--effort", seat_spec["effort"], "--speed", seat_spec["speed"]]
+
+
+def resolved_seats(root, fleet, names):
+    """For a v2 fleet: each named seat as {provider, model, effort, speed}, resolved against the live inventory."""
+    inventory_path = root / ".tasks/fleet-inventory.json"
+    try:
+        inventory, _ = read_json(inventory_path, "inventory", require_canonical=True)
+        validate_inventory(inventory)
+        registry = load_registry()
+        resolved = {name: resolve_v2(fleet, name, registry, inventory) for name in names}
+    except PolicyError as exc:
+        fail(str(exc), code=2)
+    for name, result in resolved.items():
+        if result["source"] == "unavailable":
+            fail(f"seat {name} resolves as unavailable", code=2)
+    return {name: {key: result[key] for key in ("provider", "model", "effort", "speed")}
+            for name, result in resolved.items()}
 
 
 def f007_brain_argv():
@@ -418,6 +435,8 @@ def run(argv):
         if not smoke_seats:
             fail("fleet has no non-brain seats to smoke")
 
+    smoke_specs = (resolved_seats(root, source_fleet, smoke_seats) if source_fleet["schema_version"] == 2
+                   else {name: seats[name] for name in smoke_seats})
     dest, created = prepare_dest(root, args.dest)
     clone = dest / "repo"
     try:
@@ -427,12 +446,15 @@ def run(argv):
             clone, source_rel, source_fleet, hashlib.sha256(source_raw).hexdigest(), smoke_seats,
             fixture_dir=fixture_dir, feature_id=feature_id,
         )
+        if source_fleet["schema_version"] == 2:
+            (clone / ".tasks").mkdir(exist_ok=True)
+            shutil.copy2(root / ".tasks/fleet-inventory.json", clone / ".tasks/fleet-inventory.json")
         plan = {}
         for seat in smoke_seats:
             task = f"{fixture_dir}/tasks/{task_id_for(seat)}.md"
             plan[seat] = {
                 "task": task,
-                "argv": smoke_argv(seat, seats[seat], task, feature=feature_id),
+                "argv": smoke_argv(seat, smoke_specs[seat], task, feature=feature_id),
             }
         skipped = {name: BRAIN_NOTE for name in seats if name.startswith("brain")}
         brain_plan = {"argv": f007_brain_argv()} if args.f007 else None
@@ -456,7 +478,7 @@ def run(argv):
 
         seat_results = {}
         for seat in smoke_seats:
-            seat_results[seat] = smoke_seat(seat, seats[seat], plan[seat], clone, dest, args.timeout)
+            seat_results[seat] = smoke_seat(seat, smoke_specs[seat], plan[seat], clone, dest, args.timeout)
         after = live_state(root)
         if after != before:
             fail("live tree changed during seat smoke")

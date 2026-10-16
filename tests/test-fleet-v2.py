@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FLEET_STATE = ROOT / "scripts" / "fleet_state.py"
 SCHEMA = ROOT / "schemas" / "mission-fleet.schema.json"
 MISSION_FLEET = ROOT / "docs/missions/20261014-2a-foundation/fleet.json"
+V1_FLEET = ROOT / "tests/fixtures/fleet/v1-2a-foundation.json"
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -314,6 +315,31 @@ def main():
         assert len(events) == 1 and events[0]["from"]["model"] == "gpt-5.6-luna" and events[0]["to"]["model"] == "gpt-6-luna", events
         assert set(events[0]) == {"at", "mission", "seat", "from", "to", "inventory_sha256"}
 
+        # A prior row that names Cursor by its persisted name `agent` is not drift; any real change still is.
+        cursor_root = d / "cursor"
+        cursor_fleet_path = cursor_root / "docs/missions/fixture/fleet.json"
+        cursor_fleet_path.parent.mkdir(parents=True)
+        write(cursor_fleet_path, fleet_with({"cursor.premium": seat("grok", ["cursor-grok"], effort="high", speed="standard")}))
+        cursor_inventory_path = cursor_root / ".tasks/fleet-inventory.json"
+        cursor_inventory_path.parent.mkdir(parents=True)
+        cursor_inventory_path.write_text(fleet_state.canonical(inventory({"agent": ["grok-4.7-high"]})))
+        cursor_log = cursor_root / ".tasks/drift/fixture.jsonl"
+        grok = {"provider": "agent", "model": "grok-4.7-high", "effort": "high", "speed": "standard"}
+
+        def rows_after_prior(prior):
+            cursor_log.parent.mkdir(parents=True, exist_ok=True)
+            cursor_log.write_text(json.dumps({"at": NOW, "mission": "docs/missions/fixture", "seat": "cursor.premium",
+                                              "from": prior, "to": prior, "inventory_sha256": "0" * 64}) + "\n")
+            result = run_cli("resolve", "--fleet", cursor_fleet_path, "--seat", "cursor.premium",
+                             "--mission-path", "docs/missions/fixture", "--inventory", cursor_inventory_path, "--root", cursor_root)
+            assert result.returncode == 0, (result.returncode, result.stderr)
+            assert json.loads(result.stdout)["provider"] == "cursor", result.stdout
+            return len(cursor_log.read_text().splitlines()) - 1
+        assert rows_after_prior(grok) == 0, "agent -> cursor must not be drift"
+        assert rows_after_prior({**grok, "model": "grok-4.7-xhigh"}) == 1
+        assert rows_after_prior({**grok, "provider": "codex"}) == 1
+        assert rows_after_prior({**grok, "provider": "not-a-provider"}) == 1
+
         blocked_root = d / "blocked"
         blocked_fleet_path = blocked_root / "docs/missions/fixture/fleet.json"
         blocked_fleet_path.parent.mkdir(parents=True)
@@ -332,7 +358,8 @@ def main():
 
         v1_root = d / "v1-root"
         v1_root.mkdir()
-        v1_doc = json.loads(MISSION_FLEET.read_text())
+        v1_doc = json.loads(V1_FLEET.read_text())
+        assert v1_doc["schema_version"] == 1, "the frozen fixture must be a v1 fleet"
         v1_doc["mission"]["path"] = "docs/missions/fixture"
         argon_doc = copy.deepcopy(v1_doc)
         argon_doc["seats"]["agy.premium"] = copy.deepcopy(argon_doc["seats"]["agy.economy"])

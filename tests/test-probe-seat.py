@@ -15,6 +15,7 @@ SCRIPTS = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 from execute_provider import provider_contract
 from execution_spec import CURRENT_PROVIDER_CONTRACT
+import fleet_state
 
 
 FAKE = r'''#!__PYTHON__
@@ -161,6 +162,82 @@ class ProbeSeatTest(unittest.TestCase):
             bad = self.run_probe(seat)
             self.assertEqual(bad.returncode, 2)
             self.assertFalse(self.out.exists())
+
+    NOW = "2026-10-16T18:00:00Z"
+    MODELS = {"claude": ["opus", "sonnet", "haiku"], "codex": ["gpt-6-luna"], "agent": ["grok-4.7-high"],
+              "agy": ["gemini-3.8-flash-medium", "claude-opus-5-5-high"]}
+
+    def v2_files(self, failed=()):
+        providers = {}
+        for key in fleet_state.PROVIDERS:
+            base = {"probed_at": self.NOW, "capabilities": fleet_state.CAPABILITIES[key]}
+            if key in failed:
+                providers[key] = {**base, "status": "failure", "path": "/bin/" + key, "error": "fixture failure"}
+            elif key == "claude":
+                providers[key] = {**base, "status": "success", "path": "/bin/claude", "aliases": self.MODELS[key], "observed_models": []}
+            else:
+                providers[key] = {**base, "status": "success", "path": "/bin/" + key, "aliases": [], "observed_models": self.MODELS[key]}
+        inventory = {"schema_version": 1, "probed_at": self.NOW, "providers": providers, "last_good": {},
+                     "seats": fleet_state.make_seats(providers, {})}
+        fleet_state.validate_inventory(inventory)
+        self.inventory = self.temp / "inventory.json"
+        self.inventory.write_text(fleet_state.canonical(inventory))
+
+        def seat(family, effort, doors, speed, provider, model):
+            return {"family": family, "effort": effort, "speed": speed, "doors": doors,
+                    "approved_resolution": {"provider": provider, "model": model, "effort": effort, "speed": speed}}
+        fleet = {"schema_version": 2, "mission": {"path": "docs/missions/fixture"},
+                 "inventory": {"sha256": "0" * 64, "probed_at": self.NOW},
+                 "approval": {"status": "approved", "approved_by": "test", "approved_at": self.NOW},
+                 "policy": {"billing_classes": ["included"], "fast": False, "no_zdr": "allow"},
+                 "seats": {"cursor.premium": seat("grok", "high", ["cursor-grok"], "standard", "cursor", "grok-4.7-high"),
+                           "brain": seat("opus", "high", ["agy", "claude"], "unknown", "agy", "claude-opus-5-5-high"),
+                           "agy.economy": seat("flash", "medium", ["agy"], "unknown", "agy", "gemini-3.8-flash-medium")}}
+        fleet_state.validate_fleet(fleet)
+        self.fleet = self.temp / "fleet-v2.json"
+        self.fleet.write_text(fleet_state.canonical(fleet))
+
+    def dry(self, seat, inventory=None):
+        args = ["bash", str(SCRIPTS / "probe-seat.sh"), seat, "--fleet", str(self.fleet), "--out-root", str(self.out), "--dry-run"]
+        if inventory is not False:
+            args += ["--inventory", str(inventory or self.inventory)]
+        return subprocess.run(args, text=True, capture_output=True, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+
+    def test_v2_seats_resolve_like_dispatch(self):
+        self.v2_files()
+        for seat, provider, model, effort, speed in (
+                ("cursor.premium", "agent", "grok-4.7-high", "high", "standard"),
+                ("brain", "agy", "claude-opus-5-5-high", "high", "unknown"),
+                ("agy.economy", "agy", "gemini-3.8-flash-medium", "medium", "unknown")):
+            with self.subTest(seat=seat):
+                result = self.dry(seat)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                plan = json.loads(result.stdout)
+                self.assertEqual(plan["argv"], self.expected_argv_for(plan, provider, model, effort, speed))
+        self.assertFalse(self.out.exists())
+
+    def expected_argv_for(self, plan, provider, model, effort, speed):
+        folder = plan["folder"]
+        argv, _ = provider_contract({"provider": provider, "model": model, "effort": effort, "speed": speed,
+            "repo": folder, "prompt": "Reply with OK only.", "write_scope": [], "role": "worker",
+            "provider_contract_version": CURRENT_PROVIDER_CONTRACT})
+        return argv
+
+    def test_v2_failed_door_and_bad_inputs(self):
+        self.v2_files(failed=("agy",))
+        result = self.dry("agy.economy")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("seat agy.economy resolves as unavailable", result.stderr)
+        brain = self.dry("brain")
+        self.assertEqual(brain.returncode, 0, brain.stderr)
+        plan = json.loads(brain.stdout)
+        self.assertEqual(plan["argv"], self.expected_argv_for(plan, "claude", "opus", "high", "unknown"))
+        self.assertEqual(self.dry("nope.seat").returncode, 2)
+        missing = self.dry("brain", inventory=self.temp / "absent.json")
+        self.assertEqual(missing.returncode, 2)
+        self.assertNotIn("Traceback", missing.stderr)
+        self.assertFalse(self.out.exists())
+        self.assertFalse((self.temp / ".tasks").exists())
 
 
 if __name__ == "__main__":

@@ -15,10 +15,13 @@ import time
 from execute_provider import provider_contract
 from execution_spec import CURRENT_PROVIDER_CONTRACT
 from observe_output import no_turn, observe
+import fleet_state
+from harness_registry import load_registry
 
 
 CLASSES = ("ok", "no-turn", "mcp-init-wait", "permission-wait", "input-wait", "auth", "limit", "unknown")
 SEAT = re.compile(r"[a-z]+(?:\.[a-z]+)?")
+DEFAULT_INVENTORY = Path(__file__).resolve().parent.parent / ".tasks/fleet-inventory.json"
 STEP_ZERO = "search the CLI's GitHub issues for the exact symptom first"
 
 
@@ -96,11 +99,31 @@ def _fleet_path(value):
     return root / mission / "fleet.json"
 
 
-def _seat(fleet_path, name):
+def _seat_v2(data, name, inventory_path):
+    """Resolve a v2 seat exactly as dispatch does; never writes drift rows."""
+    try:
+        inventory, _ = fleet_state.read_json(inventory_path, "inventory", require_canonical=True)
+        fleet_state.validate_inventory(inventory)
+        resolved = fleet_state.resolve_v2(data, name, load_registry(), inventory)
+    except (fleet_state.PolicyError, OSError, ValueError) as exc:
+        raise ValueError(f"cannot resolve seat {name}: {exc}") from exc
+    if resolved["source"] == "unavailable":
+        raise ValueError(f"seat {name} resolves as unavailable")
+    provider = resolved["provider"]
+    return ("agent" if provider == "cursor" else provider), resolved["model"], resolved["effort"], resolved["speed"]
+
+
+def _seat(fleet_path, name, inventory_path=None):
     if not SEAT.fullmatch(name):
         raise ValueError("seat must be a simple frozen seat name")
     try:
         data = json.loads(fleet_path.read_text())
+        v2 = isinstance(data, dict) and data.get("schema_version") == 2
+    except (OSError, ValueError) as exc:
+        raise ValueError("unknown or invalid frozen seat") from exc
+    if v2:
+        return _seat_v2(data, name, inventory_path or DEFAULT_INVENTORY)
+    try:
         seat = data["seats"][name]
         provider = seat["provider"]
         model, effort, speed = seat["model"], seat["effort"], seat["speed"]
@@ -161,6 +184,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="probe-seat.py")
     parser.add_argument("seat")
     parser.add_argument("--fleet")
+    parser.add_argument("--inventory", default=str(DEFAULT_INVENTORY))
     parser.add_argument("--timeout", type=float, default=120)
     parser.add_argument("--out-root", default=".tasks/probes")
     parser.add_argument("--dry-run", action="store_true")
@@ -168,7 +192,7 @@ def main(argv=None):
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
     try:
-        provider, model, effort, speed = _seat(_fleet_path(args.fleet), args.seat)
+        provider, model, effort, speed = _seat(_fleet_path(args.fleet), args.seat, Path(args.inventory))
     except ValueError as exc:
         print(f"probe-seat: {exc}", file=sys.stderr)
         return 2
