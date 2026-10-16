@@ -1929,8 +1929,8 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             self.assertEqual(row["observed_model"], doc["observation"]["observed_model"])
 
         self.prove_runner_mutation_fails(
-            '"value": observation["observed_model"]["value"],',
-            '"value": spec["model"],',
+            '"observed_model": {"value": observed_model_flag["value"], "source": observed_model_flag["source"]},',
+            '"observed_model": {"value": spec["model"], "source": observed_model_flag["source"]},',
             check,
         )
         self.clean_runs()
@@ -2162,8 +2162,8 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             self.assert_ledger_row_hygiene(failed_id)
 
         self.prove_runner_mutation_fails(
-            "    try:\n        row = build_ledger_row(spec, receipt, tier=tier)",
-            "    if receipt.get('outcome') != 'completed':\n        return\n    try:\n        row = build_ledger_row(spec, receipt, tier=tier)",
+            "    try:\n        row = build_ledger_row(spec, receipt, tier=tier, self_reported_model=self_reported_model)",
+            "    if receipt.get('outcome') != 'completed':\n        return\n    try:\n        row = build_ledger_row(spec, receipt, tier=tier, self_reported_model=self_reported_model)",
             check,
         )
         self.clean_runs()
