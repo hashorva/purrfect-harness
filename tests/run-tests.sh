@@ -120,6 +120,7 @@ trap 'rm -rf "$RELEASE_FIXTURE" "$UNTAGGED_FIXTURE"' EXIT
 cp -R "$HARNESS/." "$RELEASE_FIXTURE"
 rm -rf "$RELEASE_FIXTURE/.git"
 git -C "$RELEASE_FIXTURE" init -q
+# Background gc --auto races with cp -R of the fixture; keep the fixtures gc-free.
 git -C "$RELEASE_FIXTURE" config gc.auto 0
 git -C "$RELEASE_FIXTURE" config maintenance.auto false
 git -C "$RELEASE_FIXTURE" config user.email ci@test && git -C "$RELEASE_FIXTURE" config user.name CI
