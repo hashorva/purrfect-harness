@@ -263,7 +263,8 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         if provider == "claude":
             return ["-p", prompt, "--output-format", "stream-json", "--verbose", "--strict-mcp-config", "--model", model, "--effort", effort, "--allowedTools", "Read,Write,Edit,Bash"]
         if provider == "agy":
-            return ["--dangerously-skip-permissions", "--print-timeout", "30m", "--model", model, "--effort", effort, "-p", prompt]
+            return ["--dangerously-skip-permissions", "--print-timeout", "30m", "--model", model,
+                    "--output-format", "stream-json", "-p", prompt]
         return ["-p", "--force", "--trust", "--output-format", "stream-json", "--workspace", repo, "--model", model, prompt]
 
     def linked(self, *, role, provider, model, effort, speed, work_unit, feature):
@@ -339,7 +340,8 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             for provider in PROVIDERS:
                 with self.subTest(role=role, provider=provider):
                     speed = "fast" if provider == "agent" else "unknown"
-                    model = f"{provider}-model-fast" if provider == "agent" else f"{provider}-model"
+                    model = (f"{provider}-model-fast" if provider == "agent" else
+                             f"{provider}-model-high" if provider == "agy" else f"{provider}-model")
                     self.write_fleet(provider, model, "high", speed,
                                      seat_name="brain" if role == "brain" else None)
                     args = (["bash", "scripts/spawn-worker.sh", provider, "docs/missions/fixture/tasks/T-001.md", "--provider", provider,
@@ -1978,7 +1980,8 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             for tier in ("economy", "premium"):
                 with self.subTest(provider=provider, tier=tier):
                     speed = "fast" if provider == "agent" else "unknown"
-                    model = f"{provider}-{tier}-frozen-fast" if provider == "agent" else f"{provider}-{tier}-frozen"
+                    model = (f"{provider}-{tier}-frozen-fast" if provider == "agent" else
+                             f"{provider}-{tier}-frozen-high" if provider == "agy" else f"{provider}-{tier}-frozen")
                     self.write_fleet(provider, model, "high", speed, tier=tier)
                     result = self.invoke(["bash", "scripts/spawn-worker.sh", provider, "docs/missions/fixture/tasks/T-002.md",
                                           "--tier", tier, "--model", model, "--effort", "high", "--speed", speed, "--feature", "F002"])

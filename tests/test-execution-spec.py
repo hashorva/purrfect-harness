@@ -155,7 +155,8 @@ class ExecutionSpecContract(unittest.TestCase):
         self.assertEqual(self.persist(self.spec_v3(provider_contract_version=5), check=False).returncode, 0)
         self.assertEqual(self.persist(self.spec_v3(provider_contract_version=6), check=False).returncode, 0)
         self.assertEqual(self.persist(self.spec_v3(provider_contract_version=7), check=False).returncode, 0)
-        self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=8), check=False).returncode, 0)
+        self.assertEqual(self.persist(self.spec_v3(provider_contract_version=8), check=False).returncode, 0)
+        self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=9), check=False).returncode, 0)
         self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=True), check=False).returncode, 0)
 
     def test_persistence_is_canonical_hashed_and_no_clobber(self):
@@ -266,14 +267,14 @@ class ExecutionSpecContract(unittest.TestCase):
             else:
                 self.assertEqual(result.stdout.strip(), "OK")
 
-    def test_construct_emits_contract_7(self):
+    def test_construct_emits_contract_8(self):
         spec, path, _ = execution_spec.construct(
             role="worker", mission="docs/missions/fixture", feature="F001", work_unit="T-001", attempt=1,
             provider="codex", model="test-model", effort="medium", speed="unknown", repo=str(self.repo),
             prompt="exact prompt", write_scope=["allowed.txt"],
         )
         self.assertEqual(spec["schema_version"], 3)
-        self.assertEqual(spec["provider_contract_version"], 7)
+        self.assertEqual(spec["provider_contract_version"], 8)
         self.assertEqual(json.loads(path.read_text()), spec)
 
     def test_contract_seven_claude_streams_with_no_mcp_servers_for_every_role(self):
@@ -284,13 +285,40 @@ class ExecutionSpecContract(unittest.TestCase):
                 argv = json.loads(self.adapter(path, digest).stdout)["argv"]
                 self.assertEqual(argv, ["claude", "-p", "exact prompt", "--output-format", "stream-json",
                                         "--verbose", "--strict-mcp-config", *tail])
-        for provider, extra in (("codex", {}), ("agy", {}), ("agent", {"speed": "standard"})):
+        for provider, extra in (("codex", {}), ("claude", {}), ("agent", {"speed": "standard"})):
             with self.subTest(provider=provider):
                 argvs = []
-                for contract in (6, 7):
+                for contract in (7, 8):
                     path, digest = self.persisted(self.spec_v3(provider=provider, provider_contract_version=contract, **extra))
                     argvs.append(json.loads(self.adapter(path, digest).stdout)["argv"])
                 self.assertEqual(argvs[0], argvs[1])
+
+    def test_contract_eight_agy_streams_and_validates_effort_before_launch(self):
+        env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", EXECUTION_SENTINEL=str(self.sentinel))
+        for role in ("worker", "brain"):
+            for effort in ("low", "medium", "high"):
+                with self.subTest(role=role, effort=effort):
+                    model = f"gemini-3.8-flash-{effort}"
+                    path, digest = self.persisted(self.spec_v3(provider="agy", role=role, model=model, effort=effort,
+                                                               provider_contract_version=8))
+                    argv = json.loads(self.adapter(path, digest).stdout)["argv"]
+                    self.assertEqual(argv, ["agy", "--dangerously-skip-permissions", "--print-timeout", "30m",
+                                            "--model", model, "--output-format", "stream-json", "-p", "exact prompt"])
+        path, digest = self.persisted(self.spec_v3(provider="agy", model="test-model", provider_contract_version=7))
+        self.assertEqual(json.loads(self.adapter(path, digest).stdout)["argv"], ["agy", "--dangerously-skip-permissions",
+                         "--print-timeout", "30m", "--model", "test-model", "--effort", "medium", "-p", "exact prompt"])
+        for model, effort, message in (
+            ("gemini-3.8-flash-high", "medium", "agy model name encodes effort high; spec effort is medium"),
+            ("gemini-3.8-flash-low", "high", "agy model name encodes effort low; spec effort is high"),
+            ("test-model", "medium", "agy model name must end in an effort token (-low, -medium or -high)"),
+        ):
+            with self.subTest(model=model, effort=effort):
+                path, digest = self.persisted(self.spec_v3(provider="agy", model=model, effort=effort,
+                                                           provider_contract_version=8))
+                result = self.adapter(path, digest, dry=False, env=env, check=False)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stderr, f"ERROR: {message}\n")
+                self.assertFalse(self.sentinel.exists())
 
     def test_contract_six_requests_json_cli_output(self):
         repo = str(self.repo)

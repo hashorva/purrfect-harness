@@ -17,7 +17,7 @@ def provider_contract(spec):
         spec["provider"], spec["model"], spec["effort"], spec["speed"], spec["repo"], spec["prompt"]
     )
     # v1/v2 predate the marker and therefore bind the historical contract 1.
-    # Only a v3 authorization can select contract 2 or 3.
+    # Only a v3 authorization can select contract 2 or later.
     contract_version = spec.get("provider_contract_version", 1)
     if provider == "codex":
         if effort not in {"low", "medium", "high", "xhigh"}:
@@ -54,6 +54,16 @@ def provider_contract(spec):
             raise SpecError("agy does not support requested effort")
         if speed != "unknown":
             raise SpecError("agy speed must be unknown")
+        if contract_version >= 8:
+            match = re.search(r"-(low|medium|high)$", model)
+            if not match:
+                raise SpecError("agy model name must end in an effort token (-low, -medium or -high)")
+            token = match.group(1)
+            if token != effort:
+                raise SpecError(f"agy model name encodes effort {token}; spec effort is {effort}")
+            argv = ["agy", "--dangerously-skip-permissions", "--print-timeout", "30m", "--model", model,
+                    "--output-format", "stream-json", "-p", prompt]
+            return argv, {}
         argv = ["agy", "--dangerously-skip-permissions", "--print-timeout", "30m", "--model", model,
                 "--effort", effort, "-p", prompt]
     else:

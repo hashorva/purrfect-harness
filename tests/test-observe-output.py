@@ -82,6 +82,17 @@ CURSOR_NO_INIT_MODEL = {
     "fast_state": {"value": None, "source": "unknown"},
 }
 
+AGY = {
+    "observed_model": {"value": "gemini-3.8-flash-low", "source": "observed"},
+    "usage": {
+        "input": {"value": 15015, "source": "observed"},
+        "output": {"value": 1, "source": "observed"},
+        "cache": {"value": 0, "source": "observed"},
+        "reasoning": {"value": 0, "source": "observed"},
+    },
+    "fast_state": {"value": None, "source": "unknown"},
+}
+
 EXPECTED = {
     ("claude", "claude.json"): CLAUDE,
     ("claude", "claude-log.txt"): CLAUDE,
@@ -116,6 +127,48 @@ class ObserveOutputTest(unittest.TestCase):
         for name in ALL_FIXTURES:
             with self.subTest(fixture=name):
                 self.assertEqual(observe("agy", read(name)), ALL_UNKNOWN)
+
+    def test_agy_observes_recorded_stream_and_last_result(self):
+        raw = read("agy.jsonl")
+        self.assertEqual(observe("agy", raw), AGY)
+        self.assertFalse(no_turn("agy", raw))
+        for provider in ("claude", "codex", "cursor"):
+            with self.subTest(provider=provider):
+                self.assertEqual(observe(provider, raw), ALL_UNKNOWN)
+        lines = raw.decode().splitlines()
+        last = json.loads(lines[-1])
+        last["result"]["usage"] = {"input_tokens": 4, "output_tokens": 3,
+                                     "cache_read_tokens": 2, "thinking_tokens": 1}
+        stream = "\n".join(lines + [json.dumps(last)]).encode()
+        self.assertEqual(
+            {key: value["value"] for key, value in observe("agy", stream)["usage"].items()},
+            {"input": 4, "output": 3, "cache": 2, "reasoning": 1},
+        )
+
+    def test_agy_model_requires_one_nonempty_init_model(self):
+        raw = read("agy.jsonl").decode().splitlines()
+        no_model = json.loads(raw[0])
+        del no_model["init"]["model"]
+        self.assertEqual(observe("agy", (json.dumps(no_model) + "\n" + raw[-1]).encode())["observed_model"], UNKNOWN)
+        other = json.loads(raw[0])
+        other["init"]["model"] = "gemini-3.8-flash-high"
+        stream = (raw[0] + "\n" + json.dumps(other) + "\n" + raw[-1]).encode()
+        self.assertEqual(observe("agy", stream)["observed_model"], UNKNOWN)
+
+    def test_agy_no_turn_failure_shapes(self):
+        init, result = read("agy.jsonl").decode().splitlines()[0], json.loads(read("agy.jsonl").decode().splitlines()[-1])
+        cases = {
+            "no result": init + "\n",
+            "result not object": init + "\n" + json.dumps({"event": "result", "result": []}) + "\n",
+            "not success": init + "\n" + json.dumps({"event": "result", "result": {"status": "FAILURE"}}) + "\n",
+            "bad turns": init + "\n" + json.dumps({"event": "result", "result": {"status": "SUCCESS", "num_turns": True, "response": "OK"}}) + "\n",
+            "zero turns": init + "\n" + json.dumps({"event": "result", "result": {"status": "SUCCESS", "num_turns": 0, "response": "OK"}}) + "\n",
+            "empty response": init + "\n" + json.dumps({"event": "result", "result": {"status": "SUCCESS", "num_turns": 1, "response": " "}}) + "\n",
+            "zero tokens": init + "\n" + json.dumps({"event": "result", "result": {"status": "SUCCESS", "num_turns": 1, "response": "OK", "usage": {"input_tokens": 0, "output_tokens": 0}}}) + "\n",
+        }
+        for name, raw in cases.items():
+            with self.subTest(shape=name):
+                self.assertTrue(no_turn("agy", raw.encode()))
 
     def test_every_provider_is_all_unknown_on_hostile_input(self):
         for provider in ("claude", "codex", "cursor", "agy"):

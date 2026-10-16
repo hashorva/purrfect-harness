@@ -128,7 +128,20 @@ def cursor(stream):
 
 
 def agy(stream):
-    return all_unknown()
+    inits = [e for e in stream if e.get("event") == "init"]
+    models = {text(dig(e, "init", "model")) for e in inits}
+    model = unknown()
+    if inits and len(models) == 1 and None not in models:
+        model = observed(models.pop())
+    results = [e for e in stream if e.get("event") == "result"]
+    last = results[-1] if results else {}
+    usage = {
+        "input": field(dig(last, "result", "usage", "input_tokens"), count),
+        "output": field(dig(last, "result", "usage", "output_tokens"), count),
+        "cache": field(dig(last, "result", "usage", "cache_read_tokens"), count),
+        "reasoning": field(dig(last, "result", "usage", "thinking_tokens"), count),
+    }
+    return result(model, usage, unknown())
 
 
 PARSERS = {"claude": claude, "codex": codex, "cursor": cursor, "agy": agy}
@@ -145,13 +158,32 @@ def zero_tokens(usage):
     return usage["input"] == observed(0) and usage["output"] == observed(0)
 
 
+def agy_no_turn(stream):
+    """Return whether agy ran no turn; agy reports SUCCESS on a no-turn run, so status alone is not trusted."""
+    if not any(e.get("event") == "init" for e in stream):
+        return False
+    results = [e for e in stream if e.get("event") == "result"]
+    if not results:
+        return True
+    last_result = results[-1].get("result")
+    if not isinstance(last_result, dict) or last_result.get("status") != "SUCCESS":
+        return True
+    turns = last_result.get("num_turns")
+    if isinstance(turns, bool) or not isinstance(turns, int) or turns == 0:
+        return True
+    response = last_result.get("response")
+    if not isinstance(response, str) or not response.strip():
+        return True
+    return zero_tokens(agy(stream)["usage"])
+
+
 def no_turn(provider, raw):
     """True only on positive evidence in the CLI's own output that no turn ran."""
     name = ALIASES.get(provider, provider) if isinstance(provider, str) else None
     if name not in PARSERS:
         raise ValueError(f"unknown provider: {provider!r}")
     if name == "agy":
-        return False
+        return agy_no_turn(events(raw))
     stream = events(raw)
     if name == "claude":
         results = [e for e in stream if e.get("type") == "result"]

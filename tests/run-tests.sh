@@ -302,7 +302,7 @@ doc = {
     "approval": {"status": "approved", "approved_by": "human", "approved_at": "2026-08-21T00:00:00Z"},
     "seats": {
         "brain": seat("codex", "gpt-5.6-sol", "sol", "high", "unknown"),
-        "agy.premium": seat("agy", "agy-test-model", "pro", "high", "unknown"),
+        "agy.premium": seat("agy", "agy-test-model-high", "pro", "high", "unknown"),
         "claude.premium": seat("claude", "claude-test-model", "sonnet", "xhigh", "unknown"),
         "codex.economy": seat("codex", "codex-test-model", "luna", "medium", "unknown"),
         "codex.premium": seat("codex", "codex-test-model", "terra", "xhigh", "unknown"),
@@ -372,6 +372,8 @@ check "agy -p is not fed the permissions flag" \
   sh -c "! grep -q -- '-p --dangerously-skip-permissions' '$STUB_OUT'"
 check "agy gets a print-timeout longer than the 5m default" \
   sh -c "grep -q -- '--print-timeout' '$STUB_OUT'"
+check "agy streams events and is not sent --effort under the current contract" \
+  sh -c "grep -q -- '--output-format stream-json' '$STUB_OUT' && ! grep -q -- '--effort' '$STUB_OUT'"
 
 # ---- claude prompt-position regression (2.2.5) ----
 # claude's --allowedTools is VARIADIC: it keeps consuming following args as tool names,

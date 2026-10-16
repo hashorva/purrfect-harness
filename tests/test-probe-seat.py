@@ -59,7 +59,7 @@ class ProbeSeatTest(unittest.TestCase):
             "claude.test": ["claude", "sonnet", "medium", "unknown"],
             "codex.test": ["codex", "gpt-6", "medium", "unknown"],
             "cursor.test": ["cursor", "grok-high", "high", "standard"],
-            "agy.test": ["agy", "gemini", "medium", "unknown"],
+            "agy.test": ["agy", "gemini-medium", "medium", "unknown"],
         }
         self.fleet = self.temp / "fleet.json"
         self.fleet.write_text(json.dumps({"seats": {key: {"provider": value[0], "model": value[1],
@@ -93,7 +93,7 @@ class ProbeSeatTest(unittest.TestCase):
         self.assertNotEqual(Path(command["folder"]).resolve(), ROOT.resolve())
         self.assertTrue((Path(command["folder"]) / ".git").is_dir())
         expected, _ = provider_contract({"provider": {"cursor": "agent"}.get(seat.split(".")[0], seat.split(".")[0]),
-            "model": {"claude": "sonnet", "codex": "gpt-6", "cursor": "grok-high", "agy": "gemini"}[seat.split(".")[0]],
+            "model": {"claude": "sonnet", "codex": "gpt-6", "cursor": "grok-high", "agy": "gemini-medium"}[seat.split(".")[0]],
             "effort": {"claude": "medium", "codex": "medium", "cursor": "high", "agy": "medium"}[seat.split(".")[0]],
             "speed": {"claude": "unknown", "codex": "unknown", "cursor": "standard", "agy": "unknown"}[seat.split(".")[0]],
             "repo": command["folder"], "prompt": "Reply with OK only.", "write_scope": [], "role": "worker",

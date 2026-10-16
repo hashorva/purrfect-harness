@@ -102,6 +102,8 @@ class SeatSmoke(unittest.TestCase):
         shutil.copy2(ROOT / "harness-registry.json", self.source / "harness-registry.json")
         live = json.loads((ROOT / "docs/missions/20261014-2a-foundation/fleet.json").read_text())
         live["mission"] = {"path": FIXTURE}
+        # The live agy freeze encodes high while its effort is medium; contract 8 rejects that mismatch.
+        live["seats"]["agy.economy"].update(model="gemini-3.8-flash-medium", effort="medium")
         validate_fleet(live)
         self.fleet = live
         mission = self.source / FIXTURE
