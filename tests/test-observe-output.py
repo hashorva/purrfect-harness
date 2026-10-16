@@ -373,6 +373,24 @@ class ObserveOutputTest(unittest.TestCase):
         sub = sessions / "2026" / "10" / "16"
         sub.mkdir(parents=True)
         rollout = sub / f"rollout-{tid}.jsonl"
+        for bad in (
+            {
+                "model": "gpt-5.6-luna\n/Users/secret\u0000sk-abcdefghijklmnopqrstuvwxyz",
+                "cwd": "/Users/secret",
+                "instructions": "do not leak",
+            },
+            {"model": "a" * 200},
+            {"model": "gpt-5.6-luna\n"},
+        ):
+            with self.subTest(bad=bad):
+                rollout.write_text(json.dumps(bad) + "\n", encoding="utf-8")
+                obs = observe("codex", raw)
+                self.assertEqual(obs["observed_model"], UNKNOWN)
+                dumped = json.dumps(obs)
+                self.assertNotIn("/Users/secret", dumped)
+                self.assertNotIn("sk-", dumped)
+                self.assertNotIn("do not leak", dumped)
+
         rollout.write_text(
             json.dumps(
                 {
@@ -478,6 +496,58 @@ class ObserveOutputTest(unittest.TestCase):
         )
         agy_unk = json.dumps({"event": "init", "init": {"model": "Unknown Agy Display"}}).encode()
         self.assertEqual(observe("agy", agy_unk)["observed_model"], UNKNOWN)
+
+    def test_codex_sessions_dir_isolation_and_home_fallback(self):
+        fixture_bytes = read("codex.jsonl")
+        fixture_tid = [
+            json.loads(line)["thread_id"]
+            for line in fixture_bytes.decode().splitlines()
+            if json.loads(line).get("type") == "thread.started"
+        ][0]
+        prev_home = os.environ.get("HOME")
+        prev_sessions = os.environ.get("CODEX_SESSIONS_DIR")
+        try:
+            with tempfile.TemporaryDirectory() as fake_home, tempfile.TemporaryDirectory() as empty_dir:
+                home_sessions = Path(fake_home) / ".codex" / "sessions"
+                home_sessions.mkdir(parents=True)
+                (home_sessions / f"rollout-{fixture_tid}.jsonl").write_text(
+                    json.dumps({"model": "SHOULD-NOT-BE-READ"}) + "\n",
+                    encoding="utf-8",
+                )
+                os.environ["HOME"] = fake_home
+
+                # Variant 1 (production fallback): with HOME pointing at fake_home and CODEX_SESSIONS_DIR unset
+                os.environ.pop("CODEX_SESSIONS_DIR", None)
+                obs_fallback = observe("codex", fixture_bytes)
+                self.assertEqual(
+                    obs_fallback["observed_model"],
+                    {"value": "SHOULD-NOT-BE-READ", "source": "observed"},
+                )
+
+                # Variant 2 (test isolation): with HOME still pointing at fake_home and CODEX_SESSIONS_DIR set to empty dir
+                os.environ["CODEX_SESSIONS_DIR"] = empty_dir
+                obs_isolated = observe("codex", fixture_bytes)
+                self.assertEqual(obs_isolated["observed_model"], UNKNOWN)
+                self.assertNotIn("SHOULD-NOT-BE-READ", json.dumps(obs_isolated))
+        finally:
+            if prev_home is None:
+                os.environ.pop("HOME", None)
+            else:
+                os.environ["HOME"] = prev_home
+            if prev_sessions is None:
+                os.environ.pop("CODEX_SESSIONS_DIR", None)
+            else:
+                os.environ["CODEX_SESSIONS_DIR"] = prev_sessions
+
+    def test_claude_model_id_validation(self):
+        doc = json.loads(read("claude.json"))
+        for bad_model in ("claude-haiku-5-5\n/secret", "a" * 200, "claude-haiku-5-5\n"):
+            with self.subTest(bad_model=bad_model):
+                doc["modelUsage"] = {bad_model: {"inputTokens": 2, "outputTokens": 33}}
+                raw = json.dumps(doc).encode()
+                obs = observe("claude", raw)
+                self.assertEqual(obs["observed_model"], UNKNOWN)
+                self.assertNotIn("/secret", json.dumps(obs))
 
 
 if __name__ == "__main__":

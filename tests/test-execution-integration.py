@@ -25,6 +25,18 @@ import fleet_state  # noqa: E402
 class WrapperIntegration(unittest.TestCase):
     def setUp(self):
         self.parent = Path(tempfile.mkdtemp())
+        self.codex_sessions = self.parent / "codex-sessions"
+        self.codex_sessions.mkdir()
+        self._prev_codex_sessions_dir = os.environ.get("CODEX_SESSIONS_DIR")
+        os.environ["CODEX_SESSIONS_DIR"] = str(self.codex_sessions)
+
+        def restore_codex_sessions_dir():
+            if self._prev_codex_sessions_dir is None:
+                os.environ.pop("CODEX_SESSIONS_DIR", None)
+            else:
+                os.environ["CODEX_SESSIONS_DIR"] = self._prev_codex_sessions_dir
+
+        self.addCleanup(restore_codex_sessions_dir)
         self.root = self.parent / "repo"
         self.root.mkdir()
         (self.root / "scripts").mkdir()
@@ -103,6 +115,10 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             path.chmod(0o755)
 
     def tearDown(self):
+        if self._prev_codex_sessions_dir is None:
+            os.environ.pop("CODEX_SESSIONS_DIR", None)
+        else:
+            os.environ["CODEX_SESSIONS_DIR"] = self._prev_codex_sessions_dir
         shutil.rmtree(self.parent)
 
     def git(self, *args):

@@ -17,6 +17,18 @@ REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
 CODEX_THREAD_ID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
+MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}\Z")
+
+
+def model_id(value):
+    if (
+        isinstance(value, str)
+        and "\n" not in value
+        and "\r" not in value
+        and MODEL_ID_RE.fullmatch(value)
+    ):
+        return value
+    return None
 
 
 def unknown():
@@ -141,6 +153,12 @@ def events(raw):
 
 
 def result(model, usage, fast_state):
+    if isinstance(model, dict) and model.get("source") == "observed":
+        valid = model_id(model.get("value"))
+        if valid is None:
+            model = unknown()
+        else:
+            model = observed(valid)
     return {
         "observed_model": model,
         "usage": usage,
@@ -168,7 +186,8 @@ def _map_display_model(provider, raw_model):
     if raw_model is None:
         return unknown()
     canonical = _display_models_table(provider).get(raw_model)
-    return observed(canonical) if canonical is not None else unknown()
+    valid = model_id(canonical)
+    return observed(valid) if valid is not None else unknown()
 
 
 def _codex_sessions_dir():
@@ -223,9 +242,12 @@ def _codex_model_from_session(path):
             continue
         if not isinstance(obj, dict):
             continue
-        model = text(obj.get("model")) or text(dig(obj, "payload", "model"))
-        if model:
-            models.add(model)
+        for cand in (obj.get("model"), dig(obj, "payload", "model")):
+            if isinstance(cand, str) and cand:
+                valid = model_id(cand)
+                if valid is None:
+                    return None
+                models.add(valid)
     if len(models) == 1:
         return next(iter(models))
     return None
@@ -239,7 +261,8 @@ def _codex_observed_model(stream):
     if session_file is None:
         return unknown()
     model = _codex_model_from_session(session_file)
-    return observed(model) if model else unknown()
+    valid = model_id(model)
+    return observed(valid) if valid else unknown()
 
 
 def claude(stream):
@@ -250,14 +273,14 @@ def claude(stream):
     model_usage = last.get("modelUsage")
     model = None
     if isinstance(model_usage, dict) and len(model_usage) == 1:
-        model = text(next(iter(model_usage)))
+        model = model_id(next(iter(model_usage)))
     usage = {
         "input": field(dig(last, "usage", "input_tokens"), count),
         "output": field(dig(last, "usage", "output_tokens"), count),
         "cache": field(dig(last, "usage", "cache_read_input_tokens"), count),
         "reasoning": field(dig(last, "usage", "output_tokens_details", "thinking_tokens"), count),
     }
-    return result(field(model, text), usage, field(last.get("fast_mode_state"), text))
+    return result(field(model, model_id), usage, field(last.get("fast_mode_state"), text))
 
 
 def codex(stream):
