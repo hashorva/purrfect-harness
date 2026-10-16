@@ -40,6 +40,7 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-16 — T-037 rule 6 re-checked by the Front Desk (3 oracle commands fail on base and pass after; suite passes after, 384 s); dispatch on cursor.economy**
 - **2026-10-16 — Architect T-037 revision received (run 204f6de4-89d4-4765-bf2c-d5ebd7462fa3): 3 doors / 4 runs + 1 brain; Front Desk re-runs rule 6** Task text copied to tasks/T-037.md, mutants to reviews/, patch (sha 50fec781…) kept outside the tree. Architect result: 3 oracles fail on base and pass after; full suite passes after; mutants 6 of 8 killed (the two survivors are non-blocking). Old defects fixed: `reconstruct --all` picked up the brain receipt; an exit-code check passed on the base. Checks 2, 3 (fleet-doctor.sh) and 7 (suite) run only in the verifier.
 - **2026-10-16 — Architect (Opus brain run 204f6de4-89d4-4765-bf2c-d5ebd7462fa3): T-037 revised for 3 doors / 4 runs + 1 brain; rule 6 checked incl. full suite; reference patch built** Log `.tasks/logs/204f6de4-89d4-4765-bf2c-d5ebd7462fa3.log`. The `=== FILE: tasks/T-037.md ===` and `=== FILE: revie …
   Full text: `reviews/entry-8a0022cd.md`.
