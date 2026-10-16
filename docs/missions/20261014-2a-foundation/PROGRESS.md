@@ -4,7 +4,7 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 
 # Progress
 
-## GATE 1 PRESENTED (2026-10-16) — NOT advanced; waiting for your verdict
+## GATE 1 PASSED (2026-10-16) — owner verdict approved; see the "Human — GATE 1" entry
 F001, F003, F004, F005, F006 accepted (F002 removed at Gate 0). F004: run 35ecb39a-5c22-4108-acef-41f7fc694ad6, record sha256 64e8240b…; `ACCEPT OK`; `verify-mission.sh --require-workers` VERIFY OK; ledger folded in the same commit (21 rows, second fold a no-op). Deterministic suite green on the last code commit (`bash tests/run-tests.sh` exit 0; docs/feature/ledger-only commits since). Evidence package: `reviews/gate1-prep.md`. To advance: `verify-mission.sh` exit 0, set `status: awaiting-gate` in GOAL.md, your verdict, then a "Human - GATE 1" entry.
 
 ## DAY 4 STATUS (live; the full report replaces this at the end)
@@ -55,6 +55,9 @@ Order from the owner: speed rules; 1 (done: F004 accepted, Gate 1 presented); 6,
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-16 — Human — GATE 1** Verdict: approved (owner, in chat day 4; verify-mission.sh exit 0 with status awaiting-gate, then back).
+  Notes: F001, F003, F004, F005, F006 accepted; suite green. Receipts are the record.
+  Next: in-progress (Gate 2 after F007).
 - **2026-10-16 — T-051 verified (run 358dca0e-a878-4e54-87f1-c5f8630c56cc, codex.economy, commit 99800d0); Argon review started (Opus paused); T-052 rule 6 checked, dispatch on cursor.economy**
 - **2026-10-16 — T-051 (ledger allow rule) written by the Front Desk during the agy Opus pause; rule 6 checked (oracle fails on base, passes after; full ledger tests and the integration file pass after); dispatch on codex.economy** Design note for the owner: I ADDED the allow rule `[A-Za-z0-9 ._:/-]{0,200}` as the first privacy condition and kept the secret, path-root, UUID and prompt patterns, because a character set cannot see token-shaped words or `/Users/x`; the redundant e-mail/hidden-character patterns stay (a mutation test proves each pattern on its own with the allow rule switched off). Cost: the runner's check labels `bash#1` become `bash:1` (`#` is outside your set), and `HEAD~1`/`foo~bar` are now refused. Measured: 0 of 2873 strings in 82 real rows fall outside the set.
 - **2026-10-16 — SEAT PAUSE: agy Opus (brain, Google AI Pro, claude-opus-5-5 pool) hit its quota: "RESOURCE_EXHAUSTED 429 Individual quota reached, resets in 4h53m" at about 18:55 CEST (reset about 23:50 CEST)** First live brain run on agy Opus (run 878691a6-9963-4bc8-ab23-a3b71a6ae9ce, planning for the ledger/inventory tasks): the adapter and the v2 resolution worked (spec model claude-opus-5-5-high, observed model claude-opus-5-5-high from the init event), 72 steps, 382 s, 284k input / 35k output tokens (2.9M cache-read), then the quota ended the run; no paid path. Routing row class seat-limit, not attributable. The Flash (agy.economy) and Argon (agy.premium) pools answered probes ok right after, so they stay in rotation.
