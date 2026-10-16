@@ -55,6 +55,7 @@ Order from the owner: speed rules; 1 (done: F004 accepted, Gate 1 presented); 6,
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-16 — T-061 verified; agy.premium (Argon) added to the frozen fleet (drift event) and ADMITTED: 6 of 6 probes ok** Fleet: new seat `agy.premium` = gemini-4-argon-high, effort high, family argon, speed unknown (never fast); `validate-fleet` rc 0; drift row from `unavailable`. Probes: 3 fresh folder (ok, 10.2/7.4/6.4 s, ~14.9k input tokens), 3 in the repo (ok, 6.0/4.9/7.4 s); `agy mcp list` empty. Own weekly-only Argon pool per T-060. Argon qualifies as reviewer (3/3 seeded defects) and joins the rotation as a premium seat. Next: T-026 (chair on agy, fixture proof), then the live brain move.
 - **2026-10-16 — T-060 reviewed by Opus: PASS (run 4fa6515f-cf98-4849-94e2-23814628f3fd; 12 of 13 mutants caught; door permanence holds, all 29 committed rows validate); N1 -> T-061 (fleet schema family enum lacks argon), rule 6 checked, dispatch on codex.economy**
 - **2026-10-16 — Opus review of T-060 (brain run 4fa6515f-cf98-4849-94e2-23814628f3fd, log `.tasks/logs/4fa6515f-cf98-4849-94e2-23814628f3fd.log`): Verdict: PASS.** Worker run 875a028c: receipt completed, exit 0, scope pass (8 allow-listed paths), clean `git_after` 2a6a84f; verification record passe …
   Full text: `reviews/entry-4378ad61.md`.
