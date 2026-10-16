@@ -87,6 +87,7 @@ check "fleet v2 policy seat validation" python3 tests/test-fleet-v2.py
 check "registry and fleet-state legacy parity" python3 tests/test-registry.py
 check "fleet doctor identity and login checks" python3 tests/test-fleet-doctor.py
 check "seat smoke scratch clone and dry-run plan" python3 tests/test-seat-smoke.py
+check "one frozen seat probe and classifications" python3 tests/test-probe-seat.py
 
 echo "== observed CLI output (F003)"
 check "observed model and usage parser over real CLI samples" python3 tests/test-observe-output.py
