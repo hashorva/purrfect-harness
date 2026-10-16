@@ -55,6 +55,7 @@ Order from the owner: speed rules; 1 (done: F004 accepted, Gate 1 presented); 6,
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-16 — T-039 (agy adapter, contract 8) rule 6 checked (focused; the spec-load check needs the live .tasks/specs, now passed via PURRFECT_LIVE_ROOT: 183 specs load, 0 bad); dispatch on codex.premium**
 - **2026-10-16 — T-048-R1 verified and grok re-review PASS (probe names are safe); Architect agy-lane plan hit the 40-minute limit with T-039 complete (partial plan kept); T-039 rule 6 next** Grok on 7a77c5c: no blocking issue (residual: a bare token that matches the safe character set would still be kept as a name; judged non-blocking). Architect run e432a18d: exit 124 but the plan file had T-039 ready (13 of 13 mutants caught), order T-039 -> T-060 (registry: argon family, agy-argon door + weekly-only pool) -> T-061 (admission probes) -> my re-freeze of the agy seats -> T-026; T-060, T-061 and T-026 were not delivered; I will ask for them again after T-039 lands.
 - **2026-10-16 — ARCHITECT PLANNING RUN: F009 agy lane (owner item 2 a, c, d). Not a diff review. PLAN FIRST: write your skeleton into this entry in the first minutes, then extend the SAME entry as each block is ready.** Facts: `evidence/agy-mcp-hang.md` (cause: an MCP server; fixed; `agy mcp list` …
   Full text: `reviews/entry-a2cd5705.md`.
