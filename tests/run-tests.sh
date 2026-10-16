@@ -120,6 +120,8 @@ trap 'rm -rf "$RELEASE_FIXTURE" "$UNTAGGED_FIXTURE"' EXIT
 cp -R "$HARNESS/." "$RELEASE_FIXTURE"
 rm -rf "$RELEASE_FIXTURE/.git"
 git -C "$RELEASE_FIXTURE" init -q
+git -C "$RELEASE_FIXTURE" config gc.auto 0
+git -C "$RELEASE_FIXTURE" config maintenance.auto false
 git -C "$RELEASE_FIXTURE" config user.email ci@test && git -C "$RELEASE_FIXTURE" config user.name CI
 git -C "$RELEASE_FIXTURE" add -A && git -C "$RELEASE_FIXTURE" commit -qm fixture
 RELEASE_TAG="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["release"]["required_tag"])' "$HARNESS/harness-manifest.json")"
@@ -127,6 +129,8 @@ git -C "$RELEASE_FIXTURE" tag -a "$RELEASE_TAG" -m fixture
 cp -R "$RELEASE_FIXTURE/." "$UNTAGGED_FIXTURE"
 rm -rf "$UNTAGGED_FIXTURE/.git"
 git -C "$UNTAGGED_FIXTURE" init -q
+git -C "$UNTAGGED_FIXTURE" config gc.auto 0
+git -C "$UNTAGGED_FIXTURE" config maintenance.auto false
 git -C "$UNTAGGED_FIXTURE" config user.email ci@test && git -C "$UNTAGGED_FIXTURE" config user.name CI
 git -C "$UNTAGGED_FIXTURE" add -A && git -C "$UNTAGGED_FIXTURE" commit -qm fixture
 check "manifest omission of guard-verification fails release entry point" sh -c "
