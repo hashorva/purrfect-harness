@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -96,7 +97,15 @@ def registry_door_pool_and_billing(doors, provider, resolved_model):
         family = resolved_model.split("-", 1)[0] if isinstance(resolved_model, str) else ""
         door_name = f"cursor-{family}"
     else:
+        # A model token can name a door of the same CLI with its own pool (agy
+        # `gemini-4-argon-high` -> `agy-argon`); otherwise the CLI's own door.
         door_name = cli
+        tokens = re.split(r"[-_.]", resolved_model.lower()) if isinstance(resolved_model, str) else []
+        for token in tokens:
+            candidate = doors.get(f"{cli}-{token}")
+            if isinstance(candidate, dict) and candidate.get("provider") == cli:
+                door_name = f"{cli}-{token}"
+                break
     door = doors.get(door_name)
     if not isinstance(door, dict):
         return "unknown", "unknown", "unknown"

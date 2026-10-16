@@ -206,6 +206,35 @@
       "pool": "google",
       "no_zdr": false,
       "priority": 1
+    },
+    "agy-argon": {
+      "provider": "agy",
+      "billing_class": "included",
+      "pool": "agy-argon",
+      "no_zdr": false,
+      "priority": 2
+    }
+  },
+  "pools": {
+    "anthropic": {
+      "windows": ["5h", "weekly"],
+      "evidence": "docs/proposals/20261014-phase-2.md section 4: Claude Pro has a 5-hour window and a weekly cap, shared with claude.ai chat."
+    },
+    "openai": {
+      "windows": ["5h", "weekly"],
+      "evidence": "docs/proposals/20261014-phase-2.md section 4: ChatGPT Plus has a rolling 5-hour window and a weekly cap."
+    },
+    "cursor": {
+      "windows": "unknown",
+      "evidence": "not yet recorded for Cursor's included models."
+    },
+    "google": {
+      "windows": "unknown",
+      "evidence": "not yet recorded for agy Flash and the Claude models in agy (Google AI Pro)."
+    },
+    "agy-argon": {
+      "windows": ["weekly"],
+      "evidence": "owner 2026-10-16 (F009): Gemini 4 Argon in agy (Google AI Pro, premium tier) has its own weekly-only pool, separate from the Flash pool."
     }
   },
   "seat_specs": {
@@ -239,7 +268,7 @@
     ],
     "agy.premium": [
       "agy",
-      "pro"
+      "argon"
     ],
     "agy.economy": [
       "agy",

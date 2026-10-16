@@ -21,6 +21,7 @@ adapter_spec.loader.exec_module(adapter_module)
 
 # Golden copy of the fleet_state constants at commit 1345c67.  This must remain
 # independent from the registry so the parity proof is not self-referential.
+# The one deliberate change since 1345c67 is agy.premium pro -> argon (F009, T-060).
 GOLDEN_PROVIDERS = ("claude", "codex", "agent", "agy")
 GOLDEN_CAPABILITIES = {
     "claude": {"efforts": ["low", "medium", "high", "xhigh", "max"], "speeds": ["unknown"]},
@@ -32,7 +33,7 @@ GOLDEN_SEAT_SPECS = {
     "brain": ("claude", "opus"), "brain_fable": ("claude", "fable"),
     "brain_codex": ("codex", "sol"), "cursor.premium": ("agent", "grok"),
     "cursor.economy": ("agent", "composer"), "codex.premium": ("codex", "terra"),
-    "codex.economy": ("codex", "luna"), "agy.premium": ("agy", "pro"),
+    "codex.economy": ("codex", "luna"), "agy.premium": ("agy", "argon"),
     "agy.economy": ("agy", "flash"), "claude.premium": ("claude", "sonnet"),
     "claude.economy": ("claude", "haiku"),
 }
@@ -393,8 +394,61 @@ class RegistryTests(unittest.TestCase):
             "cursor-composer": "cursor",
             "cursor-grok": "cursor",
             "agy": "agy",
+            "agy-argon": "agy",
         }
         self.assertEqual({name: door["provider"] for name, door in registry["doors"].items()}, expected)
+
+    def test_agy_argon_door_pool_and_seat(self):
+        self.assertEqual(registry["seat_specs"]["agy.premium"], ["agy", "argon"])
+        self.assertEqual(registry["seat_specs"]["agy.economy"], ["agy", "flash"])
+        self.assertEqual(registry["doors"]["agy"]["pool"], "google")
+        self.assertEqual(registry["doors"]["agy-argon"], {
+            "provider": "agy", "billing_class": "included", "pool": "agy-argon", "no_zdr": False, "priority": 2})
+        self.assertEqual(registry["pools"]["agy-argon"]["windows"], ["weekly"])
+        self.assertEqual(registry["pools"]["google"]["windows"], "unknown")
+        self.assertEqual({door["pool"] for door in registry["doors"].values()}, set(registry["pools"]))
+        agy = registry["providers"]["agy"]
+        self.assertEqual(agy["fast_encoding"], "unsupported")
+        self.assertEqual(agy["capabilities"]["speeds"], ["unknown"])
+        for base, family in (("gemini-3.8-flash", "flash"), ("gemini-4-argon", "argon")):
+            with self.subTest(base=base):
+                self.assertEqual(registry_module.encode_model(registry, "agy", base, family, "high", False), f"{base}-high")
+                with self.assertRaisesRegex(registry_module.RegistryError, "does not support fast"):
+                    registry_module.encode_model(registry, "agy", base, family, "high", True)
+
+    def test_pool_guards(self):
+        windows_message = 'pools.google.windows must be "unknown" or distinct values from 5h, weekly'
+
+        def broken(mutate):
+            data = copy.deepcopy(registry)
+            mutate(data)
+            return data
+
+        def drop_pools(data):
+            del data["pools"]
+
+        cases = (
+            ("pools missing", drop_pools, "registry missing required field: pools"),
+            ("pools empty", lambda d: d.update(pools={}), "registry.pools must be a non-empty object"),
+            ("pools list", lambda d: d.update(pools=[]), "registry.pools must be a non-empty object"),
+            ("pool string", lambda d: d["pools"].update(google="x"), "pools.google must be an object"),
+            ("missing field", lambda d: d["pools"]["google"].pop("evidence"), "pools.google missing required field: evidence"),
+            ("extra field", lambda d: d["pools"]["google"].update(extra=1), "pools.google has unknown fields"),
+            ("windows daily", lambda d: d["pools"]["google"].update(windows=["daily"]), windows_message),
+            ("windows nested", lambda d: d["pools"]["google"].update(windows=[["weekly"]]), windows_message),
+            ("windows empty", lambda d: d["pools"]["google"].update(windows=[]), windows_message),
+            ("windows duplicate", lambda d: d["pools"]["google"].update(windows=["weekly", "weekly"]), windows_message),
+            ("windows string", lambda d: d["pools"]["google"].update(windows="weekly"), windows_message),
+            ("evidence blank", lambda d: d["pools"]["google"].update(evidence=" "), "pools.google.evidence must be non-empty text"),
+            ("evidence number", lambda d: d["pools"]["google"].update(evidence=7), "pools.google.evidence must be non-empty text"),
+        )
+        for label, mutate, message in cases:
+            with self.subTest(label=label):
+                with self.assertRaises(registry_module.RegistryError) as raised:
+                    registry_module.validate_registry(broken(mutate))
+                self.assertEqual(str(raised.exception), message)
+        both = broken(lambda d: d["pools"]["google"].update(windows=["5h", "weekly"]))
+        self.assertIs(registry_module.validate_registry(both), both)
 
     def test_decode_refuses_empty_base(self):
         for model in ("", "-high", "-fast"):

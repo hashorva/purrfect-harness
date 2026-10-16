@@ -8,7 +8,9 @@ import sys
 REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
 PROVIDER_FIELDS = ("binary", "legacy_names", "probe_command", "list_parser", "identity_check", "identity_pattern", "login_check", "effort_encoding", "fast_encoding", "model_name_encoding", "discovery_directory", "capabilities", "sandbox_limits", "structured_output")
 DOOR_FIELDS = ("provider", "billing_class", "pool", "no_zdr", "priority")
-ROOT_FIELDS = ("schema_version", "providers", "doors", "seat_specs")
+POOL_FIELDS = ("windows", "evidence")
+POOL_WINDOWS = ("5h", "weekly")
+ROOT_FIELDS = ("schema_version", "providers", "doors", "pools", "seat_specs")
 
 
 class RegistryError(ValueError):
@@ -133,6 +135,22 @@ def validate_registry(data):
             raise RegistryError(f"{label}.no_zdr must be boolean")
         if not isinstance(door["priority"], int) or isinstance(door["priority"], bool):
             raise RegistryError(f"{label}.priority must be an integer")
+    pools = data["pools"]
+    if not isinstance(pools, dict) or not pools:
+        raise RegistryError("registry.pools must be a non-empty object")
+    for name, pool in pools.items():
+        label = f"pools.{name}"
+        _require_fields(pool, POOL_FIELDS, label)
+        if set(pool) != set(POOL_FIELDS):
+            raise RegistryError(f"{label} has unknown fields")
+        windows = pool["windows"]
+        if windows != "unknown" and not (
+                isinstance(windows, list) and windows
+                and all(isinstance(w, str) and w in POOL_WINDOWS for w in windows)
+                and len(set(windows)) == len(windows)):
+            raise RegistryError(f'{label}.windows must be "unknown" or distinct values from 5h, weekly')
+        if not isinstance(pool["evidence"], str) or not pool["evidence"].strip():
+            raise RegistryError(f"{label}.evidence must be non-empty text")
     if not isinstance(data["seat_specs"], dict):
         raise RegistryError("registry.seat_specs must be an object")
     for seat, spec in data["seat_specs"].items():

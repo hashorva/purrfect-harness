@@ -892,6 +892,19 @@ class LedgerBuilderTests(unittest.TestCase):
         validate_row(row)
         return row
 
+    def test_agy_runs_book_the_door_of_their_model_family(self):
+        cases = (
+            ("gemini-4-argon-high", ("agy-argon", "agy-argon", "included")),
+            ("gemini-4-argon-low", ("agy-argon", "agy-argon", "included")),
+            ("gemini-3.8-flash-medium", ("agy", "google", "included")),
+            ("claude-opus-5-5-high", ("agy", "google", "included")),
+            ("gemini-4-argonx-high", ("agy", "google", "included")),
+        )
+        for model, expected in cases:
+            with self.subTest(model=model):
+                row = self.row("agy", model, tier="premium")
+                self.assertEqual((row["door"], row["pool"], row["billing_class"]), expected)
+
     def test_builder_uses_receipt_configuration_registry_doors_and_independent_tier(self):
         for speed in ("standard", "fast"):
             for model, door in (("grok-4.7-high", "cursor-grok"), ("composer-2.5", "cursor-composer")):
@@ -917,6 +930,46 @@ class LedgerBuilderTests(unittest.TestCase):
         self.assertEqual(missing["resolved_model"], {"value": None, "source": "unknown"})
         self.assertEqual(missing["effort"], {"value": None, "source": "unknown"})
         self.assertEqual(row["schema_version"], 2)
+
+
+class LedgerDoorAttributionTests(unittest.TestCase):
+    doors = load(ROOT / "harness-registry.json")["doors"]
+
+    def attribute(self, provider, model, doors=None):
+        return execution_runner.registry_door_pool_and_billing(self.doors if doors is None else doors, provider, model)
+
+    def test_model_family_selects_the_door(self):
+        argon = ("agy-argon", "agy-argon", "included")
+        flash = ("agy", "google", "included")
+        cases = (
+            ("agy", "gemini-4-argon-high", argon), ("agy", "gemini-4-argon-low", argon),
+            ("agy", "GEMINI-4-ARGON-HIGH", argon),
+            ("agy", "gemini-3.8-flash-medium", flash), ("agy", "claude-opus-5-5-high", flash),
+            ("agy", "gemini-4-argonx-high", flash), ("agy", None, flash),
+            ("claude", "opus", ("claude", "anthropic", "included")),
+            ("codex", "gpt-6-luna", ("codex", "openai", "included")),
+            ("agent", "grok-4.7-high", ("cursor-grok", "cursor", "included")),
+            ("agent", "composer-2.5", ("cursor-composer", "cursor", "included")),
+        )
+        for provider, model, expected in cases:
+            with self.subTest(provider=provider, model=model):
+                self.assertEqual(self.attribute(provider, model), expected)
+
+    def test_older_base_registry_without_argon_door(self):
+        older = {k: v for k, v in self.doors.items() if k != "agy-argon"}
+        self.assertEqual(self.attribute("agy", "gemini-4-argon-high", older), ("agy", "google", "included"))
+
+    def test_hostile_argon_doors_are_ignored(self):
+        good = self.doors["agy-argon"]
+        for label, value in (("wrong provider", dict(good, provider="codex")), ("string", "agy-argon"),
+                             ("list", ["agy"]), ("none", None), ("number", 7)):
+            with self.subTest(label=label):
+                doors = dict(self.doors, **{"agy-argon": value})
+                self.assertEqual(self.attribute("agy", "gemini-4-argon-high", doors), ("agy", "google", "included"))
+
+    def test_foreign_provider_door_does_not_capture(self):
+        doors = dict(self.doors, **{"codex-luna": dict(self.doors["claude"], provider="claude")})
+        self.assertEqual(self.attribute("codex", "gpt-6-luna", doors), ("codex", "openai", "included"))
 
 
 class LedgerFoldTests(unittest.TestCase):

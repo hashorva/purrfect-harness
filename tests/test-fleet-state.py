@@ -80,13 +80,13 @@ def main():
     clis=d/'clis'; clis.mkdir()
     stub(clis,'agent',"printf '%s\\n' 'Available models:' '  * grok-4.7 (default)' '  - grok-4.7-build-fast'")
     stub(clis,'cursor-agent',"[ \"$1\" = models ] || exit 2\nprintf '%s\\n' 'Available models' '' 'auto - Auto (default)' 'composer-2.5 - Composer 2.5' 'composer-2.5-fast - Composer 2.5 Fast' 'grok-4.7-xhigh - Grok 4.7  Extra High' 'grok-4.7-xhigh-fast - Grok 4.7  Extra High Fast' 'cursor-grok-4.5-high - Grok 4.5'")
-    stub(clis,'agy',"[ \"$1\" = models ] || exit 2\nprintf '%s\\n' 'gemini-3.8-flash-high     Gemini 3.8 Flash (High)' 'gemini-3.8-flash-low      Gemini 3.8 Flash (Low)' 'claude-opus-5-5-high      Claude Opus 5.5 (High)'")
+    stub(clis,'agy',"[ \"$1\" = models ] || exit 2\nprintf '%s\\n' 'gemini-3.8-flash-high     Gemini 3.8 Flash (High)' 'gemini-3.8-flash-low      Gemini 3.8 Flash (Low)' 'claude-opus-5-5-high      Claude Opus 5.5 (High)' 'gemini-4-argon-low        Gemini 4 Argon (Low)' 'gemini-4-argon-high       Gemini 4 Argon (High)'")
     cli_env={**env,'PATH':str(clis)+os.pathsep+env['PATH']}; real=d/'real-clis.json'
     run('/bin/bash',str(public),'--json','--out',str(real),env=cli_env); doc=json.loads(real.read_text())
     assert doc['providers']['agent']['status']=='success' and doc['providers']['agent']['path'].endswith('/cursor-agent')
     assert doc['seats']['cursor.economy']['model']=='composer-2.5' and doc['seats']['cursor.premium']['model']=='grok-4.7-xhigh'
     assert doc['seats']['agy.economy']['model']=='gemini-3.8-flash-high' and doc['seats']['agy.economy']['source']=='observed'
-    assert doc['seats']['agy.premium']['source']=='unavailable', 'no Gemini Pro listed: never guess one'
+    assert doc['seats']['agy.premium']['model']=='gemini-4-argon-high' and doc['seats']['agy.premium']['family']=='argon' and doc['seats']['agy.premium']['source']=='observed'
     write(home/'.codex/models_cache.json',{'models':['gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna']})
     # A bad cache is a current failure and retains the old record byte-for-byte semantically.
     (home/'.codex/models_cache.json').write_text('{bad')

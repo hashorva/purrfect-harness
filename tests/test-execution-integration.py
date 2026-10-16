@@ -139,7 +139,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         family = {
             ("agent", "premium"): "grok", ("agent", "economy"): "composer",
             ("codex", "premium"): "terra", ("codex", "economy"): "luna",
-            ("agy", "premium"): "pro", ("agy", "economy"): "flash",
+            ("agy", "premium"): "argon", ("agy", "economy"): "flash",
             ("claude", "premium"): "sonnet", ("claude", "economy"): "haiku",
         }[(provider, tier)]
         capabilities = {

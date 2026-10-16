@@ -302,7 +302,7 @@ doc = {
     "approval": {"status": "approved", "approved_by": "human", "approved_at": "2026-08-21T00:00:00Z"},
     "seats": {
         "brain": seat("codex", "gpt-5.6-sol", "sol", "high", "unknown"),
-        "agy.premium": seat("agy", "agy-test-model-high", "pro", "high", "unknown"),
+        "agy.premium": seat("agy", "agy-test-model-high", "argon", "high", "unknown"),
         "claude.premium": seat("claude", "claude-test-model", "sonnet", "xhigh", "unknown"),
         "codex.economy": seat("codex", "codex-test-model", "luna", "medium", "unknown"),
         "codex.premium": seat("codex", "codex-test-model", "terra", "xhigh", "unknown"),
