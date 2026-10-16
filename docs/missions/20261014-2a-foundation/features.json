@@ -120,6 +120,42 @@
         "A reconstruct command prints, per smoke run id, its spec, receipt, VerificationRecord and ledger row, and exits non-zero if any of the four is missing; the human reads that output at Gate 2"
       ],
       "passes": false
+    },
+    {
+      "id": "F008",
+      "category": "functional",
+      "priority": 8,
+      "bootstrap": false,
+      "description": "Mission hygiene (owner amendment 2026-10-16; T-043 to T-045 ran under the F004 label): workers do not write PROGRESS.md and the orchestrator records each run from its receipt; the verifier fails a check that exits 0 but reports skipped tests; the ledger privacy rule allows only a safe character set for harness-generated text; door IDs are permanent; every seat has a probe and a stall watchdog; Claude workers start without MCP servers.",
+      "steps": [
+        "`grep -rnF 'Append a PROGRESS.md entry' scripts tests docs/missions/templates` exits 1, and AGENTS.md, docs/templates/AGENTS.md.template, the mcp-hygiene skill and docs/missions/ORCHESTRATION.md say that workers do not write PROGRESS.md (an oracle command checks each file)",
+        "A verification command that exits 0 but prints a skip summary is recorded `fail` with the command number and reason, and the record never stores output text (a test shows it)",
+        "The ledger accepts harness-generated text fields only if they match letters, digits, space and `._:-/` within a maximum length; a test lists accepted and refused values including the owner's near-miss list",
+        "Door IDs in docs/missions/ledger.jsonl rows all exist in harness-registry.json (deprecated doors keep `deprecated: true`); a test fails if a door used by a committed row is missing",
+        "`scripts/probe-seat.sh <seat>` runs the seat's exact harness command with 'Reply with OK only.' in a fresh folder with stdin closed and a 2-minute cap, records MCP server names only, saves its evidence under .tasks/probes/, and classifies ok, no-turn, mcp-init-wait, permission-wait, input-wait, auth, limit or unknown (a fixture test for each class)",
+        "Every adapter stops a run with no new event or output for 90 seconds and classifies it as a stall; a result with 0 turns is a failure whatever its status says (fixture tests)",
+        "Claude worker and brain runs start with --strict-mcp-config unless the task names a server (argv test)",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F009",
+      "category": "functional",
+      "priority": 9,
+      "bootstrap": false,
+      "description": "agy lane (owner amendment 2026-10-16, agy 1.4.0): the Antigravity hang was an editor-installed MCP server that never finished starting (google-antigravity/antigravity-cli#1087), not folder trust. With the MCP servers removed, agy answers in seconds. This feature brings agy back as a worker, Architect and review lane: adapter, admission probe, registry seats, brain move, and reviewer calibration.",
+      "steps": [
+        "evidence/agy-mcp-hang.md records the symptom, the issue number, the fix and the measurements, and the probe checks the MCP list every time",
+        "The agy adapter closes stdin, uses stream-json, encodes effort only in the model name (no --effort), takes the observed model from the init event and usage from the result, and treats num_turns 0 or an empty response as a failure (fixture tests with a recorded real stream)",
+        "probe-seat.sh agy.economy passes 3 times in a fresh folder and 3 times in the repo with an empty MCP list; each probe leaves its evidence under .tasks/probes/",
+        "The registry and fleet carry agy.economy = gemini-3.8-flash and agy.premium = gemini-4-argon (its own weekly-only pool), never a fast model; both changes are logged as drift events",
+        "The chair seat can resolve to agy claude-opus-5-5-high and the move is logged as a drift event (T-026 verified and reviewed)",
+        "A seeded-defect calibration records for each reviewer (grok-4.7-high, Argon) whether it caught three planted blocking bugs in routing-data.jsonl; a reviewer that missed any is marked not for guard review",
+        "The fleet inventory finds a new model family from vendor and tier without a code change (a test with an unknown family name)",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
     }
   ]
 }
