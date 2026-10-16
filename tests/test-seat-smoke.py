@@ -25,6 +25,8 @@ from verification_record import task_at_base  # noqa: E402
 
 FIXTURE = "docs/missions/fixture"
 SMOKE_MISSION = "docs/missions/00000000-seat-smoke"
+F007_DIR = "docs/missions/00000000-f007-smoke"
+F007_SEATS = ("claude.economy", "codex.economy", "cursor.economy", "cursor.premium")
 ENV = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
 GIT_ID = ["-c", "user.name=t", "-c", "user.email=t@example.invalid"]
 
@@ -34,6 +36,17 @@ FAKE_CLI = r'''#!/usr/bin/env python3
 import json, os, pathlib, re, subprocess, sys
 name = pathlib.Path(sys.argv[0]).name
 prompt = " ".join(sys.argv[1:])
+brain = re.search(r"mission BRAIN for ([^\s]+)\.", prompt)
+if brain:
+    mission = brain.group(1)
+    progress = pathlib.Path(mission) / "PROGRESS.md"
+    progress.parent.mkdir(parents=True, exist_ok=True)
+    with progress.open("a") as handle:
+        handle.write("brain smoke line\n")
+    GIT = ["git", "-c", "user.name=fake", "-c", "user.email=fake@invalid"]
+    subprocess.run([*GIT, "add", str(progress)], check=True)
+    subprocess.run([*GIT, "commit", "-q", "-m", "smoke: brain"], check=True)
+    raise SystemExit(0)
 seat = re.search(r"T-SMOKE-([a-z]+-[a-z]+)", prompt).group(1).replace("-", ".", 1)
 probe = pathlib.Path(os.environ["SMOKE_PROBE"])
 (probe / f"launched.{seat}").write_text(name)
@@ -114,6 +127,12 @@ class SeatSmoke(unittest.TestCase):
         return subprocess.run(
             ["bash", str(self.source / "scripts/fleet-doctor.sh"), "--smoke", *args],
             cwd=self.source, text=True, capture_output=True, env=ENV,
+        )
+
+    def f007(self, *args, modes=None):
+        return subprocess.run(
+            ["bash", str(self.source / "scripts/fleet-doctor.sh"), "--smoke", "--f007", *args],
+            cwd=self.source, text=True, capture_output=True, env=self.launch_env(modes),
         )
 
     def launch(self, *args, modes=None):
@@ -341,6 +360,92 @@ class SeatSmoke(unittest.TestCase):
     def test_timeout_must_be_positive(self):
         result = self.launch("--seat", "claude.economy", "--timeout", "0", "--dest", str(self.parent / "dest"))
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+
+    def test_f007_requires_keep_and_refuses_seat(self):
+        dest = self.parent / "f007-refuse"
+        no_keep = self.f007("--dest", str(dest))
+        self.assertEqual(no_keep.returncode, 2, no_keep.stdout + no_keep.stderr)
+        self.assertIn("--f007 requires --keep", no_keep.stderr)
+        self.assertFalse(dest.exists())
+        with_seat = self.f007("--keep", "--seat", "claude.economy", "--dest", str(self.parent / "f007-seat"))
+        self.assertEqual(with_seat.returncode, 2, with_seat.stdout + with_seat.stderr)
+        self.assertIn("--f007 cannot be combined with --seat", with_seat.stderr)
+        self.assertFalse((self.parent / "f007-seat").exists())
+
+    def test_f007_dry_run_plans_four_seats_in_order_and_one_brain(self):
+        dest = self.parent / "f007-plan"
+        result = self.f007("--dry-run", "--dest", str(dest), "--keep")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["order"], list(F007_SEATS))
+        self.assertEqual(sorted(data["seats"]), sorted(F007_SEATS))
+        self.assertEqual(data["brain"]["argv"],
+                         ["bash", "scripts/spawn-brain.sh", F007_DIR, "review"])
+        clone = Path(data["clone"])
+        for seat in F007_SEATS:
+            task_id = "T-SMOKE-" + seat.replace(".", "-")
+            task = clone / F007_DIR / "tasks" / f"{task_id}.md"
+            self.assertTrue(task.is_file(), seat)
+            self.assertEqual(data["seats"][seat]["task"], f"{F007_DIR}/tasks/{task_id}.md")
+
+    def test_f007_happy_path_has_full_evidence(self):
+        dest = self.parent / "f007-happy"
+        modes = {seat: "both" for seat in F007_SEATS}
+        result = self.f007("--dest", str(dest), "--keep", modes=modes)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary = json.loads(result.stdout)
+        clone = Path(summary["clone"])
+        worker_ids = []
+        for seat in F007_SEATS:
+            worker_ids.append(summary["seats"][seat]["run_id"])
+            self.assertEqual(summary["seats"][seat]["outcome"], "completed")
+            self.assertTrue((dest / f"{seat}.out").is_file())
+            self.assertTrue((dest / f"verify-{seat}.out").is_file())
+            self.assertTrue((clone / F007_DIR / "verification" / f"{summary['seats'][seat]['run_id']}.json").is_file())
+            self.assertTrue((clone / ".tasks/ledger" / f"{summary['seats'][seat]['run_id']}.json").is_file())
+        self.assertEqual(summary["verify"], {seat: 0 for seat in F007_SEATS})
+        self.assertEqual(summary["audit_exit"], 0)
+        self.assertEqual(summary["reconstruct_exit"], 0)
+        self.assertEqual(summary["brain"]["status"], "completed")
+        self.assertTrue((dest / "brain.out").is_file())
+        self.assertTrue((dest / "audit.out").is_file())
+        self.assertTrue((dest / "reconstruct.out").is_file())
+        brain_id = summary["brain"]["run_id"]
+        self.assertTrue((clone / ".tasks/receipts" / f"{brain_id}.json").is_file())
+        for run_id in worker_ids:
+            self.assertTrue((clone / ".tasks/receipts" / f"{run_id}.json").is_file())
+            self.assertIn(run_id, (dest / "reconstruct.out").read_text())
+        self.assertFalse((self.parent / "probe/launched.agy.economy").exists())
+        reconstruct = (dest / "reconstruct.out").read_text()
+        for run_id in worker_ids:
+            self.assertIn(f"RUN {run_id}", reconstruct)
+
+    def test_f007_failed_seat_exits_1(self):
+        dest = self.parent / "f007-fail"
+        modes = {seat: "both" for seat in F007_SEATS}
+        modes["cursor.premium"] = "fail-model"
+        result = self.f007("--dest", str(dest), "--keep", modes=modes)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        summary = json.loads(result.stdout)
+        self.assertNotIn("cursor.premium", summary.get("verify", {}))
+        self.assertEqual(summary["reconstruct_exit"], 1)
+
+    def test_f007_missing_ledger_row_fails_reconstruct(self):
+        dest = self.parent / "f007-ledger"
+        modes = {seat: "both" for seat in F007_SEATS}
+        result = self.f007("--dest", str(dest), "--keep", modes=modes)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        summary = json.loads(result.stdout)
+        clone = Path(summary["clone"])
+        worker_ids = [summary["seats"][seat]["run_id"] for seat in F007_SEATS]
+        victim = worker_ids[0]
+        (clone / ".tasks/ledger" / f"{victim}.json").unlink()
+        recon = subprocess.run(
+            ["bash", "scripts/reconstruct-run.sh", F007_DIR, *worker_ids],
+            cwd=clone, text=True, capture_output=True, env=ENV,
+        )
+        self.assertEqual(recon.returncode, 1, recon.stdout + recon.stderr)
+        self.assertIn(f"MISSING {victim}: ledger row", recon.stdout + recon.stderr)
 
 
 if __name__ == "__main__":
