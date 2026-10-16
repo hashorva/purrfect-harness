@@ -4,11 +4,6 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 
 # Progress
 
-- **2026-10-16 — T-045 complete (launcher):** workers no longer write PROGRESS.md; the prompt in `scripts/spawn-worker.sh`, `tests/run-tests.sh` and `tests/test-execution-integration.py` and `WORKER_TASK.template.md` now say the Front Desk records the run from its receipt. Brain prompt untouched.
-- Verification: oracle, shellcheck, `tests/test-execution-integration.py` and `tests/run-tests.sh` all exit 0; no bytecode folders. This run's launcher prompt still said to append, so this entry is the one allowed by T-045.
-- **2026-10-16 — T-044 complete (privacy near-misses):** case-insensitive sensitive/absolute paths, expanded path roots, Unicode whitespace after Bearer, and U+061C now reject; runtime near-miss and rule mutation tests added.
-- Verification: Oracle G passed (23 hostile, 16 legitimate, 10 committed rows/fixtures); `tests/test-ledger.py` passed (81); shellcheck, JSON validation, full suite, and bytecode check passed.
-- Mutation evidence: `tests/test-ledger.py` exercises every named near-miss mutant, including lookbehind punctuation and relative-path over-refusal; scoped commit f08a615.
 ## STOP REPORT (2026-10-16): nothing independent left; waiting for your decisions
 
 - **Ready for you:** F004 acceptance (command and sha in `reviews/gate1-prep.md`; that file is also the Gate 1 package: after F004 is accepted, F001-F006 are accepted, the suite is green on HEAD and `verify-mission.sh` is OK). Gate 1 is prepared, not advanced.
