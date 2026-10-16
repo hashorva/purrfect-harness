@@ -114,6 +114,40 @@ class ProbeSeatTest(unittest.TestCase):
                                ("input-wait", "input-wait"), ("hang", "unknown"), ("auth", "auth"), ("limit", "limit")):
             with self.subTest(mode=mode): self.one("claude.test", mode, expected, 1 if "wait" in mode or mode == "hang" else 2)
 
+    def test_mcp_names_rejects_hostile_mcp_list(self):
+        hostile = "MCP_URL=https://user:password@evil.example/mcp?token=S1"
+        mcp_lines = "\n".join(
+            [
+                "Checking MCP server health...",
+                "claude.ai Claude Docs: https://api.example/v1/pages/mcp - Connected",
+                "supabase: https://mcp.example/mcp (HTTP) - Pending approval",
+                "Name          Command   Args   Env   Cwd   Status   Auth",
+                "node_repl     /Applications/x/bin/node_repl   -   TOKEN=abc   -   enabled   Unsupported",
+                hostile,
+                "no MCP servers configured",
+                "https://user:password@evil.example/x",
+            ]
+        )
+        fake = FAKE.replace(
+            '    print("Checking MCP server health...")\n'
+            '    print("alpha: https://private.example/?token=S1 - Connected")\n'
+            '    print("beta: npx private --key S2 - Failed")',
+            "    print(" + repr(mcp_lines) + ")",
+        )
+        path = self.bin / "claude"
+        path.write_text(fake.replace("__PYTHON__", sys.executable))
+        path.chmod(0o755)
+        result = self.run_probe("claude.test", "ok")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        folder = next(self.out.glob("*-claude.test"))
+        expected = ["claude.ai Claude Docs", "supabase", "node_repl"]
+        self.assertEqual(json.loads((folder / "mcp.json").read_text())["names"], expected)
+        blobs = [result.stdout, result.stderr]
+        blobs.extend(path.read_text() for path in folder.iterdir())
+        joined = "\n".join(blobs)
+        for bad in ("password", "token=", "S1", "://"):
+            self.assertNotIn(bad, joined, bad)
+
     def test_dry_run_and_bad_seats(self):
         result = self.run_probe("claude.test", wrapper=True)
         self.assertEqual(result.returncode, 0)

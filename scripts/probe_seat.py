@@ -22,18 +22,26 @@ SEAT = re.compile(r"[a-z]+(?:\.[a-z]+)?")
 STEP_ZERO = "search the CLI's GitHub issues for the exact symptom first"
 
 
+_SAFE_MCP_NAME = re.compile(r"[A-Za-z0-9._ -]{1,64}")
+
+
 def mcp_names(text):
     """Return only MCP server names; never retain their URLs or configuration."""
     names = []
     for line in text.splitlines():
         stripped = line.strip()
-        if not stripped or stripped.startswith("Checking") or stripped.lower().startswith("mcp "):
+        if not stripped or stripped.startswith("Checking") or stripped.startswith("Name "):
             continue
-        if stripped.lower().startswith("no mcp"):
+        lower = stripped.lower()
+        if lower.startswith("no mcp") or lower.startswith("mcp "):
             continue
-        name = stripped.split(": ", 1)[0].split()[0] if stripped.split(": ", 1)[0].split() else ""
-        if name:
-            names.append(name)
+        if ": " in stripped:
+            candidate = stripped.split(": ", 1)[0]
+        else:
+            parts = stripped.split()
+            candidate = parts[0] if parts else ""
+        if candidate and _SAFE_MCP_NAME.fullmatch(candidate):
+            names.append(candidate)
     return names
 
 
