@@ -4,7 +4,13 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 
 # Progress
 
-## STOP REPORT (2026-10-16): nothing independent left; waiting for your decisions
+## GATE 1 PRESENTED (2026-10-16) — NOT advanced; waiting for your verdict
+F001, F003, F004, F005, F006 accepted (F002 removed at Gate 0). F004: run 35ecb39a-5c22-4108-acef-41f7fc694ad6, record sha256 64e8240b…; `ACCEPT OK`; `verify-mission.sh --require-workers` VERIFY OK; ledger folded in the same commit (21 rows, second fold a no-op). Deterministic suite green on the last code commit (`bash tests/run-tests.sh` exit 0; docs/feature/ledger-only commits since). Evidence package: `reviews/gate1-prep.md`. To advance: `verify-mission.sh` exit 0, set `status: awaiting-gate` in GOAL.md, your verdict, then a "Human - GATE 1" entry.
+
+## DAY 4 STATUS (live; the full report replaces this at the end)
+Order from the owner: speed rules; 1 (done: F004 accepted, Gate 1 presented); 6, 3, 2, 5, 7, 10, 8, 9, 4.
+
+## DAY 3 STOP REPORT (2026-10-16; superseded by the day-4 sections above where they differ)
 
 - **Ready for you:** F004 acceptance (command and sha in `reviews/gate1-prep.md`; that file is also the Gate 1 package: after F004 is accepted, F001-F006 are accepted, the suite is green on HEAD and `verify-mission.sh` is OK). Gate 1 is prepared, not advanced.
 - **Done this round:** step 0 (PROGRESS.md archived, 717 KB to 10 KB); F003, F006 accepted; cursor.premium re-frozen (drift event, smoke passed); ledger v2 (T-041, T-042) then F005 accepted with the first fold (8 v2 rows, 1 drift event; the 31 v1 rows set aside); privacy near-misses (T-044), skipped-check-is-a-failure (T-043), workers no longer write PROGRESS.md (T-045); agy dropped by amendment (F004/F007/GOAL, T-026/T-039 deferred); F004 acceptance run (T-046); F007 smoke code (T-037, R1) and the **real F007 smoke on this Mac** (exit 0, 4 workers + 1 brain) with its evidence file (T-038).

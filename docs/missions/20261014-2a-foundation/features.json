@@ -60,7 +60,11 @@
         "The FALLBACKS constant is deleted from scripts/fleet_state.py (`grep -nE '^FALLBACKS *= *[({]' scripts/*.py` exits 1); an unavailable family stays `unavailable`, never a guessed model",
         "shellcheck and bash tests/run-tests.sh exit 0"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "35ecb39a-5c22-4108-acef-41f7fc694ad6",
+      "accepted_verification_sha256": "64e8240bde0c6b62f682024a2c4f7ac56b8e433abdbc9d73d23dcd6d68d16268",
+      "accepted_at": "2026-10-16T10:10:43.996044Z",
+      "accepted_by": "Front Desk (claude-sonnet-5-5), owner-approved by Zamir (2026-10-16)"
     },
     {
       "id": "F005",
