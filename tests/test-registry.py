@@ -450,6 +450,38 @@ class RegistryTests(unittest.TestCase):
         both = broken(lambda d: d["pools"]["google"].update(windows=["5h", "weekly"]))
         self.assertIs(registry_module.validate_registry(both), both)
 
+    def test_door_ids_are_permanent_and_deprecated_is_boolean(self):
+        def broken(mutate):
+            data = copy.deepcopy(registry)
+            mutate(data)
+            return data
+
+        ok = broken(lambda d: d["doors"]["agy"].update(deprecated=True))
+        self.assertIs(registry_module.validate_registry(ok), ok)
+
+        for bad in ("yes", 1, None, [], {}):
+            with self.subTest(deprecated=bad):
+                with self.assertRaisesRegex(registry_module.RegistryError,
+                                            r"doors\.agy\.deprecated must be boolean"):
+                    registry_module.validate_registry(
+                        broken(lambda d, value=bad: d["doors"]["agy"].update(deprecated=value)))
+
+        ledger_path = ROOT / "docs/missions/ledger.jsonl"
+        lines = ledger_path.read_text(encoding="utf-8").splitlines()
+        self.assertTrue(lines)
+        first_door = None
+        for line in lines:
+            door = json.loads(line)["door"]
+            if door == "unknown":
+                continue
+            self.assertIn(door, registry["doors"])
+            if first_door is None:
+                first_door = door
+        self.assertIsNotNone(first_door)
+        renamed = copy.deepcopy(registry)
+        renamed["doors"][f"renamed-{first_door}"] = renamed["doors"].pop(first_door)
+        self.assertNotIn(first_door, renamed["doors"])
+
     def test_decode_refuses_empty_base(self):
         for model in ("", "-high", "-fast"):
             with self.subTest(model=model):

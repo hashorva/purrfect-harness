@@ -135,6 +135,8 @@ def validate_registry(data):
             raise RegistryError(f"{label}.no_zdr must be boolean")
         if not isinstance(door["priority"], int) or isinstance(door["priority"], bool):
             raise RegistryError(f"{label}.priority must be an integer")
+        if "deprecated" in door and not isinstance(door["deprecated"], bool):
+            raise RegistryError(f"{label}.deprecated must be boolean")
     pools = data["pools"]
     if not isinstance(pools, dict) or not pools:
         raise RegistryError("registry.pools must be a non-empty object")
