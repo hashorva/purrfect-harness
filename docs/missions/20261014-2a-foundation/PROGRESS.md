@@ -40,6 +40,8 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-16 — T-037 reviewed by Opus: FAIL (one blocking: live-tree check before the brain step); T-037-R1 written, rule 6 checked, dispatched on claude.economy** Opus run e515632d-bd49-42b3-af50-b71e654512e6: confirmed by effect four seats in order + one brain, no agy, refusals before creation, no fast/credits, no remote; B1: a brain that writes the live tree leaves the smoke at exit 0. Mutants 7 of 15 killed (survivors are gates that back each other up; non-blocking). Its verdict validated against `schemas/review-verdict.schema.json`.
+  T-037-R1 = two lines + a brain live-touch test; rule 6: the oracle fails on base and passes after; suite passes after (395 s).
 - **2026-10-16 — T-037 reviewed by Opus (brain run e515632d-bd49-42b3-af50-b71e654512e6, commit 639250b, worker run 5131b318-…): FAIL, 1 blocking** Log `.tasks/logs/e515632d-bd49-42b3-af50-b71e654512e6.log`; full text in its `=== FILE: reviews/e515632d-bd49-42b3-af50-b71e654512e6.md ===` block. Fake …
   Full text: `reviews/entry-42bc837c.md`.
 - **2026-10-16 — T-037 verified (run 5131b318-bc47-4380-9513-0449ceb8e147, cursor.economy, commit 639250b); Opus review requested** VERIFY PASS (9 commands: 3 oracles, seat-smoke and reconstruct tests, shellcheck, the full suite, clean tree, no bytecode).
