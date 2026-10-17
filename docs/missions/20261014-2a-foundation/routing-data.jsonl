@@ -195,3 +195,4 @@
 {"type":"architect-run","plan":"T-090 release","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1","input_tokens":156435,"output_tokens":12852,"cache_read_tokens":861185,"outcome":"done"}
 {"run_id":"a7fe494b-5be9-4d4f-9d0a-3b0d445ca507","task":"T-056-R4","category":"ledger","size":"M","seat":"cursor.economy","model":"composer-2.5","effort":"medium","attempt":5,"outcome":"done","failure_class":"none","duration_s":67,"tokens_or_cost":"unknown"}
 {"type":"note","task":"T-056-R4","note":"first verification failed in tests/run-tests.sh, rerun on the same run passed with identical commit; suite has an intermittent test (environment/flake), not yet identified"}
+{"run_id":"2b3cb2d8-bcb1-427f-b22b-a6b7780a877f","task":"T-066-R2","category":"drive-cli","size":"M","seat":"codex.premium","model":"gpt-5.6-terra","effort":"medium","attempt":3,"outcome":"done","failure_class":"none","duration_s":83,"tokens_or_cost":"unknown"}
