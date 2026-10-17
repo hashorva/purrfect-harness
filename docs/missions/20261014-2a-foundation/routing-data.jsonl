@@ -176,3 +176,4 @@
 {"run_id":"77b3e322-6d5f-4a17-a107-44dbcd184dfc","task":"T-070-R8","category":"claude-unlock","size":"M","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":9,"outcome":"done","failure_class":"none","duration_s":169,"tokens_or_cost":"unknown"}
 {"type":"review","task":"T-070-R8","reviewer":"claude opus (Claude seat)","rung":"escalation: safety code","input_tokens":92264,"output_tokens":26419,"cache_read_tokens":1011701}
 {"run_id":"9d466b09-25ac-470e-beb4-7b20261238f2","task":"T-072","category":"capability-inventory","size":"M","seat":"cursor.economy","model":"composer-2.5","effort":"medium","attempt":1,"outcome":"done","failure_class":"none","duration_s":208,"tokens_or_cost":"unknown"}
+{"run_id":"0f981265-0550-4796-849d-91de62f034fa","task":"T-073","category":"tool-path","size":"S","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":1,"outcome":"done","failure_class":"none","duration_s":126,"tokens_or_cost":"unknown"}
