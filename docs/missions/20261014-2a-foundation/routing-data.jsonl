@@ -189,3 +189,4 @@
 {"type":"architect-run","plan":"planfixes","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1","input_tokens":147095,"output_tokens":45545,"cache_read_tokens":1298796,"outcome":"done"}
 {"type":"architect-run","plan":"plan66r2","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1","input_tokens":128773,"output_tokens":48765,"cache_read_tokens":1055686,"outcome":"done"}
 {"run_id":"b75e68c9-9639-4a28-b97d-62d36e507f48","task":"T-066-R1","category":"drive-cli","size":"M","seat":"codex.premium","model":"gpt-5.6-terra","effort":"medium","attempt":3,"outcome":"failed","failure_class":"task","duration_s":251,"tokens_or_cost":"unknown"}
+{"run_id":"83e7312e-1f71-4635-ae6f-f49f3a20a37c","task":"T-053-R2","category":"inventory","size":"S","seat":"cursor.economy","model":"composer-2.5","effort":"medium","attempt":2,"outcome":"done","failure_class":"none","duration_s":49,"tokens_or_cost":"unknown"}
