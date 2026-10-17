@@ -122,6 +122,7 @@ def _protected_file(snap, path, label):
         snap[label] = digest
 
 
+# Only MCP and hook configuration inside ~/.claude.json is protected; the file is rewritten constantly by running Claude sessions.
 def _claude_json_config_bytes(raw):
     try:
         data = json.loads(raw.decode("utf-8"))
