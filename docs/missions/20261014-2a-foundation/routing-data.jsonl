@@ -153,3 +153,6 @@
 {"type":"review","task":"T-065-R6","reviewer":"grok-4.7-high (cursor.premium)","rung":"1","verdict":"PASS","note":"after 4 FAIL rounds on T-065/R1/R3; drive-cli Opus review pending"}
 {"type":"seat-probe","time":"2026-10-17T17:59+02","argon":"SUCCESS (owner: weekly quota showed 100%; the earlier 'resets in 155h' error text was wrong)","opus_agy":"RESOURCE_EXHAUSTED (still out)","rule":"never trust reset times parsed from errors; probe after 30 min"}
 {"type":"architect-run","plan":"T-070,T-071,T-072","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1 (Argon planner)","input_tokens":209740,"output_tokens":62425,"thinking_tokens":39668,"cache_read_tokens":3358630,"outcome":"done"}
+{"type":"review","task":"T-070","reviewer":"claude opus (Claude seat)","rung":"escalation: safety code (owner-mandated)","verdict":"FAIL","findings":4,"input_tokens":67890,"output_tokens":14139,"cache_read_tokens":824916}
+{"type":"architect-run","plan":"T-070-R1","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1 (Argon planner)","input_tokens":127702,"output_tokens":37772,"cache_read_tokens":1026084,"outcome":"done"}
+{"type":"architect-run","plan":"lesson proposal","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1 (Argon planner)","input_tokens":26028,"output_tokens":4920,"cache_read_tokens":18057,"outcome":"done"}
