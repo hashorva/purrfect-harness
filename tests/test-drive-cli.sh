@@ -344,6 +344,61 @@ assert doc.get("reason") == "unknown_prompt", doc
 PY
 assert_no_y_answer_event "$events"
 
+echo "== post-answer unknown prompt must stop before second read"
+rm -f "$sentinel"
+find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+cat >"$TMP/fake-trust-then-unknown.sh" <<FAKE
+#!/usr/bin/env bash
+set -euo pipefail
+ws="\$1"
+sentinel="\$2"
+printf 'Do you trust the files in this folder?\n%s\n[y/n] ' "\$ws"
+read -r _
+printf 'Unknown prompt? [y/n] '
+if read -t 2 -r _; then
+  echo touched > "\$sentinel"
+fi
+FAKE
+chmod +x "$TMP/fake-trust-then-unknown.sh"
+export DRIVE_CLI_STALL_SECS=2
+run_drive 3 "Unknown prompt? [y/n]" -- "$TMP/fake-trust-then-unknown.sh" "$WS" "$sentinel"
+if [ -e "$sentinel" ]; then
+  echo "FAIL: sentinel exists after post-answer unknown prompt" >&2
+  exit 1
+fi
+result="$(find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -type d | head -n 1)/result.json"
+python3 - "$result" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+assert doc.get("reason") == "unknown_prompt", doc
+PY
+
+echo "== numbered menu prompt must stop before read"
+rm -f "$sentinel"
+find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+cat >"$TMP/fake-menu.sh" <<FAKE
+#!/usr/bin/env bash
+set -euo pipefail
+sentinel="\$1"
+printf 'Do you want to proceed?\n❯ 1. Yes\n  2. No\n'
+if read -t 2 -r _; then
+  echo touched > "\$sentinel"
+fi
+FAKE
+chmod +x "$TMP/fake-menu.sh"
+run_drive 3 "Do you want to proceed?" -- "$TMP/fake-menu.sh" "$sentinel"
+if [ -e "$sentinel" ]; then
+  echo "FAIL: sentinel exists after numbered menu prompt" >&2
+  exit 1
+fi
+result="$(find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -type d | head -n 1)/result.json"
+python3 - "$result" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+assert doc.get("reason") == "unknown_prompt", doc
+PY
+unset DRIVE_CLI_STALL_SECS
+
 echo "== stall with no pane change (exit 4)"
 cat >"$TMP/fake-stall.sh" <<'FAKE'
 #!/usr/bin/env bash

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fixed rule table loader and pure-Python prompt matcher for drive-cli (T-065)."""
 import argparse
+from collections import Counter
 import hashlib
 import json
 import os
@@ -20,10 +21,12 @@ _TMUX_DEAD_PANE_LINE = re.compile(
     r"\d{4}\)$"
 )
 
-_PROMPT_RESIDUE_PATTERNS = tuple(re.compile(pattern) for pattern in (
+_PROMPT_RESIDUE_PATTERNS = tuple(re.compile(pattern, re.M) for pattern in (
     r"(?i)\[y/n\]",
     r"(?i)\(y/n\)",
+    r"(?i)\by/n\b",
     r"(?i)\[yes/no\]",
+    r"(?i)\(yes/no\)",
     r"(?i)\byes/no\b",
     r"(?i)\bdo you trust\b",
     r"(?i)\ballow\b",
@@ -32,10 +35,13 @@ _PROMPT_RESIDUE_PATTERNS = tuple(re.compile(pattern) for pattern in (
     r"(?i)\bpress enter\b",
     r"(?i)\b(?:select|choose)\s+(?:an?\s+)?option\b",
     r"(?i)\b(?:select|choose)\s+\[?[0-9]+(?:-[0-9]+)?\]?",
-    r"(?i)^\s*(?:>\s*)?\[?[0-9]+\]\s+[A-Za-z]",
+    r"(?i)^\s*(?:[>❯*•-]\s*)?(?:\[[0-9]+\]|[0-9]+[.)])\s*\S",
+    r"(?i)^\s*❯\s*[0-9]+\.",
+    r"(?i)\[[0-9]+\]\s+[A-Za-z]",
     r"(?i)\b(?:type|enter)\s+(?:yes|no|y|n)\b",
     r"(?i)\bcontinue\?\s*\[",
     r"(?i)\bproceed\?\s*\[",
+    r"\?\s*$",
 ))
 
 REQUIRED_NEVER_IDS = (
@@ -285,34 +291,44 @@ def pane_digest(text: str) -> str:
     return hashlib.sha256(str(text).encode("utf-8")).hexdigest()
 
 
-def _answered_residual(norm_pane: str, norm_answered: str) -> str | None:
-    """Return pane text after removing the longest matching suffix of the answered pane."""
-    if norm_answered in norm_pane:
-        return norm_pane.replace(norm_answered, "", 1)
-    matched: str | None = None
-    for start in range(len(norm_answered)):
-        suffix = norm_answered[start:]
-        if suffix and suffix in norm_pane and (matched is None or len(suffix) > len(matched)):
-            matched = suffix
-    if matched is None:
-        return None
-    return norm_pane.replace(matched, "", 1)
+def _content_lines(text: str) -> list[str]:
+    cleaned = re.sub(r"\x1b\[[0-9;]*m", "", str(text or ""))
+    out: list[str] = []
+    for raw in cleaned.split("\n"):
+        stripped = raw.strip(" \t")
+        if not stripped or _TMUX_DEAD_PANE_LINE.match(stripped):
+            continue
+        out.append(raw.rstrip(" \t"))
+    return out
+
+
+def new_text(answered_capture: str, current_capture: str) -> str:
+    """Return multiset line difference (current_capture lines not in answered_capture)."""
+    ans_lines = _content_lines(answered_capture)
+    cur_lines = _content_lines(current_capture)
+    counts = Counter(ans_lines)
+    last_ans = ans_lines[-1] if ans_lines else None
+    diff: list[str] = []
+    for line in cur_lines:
+        if counts[line] > 0:
+            counts[line] -= 1
+        elif last_ans is not None and counts[last_ans] > 0 and line in (f"{last_ans} y", f"{last_ans}y"):
+            counts[last_ans] -= 1
+        else:
+            diff.append(line)
+    return "\n".join(diff)
 
 
 def classify_window(pane_text: str, workspace: str, answered_text: str | None = None, rules: dict | None = None) -> dict:
     if answered_text is None or answered_text == "":
         return match_pane(pane_text, workspace, rules)
-    norm_pane = normalize_pane(pane_text)
-    norm_answered = normalize_pane(answered_text)
-    if norm_pane == norm_answered:
+    diff = new_text(answered_text, pane_text)
+    if not diff:
         return {"decision": "wait", "category": "pane_unchanged", "rule_id": None, "answer": None, "exit_code": None}
-    residual = _answered_residual(norm_pane, norm_answered)
-    if residual is not None:
-        result = match_pane(residual, workspace, rules)
-        if result["decision"] == "answer":
-            return {"decision": "stop", "category": "unknown_prompt", "rule_id": None, "answer": None, "exit_code": 3}
-        return result
-    return match_pane(pane_text, workspace, rules)
+    result = match_pane(diff, workspace, rules)
+    if result["decision"] == "answer":
+        return {"decision": "stop", "category": "unknown_prompt", "rule_id": None, "answer": None, "exit_code": 3}
+    return result
 
 
 def main():

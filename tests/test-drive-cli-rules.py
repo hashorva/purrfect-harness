@@ -605,6 +605,58 @@ class TestUnknownPromptsAndWaiting(unittest.TestCase):
         self.rules = load_rules()
         self.ws = "/tmp/ws-exact"
 
+    def test_new_text_and_post_answer_and_menu_prompts(self):
+        answered = "Do you trust the files in this folder?\n/tmp/ws\n[y/n] "
+        self.assertEqual(R.new_text(answered, "/tmp/ws\n[y/n] y\ntrusted and done"), "trusted and done")
+        self.assertEqual(R.classify_window("/tmp/ws\n[y/n] y\ntrusted and done", "/tmp/ws", answered, self.rules)["decision"], "wait")
+        self.assertEqual(R.new_text(answered, "/tmp/ws\n[y/n] "), "")
+        self.assertEqual(R.classify_window("/tmp/ws\n[y/n] ", "/tmp/ws", answered, self.rules)["decision"], "wait")
+
+        repeated = "Do you trust the files in this folder?\n/tmp/ws\n[y/n]"
+        for current in (answered + "\n" + answered, answered + "y\n" + answered):
+            self.assertEqual(R.new_text(answered, current), repeated)
+            result = R.classify_window(current, "/tmp/ws", answered, self.rules)
+            self.assertEqual((result["decision"], result["exit_code"]), ("stop", 3))
+
+        unknowns = (
+            "Unknown prompt? [y/n]",
+            "Overwrite config.json? [y/n]",
+            "Apply patch to src/app.py? [y/n]",
+        )
+        expected = ("stop", "unknown_prompt", None, None, 3)
+        for prompt in unknowns:
+            self.assertEqual(R.new_text(answered, prompt), prompt)
+            for current in (prompt, answered + "y\n" + prompt):
+                result = R.classify_window(current, "/tmp/ws", answered, self.rules)
+                self.assertEqual(
+                    (result["decision"], result["category"], result["rule_id"], result["answer"], result["exit_code"]),
+                    expected,
+                )
+
+        prompts = (
+            "Do you want to proceed?\n❯ 1. Yes\n  2. No",
+            "Choose:\n[1] Yes\n[2] No",
+            "Overwrite config.json? y/N",
+            "1. Yes",
+            "[1] Yes",
+            "❯ 1.",
+            "Proceed?",
+        )
+        for prompt in prompts:
+            direct = R.match_pane(prompt, "/tmp/ws", self.rules)
+            post_answer = R.classify_window(answered + "y\n" + prompt, "/tmp/ws", answered, self.rules)
+            self.assertEqual(
+                (direct["decision"], direct["category"], direct["rule_id"], direct["answer"], direct["exit_code"]),
+                expected,
+            )
+            self.assertEqual(
+                (post_answer["decision"], post_answer["category"], post_answer["rule_id"], post_answer["answer"], post_answer["exit_code"]),
+                expected,
+            )
+
+        banner = "Pane is dead (status 0, Sat Oct 17 13:26:00 2026)"
+        self.assertEqual(R.new_text(answered, banner), "")
+
     def test_unknown_prompts_stop_with_exit_3(self):
         prompts = [
             "Enable telemetry uploads? [y/n]",

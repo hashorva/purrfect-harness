@@ -121,7 +121,7 @@ stop_session() {
 }
 
 while true; do
-  PANE_FULL="$(tmux -L "$TMUX_SOCKET" capture-pane -J -p -t "$SESSION" 2>/dev/null || true)"
+  PANE_FULL="$(tmux -L "$TMUX_SOCKET" capture-pane -p -J -S - -t "$SESSION" 2>/dev/null || true)"
   if [ "$PANE_FULL" != "$LAST_PANE" ]; then
     LAST_PANE="$PANE_FULL"
     LAST_CHANGE_EPOCH="$(date +%s)"
@@ -179,7 +179,7 @@ PY
 
   PANE_DEAD="$(tmux -L "$TMUX_SOCKET" display-message -p -t "$SESSION" '#{pane_dead}' 2>/dev/null || echo 0)"
   if [ "$PANE_DEAD" = "1" ]; then
-    PANE_FULL="$(tmux -L "$TMUX_SOCKET" capture-pane -J -p -t "$SESSION" 2>/dev/null || true)"
+    PANE_FULL="$(tmux -L "$TMUX_SOCKET" capture-pane -p -J -S - -t "$SESSION" 2>/dev/null || true)"
     FINAL_JSON="$(PANE_TEXT="$PANE_FULL" ANSWERED_TEXT="$ANSWERED_TEXT" python3 -c 'import os,sys,json; sys.path.insert(0, os.path.dirname(sys.argv[1])); import drive_cli_rules as R; print(json.dumps(R.classify_window(os.environ["PANE_TEXT"], sys.argv[2], os.environ.get("ANSWERED_TEXT") or None, R.load_rules())))' "$RULES_PY" "$WORKSPACE")"
     FINAL_DECISION="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["decision"])' <<<"$FINAL_JSON")"
     if [ "$FINAL_DECISION" = "stop" ]; then
