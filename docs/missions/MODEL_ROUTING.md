@@ -165,6 +165,7 @@ effort, and speed are equality assertions; task frontmatter `invocation:` is
 descriptive. None can override `fleet.json`. A fallback is a Gate 0 proposal or
 an explicit selection of another already-approved seat, never a silent dispatch
 rebind. External `--repo` execution is disabled in Phase 1.
+Every seat may be checked before dispatch with `bash scripts/probe-seat.sh <seat>`, runs under the runner's stall and zero-turn guards, and launches Claude with `--strict-mcp-config`; workers never write `PROGRESS.md`.
 
 ## Pricing
 
