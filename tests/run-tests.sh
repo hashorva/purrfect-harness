@@ -456,7 +456,12 @@ CODEX_MODEL="codex-test-model"
 CODEX_PROMPT="Read docs/missions/20990101-fixture/tasks/T-001.md and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Do not write PROGRESS.md; the Front Desk records your run from its receipt. End with a short plain-text report: what you changed and the exit code of each check you ran."
 CODEX_EXPECTED="$TARGET/.codex-expected"
 printf '%s\n' codex exec --json -C "$TARGET_CANONICAL" -s workspace-write --add-dir "$TARGET_CANONICAL/.git" -m "$CODEX_MODEL" \
-  '-c' 'model_reasoning_effort="medium"' "$CODEX_PROMPT" > "$CODEX_EXPECTED"
+  '-c' 'model_reasoning_effort="medium"' \
+  '-c' 'sandbox_workspace_write.network_access=true' \
+  '-c' 'web_search="live"' \
+  '-c' 'mcp_servers.cua_repl={command="true",enabled=false}' \
+  '-c' 'mcp_servers.node_repl={command="true",enabled=false}' \
+  "$CODEX_PROMPT" > "$CODEX_EXPECTED"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/tasks/T-001.md \
       --tier economy --model "$CODEX_MODEL" --feature F001 ) >/dev/null 2>&1 || true
@@ -465,7 +470,12 @@ check "codex receives the exact invocation with medium default" \
 
 CODEX_EXPECTED_XHIGH="$TARGET/.codex-expected-xhigh"
 printf '%s\n' codex exec --json -C "$TARGET_CANONICAL" -s workspace-write --add-dir "$TARGET_CANONICAL/.git" -m "$CODEX_MODEL" \
-  '-c' 'model_reasoning_effort="xhigh"' "$CODEX_PROMPT" > "$CODEX_EXPECTED_XHIGH"
+  '-c' 'model_reasoning_effort="xhigh"' \
+  '-c' 'sandbox_workspace_write.network_access=true' \
+  '-c' 'web_search="live"' \
+  '-c' 'mcp_servers.cua_repl={command="true",enabled=false}' \
+  '-c' 'mcp_servers.node_repl={command="true",enabled=false}' \
+  "$CODEX_PROMPT" > "$CODEX_EXPECTED_XHIGH"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/tasks/T-001.md \
       --tier premium --model "$CODEX_MODEL" --effort xhigh --feature F001 ) >/dev/null 2>&1 || true
