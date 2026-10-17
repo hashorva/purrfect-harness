@@ -5,6 +5,7 @@ Expected field names are literal (proposal section 8), not read from the code un
 Negative cases run scripts/ledger.py as a subprocess and build every mutation in a temp dir.
 """
 import json
+import copy
 from pathlib import Path
 import os
 import shutil
@@ -190,13 +191,39 @@ class LedgerContract(unittest.TestCase):
         self.assertEqual(schema["$schema"], "https://json-schema.org/draft/2020-12/schema")
         self.assertFalse(schema["additionalProperties"])
         properties = set(schema["properties"])
-        self.assertEqual(set(schema["required"]), properties)
+        self.assertIn("self_reported_model", properties)
+        self.assertNotIn("self_reported_model", schema["required"])
+        self.assertEqual(set(schema["required"]), properties - {"self_reported_model"})
         self.assertEqual(properties, set(FIELDS))
         self.assertEqual(set(SECTION_8_FIELDS) - properties, set(), "section 8 field missing from schema")
         self.assertEqual(properties - set(SECTION_8_FIELDS) - {"schema_version", "tier"}, set(), "unexpected schema field")
         self.assertEqual(schema["title"], "Purrfect Harness LedgerRow v2")
         self.assertEqual(schema["properties"]["schema_version"], {"const": 2})
         self.assertEqual(schema["properties"]["tier"]["enum"], ["economy", "premium", None])
+
+    def test_committed_ledger_history_validates_and_views_without_self_reported_model(self):
+        text = (ROOT / "docs/missions/ledger.jsonl").read_text(encoding="utf-8")
+        self.assertNotIn("self_reported_model", text)
+        import ledger as L
+        rows = [json.loads(line) for line in text.splitlines() if line.strip()]
+        self.assertEqual(len(rows), 29)
+        for row in rows:
+            self.assertEqual(row["schema_version"], 2)
+            self.assertNotIn("self_reported_model", row)
+            L.validate_row(row)
+            self.assertNotIn("self_reported_model", row)
+        good = copy.deepcopy(rows[0])
+        good["self_reported_model"] = {"value": "reported-model", "source": "self_reported"}
+        L.validate_row(good)
+        bad = copy.deepcopy(rows[0])
+        bad["self_reported_model"] = {"value": "m", "source": "observed"}
+        with self.assertRaises(L.LedgerError) as caught:
+            L.validate_row(bad)
+        self.assertEqual(str(caught.exception), "self_reported_model.source: must be one of self_reported, unknown")
+        result = run_cli("view", "docs/missions/ledger.jsonl", "--features", "docs/missions/20261014-2a-foundation/features.json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertTrue(result.stdout.startswith("first_try_rate "), result.stdout)
 
     def test_every_number_and_model_field_references_a_source_flag(self):
         properties = load(SCHEMA)["properties"]
@@ -270,7 +297,13 @@ class LedgerMutations(unittest.TestCase):
         return row
 
     def test_every_top_level_field_is_required(self):
+        row = self.mutated(lambda item: item.pop("self_reported_model"))
+        path = Path(self.tmp.name) / "optional-self-reported-model.json"
+        path.write_text(json.dumps(row), encoding="utf-8")
+        self.assertEqual(run_cli("validate", str(path)).returncode, 0)
         for name in FIELDS:
+            if name == "self_reported_model":
+                continue
             with self.subTest(field=name):
                 self.expect_invalid(self.mutated(lambda row, n=name: row.pop(n)), f"{name}: is required")
 

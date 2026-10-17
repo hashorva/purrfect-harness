@@ -95,14 +95,14 @@ def is_number(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
-def check_object(path, value, keys):
+def check_object(path, value, keys, optional=()):
     if not isinstance(value, dict):
         fail(path or "row", "must be an object")
     for key in keys:
         if key not in value:
             fail(sub(path, key), "is required")
     for key in value:
-        if key not in keys:
+        if key not in keys and key not in optional:
             # The key name is not printed: it could itself be an email address or a secret.
             fail(path or "row", "unknown key; name not printed")
 
@@ -315,9 +315,11 @@ def registry_door_names(path=REGISTRY_PATH):
 def validate_row(row, door_names=None):
     """Raise LedgerError on the first contract violation, including an unknown registry door."""
     check_privacy("", row)
-    check_object("", row, FIELDS)
+    required = tuple(name for name in FIELDS if name != "self_reported_model")
+    check_object("", row, required, optional=("self_reported_model",))
     for name in FIELDS:
-        CHECKS[name](name, row[name])
+        if name in row:
+            CHECKS[name](name, row[name])
     if row["door"] != "unknown":
         allowed_doors = registry_door_names() if door_names is None else door_names
         if row["door"] not in allowed_doors:

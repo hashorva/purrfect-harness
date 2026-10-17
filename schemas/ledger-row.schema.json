@@ -3,7 +3,7 @@
   "title": "Purrfect Harness LedgerRow v2",
   "description": "One summary row per run (proposal section 8). Every number and model name carries a source flag. scripts/ledger.py is the dependency-free validator for this contract.",
   "type": "object",
-  "required": ["schema_version", "mission", "feature", "task", "run_id", "parent_run", "group_id", "attempt", "repair_round", "cli", "cli_version", "door", "tier", "pool", "billing_class", "requested_model", "resolved_model", "observed_model", "self_reported_model", "effort", "fast_state", "task_class_tags", "allow_list_size", "task_text_tokens", "ste_flag", "active_lesson_ids", "experiment_id", "wall_time_s", "turns", "tool_calls", "tokens_input", "tokens_output", "tokens_cache", "tokens_reasoning", "cost", "quota_share", "checks", "diff_size", "scope_result", "anti_gaming_flags", "failure_class", "escalation_reason", "outcome"],
+  "required": ["schema_version", "mission", "feature", "task", "run_id", "parent_run", "group_id", "attempt", "repair_round", "cli", "cli_version", "door", "tier", "pool", "billing_class", "requested_model", "resolved_model", "observed_model", "effort", "fast_state", "task_class_tags", "allow_list_size", "task_text_tokens", "ste_flag", "active_lesson_ids", "experiment_id", "wall_time_s", "turns", "tool_calls", "tokens_input", "tokens_output", "tokens_cache", "tokens_reasoning", "cost", "quota_share", "checks", "diff_size", "scope_result", "anti_gaming_flags", "failure_class", "escalation_reason", "outcome"],
   "additionalProperties": false,
   "properties": {
     "schema_version": { "const": 2 },
