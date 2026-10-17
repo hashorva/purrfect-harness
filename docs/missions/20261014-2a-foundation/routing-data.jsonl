@@ -158,3 +158,5 @@
 {"type":"architect-run","plan":"lesson proposal","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1 (Argon planner)","input_tokens":26028,"output_tokens":4920,"cache_read_tokens":18057,"outcome":"done"}
 {"run_id":"dd34cbe5-0ae2-4ae2-a1fd-bd574d841ed4","task":"T-070-R1","category":"claude-unlock","size":"M","seat":"cursor.economy","model":"composer-2.5","effort":"medium","attempt":2,"outcome":"verify-failed","failure_class":"task","duration_s":152,"tokens_or_cost":"unknown"}
 {"run_id":"096620b5-a8b2-47b7-b719-620ae418be9c","task":"T-070-R2","category":"claude-unlock","size":"S","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":3,"outcome":"done","failure_class":"none","duration_s":51,"tokens_or_cost":"unknown"}
+{"type":"architect-run","plan":"T-073","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1 (Argon planner)","input_tokens":406013,"output_tokens":62402,"cache_read_tokens":2462396,"outcome":"done"}
+{"type":"architect-run","plan":"T-071,T-072 format repair","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1","input_tokens":94434,"output_tokens":11908,"cache_read_tokens":168972,"outcome":"done"}
