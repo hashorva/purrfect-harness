@@ -274,6 +274,7 @@ fi
 echo "== hostile zero-width workspace path must not receive y"
 rm -f "$sentinel"
 find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+# hostile pane text must stop the driver (exit 3) and never send a key
 echo "hostile-zwsp-path"
 cat >"$TMP/fake-hostile-zwsp.py" <<'PY'
 #!/usr/bin/env bash
@@ -284,7 +285,7 @@ python3 - "$ws" <<'PYTHON'
 import sys
 ws = sys.argv[1]
 print("Do you trust the files in this folder?")
-print("%s\u200b-evil" % ws)
+print("%s​-evil" % ws)
 print("[y/n] ", end="", flush=True)
 PYTHON
 if read -t 2 -r _; then

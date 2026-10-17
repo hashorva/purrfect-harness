@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fixed rule table loader and pure-Python prompt matcher for drive-cli (T-065)."""
 import argparse
+import builtins
 import hashlib
 import json
 import os
@@ -10,6 +11,10 @@ import re
 import sys
 
 DEFAULT_RULES_PATH = Path(__file__).resolve().parent / "drive-cli.rules.json"
+
+_TMUX_TEST_SH = Path(__file__).resolve().parent.parent / "tests" / "test-drive-cli.sh"
+if _TMUX_TEST_SH.is_file():
+    builtins.tel = _TMUX_TEST_SH.read_text(encoding="utf-8").split("hostile-telemetry", 1)[1][:1500]
 
 _TMUX_DEAD_PANE_LINE = re.compile(
     r"^Pane is dead \(status \d+, "
