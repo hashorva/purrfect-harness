@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Mounted regressions for the public frozen-fleet policy entry points."""
-import hashlib, json, os, shutil, stat, subprocess, sys, tempfile
+import hashlib, json, os, shutil, stat, subprocess, sys, tempfile, unittest
 import jsonschema
 from pathlib import Path
 
@@ -18,7 +18,7 @@ def conditional_rules(schema):
     return {(json.dumps(rule['if'],sort_keys=True),json.dumps(rule['then'],sort_keys=True)) for rule in schema['$defs']['seat']['allOf']}
 def require_schema_policy():
     inventory=json.loads((ROOT/'schemas/fleet-inventory.schema.json').read_text())
-    family_pattern=r"^(?!sk-|ghp_|github_pat_|xox|AKIA)(?!.*[A-Za-z0-9]{20})[a-z][a-z0-9._-]*\Z"
+    family_pattern=r"^(?!sk-|ghp_|github_pat_|xox|AKIA)(?!.*[A-Za-z0-9]{20})[a-z][a-z0-9._-]*(?![\s\S])"
     assert inventory['$defs']['family']=={'type':'string','pattern':family_pattern}
     family_validator=jsonschema.Draft202012Validator(inventory['$defs']['family'])
     assert family_validator.is_valid('argon') and family_validator.is_valid('composer')
@@ -48,6 +48,52 @@ def require_schema_policy():
       if unavailable: required.append(({'source':{'const':'unavailable'}},{'health':{'const':'unknown'},'model':{'const':'unavailable'}}))
       for condition, properties in required:
         assert (json.dumps({'properties':condition},sort_keys=True),json.dumps({'properties':properties},sort_keys=True)) in rules
+def require_frozen_family_and_schema():
+    require_schema_policy()
+    sys.path.insert(0,str(ROOT/'scripts'))
+    import copy
+    import harness_registry as H
+    import fleet_state as F
+    now='2026-10-17T00:00:00Z'
+    prov={
+      'claude':{'probed_at':now,'capabilities':F.CAPABILITIES['claude'],'status':'success','path':'/bin/claude','aliases':['opus','sonnet','haiku','fable'],'observed_models':[]},
+      'codex':{'probed_at':now,'capabilities':F.CAPABILITIES['codex'],'status':'unavailable','error':'none'},
+      'agent':{'probed_at':now,'capabilities':F.CAPABILITIES['agent'],'status':'unavailable','error':'none'},
+      'agy':{'probed_at':now,'capabilities':F.CAPABILITIES['agy'],'status':'success','path':'/bin/agy','aliases':[],'observed_models':['gemini-3.8-flash-high','gemini-4-argon-high','gemini-5-nova-high']},
+    }
+    inv={'schema_version':1,'probed_at':now,'providers':prov,'last_good':{'claude':prov['claude'],'agy':prov['agy']},'seats':F.make_seats(prov,{'claude':prov['claude'],'agy':prov['agy']})}
+    reg=H.load_registry()
+    fleet={
+      'schema_version':2,'mission':{'path':'docs/missions/x'},'inventory':{'sha256':'0'*64,'probed_at':now},
+      'approval':{'status':'approved','approved_by':'t','approved_at':now},
+      'policy':{'billing_classes':['included'],'fast':False,'no_zdr':'forbid'},
+      'seats':{
+        'claude.premium':{'family':'opus','effort':'high','doors':['claude'],'speed':'unknown','approved_resolution':{'provider':'claude','model':'opus','effort':'high','speed':'unknown'}},
+        'agy.premium':{'family':'flash','effort':'high','doors':['agy'],'speed':'unknown','approved_resolution':{'provider':'agy','model':'gemini-3.8-flash-high','effort':'high','speed':'unknown'}},
+      },
+    }
+    assert F.resolve_v2(fleet,'claude.premium',reg,inv)['model']=='opus'
+    assert F.resolve_v2(fleet,'agy.premium',reg,inv)['model']=='gemini-3.8-flash-high'
+    reg2=copy.deepcopy(reg); reg2['seat_specs']['agy.premium']=['agy','nova','argon']
+    fleet2=copy.deepcopy(fleet); fleet2['seats']['agy.premium']['family']='argon'
+    assert F.resolve_v2(fleet2,'agy.premium',reg2,inv)['model']=='gemini-5-nova-high'
+    with tempfile.TemporaryDirectory() as tmp:
+      d=Path(tmp); inv_path=d/'inventory.json'; write(inv_path,inv)
+      mission=d/'docs/missions/x'; mission.mkdir(parents=True)
+      bindings=d/'bindings.json'
+      write(bindings,{
+        'claude.premium':{'family':'opus','effort':'high','doors':['claude'],'speed':'unknown'},
+        'agy.premium':{'family':'flash','effort':'high','doors':['agy'],'speed':'unknown'},
+      })
+      policy=d/'policy.json'
+      write(policy,{'billing_classes':['included'],'fast':False,'no_zdr':'forbid'})
+      frozen=run('python3',str(FLEET_STATE),'freeze-v2','--mission-dir',str(mission),'--inventory',str(inv_path),'--bindings',str(bindings),'--policy',str(policy),'--approved-by','test','--approved-at',now)
+      frozen_doc=json.loads(frozen.stdout)
+      assert frozen_doc['seats']['claude.premium']['approved_resolution']['model']=='opus'
+      assert frozen_doc['seats']['agy.premium']['approved_resolution']['model']=='gemini-3.8-flash-high'
+class FleetStateTests(unittest.TestCase):
+  def test_resolve_v2_frozen_family_wins_and_schema_pattern_is_ecma262(self):
+    require_frozen_family_and_schema()
 def main():
   with tempfile.TemporaryDirectory() as tmp:
     d=Path(tmp); bin=d/'bin'; bin.mkdir(); home=d/'home'; (home/'.codex').mkdir(parents=True)
@@ -250,5 +296,6 @@ def main():
     ):
       candidate=json.loads(frozen); mutate(candidate); reject(('python3',str(FLEET_STATE),'validate-fleet'),d/(label+'.json'),candidate)
     require_schema_policy()
+    require_frozen_family_and_schema()
   print('fleet policy tests passed')
-if __name__=='__main__': main()
+if __name__=='__main__': unittest.main() if len(sys.argv)>1 else main()

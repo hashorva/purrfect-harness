@@ -438,14 +438,14 @@ def resolve_v2(fleet,seat,registry,inventory):
         if door_spec["no_zdr"] and policy["no_zdr"]=="forbid": continue
         record=inventory["providers"][key]
         if record["status"]!="success": continue
-        if seat in registry["seat_specs"] and registry["seat_specs"][seat][0] == provider:
+        if (
+            seat in registry["seat_specs"]
+            and registry["seat_specs"][seat][0] == provider
+            and spec["family"] in registry["seat_specs"][seat][1:]
+        ):
             families = tuple(registry["seat_specs"][seat][1:])
         else:
-            families = next(
-                (tuple(s[1:]) for s in registry["seat_specs"].values()
-                 if s[0] == provider and spec["family"] in s[1:]),
-                (spec["family"],),
-            )
+            families = (spec["family"],)
         raw, matched_family = choose_with_family(provider_models(record, key), families, allow_fast=fast)
         if raw is None: continue
         # The inventory may list encoded names; encode_model needs the plain base.
