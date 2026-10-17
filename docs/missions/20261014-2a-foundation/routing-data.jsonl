@@ -151,3 +151,5 @@
 {"type":"review","task":"T-065-R3","reviewer":"grok-4.7-high (cursor.premium)","rung":"1","verdict":"FAIL","findings":1}
 {"run_id":"24b8f844-59d0-4ecc-81f7-7242f1a502b8","task":"T-065-R6","category":"autopilot","size":"M","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":7,"outcome":"done","failure_class":"none","duration_s":88,"tokens_or_cost":"unknown"}
 {"type":"review","task":"T-065-R6","reviewer":"grok-4.7-high (cursor.premium)","rung":"1","verdict":"PASS","note":"after 4 FAIL rounds on T-065/R1/R3; drive-cli Opus review pending"}
+{"type":"seat-probe","time":"2026-10-17T17:59+02","argon":"SUCCESS (owner: weekly quota showed 100%; the earlier 'resets in 155h' error text was wrong)","opus_agy":"RESOURCE_EXHAUSTED (still out)","rule":"never trust reset times parsed from errors; probe after 30 min"}
+{"type":"architect-run","plan":"T-070,T-071,T-072","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1 (Argon planner)","input_tokens":209740,"output_tokens":62425,"thinking_tokens":39668,"cache_read_tokens":3358630,"outcome":"done"}
