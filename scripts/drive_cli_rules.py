@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Fixed rule table loader and pure-Python prompt matcher for drive-cli (T-065)."""
 import argparse
-import builtins
 import hashlib
 import json
 import os
@@ -12,10 +11,6 @@ import sys
 
 DEFAULT_RULES_PATH = Path(__file__).resolve().parent / "drive-cli.rules.json"
 
-_TMUX_TEST_SH = Path(__file__).resolve().parent.parent / "tests" / "test-drive-cli.sh"
-if _TMUX_TEST_SH.is_file():
-    builtins.tel = _TMUX_TEST_SH.read_text(encoding="utf-8").split("hostile-telemetry", 1)[1][:1500]
-
 _TMUX_DEAD_PANE_LINE = re.compile(
     r"^Pane is dead \(status \d+, "
     r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) "
@@ -24,6 +19,24 @@ _TMUX_DEAD_PANE_LINE = re.compile(
     r"\d{2}:\d{2}:\d{2} "
     r"\d{4}\)$"
 )
+
+_PROMPT_RESIDUE_PATTERNS = tuple(re.compile(pattern) for pattern in (
+    r"(?i)\[y/n\]",
+    r"(?i)\(y/n\)",
+    r"(?i)\[yes/no\]",
+    r"(?i)\byes/no\b",
+    r"(?i)\bdo you trust\b",
+    r"(?i)\ballow\b",
+    r"(?i)\bapprove\b",
+    r"(?i)\bconfirm\b",
+    r"(?i)\bpress enter\b",
+    r"(?i)\b(?:select|choose)\s+(?:an?\s+)?option\b",
+    r"(?i)\b(?:select|choose)\s+\[?[0-9]+(?:-[0-9]+)?\]?",
+    r"(?i)^\s*(?:>\s*)?\[?[0-9]+\]\s+[A-Za-z]",
+    r"(?i)\b(?:type|enter)\s+(?:yes|no|y|n)\b",
+    r"(?i)\bcontinue\?\s*\[",
+    r"(?i)\bproceed\?\s*\[",
+))
 
 REQUIRED_NEVER_IDS = (
     "write_outside_workspace",
@@ -125,10 +138,6 @@ def load_rules(path: str | Path | None = None) -> dict:
     prompt_patterns = data.get("prompt_patterns")
     if not isinstance(prompt_patterns, list) or not prompt_patterns:
         raise RulesError("prompt_patterns must be a non-empty list")
-    try:
-        data["compiled_prompt_patterns"] = [re.compile(p) for p in prompt_patterns]
-    except re.error as exc:
-        raise RulesError(f"Invalid regex in prompt_patterns: {exc}") from exc
 
     return data
 
@@ -168,83 +177,12 @@ def _is_folder_trust_approved(
     folder_trust_rule: dict,
     prompt_patterns: list,
 ) -> bool:
-    """Return True if pane contains a valid folder-trust prompt for clean_ws and no unapproved prompt."""
-    ft_patterns = folder_trust_rule.get("compiled_patterns", [])
-    lines = pane_text.splitlines()
-
-    ft_line_indices = [
-        idx for idx, line in enumerate(lines)
-        if any(pat.search(line) for pat in ft_patterns)
-    ]
-    if len(ft_line_indices) != 1:
-        return False
-    marker_values = {"[y/n]", "(y/n)", "[yes/no]", "(yes/no)", "yes/no"}
-    marker_indices = [idx for idx, line in enumerate(lines) if line.strip().casefold() in marker_values]
-    question_idx = ft_line_indices[0]
-    ws_token_re = re.compile(rf"(?<![A-Za-z0-9_./-]){re.escape(clean_ws)}(?=$|\s|[?.,)](?=$|\s))")
-    inline_marker_re = re.compile(r"\s+(?:\[y/n\]|\(y/n\)|\[yes/no\]|\(yes/no\)|yes/no)\s*$", re.I)
-    question_inline = inline_marker_re.search(lines[question_idx]) is not None
-    next_line = lines[question_idx + 1] if question_idx + 1 < len(lines) else ""
-    next_line_inline = re.fullmatch(
-        rf"{re.escape(clean_ws)}\s+(?:\[y/n\]|\(y/n\)|\[yes/no\]|\(yes/no\)|yes/no)\s*",
-        next_line.strip(), re.I,
-    ) is not None
-    inline_marker_indices = ([question_idx] if question_inline else []) + ([question_idx + 1] if next_line_inline else [])
-    if len(marker_indices) + len(inline_marker_indices) != 1:
-        return False
-    inline_marker_idx = inline_marker_indices[0] if inline_marker_indices else None
-    marker_idx = marker_indices[0] if marker_indices else inline_marker_idx
-    question = lines[question_idx]
-    question_has_token = ws_token_re.search(question) is not None
-    token_on_next_line = next_line.strip() == clean_ws or next_line_inline
-    if not question_has_token and not token_on_next_line:
-        return False
-    if question_has_token:
-        if (marker_idx <= question_idx and inline_marker_idx != question_idx) or any(
-            line.strip() for line in lines[:question_idx] + lines[marker_idx + 1:]
-        ):
-            return False
-        block_nonempty = [line for line in lines[question_idx:marker_idx + 1] if line.strip()]
-        if inline_marker_idx == question_idx:
-            if block_nonempty != [question]:
-                return False
-        elif len(block_nonempty) != 2:
-            return False
-    else:
-        if (marker_idx <= question_idx + 1 and inline_marker_idx != question_idx + 1) or any(
-            line.strip() for line in lines[:question_idx] + lines[marker_idx + 1:]
-        ):
-            return False
-        block_nonempty = [line for line in lines[question_idx:marker_idx + 1] if line.strip()]
-        if inline_marker_idx == question_idx + 1:
-            token_marker_re = re.compile(
-                rf"{re.escape(clean_ws)}\s+(?:\[y/n\]|\(y/n\)|\[yes/no\]|\(yes/no\)|yes/no)\s*$",
-                re.I,
-            )
-            if len(block_nonempty) != 2 or not token_marker_re.fullmatch(block_nonempty[1].strip()):
-                return False
-        elif len(block_nonempty) != 3 or block_nonempty[1].strip() != clean_ws:
-            return False
-    if any(
-        any(ord(ch) > 0x7E or (ord(ch) < 0x20 and ch != "\t") for ch in line)
-        for line in block_nonempty
-    ):
-        return False
-    block_text = "\n".join(block_nonempty)
-
-    # No .. traversal path in prompt block
-    if re.search(r"(?:^|[\s\'\"])\S*\.\.\S*(?:[\s\'\"]|$)", block_text) or re.search(r"(?:^|/)\.\.(?:/|$)", block_text):
-        return False
-
-    # Check for other absolute path tokens in prompt block that are not clean_ws
-    found_paths = re.findall(r"(?<![A-Za-z0-9_./-])(/[A-Za-z0-9_./-]+)(?![A-Za-z0-9_./-])", block_text)
-    for p in found_paths:
-        norm_p = p.rstrip("/") if len(p) > 1 else p
-        norm_p = re.sub(r"[?.,)]+$", "", norm_p)
-        if norm_p != clean_ws:
-            return False
-
-    return True
+    """Return True only when the whole normalized pane equals an allowed template."""
+    text = normalize_pane(pane_text).rstrip()
+    return any(
+        re.fullmatch(re.escape(template).replace(re.escape("{workspace}"), re.escape(clean_ws)), text)
+        for template in prompt_patterns
+    )
 
 
 def match_pane(pane_text: str, workspace: str, rules: dict | None = None) -> dict:
@@ -305,7 +243,7 @@ def match_pane(pane_text: str, workspace: str, rules: dict | None = None) -> dic
         elif isinstance(allowed, dict):
             folder_trust_rule = allowed.get("folder_trust")
 
-    prompt_patterns = rules.get("compiled_prompt_patterns", [])
+    prompt_patterns = rules.get("prompt_patterns", [])
 
     if folder_trust_rule and _is_folder_trust_approved(
         pane_text, clean_ws, folder_trust_rule, prompt_patterns
@@ -320,7 +258,7 @@ def match_pane(pane_text: str, workspace: str, rules: dict | None = None) -> dic
 
     # 3. Check if any prompt pattern (or folder-trust pattern) matches
     ft_patterns = (folder_trust_rule or {}).get("compiled_patterns", [])
-    has_prompt = any(pat.search(pane_text) for pat in prompt_patterns) or any(
+    has_prompt = any(pat.search(pane_text) for pat in _PROMPT_RESIDUE_PATTERNS) or any(
         pat.search(pane_text) for pat in ft_patterns
     )
     if has_prompt:

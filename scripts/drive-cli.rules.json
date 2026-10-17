@@ -80,20 +80,8 @@
     }
   ],
   "prompt_patterns": [
-    "(?i)\\[y/n\\]",
-    "(?i)\\(y/n\\)",
-    "(?i)\\[yes/no\\]",
-    "(?i)\\byes/no\\b",
-    "(?i)\\bdo you trust\\b",
-    "(?i)\\ballow\\b",
-    "(?i)\\bapprove\\b",
-    "(?i)\\bconfirm\\b",
-    "(?i)\\bpress enter\\b",
-    "(?i)\\b(?:select|choose)\\s+(?:an?\\s+)?option\\b",
-    "(?i)\\b(?:select|choose)\\s+\\[?[0-9]+(?:-[0-9]+)?\\]?",
-    "(?i)^\\s*(?:>\\s*)?\\[?[0-9]+\\]\\s+[A-Za-z]",
-    "(?i)\\b(?:type|enter)\\s+(?:yes|no|y|n)\\b",
-    "(?i)\\bcontinue\\?\\s*\\[",
-    "(?i)\\bproceed\\?\\s*\\["
+    "Do you trust the files in this folder?\n{workspace}\n[y/n]",
+    "Do you trust the files in this folder? {workspace} [y/n]",
+    "Do you trust this folder {workspace} [y/n]"
   ]
 }
