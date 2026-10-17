@@ -178,6 +178,95 @@ chmod +x "$TMP/fake-unknown.sh"
 find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 run_drive 3 "Enable telemetry uploads?" -- "$TMP/fake-unknown.sh"
 
+sentinel="$TMP/read-sentinel"
+
+assert_no_y_answer_event() {
+  local events_file="$1"
+  if grep -Fq '"answer": "y\n"' "$events_file" 2>/dev/null; then
+    echo "FAIL: events.jsonl contains answer y for a never/unknown prompt" >&2
+    exit 1
+  fi
+}
+
+run_sentinel_never_case() {
+  local expected_rid="$1"
+  local prompt="$2"
+  rm -f "$sentinel"
+  find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  cat >"$TMP/fake-sentinel-never.sh" <<FAKE
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "\$1"
+if read -t 2 -r _; then
+  echo touched > "\$2"
+fi
+exit 0
+FAKE
+  chmod +x "$TMP/fake-sentinel-never.sh"
+  run_drive 3 "$prompt" -- "$TMP/fake-sentinel-never.sh" "$prompt" "$sentinel"
+  if [ -e "$sentinel" ]; then
+    echo "FAIL: sentinel exists for never case $expected_rid" >&2
+    exit 1
+  fi
+  local result
+  result="$(find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -type d | head -n 1)/result.json"
+  python3 - "$result" "$expected_rid" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1]))
+rid = sys.argv[2]
+if doc.get("rule_id") != rid:
+    raise SystemExit(f"expected rule_id {rid}, got {doc.get('rule_id')}")
+PY
+  local events
+  events="$(find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -type d | head -n 1)/events.jsonl"
+  assert_no_y_answer_event "$events"
+}
+
+echo "== never prompts must not receive y (sentinel)"
+run_sentinel_never_case push_network_install "Allow git push origin main? [y/n]"
+run_sentinel_never_case delete_ignored_files "Run git clean -fdX to delete ignored files? [y/n]"
+run_sentinel_never_case push_network_install "Allow npm install the package from the network? [y/n]"
+run_sentinel_never_case credits_payment "Purchase \$20 API credits now? [y/n]"
+
+echo "== post-answer push must stop before second read"
+rm -f "$sentinel"
+find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+cat >"$TMP/fake-trust-then-push.sh" <<FAKE
+#!/usr/bin/env bash
+set -euo pipefail
+ws="\$1"
+sentinel="\$2"
+printf 'Do you trust the files in this folder?\n%s\n[y/n] ' "\$ws"
+read -r _
+printf 'Allow git push origin main? [y/n]\n'
+if read -t 2 -r _; then
+  echo touched > "\$sentinel"
+fi
+exit 0
+FAKE
+chmod +x "$TMP/fake-trust-then-push.sh"
+run_drive 3 "Allow git push origin main? [y/n]" -- "$TMP/fake-trust-then-push.sh" "$WS" "$sentinel"
+if [ -e "$sentinel" ]; then
+  echo "FAIL: sentinel exists after post-answer push" >&2
+  exit 1
+fi
+result="$(find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -type d | head -n 1)/result.json"
+python3 - "$result" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1]))
+if doc.get("rule_id") != "push_network_install":
+    raise SystemExit(f"expected push_network_install, got {doc.get('rule_id')}")
+PY
+events="$(find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -type d | head -n 1)/events.jsonl"
+if ! grep -Fq '"rule_id": "folder_trust"' "$events"; then
+  echo "FAIL: expected folder_trust answer event" >&2
+  exit 1
+fi
+if ! grep -Fq '"answer": "y\n"' "$events"; then
+  echo "FAIL: expected trust y answer event" >&2
+  exit 1
+fi
+
 echo "== stall with no pane change (exit 4)"
 cat >"$TMP/fake-stall.sh" <<'FAKE'
 #!/usr/bin/env bash

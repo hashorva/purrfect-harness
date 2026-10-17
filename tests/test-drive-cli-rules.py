@@ -323,6 +323,69 @@ class TestFolderTrustExactMatching(unittest.TestCase):
         self.assertEqual((second["decision"], second["exit_code"], second["answer"]), ("stop", 3, None))
         self.assertEqual(R.classify_window("", "/ws", rules=rules)["decision"], "wait")
 
+    def test_tmux_dead_pane_banner_is_not_a_second_prompt(self):
+        rules = self.rules
+        ws = "/ws"
+        banner = "Pane is dead (status 0, Sat Oct 17 13:26:00 2026)" + (" " * 40)
+        old = f"Do you trust the files in this folder?\n{ws}\n[y/n] " + ("\n" * 21)
+        dead = (
+            f"Do you trust the files in this folder?\n{ws}\n[y/n] y\n"
+            f"trusted and done\n" + ("\n" * 18) + banner
+        )
+        waited = R.classify_window(dead, ws, old, rules)
+        self.assertEqual((waited["decision"], waited["answer"], waited["exit_code"]), ("wait", None, None))
+        fresh = R.match_pane(dead, ws, rules)
+        self.assertEqual(
+            (fresh["decision"], fresh["category"], fresh["exit_code"], fresh["answer"]),
+            ("stop", "unknown_prompt", 3, None),
+        )
+        self.assertEqual(R.classify_window(dead, ws, None, rules), fresh)
+        push = (
+            f"Do you trust the files in this folder?\n{ws}\n[y/n] y\n"
+            f"Allow git push origin main? [y/n]\n{banner}"
+        )
+        pushed = R.classify_window(push, ws, old, rules)
+        self.assertEqual(
+            (pushed["decision"], pushed["exit_code"], pushed["answer"], pushed["rule_id"]),
+            ("stop", 3, None, "push_network_install"),
+        )
+        residual = R.classify_window(
+            f"Do you trust the files in this folder?\n{ws}\n[y/n] y\nAllow git push origin main? [y/n]",
+            ws,
+            old,
+            rules,
+        )
+        self.assertEqual(
+            (residual["decision"], residual["exit_code"], residual["answer"], residual["rule_id"]),
+            ("stop", 3, None, "push_network_install"),
+        )
+        sneak = R.match_pane(
+            "Pane is dead (status 0, not-a-date) Allow git push origin main? [y/n]",
+            ws,
+            rules,
+        )
+        self.assertEqual((sneak["decision"], sneak["rule_id"]), ("stop", "push_network_install"))
+        plain = R.match_pane(f"Allow git push origin main? [y/n]\n{banner}", ws, rules)
+        self.assertEqual((plain["rule_id"], plain["answer"]), ("push_network_install", None))
+        pure = R.match_pane(
+            f"Do you trust the files in this folder?\n{ws}\n[y/n] \n" + ("\n" * 20) + banner,
+            ws,
+            rules,
+        )
+        self.assertEqual(
+            (pure["decision"], pure["rule_id"], pure["answer"]),
+            ("answer", "folder_trust", "y\n"),
+        )
+        self.assertEqual(R.normalize_pane("keep\n\n \n"), "keep")
+        self.assertEqual(R.normalize_pane("[y/n] "), "[y/n] ")
+        self.assertEqual(
+            R.normalize_pane("Pane is dead (status 130, Mon Jan  2 03:04:05 2026)\nkeep"),
+            "keep",
+        )
+        norm_dead = R.normalize_pane(dead)
+        self.assertIn("trusted and done", norm_dead)
+        self.assertNotIn("Pane is dead", norm_dead)
+
 
 class TestNeverRules(unittest.TestCase):
     """Test all 5 required NEVER categories."""

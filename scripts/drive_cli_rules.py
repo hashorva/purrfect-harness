@@ -11,6 +11,15 @@ import sys
 
 DEFAULT_RULES_PATH = Path(__file__).resolve().parent / "drive-cli.rules.json"
 
+_TMUX_DEAD_PANE_LINE = re.compile(
+    r"^Pane is dead \(status \d+, "
+    r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) "
+    r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) "
+    r" ?\d{1,2} "
+    r"\d{2}:\d{2}:\d{2} "
+    r"\d{4}\)$"
+)
+
 REQUIRED_NEVER_IDS = (
     "write_outside_workspace",
     "delete_ignored_files",
@@ -139,7 +148,16 @@ def normalize_pane(text: str) -> str:
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
     text = re.sub(r"\x1b(?:[@-Z\\-_]|\][^\x07]*(?:\x07|\x1b\\))", "", text)
     text = "".join(" " if unicodedata.category(ch) == "Cf" else ch for ch in text)
-    return "".join(ch for ch in text if unicodedata.category(ch) != "Cc" or ch in "\n\t\r")
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Cc" or ch in "\n\t\r")
+
+    lines: list[str] = []
+    for line in text.splitlines():
+        if _TMUX_DEAD_PANE_LINE.match(line.strip()):
+            continue
+        lines.append(line)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines)
 
 
 def _is_folder_trust_approved(
@@ -286,13 +304,29 @@ def pane_digest(text: str) -> str:
     return hashlib.sha256(str(text).encode("utf-8")).hexdigest()
 
 
+def _answered_residual(norm_pane: str, norm_answered: str) -> str | None:
+    """Return pane text after removing the longest matching suffix of the answered pane."""
+    if norm_answered in norm_pane:
+        return norm_pane.replace(norm_answered, "", 1)
+    matched: str | None = None
+    for start in range(len(norm_answered)):
+        suffix = norm_answered[start:]
+        if suffix and suffix in norm_pane and (matched is None or len(suffix) > len(matched)):
+            matched = suffix
+    if matched is None:
+        return None
+    return norm_pane.replace(matched, "", 1)
+
+
 def classify_window(pane_text: str, workspace: str, answered_text: str | None = None, rules: dict | None = None) -> dict:
-    if not answered_text:
+    if answered_text is None or answered_text == "":
         return match_pane(pane_text, workspace, rules)
-    if pane_text == answered_text:
+    norm_pane = normalize_pane(pane_text)
+    norm_answered = normalize_pane(answered_text)
+    if norm_pane == norm_answered:
         return {"decision": "wait", "category": "pane_unchanged", "rule_id": None, "answer": None, "exit_code": None}
-    if answered_text in pane_text:
-        residual = pane_text.replace(answered_text, "", 1)
+    residual = _answered_residual(norm_pane, norm_answered)
+    if residual is not None:
         result = match_pane(residual, workspace, rules)
         if result["decision"] == "answer":
             return {"decision": "stop", "category": "unknown_prompt", "rule_id": None, "answer": None, "exit_code": 3}
