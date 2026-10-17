@@ -144,11 +144,8 @@ def _validate_workspace(workspace: str) -> str:
 
 def normalize_pane(text: str) -> str:
     """Normalize pane text before applying any prompt rules."""
-    text = unicodedata.normalize("NFKC", str(text or ""))
-    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
-    text = re.sub(r"\x1b(?:[@-Z\\-_]|\][^\x07]*(?:\x07|\x1b\\))", "", text)
-    text = "".join(" " if unicodedata.category(ch) == "Cf" else ch for ch in text)
-    text = "".join(ch for ch in text if unicodedata.category(ch) != "Cc" or ch in "\n\t\r")
+    text = str(text or "")
+    text = re.sub(r"\x1b\[[0-9;]*m", "", text)
 
     lines: list[str] = []
     for line in text.splitlines():
@@ -174,32 +171,61 @@ def _is_folder_trust_approved(
         idx for idx, line in enumerate(lines)
         if any(pat.search(line) for pat in ft_patterns)
     ]
-    if not ft_line_indices:
+    if len(ft_line_indices) != 1:
         return False
-    if len(ft_line_indices) > 1:
-        # Multiple folder-trust prompt questions present
-        return False
-
-    start_idx = ft_line_indices[0]
-    nonempty = [line for line in lines if line.strip()]
-    if len(nonempty) > 3:
-        return False
-    block_text = "\n".join(nonempty)
-    marker_re = re.compile(r"(?i)\[y/n\]|\(y/n\)|\[yes/no\]|yes/no")
-    if not any(marker_re.search(line) for line in nonempty):
-        return False
-
-    # Must match clean_ws on an exact path token boundary
+    marker_values = {"[y/n]", "(y/n)", "[yes/no]", "(yes/no)", "yes/no"}
+    marker_indices = [idx for idx, line in enumerate(lines) if line.strip().casefold() in marker_values]
+    question_idx = ft_line_indices[0]
     ws_token_re = re.compile(rf"(?<![A-Za-z0-9_./-]){re.escape(clean_ws)}(?=$|\s|[?.,)](?=$|\s))")
-    if not ws_token_re.search(block_text):
+    inline_marker_re = re.compile(r"\s+(?:\[y/n\]|\(y/n\)|\[yes/no\]|\(yes/no\)|yes/no)\s*$", re.I)
+    question_inline = inline_marker_re.search(lines[question_idx]) is not None
+    next_line = lines[question_idx + 1] if question_idx + 1 < len(lines) else ""
+    next_line_inline = re.fullmatch(
+        rf"{re.escape(clean_ws)}\s+(?:\[y/n\]|\(y/n\)|\[yes/no\]|\(yes/no\)|yes/no)\s*",
+        next_line.strip(), re.I,
+    ) is not None
+    inline_marker_indices = ([question_idx] if question_inline else []) + ([question_idx + 1] if next_line_inline else [])
+    if len(marker_indices) + len(inline_marker_indices) != 1:
         return False
+    inline_marker_idx = inline_marker_indices[0] if inline_marker_indices else None
+    marker_idx = marker_indices[0] if marker_indices else inline_marker_idx
+    question = lines[question_idx]
+    question_has_token = ws_token_re.search(question) is not None
+    token_on_next_line = next_line.strip() == clean_ws or next_line_inline
+    if not question_has_token and not token_on_next_line:
+        return False
+    if question_has_token:
+        if (marker_idx <= question_idx and inline_marker_idx != question_idx) or any(
+            line.strip() for line in lines[:question_idx] + lines[marker_idx + 1:]
+        ):
+            return False
+        block_nonempty = [line for line in lines[question_idx:marker_idx + 1] if line.strip()]
+        if inline_marker_idx == question_idx:
+            if block_nonempty != [question]:
+                return False
+        elif len(block_nonempty) != 2:
+            return False
+    else:
+        if (marker_idx <= question_idx + 1 and inline_marker_idx != question_idx + 1) or any(
+            line.strip() for line in lines[:question_idx] + lines[marker_idx + 1:]
+        ):
+            return False
+        block_nonempty = [line for line in lines[question_idx:marker_idx + 1] if line.strip()]
+        if inline_marker_idx == question_idx + 1:
+            token_marker_re = re.compile(
+                rf"{re.escape(clean_ws)}\s+(?:\[y/n\]|\(y/n\)|\[yes/no\]|\(yes/no\)|yes/no)\s*$",
+                re.I,
+            )
+            if len(block_nonempty) != 2 or not token_marker_re.fullmatch(block_nonempty[1].strip()):
+                return False
+        elif len(block_nonempty) != 3 or block_nonempty[1].strip() != clean_ws:
+            return False
     if any(
-        not any(pattern.search(line) for pattern in ft_patterns)
-        and not ws_token_re.search(line)
-        and not marker_re.search(line)
-        for line in nonempty
+        any(ord(ch) > 0x7E or (ord(ch) < 0x20 and ch != "\t") for ch in line)
+        for line in block_nonempty
     ):
         return False
+    block_text = "\n".join(block_nonempty)
 
     # No .. traversal path in prompt block
     if re.search(r"(?:^|[\s\'\"])\S*\.\.\S*(?:[\s\'\"]|$)", block_text) or re.search(r"(?:^|/)\.\.(?:/|$)", block_text):
@@ -228,6 +254,18 @@ def match_pane(pane_text: str, workspace: str, rules: dict | None = None) -> dic
     clean_ws = _validate_workspace(workspace)
     if not isinstance(pane_text, str):
         pane_text = str(pane_text or "")
+
+    scanned_text = re.sub(r"\x1b\[[0-9;]*m", "", pane_text)
+    if any(
+        unicodedata.category(ch) in {"Cf", "Zl", "Zp"}
+        or (unicodedata.category(ch) == "Cc" and ch not in "\n\t")
+        or ch == "\x1b"
+        for ch in scanned_text
+    ):
+        return {
+            "decision": "stop", "category": "unknown_prompt", "rule_id": None,
+            "answer": None, "exit_code": 3,
+        }
 
     pane_text = normalize_pane(pane_text)
     if rules is None:

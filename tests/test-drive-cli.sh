@@ -17,6 +17,10 @@ ws = "/tmp/ws-exact"
 rules = R.load_rules()
 ok = R.match_pane(f"Do you trust the files in this folder?\n{ws}\n[y/n] ", ws, rules)
 assert ok["decision"] == "answer" and ok["rule_id"] == "folder_trust", ok
+hostile = R.match_pane(f"Do you trust the files in this folder?\n{ws}\u200b-evil\n[y/n] ", ws, rules)
+assert hostile["decision"] == "stop" and hostile["category"] == "unknown_prompt" and hostile["answer"] is None, hostile
+telemetry = R.match_pane(f"Do you trust the files in this folder? {ws}\nEnable telemetry uploads? [y/n]", ws, rules)
+assert telemetry["decision"] == "stop" and telemetry["category"] == "unknown_prompt" and telemetry["answer"] is None, telemetry
 unk = R.match_pane("Enable telemetry uploads? [y/n]", ws, rules)
 assert unk["decision"] == "stop" and unk["exit_code"] == 3, unk
 answered = "Do you trust this folder /tmp/ws-exact [y/n]"
@@ -266,6 +270,75 @@ if ! grep -Fq '"answer": "y\n"' "$events"; then
   echo "FAIL: expected trust y answer event" >&2
   exit 1
 fi
+
+echo "== hostile zero-width workspace path must not receive y"
+rm -f "$sentinel"
+find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+echo "hostile-zwsp-path"
+cat >"$TMP/fake-hostile-zwsp.py" <<'PY'
+#!/usr/bin/env bash
+set -euo pipefail
+ws="$1"
+sentinel="$2"
+python3 - "$ws" <<'PYTHON'
+import sys
+ws = sys.argv[1]
+print("Do you trust the files in this folder?")
+print("%s\u200b-evil" % ws)
+print("[y/n] ", end="", flush=True)
+PYTHON
+if read -t 2 -r _; then
+  echo touched > "$sentinel"
+fi
+PY
+chmod +x "$TMP/fake-hostile-zwsp.py"
+run_drive 3 "[y/n]" -- "$TMP/fake-hostile-zwsp.py" "$WS" "$sentinel"
+if [ -e "$sentinel" ]; then
+  echo "FAIL: sentinel exists for hostile zero-width path" >&2
+  exit 1
+fi
+result="$(find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -type d | head -n 1)/result.json"
+events="$(find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -type d | head -n 1)/events.jsonl"
+python3 - "$result" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+assert doc.get("reason") == "unknown_prompt", doc
+PY
+assert_no_y_answer_event "$events"
+
+echo "== hostile telemetry question must not receive y"
+rm -f "$sentinel"
+find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+echo "hostile-telemetry"
+cat >"$TMP/fake-hostile-telemetry.py" <<'PY'
+#!/usr/bin/env bash
+set -euo pipefail
+ws="$1"
+sentinel="$2"
+python3 - "$ws" <<'PYTHON'
+import sys
+ws = sys.argv[1]
+print("Do you trust the files in this folder? %s" % ws)
+print("Enable telemetry uploads? [y/n]", flush=True)
+PYTHON
+if read -t 2 -r _; then
+  echo touched > "$sentinel"
+fi
+PY
+chmod +x "$TMP/fake-hostile-telemetry.py"
+run_drive 3 "Enable telemetry uploads?" -- "$TMP/fake-hostile-telemetry.py" "$WS" "$sentinel"
+if [ -e "$sentinel" ]; then
+  echo "FAIL: sentinel exists for hostile telemetry prompt" >&2
+  exit 1
+fi
+result="$(find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -type d | head -n 1)/result.json"
+events="$(find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -type d | head -n 1)/events.jsonl"
+python3 - "$result" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+assert doc.get("reason") == "unknown_prompt", doc
+PY
+assert_no_y_answer_event "$events"
 
 echo "== stall with no pane change (exit 4)"
 cat >"$TMP/fake-stall.sh" <<'FAKE'

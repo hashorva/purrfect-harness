@@ -302,13 +302,61 @@ class TestFolderTrustExactMatching(unittest.TestCase):
         self.assertEqual(match_pane("Do you trust this folder /ws while pushing files? [y/n]", "/ws", self.rules)["decision"], "answer")
         self.assertEqual(match_pane("Do you trust this folder /ws and " + "a" * 4000 + " push? [y/n]", "/ws", self.rules)["category"], "unknown_prompt")
         self.assertEqual(R.normalize_pane("/ws\x1b[0m-evil"), "/ws-evil")
-        self.assertEqual(R.normalize_pane("git\u200bpush"), "git push")
-        self.assertEqual(R.normalize_pane("git\u200cpush"), "git push")
+        self.assertEqual(R.normalize_pane("git\u200bpush"), "git\u200bpush")
+        self.assertEqual(R.normalize_pane("git\u200cpush"), "git\u200cpush")
         self.assertEqual(R.pane_digest(base), hashlib.sha256(base.encode("utf-8")).hexdigest())
         self.assertNotEqual(R.pane_digest("/ws"), R.pane_digest("/ws\u200b"))
         changed = copy.deepcopy(self.rules)
         changed["danger_words"].remove("push")
         self.assertEqual(match_pane("Do you trust this folder /ws and push here? [y/n]", "/ws", changed)["decision"], "answer")
+
+    def test_hostile_characters_and_trust_block_are_default_deny(self):
+        q = "Do you trust the files in this folder?"
+        hostile = [
+            q + "\n/ws\u200b-evil\n[y/n] ", q + "\n/ws\u200c-evil\n[y/n] ",
+            q + "\n/ws\u200d-evil\n[y/n] ", q + "\n/ws\u200e-evil\n[y/n] ",
+            q + "\n/ws\u200f-evil\n[y/n] ", q + "\n/ws\u2060-evil\n[y/n] ",
+            q + "\n/ws\ufeff-evil\n[y/n] ", q + "\n/ws\u2066-evil\n[y/n] ",
+            "Do you trust this folder /ws and git pu\u200bsh origin? [y/n]",
+            "Do you trust this folder /ws and git pu\u200csh origin? [y/n]",
+            "Do you trust this folder /ws and git\u200bpush origin? [y/n]",
+            "Do you trust this folder /ws and git abcd\x1b[4Dpush origin? [y/n]",
+            "Do you trust this folder /ws and git abcd\x1b[4Apush origin? [y/n]",
+            q + " /ws\nEnable telemetry uploads? [y/n]",
+            q + " /ws\nEnable telemetry uploads? [Y/n]",
+            q + " /ws\nEnable telemetry uploads? (yes/no)",
+            q + "\n/ws\nEnable telemetry uploads? [y/n]", "/ws\n" + q + " [y/n]",
+            q + "\u2028/ws\u2028[y/n] ", q + "\u2029/ws\u2029[y/n] ",
+            q + "\n/ws\x07\n[y/n] ", q + "\r\n/ws\r\n[y/n] ",
+            q + "\n/ws\x1b\n[y/n] ", q + "\n/ws\x1b]0;x\x07\n[y/n] ",
+            q + "\n\uff0f\uff57\uff53\n[y/n] ", q + "\n/w\u0441\n[y/n] ",
+        ]
+        for pane in hostile:
+            with self.subTest(pane=pane):
+                result = match_pane(pane, "/ws", self.rules)
+                self.assertEqual(
+                    (result["decision"], result["category"], result["rule_id"], result["answer"], result["exit_code"]),
+                    ("stop", "unknown_prompt", None, None, 3),
+                )
+
+        allowed = [
+            q + "\n/ws\n[y/n] ", q + " /ws [y/n]", q + " /ws [Y/n]", q + " /ws (yes/no)",
+            q + "\n/ws\x1b[0m\n[y/n] ", q + "\n/ws\x1b[1;31m\n[y/n] ",
+            q + "\t/ws\t[y/n]", q + "\n/ws\n\n[y/n] ", q + "\n/ws [y/n]",
+            "Do you trust this folder /ws while pushing files? [y/n]",
+        ]
+        for pane in allowed:
+            with self.subTest(allowed=pane):
+                result = match_pane(pane, "/ws", self.rules)
+                self.assertEqual((result["decision"], result["rule_id"], result["answer"]), ("answer", "folder_trust", "y\n"))
+        for pane in (
+            q + "\n/ws\u200b-evil\n[y/n] ",
+            q + " /ws\nEnable telemetry uploads? [y/n]",
+        ):
+            self.assertEqual(R.match_pane(pane, "/ws", self.rules)["decision"], "stop")
+        self.assertEqual(R.normalize_pane("/ws\x1b[0m-evil"), "/ws-evil")
+        self.assertEqual(R.normalize_pane("/ws\u2066-evil"), "/ws\u2066-evil")
+        self.assertIn("\x1b[4D", R.normalize_pane("abcd\x1b[4Dpush"))
 
     def test_answered_window_classification(self):
         old = "Do you trust this folder /ws [y/n]"
