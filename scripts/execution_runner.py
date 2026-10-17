@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 """Supervise one authorized provider process and always emit terminal evidence."""
-import sys
-_SCRIPT_PATH = sys.path.pop(0) if sys.path and sys.path[0] == __file__.rsplit("/", 1)[0] else None
 import argparse
 import json
 import math
@@ -10,16 +8,14 @@ from pathlib import Path
 import re
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 from datetime import datetime
 
-if _SCRIPT_PATH is not None:
-    sys.path.insert(0, _SCRIPT_PATH)
-
 from execute_provider import provider_contract
 from execution_receipt import (ReceiptError, all_unknown, canonical_bytes, capture_before, now,
-                               write_receipt)
+                               protected_snapshot, write_receipt)
 from observe_output import no_turn, observe, observe_self_reported, resolve_model_identity
 from execution_spec import artifact_directory, SpecError, load_persisted, spec_sha256
 
@@ -329,6 +325,7 @@ def run(args):
 
     started_at = now()
     before = capture_before(args.spec, args.spec_sha256)
+    protected_before = protected_snapshot(spec["repo"])
     process = None
     received_signal = None
 
@@ -453,6 +450,7 @@ def run(args):
         task=args.task,
         tier=args.tier,
         observation=observation,
+        protected_before=protected_before,
     )
     try:
         receipt_doc = json.loads(receipt.read_text(encoding="utf-8"))
