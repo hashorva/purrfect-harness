@@ -1,7 +1,7 @@
 ---
 title: Purrfect Harness
-version: 3.0.0
-updated: 2026-10-14
+version: 3.1.0
+updated: 2026-10-17
 ---
 
 # Purrfect Harness

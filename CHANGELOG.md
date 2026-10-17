@@ -1,5 +1,98 @@
 # Changelog — agent-harness kit
 
+## 3.1.0 (2026-10-17)
+
+Minor release (Phase 2A Foundation). New capabilities, schemas, and scripts
+propagate cleanly through `scripts/update-harness.sh`; read the consumer
+migration notes below before updating a repository.
+
+### Migration: read this before you update a consumer
+
+This is a minor release: `bash scripts/update-harness.sh /path/to/consumer`
+propagates the new scripts, schemas, registry, and skills on a branch without
+committing. Review these operational changes when adopting `v3.1.0`:
+
+1. **Fleet v2 policy seats and doors:** new missions use `fleet.json` v2 policy
+   seats bound to doors in `harness-registry.json`, with per-spawn model
+   resolution recorded in the ExecutionSpec and model or door changes appended
+   to `drift.jsonl`. Existing `fleet.json` v1 files still validate; Door IDs in
+   `harness-registry.json` are permanent and retire only via `"deprecated": true`.
+2. **Tool PATH and Gate 0 doctor (`scripts/harness-path.sh`, `scripts/fleet-doctor.sh`):**
+   wrappers source `scripts/harness-path.sh` to prepend `/opt/homebrew/bin` and
+   `/usr/local/bin` once without duplicates. `fleet-doctor.sh` checks `git`,
+   `python3`, `tmux`, `jq`, and `shellcheck` plus provider binary identity and
+   login at Gate 0.
+3. **Seat admission probes and capability baselines (`scripts/probe-seat.sh`):**
+   before dispatching a newly frozen or changed seat, run
+   `bash scripts/probe-seat.sh <seat>` to verify a one-turn probe in a fresh Git
+   folder with stdin closed, record MCP server names only, and diff `<cli> --help`
+   flags against `docs/missions/capabilities/<cli>.txt`.
+4. **Provider contracts 7–9:** Claude runs under `--strict-mcp-config` (unless
+   the spec explicitly names an MCP server) and `--permission-mode bypassPermissions`
+   with `--add-dir <repo>`, the `CLAUDE_DISALLOWED_TOOLS` deny-list, and the
+   post-run protected-path receipt guard. Codex keeps `-s workspace-write` with
+   `sandbox_workspace_write.network_access=true`, `web_search="live"`, and
+   per-run `cua_repl`/`node_repl` disabled. Every adapter runs under the 90s
+   stall watchdog and fails any run that completes with 0 turns.
+5. **Ledger v2 privacy and `self_reported_model`:** `.tasks/ledger/<run_id>.json`
+   stays gitignored until folded into `docs/missions/ledger.jsonl` at feature
+   acceptance. Ledger rows carry `self_reported_model` alongside `observed_model`
+   and enforce the `[A-Za-z0-9 ._:/-]{0,200}` allow rule on harness-generated
+   text fields.
+
+### What changes
+
+- **Fleet v2 (`scripts/fleet_state.py`, `harness-registry.json`):** policy seats
+  resolve through ranked doors (`included` before `credits`/`api` unless
+  opted in, never `-fast` unless enabled), encode Cursor effort in the model id
+  and Antigravity effort in the model name (`agy.economy` = `gemini-3.8-flash`,
+  `agy.premium` = `gemini-4-argon` on its weekly-only pool, chair resolution on
+  `agy`), and require a writable drift log whenever resolution changes.
+- **Provider contracts 7–9 (`scripts/execute_provider.py`, `scripts/execution_runner.py`, `scripts/execution_receipt.py`):**
+  contract 7 adds the 90s stall watchdog, zero-turn failure guard, and Claude
+  `--strict-mcp-config`; contract 8 restores the `agy` `stream-json` lane with
+  stdin closed; contract 9 unlocks native toolsets across providers — Claude
+  `bypassPermissions` with the 73-pattern `CLAUDE_DISALLOWED_TOOLS` deny-list
+  and in-memory pre/post protected-path, symlink, `.gitignore`, and stdlib-shadowing
+  guards, and Codex `workspace-write` with live network/web search and
+  `cua_repl`/`node_repl` disabled per run.
+- **Ledger and verdicts (`scripts/ledger.py`, `scripts/validate_verdict.py`, `schemas/`):**
+  ledger schema v2 records `self_reported_model`, enforces the character-set
+  allow rule and near-miss refusal on harness-generated text, and verifies door
+  permanence across `docs/missions/ledger.jsonl`; JSON schemas validate task
+  plans, review verdicts, and worker outputs.
+- **Seat probes and capability inventory (`scripts/probe-seat.sh`, `scripts/probe_seat.py`):**
+  runs the seat's exact harness command in a scratch Git repo with stdin closed
+  and a 2-minute cap, classifies `ok`, `no-turn`, `mcp-init-wait`,
+  `permission-wait`, `input-wait`, `auth`, `limit`, or `unknown`, records MCP
+  server names only, and diffs `<cli> --help` flags against committed baselines.
+- **Model identity (`scripts/observe_output.py`):** observed model identity is
+  taken strictly from authoritative CLI session metadata (for Codex, only the
+  top-level session `model` field, never nested or guessed values) and `no_turn`
+  requires positive zero-turn evidence.
+- **Autopilot driver (`scripts/drive-cli.sh`, `scripts/drive_cli_rules.py`):**
+  isolated `tmux` driver with deterministic regex rules that answers at most one
+  exact folder-trust prompt and stops with exit code 3 on any later or
+  numbered/menu unknown prompt without sending input.
+- **Shared tool PATH (`scripts/harness-path.sh`):** idempotent PATH helper
+  sourced by wrappers, `fleet-doctor.sh`, and tests; safe under `set -u`.
+- **Seeded-defect reviewer calibration:** `routing-data.jsonl` records 3/3
+  planted-bug catches (cases A, B, C) for `grok-4.7-high` and
+  `gemini-4-argon-high (agy)` to qualify guard-review lanes from evidence.
+
+### Known limits
+
+- **Claude `bypassPermissions` + `Bash` is a net, not a wall:** headless Claude
+  Code has no OS-level workspace-write sandbox, and `acceptEdits`/`dontAsk` do
+  not confine shell commands when `Bash` is enabled. Contract 9 pairs the
+  `--disallowedTools` deny-list with post-run protected-path and Git-state
+  receipt checks, which catch accidental destructive commands and protected-path
+  edits rather than arbitrary shell evasion (see
+  `docs/missions/20261014-2a-foundation/evidence/claude-unlock-residual-risk.md`).
+- Scope checks and protected-path snapshots cover Git-visible workspace changes
+  and the explicitly snapshotted protected paths only.
+- One worker at a time per repository workspace lock.
+
 ## 3.0.0 (2026-10-14)
 
 First release since `v2.3.0`. It publishes Phase 1 (Execution Truth) and the
