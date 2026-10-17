@@ -20,7 +20,7 @@ PROVIDERS = ("codex", "claude", "agent", "agy")
 sys.path.insert(0, str(ROOT / "scripts"))
 from observe_output import observe  # noqa: E402
 import fleet_state  # noqa: E402
-from execute_provider import CLAUDE_DISALLOWED_TOOLS  # noqa: E402
+from execute_provider import CLAUDE_DISALLOWED_TOOLS, CODEX_CONFIG_OVERRIDES  # noqa: E402
 
 
 class WrapperIntegration(unittest.TestCase):
@@ -327,7 +327,8 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
     def expected_argv(self, provider, model, effort, speed, prompt):
         repo = self.physical_root
         if provider == "codex":
-            return ["exec", "--json", "-C", repo, "-s", "workspace-write", "--add-dir", str(Path(repo) / ".git"), "-m", model, "-c", f'model_reasoning_effort="{effort}"', prompt]
+            return ["exec", "--json", "-C", repo, "-s", "workspace-write", "--add-dir", str(Path(repo) / ".git"), "-m", model,
+                    "-c", f'model_reasoning_effort="{effort}"', *CODEX_CONFIG_OVERRIDES, prompt]
         if provider == "claude":
             return ["-p", prompt, "--output-format", "stream-json", "--verbose", "--strict-mcp-config",
                     "--permission-mode", "bypassPermissions", "--add-dir", repo, "--disallowedTools", CLAUDE_DISALLOWED_TOOLS,
@@ -574,7 +575,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         receipt_path = self.root / ".tasks/receipts" / f"{run_id}.json"
         receipt = json.loads(receipt_path.read_text())
         self.assertEqual(receipt["resolved_configuration"]["argv_sha256"], hashlib.sha256(
-            (json.dumps(["codex", "exec", "-C", self.physical_root, "-s", "workspace-write", "-m", "legacy-model", "-c", 'model_reasoning_effort="medium"', self.prompt_worker()], separators=(",", ":")) + "\n").encode()
+            (json.dumps(["codex", "exec", "-C", self.physical_root, "-s", "workspace-write", "-m", "legacy-model", "-c", 'model_reasoning_effort="medium"', *CODEX_CONFIG_OVERRIDES, self.prompt_worker()], separators=(",", ":")) + "\n").encode()
         ).hexdigest())
         verified = self.invoke(["bash", "scripts/verify-mission.sh", "--run-id", run_id, "docs/missions/fixture"])
         self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
