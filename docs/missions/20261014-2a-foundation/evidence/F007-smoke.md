@@ -32,3 +32,5 @@ Brain review run id: `70f7ce27-cc1b-4d2c-a1c1-3d5dbc89dee5` (claude / opus, acti
 3. Confirm no run used a `-fast` model and no **credits** billing door was used (resolved models are haiku, gpt-6-luna, composer-2.5, grok-4.7-high with speed standard where applicable).
 4. Note that **agy is out of this mission** — only the three doors above were smoked.
 5. Decide whether F007 step 2 should be amended or accepted with the documented Codex `unknown` observed model.
+
+2026-10-17 re-run (.tasks/f007-smoke2.out, .tasks/smoke/f007b): base_commit=9f426379188679749364c49f73808d040ad2ce2b claude.economy=7ae28f1d-d307-4edf-ae1e-70104ff9df3b:claude-haiku-5-5 codex.economy=a527dad9-7aad-47f3-a2fa-eff4b5489610:gpt-6-luna cursor.economy=65f2cdf8-71f4-46c2-a325-bb939d59edc6:composer-2.5 cursor.premium=a2aec0bb-5219-44af-b3d8-cef00a322a5a:grok-4.7-high brain=03da6a07-343a-4828-ae74-9613654f334c audit_exit=0 reconstruct_exit=0
