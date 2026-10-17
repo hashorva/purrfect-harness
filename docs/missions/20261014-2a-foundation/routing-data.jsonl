@@ -143,3 +143,5 @@
 {"type":"review","task":"T-065+T-066","reviewer":"grok-4.7-high (cursor.premium)","rung":"1","verdict":"FAIL","findings":3}
 {"type":"plan-reformat","plan":"T-065-R2","planner":"grok-4.7-high (cursor.premium, ask mode)","rung":"3"}
 {"run_id":"92052f54-d741-4b54-884f-ace77ef137ba","task":"T-065-R1","category":"autopilot","size":"M","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":2,"outcome":"verify-failed","failure_class":"task","duration_s":154,"tokens_or_cost":"unknown"}
+{"run_id":"b59c7419-148b-42b9-ae6d-25b404374369","task":"T-065-R2","category":"autopilot","size":"M","seat":"cursor.economy","model":"composer-2.5","effort":"medium","attempt":3,"outcome":"done","failure_class":"none","duration_s":198,"tokens_or_cost":"unknown"}
+{"type":"review","task":"T-065-R1","reviewer":"grok-4.7-high (cursor.premium)","rung":"1","verdict":"FAIL","findings":4}
