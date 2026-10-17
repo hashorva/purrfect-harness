@@ -156,3 +156,4 @@
 {"type":"review","task":"T-070","reviewer":"claude opus (Claude seat)","rung":"escalation: safety code (owner-mandated)","verdict":"FAIL","findings":4,"input_tokens":67890,"output_tokens":14139,"cache_read_tokens":824916}
 {"type":"architect-run","plan":"T-070-R1","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1 (Argon planner)","input_tokens":127702,"output_tokens":37772,"cache_read_tokens":1026084,"outcome":"done"}
 {"type":"architect-run","plan":"lesson proposal","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1 (Argon planner)","input_tokens":26028,"output_tokens":4920,"cache_read_tokens":18057,"outcome":"done"}
+{"run_id":"dd34cbe5-0ae2-4ae2-a1fd-bd574d841ed4","task":"T-070-R1","category":"claude-unlock","size":"M","seat":"cursor.economy","model":"composer-2.5","effort":"medium","attempt":2,"outcome":"verify-failed","failure_class":"task","duration_s":152,"tokens_or_cost":"unknown"}
