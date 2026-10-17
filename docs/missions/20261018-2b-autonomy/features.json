@@ -1,0 +1,154 @@
+{
+  "mission": "2B Autonomy",
+  "rules": "Workers never edit this file. Only the orchestrator accepts a non-bootstrap feature using accept-feature.sh after a matching passing VerificationRecord exists, recording accepted_run_id, accepted_verification_sha256, accepted_at, and accepted_by with passes:true. Editing or removing approved descriptions/steps is unacceptable. Keep bootstrap on every feature: false (default) requires verified worker execution and separate acceptance; true exempts work no worker will ever run, such as mission scaffolding or orchestrator decisions. Set it when authoring; never add it after GATE 0 to excuse missing evidence.",
+  "features": [
+    {
+      "id": "F001",
+      "category": "functional",
+      "priority": 1,
+      "bootstrap": false,
+      "description": "Quota meter. drive-cli captures percent left and reset time per pool from claude /usage, codex /status, cursor-agent /usage, and the agy quota panel. Snapshots before and after each batch, a forecast logged before the batch, ledger quota_share from that forecast, the 98% rule on both windows, soonest-expiry choice, vendor ladder kept inside the vendor, pauses that end at the vendor-shown reset, and every parse kept as the training set. Unparsable text is unknown. Tests use fixtures, never live CLIs.",
+      "steps": [
+        "scripts/quota_meter.py parse_screen(cli, text) returns percent left and reset time per pool for tests/fixtures/quota/claude-usage.txt, codex-status.txt, cursor-usage.txt, and agy-panel.txt; python3 tests/test-quota-meter.py QuotaParserTests.test_claude_usage_percent_left_and_reset and the three sibling fixture methods exit 0",
+        "A 429 line containing resets in 4h53m, a block-character bar, an empty screen, a non-exact percent line, and a block whose reset line is not Resets plus an RFC3339 Z timestamp each return percent_left and reset_at with value null and source unknown, and the values do not contain a computed time; QuotaParserTests.test_unparsable_is_unknown exits 0 and the module does not import subprocess",
+        "A snapshot command stores percent left and reset time per pool before a batch and after it, using drive-cli only against a fake pane; a missing after-snapshot exits non-zero, and the suite does not start claude, codex, cursor-agent, or agy",
+        "A forecast is written before the batch; the run's ledger quota_share equals that forecast with source estimated, or value null and source unknown when the parse was unknown; no path writes a guessed number as observed",
+        "Dispatch exits non-zero unless percent left minus the forecast is greater than 2 on the 5-hour window and, by the same comparison, on the weekly window; 10 left and forecast 8 is refused, 10 left and forecast 7 is allowed; an unknown percent, window, or reset is refused; among allowed pools the soonest reset wins, and the seat's provider is that pool's provider (an agy pause does not select a claude seat)",
+        "pause_until is the reset time on the last observed usage screen, never a time from error text; after that time the next decision re-reads the screen; a read that is unknown or still over the rule sets the next probe 30 minutes later; every parse, including unknown, is appended to the training-set file and a second parse does not delete the first row"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F002",
+      "category": "functional",
+      "priority": 2,
+      "bootstrap": false,
+      "description": "Loop driver. scripts/mission-run.sh runs dispatch, then checks, then review, then fix, then re-review. The Front Desk starts it, watches it, and reports. State lives in files. The script stops at a human gate and resumes after a restart without a second receipt.",
+      "steps": [
+        "On a fixture mission, scripts/mission-run.sh records the stages dispatch, checks, review, fix, re-review in that order in loop-state.json and exits 0 only when the order matches",
+        "The Front Desk skill names this script as what it starts, watches, and reports; a test shows the script does not write GOAL.md, features.json, or PROGRESS.md",
+        "A fixture mission sitting at a human gate makes the script exit 0 with state gate-wait and no further dispatch",
+        "Starting the script again after it stops between dispatch and checks does not write a second receipt for the same run id",
+        "The script asks the quota meter before dispatch and does not launch when the 98% rule fails; shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F003",
+      "category": "functional",
+      "priority": 3,
+      "bootstrap": false,
+      "description": "Structured progress. progress.jsonl is append-only. scripts/progress.py add is the only writer and also writes the per-task brief. PROGRESS.md is generated and is not edited by hand.",
+      "steps": [
+        "schemas/progress-event.schema.json and scripts/progress.py reject a hostile row and name the field, one row each for an absolute path, a secret, a bad UUID, an unknown type, a status illegal for the type, a multi-line summary, a missing link, and a run id with no receipt",
+        "progress.py add sets seq and at, takes the workspace lock, appends one line, and renders PROGRESS.md; one hand edit makes progress.py render --check exit 1",
+        "progress.py brief --task on a fixture task prints at most 8 KB, includes that task, events of its feature and of features named on its Depends on line, the last 5 events, and active lessons whose category matches the feature",
+        "verify-mission.sh runs render --check; spawn-brain records with progress.py add and does not append PROGRESS.md by hand",
+        "Existing PROGRESS.md stays unread under progress-archive and is linked by one note event; shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F004",
+      "category": "functional",
+      "priority": 4,
+      "bootstrap": false,
+      "description": "Worker inner loop. ruff and the Python type checker ty are dev tools installed with uv tool install. The runtime stays the standard library. The worker's own attempt runs ruff, ty, and shellcheck. Lint or type failures get a resumed repair round. Logic failures get a fresh run one rung up inside the same vendor.",
+      "steps": [
+        "uv tool install ruff and uv tool install ty are the documented install paths; a test shows no file under scripts/ imports ruff or ty",
+        "A worker attempt runs ruff, ty, and shellcheck on its allow-list before it finishes; a fixture attempt that skips any of the three is a failed attempt",
+        "A lint or type failure resumes the same session with those errors, increments ledger repair_round, and stays the same rollout; a second repair is allowed only when the error count fell, otherwise the failure class becomes logic",
+        "A failing test starts a fresh run in a clean worktree with a short failure summary, one rung up inside the same vendor, and does not resume the session",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F005",
+      "category": "functional",
+      "priority": 5,
+      "bootstrap": false,
+      "description": "Task-size signal. More than 2 review rounds on one task sends it back to the planner to split. The miss is recorded as a decomposition miss. The loop does not dispatch another fix for that task.",
+      "steps": [
+        "A fixture task with 2 review rounds may still receive one fix dispatch; a fixture task with 3 review rounds receives none",
+        "The third review round writes one progress.py add decision event whose summary starts with decomposition-miss and names the task and its class, with a link to reviews/<task>-split.md",
+        "The loop's next action for that task id is a planner split, and a test shows no T-xxx fix task is created for it",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F006",
+      "category": "functional",
+      "priority": 6,
+      "bootstrap": false,
+      "description": "Parallel lanes, minimum slice. Two disjoint tasks, two providers, one serial merge. No second lane of the same provider, no Codex lane, no brain run while a lane is active.",
+      "steps": [
+        "Admission refuses, before any launch, overlapping allow-lists, a Depends-on edge, the same provider twice, a Codex lane, and a brain run while a lane is active",
+        "Two admitted tasks on two providers produce receipts whose started_at to finished_at intervals overlap, and each receipt scope is pass in its own worktree",
+        "Snapshots show the root checkout and the other worktree unchanged across each run",
+        "The orchestrator merges each lane with git merge --no-ff in admission order; a content conflict stops the merge and is not auto-resolved",
+        "bash tests/run-tests.sh exits 0 on the merged HEAD, and both lane commits stay ancestors of that HEAD",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F007",
+      "category": "functional",
+      "priority": 7,
+      "bootstrap": false,
+      "description": "Static HTML board, readable on a phone, regenerated from progress events and quota snapshots, opened from disk. No server. Gate actions are copy text. The board never runs a command.",
+      "steps": [
+        "The generator writes one HTML file that contains meta http-equiv refresh content 15, a viewport width=device-width, and the Tailwind v4 browser build, and a test shows the generator does not listen on a port",
+        "The fixture HTML contains each pool's percent left and the next gate as text, and contains no min-width whose number is greater than 390",
+        "Gate actions are command text inside a copy control, and the HTML contains no script that runs a command or calls fetch",
+        "A new progress event can rebuild the file; shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F008",
+      "category": "functional",
+      "priority": 8,
+      "bootstrap": false,
+      "description": "Held-out benchmark, run every 2 to 4 weeks and on a harness release. A task set and a mission set, graded only by scripts, version v1 never edited.",
+      "steps": [
+        "The task set has 10 to 20 tasks and the mission set has 2 to 3 goals; a test fails if a lesson or skill file quotes a benchmark item id",
+        "Each item is graded only by a script, names a pinned commit, and has no network step",
+        "The runner refuses to change the v1 file hash and writes pass rate, tokens per pass, quota per pass, and wall time",
+        "A fixture dated 13 days after the last report does not run; a fixture dated 28 days does; a harness release also runs it",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F009",
+      "category": "functional",
+      "priority": 9,
+      "bootstrap": false,
+      "description": "Front Desk skills for every CLI the harness drives: Claude Code, Codex, Cursor, and Antigravity. Each skill tells the Front Desk how to start mission-run.sh, watch it, and report.",
+      "steps": [
+        "A Front Desk skill for claude, one for codex, one for cursor, and one for agy each name scripts/mission-run.sh and the verbs start, watch, and report",
+        "harness-manifest.json lists each skill under canonical_skills, and each skill path sits in that provider's discovery directory from harness-registry.json",
+        "Each skill says the Front Desk writes nothing in the repository while a run is in progress, and does not parse reset times from error text",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F010",
+      "category": "functional",
+      "priority": 10,
+      "bootstrap": false,
+      "description": "Prediction model after a few hundred kept readings (draft threshold 300, confirmed at Gate 0). It trains on the quota meter's training set. It does not dispatch and does not override the 98% rule.",
+      "steps": [
+        "The trainer reads only the append-only training set from F001 and exits non-zero when that file has fewer than 300 rows, writing no model file",
+        "At 300 rows it writes a model file whose numbers use source estimated; dispatch still compares the meter's percent left minus the meter forecast with the floor of 2",
+        "A fixture of 300 rows emits a forecast; removing one row makes the trainer exit non-zero and leaves the dispatch forecast unchanged",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    }
+  ]
+}

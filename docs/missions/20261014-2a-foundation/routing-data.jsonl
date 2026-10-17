@@ -203,3 +203,4 @@
 {"type":"seat-pause","seat":"agy.premium","time":"2026-10-18T00:53+02","error_text":"Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 161h5m43s.","rule":"reset time in the error text is not trusted; probe again after 30 min (about 01:25)"}
 {"type":"plan-reformat","plan":"T-091","planner":"grok-4.7-high (cursor.premium, ask mode)","rung":"3 (Argon quota out)"}
 {"run_id":"1c45c0ba-6fe5-4959-a969-113d3fa85efe","task":"T-091","category":"docs","size":"S","seat":"cursor.economy","model":"composer-2.5","effort":"medium","attempt":1,"outcome":"done","failure_class":"none","duration_s":55,"tokens_or_cost":"unknown"}
+{"type":"plan-reformat","plan":"2B GOAL/features/T-001","planner":"grok-4.7-high (cursor.premium, ask mode)","rung":"3 (Argon quota out)"}
