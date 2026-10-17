@@ -111,6 +111,8 @@ import json, os, pathlib, sys
 spec = json.loads(next(pathlib.Path('.tasks/specs').glob('*.json')).read_text())
 action = os.environ.get('PROVIDER_ACTION')
 if action == 'protected-volatile':
+    cj = pathlib.Path.home() / '.claude.json'
+    cj.write_text(json.dumps({'numStartups': 2, 'caches': {'gate': False}, 'projects': {'/tmp/p': {'lastCost': 0.9, 'mcpServers': {}}, '/tmp/q': {'history': ['hi']}}}))
     (pathlib.Path.home() / '.claude/sessions').mkdir(parents=True, exist_ok=True)
     (pathlib.Path.home() / '.claude/sessions/67107.abc.key').write_text('session')
     p = pathlib.Path.home() / '.claude/plugins/synced/p/.in_use'
@@ -151,6 +153,7 @@ raise SystemExit(0)
     def test_protected_snapshot_in_memory_baseline_allowlist_and_tamper_detection(self):
         home = self.parent / "fake-home"
         (home / ".claude").mkdir(parents=True)
+        (home / ".claude.json").write_text(json.dumps({"numStartups": 1, "caches": {"gate": True}, "projects": {"/tmp/p": {"lastCost": 0.1, "mcpServers": {}}}}))
         args = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
                 "--model", "model", "--feature", "F001"]
         for action, expected in (
@@ -170,6 +173,61 @@ raise SystemExit(0)
                     self.assertIn(f"<protected:.tasks/specs/{run_id}.protected>", receipt["scope"]["violations"])
                     self.assertIn("<protected:~/.claude/settings.json>", receipt["scope"]["violations"])
                 shutil.rmtree(self.root / ".tasks")
+
+    def test_claude_json_protects_only_mcp_and_hooks_configuration(self):
+        home = self.parent / "claude-json-home"
+        home.mkdir()
+        path = home / ".claude.json"
+        spec = {"repo": str(self.root), "run_id": "claude-json-test"}
+
+        def check(before_value, after_value=None, *, before_raw=None, after_raw=None, symlink=False):
+            protected_file = execution_receipt._protected_snapshot_file(spec, create=True)
+            if protected_file.exists():
+                protected_file.chmod(0o600)
+                protected_file.unlink()
+            if path.is_symlink() or path.exists():
+                path.unlink()
+            target = home / "target.json"
+            if target.exists():
+                target.unlink()
+            if before_raw is not None:
+                target.write_bytes(before_raw)
+            else:
+                target.write_text(json.dumps(before_value))
+            if symlink:
+                path.symlink_to(target)
+            else:
+                if before_raw is not None:
+                    path.write_bytes(before_raw)
+                else:
+                    path.write_text(json.dumps(before_value))
+            with mock.patch.dict(os.environ, {"HOME": str(home)}):
+                baseline = execution_receipt.protected_snapshot(str(self.root))
+                protected_file.write_bytes(canonical_bytes({"before": baseline}))
+                if after_raw is not None:
+                    (target if symlink else path).write_bytes(after_raw)
+                elif after_value is not None:
+                    (target if symlink else path).write_text(json.dumps(after_value))
+                violations = execution_receipt.protected_violations(spec, protected_before=baseline, finalize=True)
+            return {"result": "pass" if not violations else "fail", "violations": violations}
+
+        base = {"numStartups": 1, "caches": {"gate": True}, "projects": {"X": {"lastCost": 1, "mcpServers": {}}}}
+        changed_runtime = {"numStartups": 9, "caches": {"gate": False}, "projects": {"X": {"lastCost": 8}, "Y": {"history": ["x"]}}}
+        self.assertEqual(check(base, changed_runtime), {"result": "pass", "violations": []})
+        top = {"numStartups": 1, "mcpServers": {"s": {"command": "a"}}}
+        self.assertEqual(check(top, {"mcpServers": {"s": {"command": "a"}, "new": {"command": "b"}}}), {"result": "fail", "violations": ["<protected:~/.claude.json>"]})
+        proj = {"projects": {"X": {"mcpServers": {}}}}
+        self.assertEqual(check(proj, {"projects": {"X": {"mcpServers": {"p": {"command": "c"}}}}}), {"result": "fail", "violations": ["<protected:~/.claude.json>"]})
+        hooks = {"projects": {"X": {}}}
+        for value in ({"hooks": {"PreToolUse": ["x"]}}, {"projects": {"X": {"hooks": {"Stop": ["x"]}}}}):
+            self.assertEqual(check(hooks, value), {"result": "fail", "violations": ["<protected:~/.claude.json>"]})
+        invalid = b"{invalid"
+        self.assertEqual(check(None, before_raw=invalid, after_raw=invalid), {"result": "pass", "violations": []})
+        self.assertEqual(check(None, before_raw=invalid, after_raw=b"{other"), {"result": "fail", "violations": ["<protected:~/.claude.json>"]})
+        self.assertEqual(check({}, after_raw=invalid), {"result": "fail", "violations": ["<protected:~/.claude.json>"]})
+        self.assertEqual(check(None, before_raw=invalid, after_raw=b"{}"), {"result": "fail", "violations": ["<protected:~/.claude.json>"]})
+        self.assertEqual(check(base, {"numStartups": 2, "projects": {"X": {}}}, symlink=True), {"result": "pass", "violations": []})
+        self.assertEqual(check(base, {"mcpServers": {"s": {"command": "a"}}}, symlink=True), {"result": "fail", "violations": ["<protected:~/.claude.json>"]})
 
     def write_canonical(self, path, receipt):
         path.chmod(0o600)

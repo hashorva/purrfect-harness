@@ -20,7 +20,7 @@ CLAUDE_PROTECTED_FILES = ("settings.json", "settings.local.json", "CLAUDE.md", "
 CLAUDE_PROTECTED_DIRS = ("commands", "agents", "hooks", "skills")
 HOME_PROTECTED_FILES = (
     ".zshrc", ".zshenv", ".zprofile", ".bash_profile", ".bashrc", ".gitconfig",
-    ".config/git/config", ".claude.json",
+    ".config/git/config",
 )
 _PROTECTED_BASELINES = {}
 COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
@@ -122,6 +122,56 @@ def _protected_file(snap, path, label):
         snap[label] = digest
 
 
+def _claude_json_config_bytes(raw):
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    mcp_servers = data.get("mcpServers")
+    if mcp_servers is None:
+        mcp_servers = {}
+    hooks = data.get("hooks")
+    if hooks is None:
+        hooks = {}
+    projects_raw = data.get("projects")
+    if projects_raw is None:
+        projects = {}
+    elif isinstance(projects_raw, dict):
+        projects = {}
+        for proj_path, proj_val in sorted(projects_raw.items()):
+            if not isinstance(proj_val, dict):
+                continue
+            proj_mcp = proj_val.get("mcpServers")
+            if proj_mcp is None:
+                proj_mcp = {}
+            proj_hooks = proj_val.get("hooks")
+            if proj_hooks is None:
+                proj_hooks = {}
+            if proj_mcp != {} or proj_hooks != {}:
+                projects[proj_path] = {"hooks": proj_hooks, "mcpServers": proj_mcp}
+    else:
+        projects = projects_raw
+    return canonical_bytes({"hooks": hooks, "mcpServers": mcp_servers, "projects": projects})
+
+
+def _protected_claude_json(snap, path, label="~/.claude.json"):
+    if not path.is_symlink() and not path.is_file():
+        return
+    if path.is_file():
+        config_bytes = _claude_json_config_bytes(path.read_bytes())
+        if config_bytes is not None:
+            if path.is_symlink():
+                link_hash = hashlib.sha256(os.readlink(path).encode("utf-8", "surrogateescape")).hexdigest()
+                cfg_hash = hashlib.sha256(config_bytes).hexdigest()
+                snap[label] = hashlib.sha256(f"symlink:{link_hash}:claude-json:{cfg_hash}".encode("ascii")).hexdigest()
+                return
+            snap[label] = hashlib.sha256(b"claude-json:" + config_bytes).hexdigest()
+            return
+    _protected_file(snap, path, label)
+
+
 def protected_snapshot(repo):
     """Return a deterministic digest map for paths that must not change during a run."""
     repo = Path(repo)
@@ -140,6 +190,7 @@ def protected_snapshot(repo):
                     snap[f".git/index-flags/{rel}"] = f"flag:{flag}"
     for rel in HOME_PROTECTED_FILES:
         _protected_file(snap, home / rel, f"~/{rel}")
+    _protected_claude_json(snap, home / ".claude.json")
     _protected_tree(snap, home / ".ssh", "~/.ssh")
     _protected_tree(snap, home / "Library" / "LaunchAgents", "~/Library/LaunchAgents")
     claude = home / ".claude"
