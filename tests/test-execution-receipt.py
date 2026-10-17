@@ -234,6 +234,93 @@ raise SystemExit(0)
         path.write_bytes(canonical_bytes(receipt))
         path.chmod(0o400)
 
+    def test_symlinked_claude_and_projects_roots_record_link_target_only(self):
+        home = self.parent / "home"
+        claude = self.parent / "dotfiles/claude"
+        projects = self.parent / "dotfiles/projects"
+        for path in (claude / "sessions", claude / "plugins/synced/x/.in_use",
+                     claude / "commands", projects / "p/memory"):
+            path.mkdir(parents=True, exist_ok=True)
+        (claude / "settings.json").write_text("{}")
+        (projects / "p/memory/notes.md").write_text("notes")
+        (claude / "projects").symlink_to(projects)
+        home.mkdir()
+        (home / ".claude").symlink_to(claude)
+        with mock.patch.dict(os.environ, {"HOME": str(home)}):
+            baseline = execution_receipt.protected_snapshot(self.root)
+            for path, label in ((home / ".claude", "~/.claude"),
+                                 (claude / "projects", "~/.claude/projects")):
+                link_hash = hashlib.sha256(os.readlink(path).encode("utf-8", "surrogateescape")).hexdigest()
+                expected = hashlib.sha256(f"symlink:{link_hash}".encode("ascii")).hexdigest()
+                self.assertEqual(baseline[label], expected)
+            (home / ".claude/sessions/1.key").write_text("volatile")
+            (home / ".claude/plugins/synced/x/.in_use/1").write_text("volatile")
+            (home / ".claude/projects/p/transcript.jsonl").write_text("{}\n")
+            self.assertEqual(execution_receipt.protected_snapshot(self.root), baseline)
+            for rel, expected in (
+                (".claude/settings.json", "<protected:~/.claude/settings.json>"),
+                (".claude/commands/c.md", "<protected:~/.claude/commands/c.md>"),
+                (".claude/projects/p/memory/notes.md", "<protected:~/.claude/projects/p/memory/notes.md>"),
+            ):
+                target = home / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("changed")
+                after = execution_receipt.protected_snapshot(self.root)
+                self.assertIn(expected, [f"<protected:{key}>" for key in set(baseline) | set(after)
+                                         if baseline.get(key) != after.get(key)])
+                target.write_text("{}" if rel.endswith("settings.json") else "notes")
+            old_target = os.readlink(home / ".claude")
+            (home / ".claude").unlink()
+            (home / ".claude").symlink_to(self.parent / "dotfiles/other-claude")
+            after = execution_receipt.protected_snapshot(self.root)
+            self.assertNotEqual(baseline["~/.claude"], after["~/.claude"])
+            (home / ".claude").unlink()
+            (home / ".claude").symlink_to(old_target)
+            (claude / "projects").unlink()
+            (claude / "projects").symlink_to(self.parent / "dotfiles/other-projects")
+            after = execution_receipt.protected_snapshot(self.root)
+            self.assertNotEqual(baseline["~/.claude/projects"], after["~/.claude/projects"])
+
+    def test_untracked_scope_ignores_local_gitignore_and_flags_ignore_and_stdlib_shadowing(self):
+        base = subprocess.run(["git", "-C", str(self.root), "rev-parse", "HEAD"],
+                              check=True, text=True, capture_output=True).stdout.strip()
+        (self.root / "scripts/.gitignore").write_text(".gitignore\njson.py\n")
+        (self.root / "scripts/json.py").write_text("x = 1\n")
+        dirty = execution_receipt.dirty_paths(self.root, base_commit=base)
+        self.assertIn("scripts/.gitignore", dirty)
+        self.assertIn("scripts/json.py", dirty)
+        for path in (".gitignore", "scripts/.gitignore", "scripts/json.py", "scripts/os.py",
+                     "scripts/sys.py", "scripts/re.py", "tests/json.py"):
+            self.assertFalse(execution_receipt.in_scope(path, ["scripts/**", "tests/**", ".gitignore"]))
+        (self.root / ".gitignore").write_text("planted.txt\n")
+        (self.root / "planted.txt").write_text("visible")
+        self.assertIn("planted.txt", execution_receipt.dirty_paths(self.root, base_commit=base))
+        self.assertIn(".gitignore", execution_receipt.dirty_paths(self.root, base_commit=base))
+        with mock.patch.dict(os.environ, {"HOME": str(self.parent / "fake-home")}):
+            (self.root / ".git/info/exclude").write_text("hidden-info\n")
+            config_home = self.parent / "fake-home/.config/git"
+            config_home.mkdir(parents=True)
+            (config_home / "ignore").write_text("hidden-global\n")
+            (config_home / "attributes").write_text("*.x test\n")
+            subprocess.run(["git", "-C", str(self.root), "config", "--local", "core.excludesFile",
+                            str(config_home / "ignore")], check=True)
+            baseline = execution_receipt.protected_snapshot(self.root)
+            (self.root / ".git/info/exclude").write_text("changed\n")
+            (config_home / "ignore").write_text("changed-global\n")
+            (config_home / "attributes").write_text("*.x changed\n")
+            after = execution_receipt.protected_snapshot(self.root)
+            changed = {key for key in set(baseline) | set(after) if baseline.get(key) != after.get(key)}
+            violations = {f"<protected:{key}>" for key in changed}
+            self.assertIn("<protected:.git/info/exclude>", violations)
+            self.assertIn("<protected:~/.config/git/ignore>", violations)
+            self.assertIn("<protected:~/.config/git/attributes>", violations)
+            self.assertIn("<protected:core.excludesFile>", violations)
+            (self.root / "hidden-info").write_text("caught")
+            (self.root / "hidden-global").write_text("caught")
+            dirty = execution_receipt.dirty_paths(self.root, base_commit=base)
+            self.assertIn("hidden-info", dirty)
+            self.assertIn("hidden-global", dirty)
+
     def test_v1_fixture_validates(self):
         path, receipt = self.spawn_receipt()
         legacy = dict(receipt)

@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """Strict UUID-keyed ExecutionReceipt construction and validation."""
+import sys
+_SCRIPT_PATH = sys.path.pop(0) if sys.path and sys.path[0] == __file__.rsplit("/", 1)[0] else None
 import argparse
 from datetime import datetime, timezone
+import fnmatch
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
-import sys
 import tempfile
+
+if _SCRIPT_PATH is not None:
+    sys.path.insert(0, _SCRIPT_PATH)
 
 from execution_spec import artifact_directory, SpecError, load_persisted, receipt_link, spec_sha256
 from observe_output import all_unknown
@@ -20,8 +25,15 @@ CLAUDE_PROTECTED_FILES = ("settings.json", "settings.local.json", "CLAUDE.md", "
 CLAUDE_PROTECTED_DIRS = ("commands", "agents", "hooks", "skills")
 HOME_PROTECTED_FILES = (
     ".zshrc", ".zshenv", ".zprofile", ".bash_profile", ".bashrc", ".gitconfig",
-    ".config/git/config",
+    ".config/git/config", ".config/git/ignore", ".config/git/attributes",
+    ".gitignore", ".gitignore_global",
 )
+STDLIB_SHADOW_MODULES = frozenset(getattr(sys, "stdlib_module_names", ())) | {
+    "argparse", "collections", "copy", "datetime", "enum", "fnmatch", "functools",
+    "glob", "hashlib", "importlib", "io", "itertools", "json", "math", "os",
+    "pathlib", "re", "shutil", "signal", "stat", "subprocess", "sys", "tempfile",
+    "time", "unittest",
+}
 _PROTECTED_BASELINES = {}
 COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
 RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$")
@@ -74,10 +86,56 @@ def nul_paths(raw, label):
     return values
 
 
-def dirty_paths(repo, reference="HEAD"):
+def _is_gitignore_path(path):
+    return path == ".gitignore" or path.endswith("/.gitignore")
+
+
+def _is_stdlib_shadow(path):
+    parts = path.split("/")
+    if len(parts) < 2 or parts[0] not in {"scripts", "tests"}:
+        return False
+    name = parts[-1]
+    if name.endswith(".py") and name[:-3] in STDLIB_SHADOW_MODULES:
+        return True
+    if len(parts) >= 3 and parts[1] in STDLIB_SHADOW_MODULES:
+        return True
+    return False
+
+
+def _base_root_gitignore_lines(repo, base_commit="HEAD"):
+    ref = base_commit if isinstance(base_commit, str) and base_commit and not base_commit.startswith("-") else "HEAD"
+    raw = git_bytes(repo, "show", f"{ref}:.gitignore", check=False)
+    if raw.returncode != 0:
+        return []
+    return [line.strip() for line in raw.stdout.decode("utf-8", "surrogateescape").splitlines()
+            if line.strip() and not line.strip().startswith(("#", "!"))]
+
+
+def _is_harness_ignored(path, ignore_lines):
+    if _is_gitignore_path(path) or _is_stdlib_shadow(path):
+        return False
+    parts = path.split("/")
+    if parts[0] == ".tasks" or "__pycache__" in parts or path.endswith(".pyc") or parts[-1] == ".DS_Store":
+        return True
+    for rule in ignore_lines:
+        clean = rule.lstrip("/")
+        if clean.endswith("/"):
+            prefix = clean.rstrip("/")
+            if prefix and (path == prefix or path.startswith(prefix + "/") or
+                           ("/" not in prefix and not rule.startswith("/") and prefix in parts[:-1])):
+                return True
+        elif clean and fnmatch.fnmatchcase(path, clean):
+            return True
+    return False
+
+
+def dirty_paths(repo, reference="HEAD", base_commit=None):
     tracked = git_bytes(repo, "diff", "--no-renames", "--name-only", "-z", reference, "--").stdout
-    untracked = git_bytes(repo, "ls-files", "--others", "--exclude-standard", "-z", "--").stdout
-    return sorted(set(nul_paths(tracked, "tracked Git delta") + nul_paths(untracked, "untracked Git delta")))
+    untracked_raw = git_bytes(repo, "ls-files", "--others", "-z", "--").stdout
+    ignore_lines = _base_root_gitignore_lines(repo, base_commit if base_commit is not None else reference)
+    untracked = [path for path in nul_paths(untracked_raw, "untracked Git delta")
+                 if not _is_harness_ignored(path, ignore_lines)]
+    return sorted(set(nul_paths(tracked, "tracked Git delta") + untracked))
 
 
 def _protected_digest(path):
@@ -120,6 +178,12 @@ def _protected_file(snap, path, label):
     digest = _protected_digest(path)
     if digest is not None:
         snap[label] = digest
+
+
+def _protected_symlink_target(snap, path, label):
+    if path.is_symlink():
+        link_hash = hashlib.sha256(os.readlink(path).encode("utf-8", "surrogateescape")).hexdigest()
+        snap[label] = hashlib.sha256(f"symlink:{link_hash}".encode("ascii")).hexdigest()
 
 
 # Only MCP and hook configuration inside ~/.claude.json is protected; the file is rewritten constantly by running Claude sessions.
@@ -191,19 +255,40 @@ def protected_snapshot(repo):
                     snap[f".git/index-flags/{rel}"] = f"flag:{flag}"
     for rel in HOME_PROTECTED_FILES:
         _protected_file(snap, home / rel, f"~/{rel}")
+    excludes = subprocess.run(
+        ["git", "-C", str(repo), "config", "--includes", "--get-all", "core.excludesfile"],
+        env={**os.environ, "HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config")},
+        capture_output=True, check=False,
+    )
+    entries = []
+    if excludes.returncode == 0 and excludes.stdout:
+        for val in excludes.stdout.decode("utf-8", "surrogateescape").splitlines():
+            if not val:
+                continue
+            target = home / val[2:] if val.startswith("~/") else Path(val) if Path(val).is_absolute() else repo / val
+            entries.append([val, _protected_digest(target)])
+    if entries:
+        snap["core.excludesFile"] = hashlib.sha256(canonical_bytes(entries)).hexdigest()
+    for current, dirs, files in os.walk(repo):
+        dirs[:] = [d for d in dirs if d not in {".git", ".tasks", "__pycache__"}]
+        for name in files:
+            if name == ".gitignore":
+                gitignore_path = Path(current) / name
+                rel = gitignore_path.relative_to(repo).as_posix()
+                _protected_file(snap, gitignore_path, rel)
     _protected_claude_json(snap, home / ".claude.json")
     _protected_tree(snap, home / ".ssh", "~/.ssh")
     _protected_tree(snap, home / "Library" / "LaunchAgents", "~/Library/LaunchAgents")
     claude = home / ".claude"
     if claude.is_symlink():
-        _protected_file(snap, claude, "~/.claude")
+        _protected_symlink_target(snap, claude, "~/.claude")
     for name in CLAUDE_PROTECTED_FILES:
         _protected_file(snap, claude / name, f"~/.claude/{name}")
     for name in CLAUDE_PROTECTED_DIRS:
         _protected_tree(snap, claude / name, f"~/.claude/{name}")
     projects_root = claude / "projects"
     if projects_root.is_symlink():
-        _protected_file(snap, projects_root, "~/.claude/projects")
+        _protected_symlink_target(snap, projects_root, "~/.claude/projects")
     if projects_root.is_dir():
         for proj in sorted(projects_root.iterdir()):
             if not (proj.is_dir() or proj.is_symlink()):
@@ -277,15 +362,17 @@ def protected_violations(spec, protected_before=None, finalize=False):
     return violations
 
 
-def snapshot(repo):
+def snapshot(repo, base_commit=None):
     repo = Path(repo)
     head = git_bytes(repo, "rev-parse", "HEAD").stdout.decode().strip().lower()
     status = git_bytes(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all").stdout
+    dirty = dirty_paths(repo, "HEAD", base_commit=base_commit if base_commit is not None else head)
+    raw_count = len([item for item in status.split(b"\0") if item])
     return {
         "head": head,
         "status_porcelain_v1_z_sha256": hashlib.sha256(status).hexdigest(),
-        "status_entry_count": len([item for item in status.split(b"\0") if item]),
-        "dirty_paths": dirty_paths(repo),
+        "status_entry_count": max(raw_count, len(dirty)) if dirty else 0,
+        "dirty_paths": dirty,
     }
 
 
@@ -299,6 +386,8 @@ def capture_before(spec_path, digest):
     if before["head"] != spec["base_commit"]:
         fail("Git HEAD before launch does not match the authorized base commit")
     if before["status_entry_count"] != 0 or before["dirty_paths"]:
+        fail("workspace must be clean at the attributable before snapshot")
+    if before["status_porcelain_v1_z_sha256"] != hashlib.sha256(b"").hexdigest():
         fail("workspace must be clean at the attributable before snapshot")
     before_snap = protected_snapshot(spec["repo"])
     _PROTECTED_BASELINES[spec["run_id"]] = dict(before_snap)
@@ -329,18 +418,20 @@ def glob_regex(pattern):
 
 
 def in_scope(path, allowed):
+    if _is_gitignore_path(path) or _is_stdlib_shadow(path):
+        return False
     return any(glob_regex(pattern).fullmatch(path) for pattern in allowed)
 
 
 def git_delta(spec, before, protected_before=None):
     repo = Path(spec["repo"])
-    after = snapshot(repo)
     base = before["head"]
+    after = snapshot(repo, base_commit=base)
     after_head = after["head"]
     ancestor = git_bytes(repo, "merge-base", "--is-ancestor", base, after_head, check=False).returncode == 0
     commits_raw = git_bytes(repo, "rev-list", "--reverse", f"{base}..{after_head}").stdout
     commits = [line for line in commits_raw.decode().splitlines() if line]
-    changed = dirty_paths(repo, base)
+    changed = dirty_paths(repo, base, base_commit=base)
     violations = [path for path in changed if not in_scope(path, spec["write_scope"])]
     violations = sorted(set(violations + protected_violations(spec, protected_before=protected_before, finalize=True)))
     if not ancestor:

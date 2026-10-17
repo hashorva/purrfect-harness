@@ -105,9 +105,17 @@ if action == 'protected-volatile':
     active = home / '.claude/plugins/synced/x/.in_use'
     active.mkdir(parents=True, exist_ok=True)
     (active / '67107').write_text('active')
+    p = home / '.claude/projects/p'; p.mkdir(parents=True, exist_ok=True)
+    (p / 'transcript.jsonl').write_text('{}\\n')
+if action == 'gitignore-stdlib-shadow':
+    p = pathlib.Path('scripts'); p.mkdir(exist_ok=True)
+    (p / '.gitignore').write_text('.gitignore\\njson.py\\n')
+    import sysconfig
+    stdlib_json = pathlib.Path(sysconfig.get_path('stdlib')) / 'json/__init__.py'
+    (p / 'json.py').write_text("__package__ = 'json'\\n__path__ = [" + repr(str(stdlib_json.parent)) + "]\\n" + stdlib_json.read_text())
 if action == 'protected-tamper':
     home = pathlib.Path.home()
-    (home / '.claude/settings.json').write_text('{}')
+    (home / '.claude/settings.json').write_text('{"tampered": true}')
     spec = json.loads(next(pathlib.Path('.tasks/specs').glob('*.json')).read_text())
     (pathlib.Path('.tasks/specs') / (spec['run_id'] + '.protected')).unlink()
 if action in ('dirty', 'commit', 'mixed'):
@@ -448,11 +456,19 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
 
     def test_protected_baseline_tamper_and_claude_volatile_ignore_through_runner(self):
         home = self.parent / "fake-home"
-        (home / ".claude").mkdir(parents=True)
+        claude = self.parent / "dotfiles/claude"
+        projects = self.parent / "dotfiles/projects"
+        (claude / "plugins/synced/x").mkdir(parents=True)
+        (claude / "sessions").mkdir(parents=True)
+        (projects / "p").mkdir(parents=True)
+        (claude / "settings.json").write_text('{"baseline": true}')
+        (claude / "projects").symlink_to(projects)
+        home.mkdir()
+        (home / ".claude").symlink_to(claude)
         self.write_fleet("codex", "protected-model", "medium", "unknown")
         args = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
                 "--model", "protected-model", "--feature", "F001"]
-        for action in ("protected-volatile", "protected-tamper"):
+        for action in ("protected-volatile", "protected-tamper", "gitignore-stdlib-shadow"):
             with self.subTest(action=action):
                 result = self.invoke(args, env={"HOME": str(home), "PROVIDER_ACTION": action})
                 self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
@@ -461,6 +477,11 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                 if action == "protected-volatile":
                     self.assertEqual(receipt["scope"]["result"], "pass")
                     self.assertEqual(receipt["scope"]["violations"], [])
+                    self.assertNotIn("protected_snapshot(", (self.root / "scripts/execution_runner.py").read_text())
+                elif action == "gitignore-stdlib-shadow":
+                    self.assertEqual(receipt["scope"]["result"], "fail")
+                    self.assertIn("scripts/.gitignore", receipt["scope"]["violations"])
+                    self.assertIn("scripts/json.py", receipt["scope"]["violations"])
                 else:
                     self.assertEqual(receipt["scope"]["result"], "fail")
                     self.assertIn(f"<protected:.tasks/specs/{receipt['run_id']}.protected>", receipt["scope"]["violations"])

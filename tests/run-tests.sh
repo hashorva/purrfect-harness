@@ -324,6 +324,7 @@ PY
 chmod 444 "$FEAT/fleet.json"
 check "verify fails without receipts" sh -c "cd '$TARGET' && ! bash scripts/verify-mission.sh docs/missions/20990101-fixture"
 printf '%s\n' '.tasks/' '.verifybin/' > "$TARGET/.git/info/exclude"
+printf '%s\n' '.tasks/' '.verifybin/' > "$TARGET/.gitignore"
 VERIFY_BIN="$TARGET/.verifybin"; mkdir -p "$VERIFY_BIN"
 # shellcheck disable=SC2016  # generated stub must expand VERIFY_WRITE at runtime
 printf '%s\n' '#!/usr/bin/env bash' '[ "${VERIFY_WRITE:-0}" != 1 ] || { printf "%s\n" verified > proof.txt && git add proof.txt && git commit -qm proof; }' 'exit 0' > "$VERIFY_BIN/codex"
@@ -360,6 +361,7 @@ check "spawn-worker --repo rejects missing path" sh -c "cd '$TARGET' && bash scr
 # machine-local harness evidence and test sentinels outside Git truth, make F001
 # pending again after the receipt-verification fixture, then commit the baseline.
 printf '%s\n' '.tasks/' '.stubbin/' '.agy-args' '.claude-args' '.codex-*' '.agent-*' >> "$TARGET/.git/info/exclude"
+printf '%s\n' '.tasks/' '.stubbin/' '.agy-args' '.claude-args' '.codex-*' '.agent-*' >> "$TARGET/.gitignore"
 printf '%s\n' '{"goal":"t","features":[{"id":"F001","description":"Provider wrapper contract","bootstrap":false,"steps":[],"passes":false,"priority":1},{"id":"F002","description":"Other pending work","bootstrap":false,"steps":[],"passes":false,"priority":2}]}' > "$FEAT/features.json"
 git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "installed harness dispatch fixture"
 
