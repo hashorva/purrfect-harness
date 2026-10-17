@@ -203,15 +203,14 @@ class LedgerContract(unittest.TestCase):
 
     def test_committed_ledger_history_validates_and_views_without_self_reported_model(self):
         text = (ROOT / "docs/missions/ledger.jsonl").read_text(encoding="utf-8")
-        self.assertNotIn("self_reported_model", text)
         import ledger as L
         rows = [json.loads(line) for line in text.splitlines() if line.strip()]
-        self.assertEqual(len(rows), 29)
+        self.assertGreaterEqual(len(rows), 29)
+        for row in rows[:29]:
+            self.assertNotIn("self_reported_model", row)
         for row in rows:
             self.assertEqual(row["schema_version"], 2)
-            self.assertNotIn("self_reported_model", row)
             L.validate_row(row)
-            self.assertNotIn("self_reported_model", row)
         good = copy.deepcopy(rows[0])
         good["self_reported_model"] = {"value": "reported-model", "source": "self_reported"}
         L.validate_row(good)
@@ -990,7 +989,7 @@ class LedgerBuilderTests(unittest.TestCase):
         self.assertEqual(row["resolved_model"], {"value": "gemini-3.8-flash-low", "source": "configured"})
         self.assertEqual(row["observed_model"], {"value": "gemini-4-argon-high", "source": "observed"})
         self.assertEqual(row["self_reported_model"], {"value": "claude-opus-5-5-high", "source": "self_reported"})
-        self.assertEqual((row["door"], row["pool"]), ("agy-argon", "agy-argon"))
+        self.assertEqual((row["door"], row["pool"]), ("agy", "google"))
         self.assertEqual(row["anti_gaming_flags"], ["model_drift"])
         receipt["observation"]["observed_model"] = unknown
         receipt["requested_configuration"]["model"] = "gemini-3.8-flash-low"
@@ -1001,6 +1000,39 @@ class LedgerBuilderTests(unittest.TestCase):
         receipt["self_reported_model"] = unknown
         row = execution_runner.build_ledger_row(spec, receipt, tier="premium")
         self.assertEqual(row["anti_gaming_flags"], [])
+        cases = (
+            ("gemini-4-argon-high", "gemini-3.8-flash-low", "agy", "google"),
+            ("gemini-3.8-flash-low", "gemini-4-argon-high", "agy-argon", "agy-argon"),
+        )
+        for reported_model, configured_model, expected_door, expected_pool in cases:
+            spec["provider"] = "agy"
+            receipt["requested_configuration"]["model"] = configured_model
+            receipt["resolved_configuration"]["model"] = configured_model
+            row = execution_runner.build_ledger_row(spec, receipt, tier="premium",
+                self_reported_model={"value": reported_model, "source": "self_reported"})
+            self.assertEqual((row["door"], row["pool"]), (expected_door, expected_pool))
+        spec["provider"] = "agent"
+        receipt["requested_configuration"]["model"] = "grok-4.7-high"
+        receipt["resolved_configuration"]["model"] = "grok-4.7-high"
+        row = execution_runner.build_ledger_row(spec, receipt, tier="premium",
+            self_reported_model={"value": "composer-2.5", "source": "self_reported"})
+        self.assertEqual((row["door"], row["pool"]), ("cursor-grok", "cursor"))
+        import ledger as L
+        from execution_runner import write_ledger_row
+        for bad in ("sk-123456789012345678901234", "11111111-2222-4333-8444-555555555555",
+                    "a" * 40, "x/tmp/y", "deadbeef" * 4):
+            with self.subTest(bad=bad), tempfile.TemporaryDirectory() as directory:
+                local_spec = dict(spec, repo=directory, run_id=str(uuid.uuid4()), provider="agy")
+                local_receipt = copy.deepcopy(receipt)
+                local_receipt["requested_configuration"]["model"] = "gemini-3.8-flash-low"
+                local_receipt["resolved_configuration"]["model"] = "gemini-3.8-flash-low"
+                write_ledger_row(local_spec, local_receipt, tier="economy", log=Path(directory) / "worker.log",
+                    self_reported_model={"value": bad, "source": "self_reported"})
+                path = Path(directory) / ".tasks" / "ledger" / f"{local_spec['run_id']}.json"
+                self.assertTrue(path.is_file(), "hostile model text must not drop the ledger row")
+                written = json.loads(path.read_text(encoding="utf-8"))
+                self.assertEqual(written["self_reported_model"], unknown)
+                L.validate_row(written)
 
     def test_agy_runs_book_the_door_of_their_model_family(self):
         cases = (

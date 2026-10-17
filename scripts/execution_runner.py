@@ -22,9 +22,11 @@ from execution_spec import artifact_directory, SpecError, load_persisted, spec_s
 # Imported before any provider runs, so a worker's later edit to scripts/ledger.py
 # is never executed by this run. A module that fails to import only skips the ledger step.
 try:
-    from ledger import LedgerError, validate_row
+    from ledger import LedgerError, check_privacy, valid_model_id, validate_row
 except Exception:
     LedgerError = None
+    check_privacy = None
+    valid_model_id = None
     validate_row = None
 
 
@@ -39,6 +41,26 @@ def unknown_number():
 
 def unknown_text():
     return {"value": None, "source": "unknown"}
+
+
+def safe_model_flag(entry, source):
+    if (not isinstance(entry, dict) or set(entry) != {"value", "source"}
+            or entry.get("source") != source or valid_model_id is None):
+        return unknown_text()
+    value = valid_model_id(entry.get("value"))
+    return {"value": value, "source": source} if isinstance(value, str) and value else unknown_text()
+
+
+def safe_text_flag(entry, source):
+    if (not isinstance(entry, dict) or entry.get("source") != source
+            or not isinstance(entry.get("value"), str) or not entry["value"].strip()
+            or check_privacy is None):
+        return unknown_text()
+    try:
+        check_privacy("field", entry["value"])
+    except Exception:
+        return unknown_text()
+    return {"value": entry["value"], "source": source}
 
 
 def observed_number(value):
@@ -127,19 +149,15 @@ def build_ledger_row(spec, receipt, *, tier, self_reported_model=None):
     requested_configuration = receipt.get("requested_configuration") or {}
     resolved_model = resolved_configuration.get("model")
     requested_model_flag = configured_text(requested_configuration.get("model"))
-    observed_model_flag = observation["observed_model"]
+    observed_model_flag = safe_model_flag(observation.get("observed_model"), "observed")
     reported = self_reported_model if self_reported_model is not None else receipt.get("self_reported_model")
-    if (not isinstance(reported, dict) or set(reported) != {"value", "source"}
-            or reported.get("source") != "self_reported" or not isinstance(reported.get("value"), str)
-            or not reported["value"].strip()):
-        reported = unknown_text()
-    self_reported_model_flag = {"value": reported["value"], "source": reported["source"]}
+    self_reported_model_flag = safe_model_flag(reported, "self_reported")
+    fast_state_flag = safe_text_flag(observation.get("fast_state"), "observed")
     identity = resolve_model_identity(requested_model_flag, observed_model_flag, self_reported_model_flag)
-    attributed_model = identity["attributed_model"] or resolved_model
     doors = base_registry_doors(spec["repo"], spec["base_commit"])
-    door, pool, billing_class = registry_door_pool_and_billing(doors, spec["provider"], attributed_model)
-    if ledger_cli_name(spec["provider"]) == "cursor" and door == "unknown" and resolved_model:
-        door, pool, billing_class = registry_door_pool_and_billing(doors, spec["provider"], resolved_model)
+    resolved_model_flag = configured_text(resolved_model)
+    door_model = resolved_model_flag["value"] or requested_model_flag["value"]
+    door, pool, billing_class = registry_door_pool_and_billing(doors, spec["provider"], door_model)
     mission = Path(spec["mission"]).name
     feature = receipt["feature"] if receipt.get("feature") else "unknown"
     return {
@@ -159,14 +177,11 @@ def build_ledger_row(spec, receipt, *, tier, self_reported_model=None):
         "pool": pool,
         "billing_class": billing_class,
         "requested_model": requested_model_flag,
-        "resolved_model": configured_text(resolved_model),
-        "observed_model": {"value": observed_model_flag["value"], "source": observed_model_flag["source"]},
+        "resolved_model": resolved_model_flag,
+        "observed_model": observed_model_flag,
         "self_reported_model": self_reported_model_flag,
         "effort": configured_text(requested_configuration.get("effort")),
-        "fast_state": {
-            "value": observation["fast_state"]["value"],
-            "source": observation["fast_state"]["source"],
-        },
+        "fast_state": fast_state_flag,
         "task_class_tags": [],
         "allow_list_size": observed_number(len(spec["write_scope"])),
         "task_text_tokens": unknown_number(),

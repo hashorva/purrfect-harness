@@ -26,6 +26,19 @@ REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
 SOURCES = ("observed", "estimated", "unknown")
 CONFIGURED_SOURCES = ("observed", "configured", "estimated", "unknown")
 SELF_REPORTED_SOURCES = ("self_reported", "unknown")
+MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}\Z")
+
+
+def valid_model_id(value):
+    if not isinstance(value, str) or "\n" in value or "\r" in value or not MODEL_ID_RE.fullmatch(value):
+        return None
+    try:
+        check_privacy("model", value)
+    except LedgerError:
+        return None
+    return value
+
+
 # Privacy rule, applied to every text value at every nesting level (lists included).
 # Not covered, on purpose: a secret split across several fields. Each part alone looks harmless,
 # and the validator checks one value at a time.

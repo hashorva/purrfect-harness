@@ -191,6 +191,11 @@ class ObserveOutputTest(unittest.TestCase):
             "gpt-5\nsk-123456789012345678901234\u0000",
             "gpt-5\r\n",
             "a" * 81,
+            "sk-123456789012345678901234",
+            "11111111-2222-4333-8444-555555555555",
+            "a" * 40,
+            "x/tmp/y",
+            "deadbeef" * 4,
         )
         for value in bad_values:
             with self.subTest(value=value):
@@ -199,6 +204,10 @@ class ObserveOutputTest(unittest.TestCase):
                 result = observe_self_reported("claude", raw)
                 self.assertEqual(result, UNKNOWN)
                 self.assertNotIn("sk-", json.dumps(result))
+                identity = resolve_model_identity(
+                    {"value": "claude", "source": "configured"}, UNKNOWN, result
+                )
+                self.assertEqual(identity["attributed_source"], "configured")
 
     def test_observe_self_reported_validates_only_final_top_level_json_object(self):
         prose = (

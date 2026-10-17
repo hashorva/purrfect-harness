@@ -10,6 +10,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ledger import valid_model_id
+
 PROVIDERS = ("claude", "codex", "cursor", "agy")
 ALIASES = {"agent": "cursor"}
 USAGE_FIELDS = ("input", "output", "cache", "reasoning")
@@ -17,19 +20,11 @@ REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
 CODEX_THREAD_ID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
-MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}\Z")
 FENCED_JSON_RE = re.compile(r"```(?:json)?\n(.*)\n```", re.S)
 
 
 def model_id(value):
-    if (
-        isinstance(value, str)
-        and "\n" not in value
-        and "\r" not in value
-        and MODEL_ID_RE.fullmatch(value)
-    ):
-        return value
-    return None
+    return valid_model_id(value)
 
 
 def unknown():
