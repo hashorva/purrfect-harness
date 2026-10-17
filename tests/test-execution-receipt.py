@@ -131,6 +131,88 @@ raise SystemExit(0)
     def tearDown(self):
         shutil.rmtree(self.parent)
 
+    def test_symlinked_claude_and_projects_roots_record_link_target_only(self):
+        home = self.parent / "fake-home"
+        dot = self.parent / "dotfiles"
+        claude = dot / "claude"
+        projects = dot / "projects"
+        for path in (claude / "commands", claude / "sessions", claude / "plugins/synced/x/.in_use",
+                     projects / "p/memory"):
+            path.mkdir(parents=True, exist_ok=True)
+        (claude / "settings.json").write_text("{}")
+        (claude / "commands/c.md").write_text("command")
+        (projects / "p/memory/notes.md").write_text("notes")
+        (claude / "projects").symlink_to(projects)
+        home.mkdir()
+        (home / ".claude").symlink_to(claude)
+        with mock.patch.dict(os.environ, {"HOME": str(home)}):
+            before = execution_receipt.protected_snapshot(str(self.root))
+            (claude / "sessions/1.key").write_text("session")
+            (claude / "plugins/synced/x/.in_use/1").write_text("active")
+            (projects / "p/transcript.jsonl").write_text("{}\n")
+            self.assertEqual(execution_receipt.protected_snapshot(str(self.root)), before)
+            for target, label in ((claude / "settings.json", "~/.claude/settings.json"),
+                                  (claude / "commands/c.md", "~/.claude/commands/c.md"),
+                                  (projects / "p/memory/notes.md", "~/.claude/projects/p/memory/notes.md")):
+                baseline = execution_receipt.protected_snapshot(str(self.root))
+                target.write_text(target.read_text() + " changed")
+                after = execution_receipt.protected_snapshot(str(self.root))
+                self.assertNotEqual(baseline.get(label), after.get(label))
+                self.assertIn(label, after)
+            (home / ".claude").unlink()
+            alternate = dot / "alternate"
+            alternate.mkdir()
+            (home / ".claude").symlink_to(alternate)
+            self.assertNotEqual(before.get("~/.claude"), execution_receipt.protected_snapshot(str(self.root)).get("~/.claude"))
+            (home / ".claude").unlink()
+            (home / ".claude").symlink_to(claude)
+            (claude / "projects").unlink()
+            alternate_projects = dot / "alternate-projects"
+            (alternate_projects / "p/memory").mkdir(parents=True)
+            (claude / "projects").symlink_to(alternate_projects)
+            self.assertNotEqual(before.get("~/.claude/projects"),
+                                execution_receipt.protected_snapshot(str(self.root)).get("~/.claude/projects"))
+
+    def test_untracked_scope_ignores_local_gitignore_and_flags_ignore_and_stdlib_shadowing(self):
+        base = subprocess.run(["git", "-C", str(self.root), "rev-parse", "HEAD"], check=True,
+                              text=True, capture_output=True).stdout.strip()
+        (self.root / "scripts/.gitignore").write_text(".gitignore\njson.py\n")
+        (self.root / "scripts/json.py").write_text("x = 1\n")
+        changed = execution_receipt.dirty_paths(self.root, base_commit=base)
+        self.assertIn("scripts/.gitignore", changed)
+        self.assertIn("scripts/json.py", changed)
+        for path in (".gitignore", "scripts/.gitignore", "scripts/json.py", "scripts/os.py",
+                     "scripts/sys.py", "scripts/re.py", "tests/json.py"):
+            self.assertFalse(execution_receipt.in_scope(path, ["scripts/**", "tests/**", ".gitignore"]))
+        (self.root / ".gitignore").write_text(".tasks/\nplanted.txt\n")
+        (self.root / "planted.txt").write_text("caught\n")
+        changed = execution_receipt.dirty_paths(self.root, base_commit=base)
+        self.assertIn(".gitignore", changed)
+        self.assertIn("planted.txt", changed)
+        for raw in (b"/abs\0", b"../escape\0", b"a//b\0", b"a//\0"):
+            with self.assertRaises(ReceiptError):
+                execution_receipt.nul_paths(raw, "test")
+
+    def test_tasks_smoke_clone_and_local_state_are_subtracted_from_untracked_delta(self):
+        base = subprocess.run(["git", "-C", str(self.root), "rev-parse", "HEAD"], check=True,
+                              text=True, capture_output=True).stdout.strip()
+        tasks = self.root / ".tasks"
+        nested = tasks / "smoke/run/repo"
+        nested.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q"], cwd=nested, check=True)
+        for rel in ("probes/p/.gitignore", "receipts/r.json", "specs/s.json", "logs/l.log"):
+            path = tasks / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("state")
+        self.assertEqual(execution_receipt.dirty_paths(self.root, base_commit=base), [])
+        self.assertEqual(execution_receipt.snapshot(self.root, base_commit=base)["dirty_paths"], [])
+        rogue = self.root / "rogue-repo"
+        rogue.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=rogue, check=True)
+        (rogue / "file").write_text("x")
+        self.assertIn("rogue-repo", execution_receipt.dirty_paths(self.root, base_commit=base))
+        self.assertFalse(execution_receipt.in_scope("rogue-repo", ["README.md"]))
+
     def invoke(self, args, extra_env=None):
         env = dict(os.environ, PATH=f"{self.root / 'bin'}:{os.environ['PATH']}",
                    PYTHONDONTWRITEBYTECODE="1", SPAWN_WORKER_TIMEOUT_SECS="0")

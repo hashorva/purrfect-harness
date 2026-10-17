@@ -9,6 +9,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import time
 import unittest
@@ -105,6 +106,11 @@ if action == 'protected-volatile':
     active = home / '.claude/plugins/synced/x/.in_use'
     active.mkdir(parents=True, exist_ok=True)
     (active / '67107').write_text('active')
+    (home / '.claude/projects/p').mkdir(parents=True, exist_ok=True)
+    (home / '.claude/projects/p/transcript.jsonl').write_text('{}\\n')
+if action == 'gitignore-stdlib-shadow':
+    pathlib.Path('scripts/.gitignore').write_text('.gitignore\\njson.py\\n')
+    pathlib.Path('scripts/json.py').write_text('x = 1\\n')
 if action == 'protected-tamper':
     home = pathlib.Path.home()
     (home / '.claude/settings.json').write_text('{}')
@@ -448,7 +454,15 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
 
     def test_protected_baseline_tamper_and_claude_volatile_ignore_through_runner(self):
         home = self.parent / "fake-home"
-        (home / ".claude").mkdir(parents=True)
+        home.mkdir()
+        claude_target = self.parent / "external-claude"
+        projects_target = self.parent / "external-projects"
+        (claude_target / "sessions").mkdir(parents=True)
+        (claude_target / "plugins").mkdir()
+        (claude_target / "projects").symlink_to(projects_target)
+        (projects_target / "p").mkdir(parents=True)
+        (claude_target / "settings.json").write_text('{"stable":true}')
+        (home / ".claude").symlink_to(claude_target)
         self.write_fleet("codex", "protected-model", "medium", "unknown")
         args = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
                 "--model", "protected-model", "--feature", "F001"]
@@ -466,6 +480,18 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                     self.assertIn(f"<protected:.tasks/specs/{receipt['run_id']}.protected>", receipt["scope"]["violations"])
                     self.assertIn("<protected:~/.claude/settings.json>", receipt["scope"]["violations"])
                 self.clean_runs()
+
+        result = self.invoke(args, env={
+            "HOME": str(home), "PROVIDER_ACTION": "gitignore-stdlib-shadow",
+            "PYTHONSAFEPATH": "1",
+            "PYTHONPATH": f"{sysconfig.get_path('stdlib')}:{self.root / 'scripts'}",
+        })
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        receipt = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())
+        self.assertEqual(receipt["scope"]["result"], "fail")
+        self.assertIn("scripts/.gitignore", receipt["scope"]["violations"])
+        self.assertIn("scripts/json.py", receipt["scope"]["violations"])
+        self.assertNotIn("protected_snapshot(", (self.root / "scripts/execution_runner.py").read_text())
 
     def test_cursor_alias_persists_agent_contract_through_wrappers(self):
         model, speed = "cursor-model-fast", "fast"

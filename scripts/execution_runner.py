@@ -15,7 +15,7 @@ from datetime import datetime
 
 from execute_provider import provider_contract
 from execution_receipt import (ReceiptError, all_unknown, canonical_bytes, capture_before, now,
-                               protected_snapshot, write_receipt)
+                               write_receipt)
 from observe_output import no_turn, observe, observe_self_reported, resolve_model_identity
 from execution_spec import artifact_directory, SpecError, load_persisted, spec_sha256
 
@@ -325,7 +325,6 @@ def run(args):
 
     started_at = now()
     before = capture_before(args.spec, args.spec_sha256)
-    protected_before = protected_snapshot(spec["repo"])
     process = None
     received_signal = None
 
@@ -450,7 +449,6 @@ def run(args):
         task=args.task,
         tier=args.tier,
         observation=observation,
-        protected_before=protected_before,
     )
     try:
         receipt_doc = json.loads(receipt.read_text(encoding="utf-8"))
