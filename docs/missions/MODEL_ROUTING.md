@@ -114,6 +114,8 @@ is on PATH with a healthy inventory bind.
 GATE 0 must list `agy.premium` / `agy.economy` whenever `agy` is present so the
 human can assign UI features there and spend those credits on purpose.
 
+Note (F009): In Google AI Pro, agy.premium binds gemini-4-argon on its weekly-only agy-argon pool, agy.economy binds gemini-3.8-flash, the chair can resolve to claude-opus-5-5-high on agy, and contract 8 encodes agy effort only in the model name over stream-json with stdin closed.
+
 ### Claude (`claude -p` workers — not the chair)
 
 | Seat    | Family         |
