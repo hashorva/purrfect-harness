@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 
@@ -16,6 +17,7 @@ sys.path.insert(0, str(SCRIPTS))
 from execute_provider import provider_contract
 from execution_spec import CURRENT_PROVIDER_CONTRACT
 import fleet_state
+import probe_seat
 
 
 FAKE = r'''#!__PYTHON__
@@ -25,6 +27,9 @@ if sys.argv[1:] == ["mcp", "list"]:
     print("Checking MCP server health...")
     print("alpha: https://private.example/?token=S1 - Connected")
     print("beta: npx private --key S2 - Failed")
+    raise SystemExit(0)
+if sys.argv[1:] == ["--help"]:
+    print(os.environ.get("PROBE_HELP_TEXT", "Usage: " + name + "\n  --add-dir <dir>\n  --model <model>\n  -p\n"))
     raise SystemExit(0)
 mode = os.environ.get("PROBE_MODE", "ok")
 if mode == "hang": time.sleep(10)
@@ -81,8 +86,15 @@ class ProbeSeatTest(unittest.TestCase):
         result = self.run_probe(seat, mode, timeout)
         self.assertEqual(result.returncode, 0 if expected == "ok" else 1, result.stderr)
         folder = next(self.out.glob(f"*-{seat}"))
-        for name in ("command.json", "stdout.txt", "stderr.txt", "events.jsonl", "mcp.json", "result.json"):
+        for name in ("command.json", "stdout.txt", "stderr.txt", "events.jsonl", "mcp.json", "result.json", "help.json"):
             self.assertTrue((folder / name).is_file(), name)
+        help_payload = json.loads((folder / "help.json").read_text())
+        self.assertEqual(help_payload["cli"], json.loads((folder / "command.json").read_text())["argv"][0])
+        self.assertIn("flags", help_payload)
+        self.assertIn("new_flags", help_payload)
+        sha = help_payload["sha256"]
+        self.assertIsInstance(sha, str)
+        self.assertRegex(sha, r"^[0-9a-f]{64}$")
         saved = "\n".join(path.read_text() for path in folder.iterdir())
         self.assertNotIn("S1", saved)
         self.assertNotIn("private.example", saved)
@@ -148,6 +160,68 @@ class ProbeSeatTest(unittest.TestCase):
         joined = "\n".join(blobs)
         for bad in ("password", "token=", "S1", "://"):
             self.assertNotIn(bad, joined, bad)
+
+    def test_help_flags_parses_fixture_and_ignores_secrets(self):
+        sample = (
+            "Usage: tool [options]\n"
+            "  -p, --print  Print\n"
+            "  -Z  Short new\n"
+            "  --brand-new-flag <v>  Secret https://u:p@example.com?token=S1\n"
+        )
+        self.assertEqual(probe_seat.help_flags(sample), ["--brand-new-flag", "--print", "-Z", "-p"])
+
+    def test_help_new_flags_from_capabilities_baseline(self):
+        cap = self.temp / "capabilities"
+        cap.mkdir()
+        (cap / "claude.txt").write_text("--add-dir\n--model\n-p\n")
+        env = dict(os.environ, PATH=f"{self.bin}:/usr/bin:/bin", PROBE_MODE="ok", PYTHONDONTWRITEBYTECODE="1",
+                   PROBE_HELP_TEXT="Usage: claude\n  --add-dir <dir>\n  --model <model>\n  -p\n  --brand-new-flag <v>\n")
+        result = subprocess.run(
+            [sys.executable, str(SCRIPTS / "probe_seat.py"), "claude.test", "--fleet", str(self.fleet),
+             "--out-root", str(self.out), "--capabilities-dir", str(cap), "--timeout", "2"],
+            text=True, capture_output=True, env=env, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        folder = next(self.out.glob("*-claude.test"))
+        help_payload = json.loads((folder / "help.json").read_text())
+        self.assertEqual(help_payload["new_flags"], ["--brand-new-flag"])
+        self.assertIn("--brand-new-flag", result.stdout)
+
+    def test_help_new_flags_empty_when_fixture_matches_baseline(self):
+        cap = self.temp / "capabilities"
+        cap.mkdir()
+        (cap / "claude.txt").write_text("--add-dir\n--model\n-p\n")
+        env = dict(os.environ, PATH=f"{self.bin}:/usr/bin:/bin", PROBE_MODE="ok", PYTHONDONTWRITEBYTECODE="1",
+                   PROBE_HELP_TEXT="Usage: claude\n  --add-dir <dir>\n  --model <model>\n  -p\n")
+        result = subprocess.run(
+            [sys.executable, str(SCRIPTS / "probe_seat.py"), "claude.test", "--fleet", str(self.fleet),
+             "--out-root", str(self.out), "--capabilities-dir", str(cap), "--timeout", "2"],
+            text=True, capture_output=True, env=env, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        folder = next(self.out.glob("*-claude.test"))
+        help_payload = json.loads((folder / "help.json").read_text())
+        self.assertEqual(help_payload["new_flags"], [])
+
+    def test_help_new_flags_compares_to_prior_probe_in_out_root(self):
+        cap = self.temp / "capabilities"
+        cap.mkdir()
+        (cap / "claude.txt").write_text("--add-dir\n--model\n-p\n")
+        base_env = dict(os.environ, PATH=f"{self.bin}:/usr/bin:/bin", PROBE_MODE="ok", PYTHONDONTWRITEBYTECODE="1")
+        first_env = {**base_env, "PROBE_HELP_TEXT": "Usage: claude\n  --add-dir <dir>\n  --model <model>\n  -p\n"}
+        subprocess.run(
+            [sys.executable, str(SCRIPTS / "probe_seat.py"), "claude.test", "--fleet", str(self.fleet),
+             "--out-root", str(self.out), "--capabilities-dir", str(cap), "--timeout", "2"],
+            text=True, capture_output=True, env=first_env, check=True)
+        time.sleep(1.1)
+        second_env = {**base_env, "PROBE_HELP_TEXT": "Usage: claude\n  --add-dir <dir>\n  --model <model>\n  -p\n  --only-in-second <v>\n"}
+        result = subprocess.run(
+            [sys.executable, str(SCRIPTS / "probe_seat.py"), "claude.test", "--fleet", str(self.fleet),
+             "--out-root", str(self.out), "--capabilities-dir", str(cap), "--timeout", "2"],
+            text=True, capture_output=True, env=second_env, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        folders = sorted(self.out.glob("*-claude.test"))
+        help_payload = json.loads((folders[-1] / "help.json").read_text())
+        self.assertEqual(help_payload["new_flags"], ["--only-in-second"])
+        self.assertIn("--only-in-second", result.stdout)
 
     def test_dry_run_and_bad_seats(self):
         result = self.run_probe("claude.test", wrapper=True)

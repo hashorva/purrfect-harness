@@ -493,6 +493,30 @@ class ExecutionSpecContract(unittest.TestCase):
                 self.assertIn(violation, receipt["scope"]["violations"])
                 subprocess.run(["git", "-C", str(self.repo), "update-index", "--no-skip-worktree", "README.md"], check=True)
 
+    def test_contract_eight_providers_use_full_native_toolsets(self):
+        limiting = ("--allowedTools", "--tools", "--restricted", "--sandbox", "--disable-slash-commands", "--plan", "--mode")
+        agy_model = "gemini-3.8-flash-medium"
+        repo = str(self.repo)
+        for role in ("worker", "brain"):
+            for provider, extra, expected in (
+                    ("agent", {"speed": "standard"},
+                     ["cursor-agent", "-p", "--force", "--trust", "--output-format", "stream-json",
+                      "--workspace", repo, "--model", "test-model", "exact prompt"]),
+                    ("agy", {"model": agy_model, "effort": "medium"},
+                     ["agy", "--dangerously-skip-permissions", "--print-timeout", "30m", "--model", agy_model,
+                      "--output-format", "stream-json", "-p", "exact prompt"]),
+            ):
+                with self.subTest(provider=provider, role=role):
+                    path, digest = self.persisted(self.spec_v3(provider=provider, role=role,
+                                                               provider_contract_version=8, **extra))
+                    argv = json.loads(self.adapter(path, digest).stdout)["argv"]
+                    for flag in limiting:
+                        self.assertNotIn(flag, argv)
+                    self.assertEqual(argv, expected)
+        launch = ADAPTER.read_text()
+        self.assertIn("stdin=subprocess.DEVNULL", launch)
+        self.assertRegex(launch, r"return subprocess\.run\(argv, check=False, stdin=subprocess\.DEVNULL\)")
+
     def test_contract_eight_agy_streams_and_validates_effort_before_launch(self):
         env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", EXECUTION_SENTINEL=str(self.sentinel))
         for role in ("worker", "brain"):

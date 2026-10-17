@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run exactly one frozen fleet seat and retain privacy-safe probe evidence."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -22,7 +23,43 @@ from harness_registry import load_registry
 CLASSES = ("ok", "no-turn", "mcp-init-wait", "permission-wait", "input-wait", "auth", "limit", "unknown")
 SEAT = re.compile(r"[a-z]+(?:\.[a-z]+)?")
 DEFAULT_INVENTORY = Path(__file__).resolve().parent.parent / ".tasks/fleet-inventory.json"
+DEFAULT_CAPABILITIES_DIR = Path(__file__).resolve().parent.parent / "docs/missions/capabilities"
 STEP_ZERO = "search the CLI's GitHub issues for the exact symptom first"
+
+FLAG_RE = re.compile(r"(?:^|[\s,(])(--[A-Za-z0-9][A-Za-z0-9_-]*|-[A-Za-z0-9])(?=$|[\s,)=.\[\]])")
+
+
+def help_flags(text):
+    """Return sorted unique CLI flag tokens parsed from --help text."""
+    return sorted(set(FLAG_RE.findall(text)))
+
+
+def recorded_flags(cli, capabilities_dir, out_root=None):
+    """Return the last recorded flag list for a CLI from prior probes or committed baselines."""
+    if out_root is not None:
+        root = Path(out_root)
+        if root.exists():
+            matches = []
+            for help_path in root.glob("*/help.json"):
+                try:
+                    payload = json.loads(help_path.read_text())
+                except (OSError, ValueError, TypeError):
+                    continue
+                if payload.get("cli") == cli and isinstance(payload.get("flags"), list):
+                    if all(isinstance(item, str) for item in payload["flags"]):
+                        matches.append((help_path.parent.name, payload["flags"]))
+            if matches:
+                matches.sort(key=lambda item: item[0])
+                return list(matches[-1][1])
+    baseline = Path(capabilities_dir) / f"{cli}.txt"
+    if baseline.is_file():
+        return [line.strip() for line in baseline.read_text().splitlines() if line.strip()]
+    return []
+
+
+def new_help_flags(flags, baseline):
+    """Return flags present in help output but not in the baseline list."""
+    return sorted(set(flags) - set(baseline))
 
 
 _SAFE_MCP_NAME = re.compile(r"[A-Za-z0-9._ -]{1,64}")
@@ -187,6 +224,7 @@ def main(argv=None):
     parser.add_argument("--inventory", default=str(DEFAULT_INVENTORY))
     parser.add_argument("--timeout", type=float, default=120)
     parser.add_argument("--out-root", default=".tasks/probes")
+    parser.add_argument("--capabilities-dir", default=str(DEFAULT_CAPABILITIES_DIR))
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     if args.timeout <= 0:
@@ -218,10 +256,19 @@ def main(argv=None):
     command, _ = provider_contract(spec)
     mcp_command = [command[0], "mcp", "list"]
     mcp_exit, mcp_stdout, _ = _run(mcp_command, folder, 30)
+    help_command = [command[0], "--help"]
+    help_exit, help_stdout, _ = _run(help_command, folder, 30)
+    help_sha256 = hashlib.sha256(help_stdout.encode("utf-8", errors="replace")).hexdigest() if help_exit == 0 else None
+    flags = help_flags(help_stdout) if help_exit == 0 else []
+    baseline = recorded_flags(command[0], Path(args.capabilities_dir), Path(args.out_root))
+    new_flags = new_help_flags(flags, baseline) if help_exit == 0 else []
     out_dir = Path(args.out_root) / f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{args.seat}"
     out_dir.mkdir(parents=True, exist_ok=False)
     (out_dir / "command.json").write_text(json.dumps({"argv": command, "folder": str(folder)}, sort_keys=True) + "\n")
     (out_dir / "mcp.json").write_text(json.dumps({"cli": command[0], "names": mcp_names(mcp_stdout) if mcp_exit == 0 else None}, sort_keys=True) + "\n")
+    (out_dir / "help.json").write_text(json.dumps({"cli": command[0], "flags": flags, "new_flags": new_flags, "sha256": help_sha256}, sort_keys=True) + "\n")
+    if new_flags:
+        print(f"probe-seat: new flags for {command[0]}: {', '.join(new_flags)}")
     started = time.monotonic()
     exit_code, stdout, stderr = _run(command, folder, args.timeout, out_dir / "stdout.txt", out_dir / "stderr.txt")
     duration = time.monotonic() - started
