@@ -1,0 +1,7 @@
+# Claude contract 9 residual risk
+
+Contract 9 runs Claude Code with `--permission-mode bypassPermissions` and `--add-dir <repo>` so an unattended `-p` worker can make authorized changes without interactive approval. It also uses `--strict-mcp-config` to avoid starting unapproved MCP servers and `--disallowedTools` to block known destructive commands and protected-path edits. Headless mode does not provide an OS-level workspace-write sandbox. `acceptEdits` and `dontAsk` do not confine shell commands when `Bash` is enabled.
+
+The two-layer guard combines a 73-pattern `--disallowedTools` deny-list with post-run state checks. `execution_runner.py` retains `protected_before` in memory and passes it to `execution_receipt.py`, which detects deletion or modification of `.tasks/specs/<run_id>.protected`. Protected symlinks are hashed by both link target and resolved file or directory content. The `~/.claude` snapshot uses an explicit configuration allowlist and ignores volatile runtime paths such as `sessions/` and `plugins/`. It also checks `.git/info/exclude` and `git ls-files -v` for skip-worktree or assume-unchanged flags.
+
+The owner accepts this residual risk: `bypassPermissions` plus `Bash` remains an unsandboxed shell. A command that evades `--disallowedTools` can read, exfiltrate, or mutate paths outside the workspace. The post-run snapshot detects changes only to the explicitly listed protected paths and Git workspace/index state.

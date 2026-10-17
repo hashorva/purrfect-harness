@@ -16,10 +16,13 @@ from observe_output import all_unknown
 
 
 OUTCOMES = {"completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed"}
-CLAUDE_VOLATILE_DIRS = {
-    "projects", "todos", "statsig", "debug", "shell-snapshots", "ide", "telemetry",
-    "session-env", "file-history", "plans", "tasks", "backups", "cache",
-}
+CLAUDE_PROTECTED_FILES = ("settings.json", "settings.local.json", "CLAUDE.md", ".mcp.json")
+CLAUDE_PROTECTED_DIRS = ("commands", "agents", "hooks", "skills")
+HOME_PROTECTED_FILES = (
+    ".zshrc", ".zshenv", ".zprofile", ".bash_profile", ".bashrc", ".gitconfig",
+    ".config/git/config", ".claude.json",
+)
+_PROTECTED_BASELINES = {}
 COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
 RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$")
 SOURCES = {"observed", "estimated", "unknown"}
@@ -79,26 +82,44 @@ def dirty_paths(repo, reference="HEAD"):
 
 def _protected_digest(path):
     if path.is_symlink():
-        target = os.readlink(path)
-        return hashlib.sha256(b"symlink:" + target.encode("utf-8", "surrogateescape")).hexdigest()
+        link_hash = hashlib.sha256(os.readlink(path).encode("utf-8", "surrogateescape")).hexdigest()
+        if path.is_file():
+            body_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+            payload = f"symlink:{link_hash}:file:{body_hash}"
+        elif path.is_dir():
+            entries = []
+            for child in sorted(path.rglob("*")):
+                digest = _protected_digest(child)
+                if digest is not None:
+                    entries.append((child.relative_to(path).as_posix(), digest))
+            dir_hash = hashlib.sha256(canonical_bytes(entries)).hexdigest()
+            payload = f"symlink:{link_hash}:dir:{dir_hash}"
+        else:
+            payload = f"symlink:{link_hash}:missing"
+        return hashlib.sha256(payload.encode("ascii")).hexdigest()
     if path.is_file():
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+        return hashlib.sha256(b"file:" + path.read_bytes()).hexdigest()
     return None
 
 
-def _protected_tree(snap, root, prefix, prune_top_dirs=None):
-    if not root.exists():
+def _protected_tree(snap, root, prefix):
+    if root.is_symlink():
+        snap[prefix] = _protected_digest(root)
+    if not root.is_dir():
         return
-    prune_top_dirs = prune_top_dirs or set()
     for path in sorted(root.rglob("*")):
-        if path.is_dir():
+        if path.is_dir() and not path.is_symlink():
             continue
         relative = path.relative_to(root).as_posix()
-        if prune_top_dirs and relative.split("/", 1)[0] in prune_top_dirs:
-            continue
         digest = _protected_digest(path)
         if digest is not None:
             snap[f"{prefix}/{relative}"] = digest
+
+
+def _protected_file(snap, path, label):
+    digest = _protected_digest(path)
+    if digest is not None:
+        snap[label] = digest
 
 
 def protected_snapshot(repo):
@@ -106,17 +127,41 @@ def protected_snapshot(repo):
     repo = Path(repo)
     home = Path(os.environ.get("HOME") or str(Path.home()))
     snap = {}
-    git_config = repo / ".git" / "config"
-    digest = _protected_digest(git_config)
-    if digest is not None:
-        snap[".git/config"] = digest
+    _protected_file(snap, repo / ".git" / "config", ".git/config")
+    _protected_file(snap, repo / ".git" / "info" / "exclude", ".git/info/exclude")
     _protected_tree(snap, repo / ".git" / "hooks", ".git/hooks")
-    zshrc = home / ".zshrc"
-    digest = _protected_digest(zshrc)
-    if digest is not None:
-        snap["~/.zshrc"] = digest
+    ls_files = git_bytes(repo, "ls-files", "-v", "-z", check=False)
+    if ls_files.returncode == 0:
+        for item in ls_files.stdout.split(b"\0"):
+            if len(item) > 2 and item[1:2] == b" ":
+                flag = item[:1].decode("ascii", "replace")
+                rel = item[2:].decode("utf-8", "surrogateescape")
+                if flag != "H":
+                    snap[f".git/index-flags/{rel}"] = f"flag:{flag}"
+    for rel in HOME_PROTECTED_FILES:
+        _protected_file(snap, home / rel, f"~/{rel}")
     _protected_tree(snap, home / ".ssh", "~/.ssh")
-    _protected_tree(snap, home / ".claude", "~/.claude", prune_top_dirs=CLAUDE_VOLATILE_DIRS)
+    _protected_tree(snap, home / "Library" / "LaunchAgents", "~/Library/LaunchAgents")
+    claude = home / ".claude"
+    if claude.is_symlink():
+        _protected_file(snap, claude, "~/.claude")
+    for name in CLAUDE_PROTECTED_FILES:
+        _protected_file(snap, claude / name, f"~/.claude/{name}")
+    for name in CLAUDE_PROTECTED_DIRS:
+        _protected_tree(snap, claude / name, f"~/.claude/{name}")
+    projects_root = claude / "projects"
+    if projects_root.is_symlink():
+        _protected_file(snap, projects_root, "~/.claude/projects")
+    if projects_root.is_dir():
+        for proj in sorted(projects_root.iterdir()):
+            if not (proj.is_dir() or proj.is_symlink()):
+                continue
+            mem = proj / "memory"
+            prefix = f"~/.claude/projects/{proj.name}/memory"
+            if mem.is_dir() and not mem.is_symlink():
+                _protected_tree(snap, mem, prefix)
+            else:
+                _protected_file(snap, mem, prefix)
     return snap
 
 
@@ -124,20 +169,58 @@ def _protected_snapshot_file(spec, create=False):
     return artifact_directory(spec["repo"], "specs", create=create) / f"{spec['run_id']}.protected"
 
 
-def protected_violations(spec):
+def protected_violations(spec, protected_before=None, finalize=False):
     path = _protected_snapshot_file(spec, create=False)
-    if not path.is_file():
-        return []
-    stored = json.loads(path.read_bytes())
-    if "violations" in stored:
-        return stored["violations"]
+    baseline_violation = f"<protected:.tasks/specs/{spec['run_id']}.protected>"
+    if not finalize:
+        try:
+            if path.is_symlink() or not path.is_file():
+                return [baseline_violation]
+            raw = path.read_bytes()
+            stored = json.loads(raw)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return [baseline_violation]
+        if (not isinstance(stored, dict) or set(stored) != {"before", "violations"} or
+                not isinstance(stored["before"], dict) or not isinstance(stored["violations"], list) or
+                raw != canonical_bytes(stored)):
+            return [baseline_violation]
+        return list(stored["violations"])
+
+    memory_before = protected_before if protected_before is not None else _PROTECTED_BASELINES.get(spec["run_id"])
+    tampered = False
+    if memory_before is not None:
+        expected_raw = canonical_bytes({"before": memory_before})
+        tampered = path.is_symlink() or not path.is_file()
+        if not tampered:
+            try:
+                tampered = path.read_bytes() != expected_raw
+            except OSError:
+                tampered = True
+        before_snap = memory_before
+    else:
+        try:
+            if path.is_symlink() or not path.is_file():
+                raise ValueError("invalid protected baseline")
+            raw = path.read_bytes()
+            stored = json.loads(raw)
+            if (not isinstance(stored, dict) or set(stored) != {"before"} or
+                    not isinstance(stored["before"], dict) or raw != canonical_bytes(stored)):
+                raise ValueError("invalid protected baseline")
+            before_snap = stored["before"]
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            tampered = True
+            before_snap = {}
     after_snap = protected_snapshot(spec["repo"])
-    before_snap = stored.get("before", {})
     keys = sorted(set(before_snap) | set(after_snap))
     violations = [f"<protected:{key}>" for key in keys if before_snap.get(key) != after_snap.get(key)]
-    stored["violations"] = violations
-    path.chmod(0o600)
-    path.write_bytes(canonical_bytes(stored))
+    if tampered:
+        violations = sorted(set(violations + [baseline_violation]))
+    record = canonical_bytes({"before": before_snap, "violations": violations})
+    if path.is_symlink():
+        path.unlink()
+    if path.exists():
+        path.chmod(0o600)
+    path.write_bytes(record)
     path.chmod(0o400)
     return violations
 
@@ -165,8 +248,10 @@ def capture_before(spec_path, digest):
         fail("Git HEAD before launch does not match the authorized base commit")
     if before["status_entry_count"] != 0 or before["dirty_paths"]:
         fail("workspace must be clean at the attributable before snapshot")
+    before_snap = protected_snapshot(spec["repo"])
+    _PROTECTED_BASELINES[spec["run_id"]] = dict(before_snap)
     protected_path = _protected_snapshot_file(spec, create=True)
-    protected_path.write_bytes(canonical_bytes({"before": protected_snapshot(spec["repo"])}))
+    protected_path.write_bytes(canonical_bytes({"before": before_snap}))
     protected_path.chmod(0o400)
     return before
 
@@ -195,7 +280,7 @@ def in_scope(path, allowed):
     return any(glob_regex(pattern).fullmatch(path) for pattern in allowed)
 
 
-def git_delta(spec, before):
+def git_delta(spec, before, protected_before=None):
     repo = Path(spec["repo"])
     after = snapshot(repo)
     base = before["head"]
@@ -205,7 +290,7 @@ def git_delta(spec, before):
     commits = [line for line in commits_raw.decode().splitlines() if line]
     changed = dirty_paths(repo, base)
     violations = [path for path in changed if not in_scope(path, spec["write_scope"])]
-    violations = sorted(set(violations + protected_violations(spec)))
+    violations = sorted(set(violations + protected_violations(spec, protected_before=protected_before, finalize=True)))
     if not ancestor:
         violations = sorted(set(violations + ["<history-diverged>"]))
     return after, commits, changed, {
@@ -302,7 +387,7 @@ def _validate_sourced_scalar(label, item, kind):
 
 
 def build_receipt(*, spec_path, digest, before, started_at, finished_at, outcome,
-                  exit_code, log_path, task=None, tier=None, observation=None):
+                  exit_code, log_path, task=None, tier=None, observation=None, protected_before=None):
     spec, raw = load_persisted(spec_path)
     if spec_sha256(raw) != digest:
         fail("execution spec SHA-256 does not match exact persisted bytes")
@@ -329,7 +414,7 @@ def build_receipt(*, spec_path, digest, before, started_at, finished_at, outcome
         fail("git_before has invalid fields")
     if before["head"] != spec["base_commit"] or before["status_entry_count"] != 0 or before["dirty_paths"]:
         fail("git_before is not the clean authorized base state")
-    after, commits, changed, scope = git_delta(spec, before)
+    after, commits, changed, scope = git_delta(spec, before, protected_before=protected_before)
     workspace_changed = before["head"] != after["head"] or bool(changed)
     if observation is None:
         observation = all_unknown()

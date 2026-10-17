@@ -108,6 +108,18 @@ class ExecutionReceiptObservation(unittest.TestCase):
         bin_dir.mkdir()
         provider_stub = '''#!/usr/bin/env python3
 import json, os, pathlib, sys
+spec = json.loads(next(pathlib.Path('.tasks/specs').glob('*.json')).read_text())
+action = os.environ.get('PROVIDER_ACTION')
+if action == 'protected-volatile':
+    (pathlib.Path.home() / '.claude/sessions').mkdir(parents=True, exist_ok=True)
+    (pathlib.Path.home() / '.claude/sessions/67107.abc.key').write_text('session')
+    p = pathlib.Path.home() / '.claude/plugins/synced/p/.in_use'
+    p.mkdir(parents=True, exist_ok=True); (p / '67107').write_text('active')
+    p = pathlib.Path.home() / '.claude/projects/p'; p.mkdir(parents=True, exist_ok=True)
+    (p / 'transcript.jsonl').write_text('{}\\n')
+if action == 'protected-tamper':
+    (pathlib.Path.home() / '.claude/settings.json').write_text('{}')
+    (pathlib.Path('.tasks/specs') / (spec['run_id'] + '.protected')).unlink()
 pathlib.Path('.tasks/invoked.json').write_text(json.dumps({'provider': pathlib.Path(sys.argv[0]).name}))
 raise SystemExit(0)
 '''
@@ -117,9 +129,11 @@ raise SystemExit(0)
     def tearDown(self):
         shutil.rmtree(self.parent)
 
-    def invoke(self, args):
+    def invoke(self, args, extra_env=None):
         env = dict(os.environ, PATH=f"{self.root / 'bin'}:{os.environ['PATH']}",
                    PYTHONDONTWRITEBYTECODE="1", SPAWN_WORKER_TIMEOUT_SECS="0")
+        if extra_env:
+            env.update(extra_env)
         return subprocess.run(args, cwd=self.root, env=env, text=True, capture_output=True)
 
     def spawn_receipt(self):
@@ -133,6 +147,29 @@ raise SystemExit(0)
         path = receipts[0]
         receipt = json.loads(path.read_text())
         return path, receipt
+
+    def test_protected_snapshot_in_memory_baseline_allowlist_and_tamper_detection(self):
+        home = self.parent / "fake-home"
+        (home / ".claude").mkdir(parents=True)
+        args = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                "--model", "model", "--feature", "F001"]
+        for action, expected in (
+            ("protected-volatile", ("pass", [])),
+            ("protected-tamper", ("fail", None)),
+        ):
+            with self.subTest(action=action):
+                result = self.invoke(args, {"HOME": str(home), "PROVIDER_ACTION": action})
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                receipt_path = next((self.root / ".tasks/receipts").glob("*.json"))
+                receipt = json.loads(receipt_path.read_text())
+                self.assertEqual(receipt["scope"]["result"], expected[0])
+                if expected[1] is not None:
+                    self.assertEqual(receipt["scope"]["violations"], expected[1])
+                else:
+                    run_id = receipt["run_id"]
+                    self.assertIn(f"<protected:.tasks/specs/{run_id}.protected>", receipt["scope"]["violations"])
+                    self.assertIn("<protected:~/.claude/settings.json>", receipt["scope"]["violations"])
+                shutil.rmtree(self.root / ".tasks")
 
     def write_canonical(self, path, receipt):
         path.chmod(0o600)

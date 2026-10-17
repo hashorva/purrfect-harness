@@ -408,6 +408,16 @@ check "claude deny-list blocks rm -rf" \
   sh -c "grep -qF -- 'Bash(*rm -rf *)' '$CLAUDE_OUT'"
 check "claude deny-list blocks rm -fr" \
   sh -c "grep -qF -- 'Bash(*rm -fr *)' '$CLAUDE_OUT'"
+check "claude deny-list blocks recursive rm" \
+  sh -c "grep -qF -- 'Bash(*rm -r*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks find delete" \
+  sh -c "grep -qF -- 'Bash(*find*-delete*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks rmtree" \
+  sh -c "grep -qF -- 'Bash(*rmtree*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks exec rm" \
+  sh -c "grep -qF -- 'Bash(*-exec rm*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks parent edit globs" \
+  sh -c "grep -qF -- 'Edit(../../**)' '$CLAUDE_OUT'"
 check "claude deny-list blocks git push" \
   sh -c "grep -qF -- 'Bash(*git*push*)' '$CLAUDE_OUT'"
 check "claude deny-list blocks git reset hard" \

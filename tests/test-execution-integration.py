@@ -98,6 +98,18 @@ if wait_for:
     while not pathlib.Path(wait_for).exists():
         time.sleep(0.02)
 action = os.environ.get('PROVIDER_ACTION', 'noop')
+if action == 'protected-volatile':
+    home = pathlib.Path.home()
+    (home / '.claude/sessions').mkdir(parents=True, exist_ok=True)
+    (home / '.claude/sessions/67107.key').write_text('session')
+    active = home / '.claude/plugins/synced/x/.in_use'
+    active.mkdir(parents=True, exist_ok=True)
+    (active / '67107').write_text('active')
+if action == 'protected-tamper':
+    home = pathlib.Path.home()
+    (home / '.claude/settings.json').write_text('{}')
+    spec = json.loads(next(pathlib.Path('.tasks/specs').glob('*.json')).read_text())
+    (pathlib.Path('.tasks/specs') / (spec['run_id'] + '.protected')).unlink()
 if action in ('dirty', 'commit', 'mixed'):
     pathlib.Path('allowed.txt').write_text(f'allowed change {time.time_ns()}\\n')
 if action == 'outside':
@@ -420,6 +432,9 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                         patterns = invoked["argv"][invoked["argv"].index("--disallowedTools") + 1].split(",")
                         for literal in (
                             "Bash(*rm -rf *)", "Bash(*rm -fr *)", "Bash(*rm --recursive*)", "Bash(*git*push*)",
+                            "Bash(*rm -r*)", "Bash(*find*-delete*)", "Bash(*rmtree*)", "Bash(*-exec rm*)",
+                            "Edit(../../**)", "Edit(../../../**)", "Edit(~/.gitconfig)", "Edit(~/.claude.json)",
+                            "Edit(~/Library/LaunchAgents/**)", "Edit(.git/info/**)",
                             "Bash(*git*reset*--hard*)", "Bash(*git*clean*-f*)", "Bash(*git*clean*-d*)",
                             "Bash(*git*clean*-x*)", "Bash(*git*checkout*-f*)", "Bash(*git*branch*-D*)",
                             "Bash(*git*stash*clear*)", "Bash(*git*config*alias.*)", "Bash(*chmod*-R*)",
@@ -430,6 +445,27 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                     if provider == "agy":
                         self.assertEqual(invoked["argv"][-2:], ["-p", spec["prompt"]])
                     self.clean_runs()
+
+    def test_protected_baseline_tamper_and_claude_volatile_ignore_through_runner(self):
+        home = self.parent / "fake-home"
+        (home / ".claude").mkdir(parents=True)
+        self.write_fleet("codex", "protected-model", "medium", "unknown")
+        args = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                "--model", "protected-model", "--feature", "F001"]
+        for action in ("protected-volatile", "protected-tamper"):
+            with self.subTest(action=action):
+                result = self.invoke(args, env={"HOME": str(home), "PROVIDER_ACTION": action})
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                receipt_path = next((self.root / ".tasks/receipts").glob("*.json"))
+                receipt = json.loads(receipt_path.read_text())
+                if action == "protected-volatile":
+                    self.assertEqual(receipt["scope"]["result"], "pass")
+                    self.assertEqual(receipt["scope"]["violations"], [])
+                else:
+                    self.assertEqual(receipt["scope"]["result"], "fail")
+                    self.assertIn(f"<protected:.tasks/specs/{receipt['run_id']}.protected>", receipt["scope"]["violations"])
+                    self.assertIn("<protected:~/.claude/settings.json>", receipt["scope"]["violations"])
+                self.clean_runs()
 
     def test_cursor_alias_persists_agent_contract_through_wrappers(self):
         model, speed = "cursor-model-fast", "fast"
