@@ -10,10 +10,49 @@ import sys
 
 from execution_spec import SpecError, load_persisted
 
-CLAUDE_DISALLOWED_TOOLS = (
-    "Bash(rm -rf *),Bash(git push*),Bash(git reset --hard*),"
-    "Bash(git checkout -- *),Bash(git clean -f*)"
+CLAUDE_DISALLOWED_TOOLS_PATTERNS = (
+    "Bash(*rm -rf *)",
+    "Bash(*rm -fr *)",
+    "Bash(*rm -Rf *)",
+    "Bash(*rm -fR *)",
+    "Bash(*rm -r -f *)",
+    "Bash(*rm -f -r *)",
+    "Bash(*rm --recursive*)",
+    "Bash(*rm --force*)",
+    "Bash(*git*push*)",
+    "Bash(*git*reset*--hard*)",
+    "Bash(*git*checkout*-- *)",
+    "Bash(*git*checkout*-f*)",
+    "Bash(*git*checkout*--force*)",
+    "Bash(*git*clean*-f*)",
+    "Bash(*git*clean*-d*)",
+    "Bash(*git*clean*-x*)",
+    "Bash(*git*clean*--force*)",
+    "Bash(*git*branch*-D*)",
+    "Bash(*git*stash*clear*)",
+    "Bash(*git*stash*drop*)",
+    "Bash(*git*config*alias.*)",
+    "Bash(*git*config*--global*)",
+    "Bash(*chmod*-R*)",
+    "Bash(*chmod*--recursive*)",
+    "Bash(sudo *)",
+    "Bash(* sudo *)",
+    "Bash(*curl*|*sh*)",
+    "Bash(*wget*|*sh*)",
+    "Edit(../*)",
+    "Write(../*)",
+    "Edit(~/.claude/**)",
+    "Write(~/.claude/**)",
+    "Edit(~/.zshrc)",
+    "Write(~/.zshrc)",
+    "Edit(~/.ssh/**)",
+    "Write(~/.ssh/**)",
+    "Edit(.git/hooks/**)",
+    "Write(.git/hooks/**)",
+    "Edit(.git/config)",
+    "Write(.git/config)",
 )
+CLAUDE_DISALLOWED_TOOLS = ",".join(CLAUDE_DISALLOWED_TOOLS_PATTERNS)
 
 
 def provider_contract(spec):
@@ -50,6 +89,9 @@ def provider_contract(spec):
         # an unattended run must not wait on an MCP server (--strict-mcp-config starts none).
         if contract_version >= 7:
             argv.extend(["--output-format", "stream-json", "--verbose", "--strict-mcp-config"])
+        elif contract_version >= 6:
+            argv.extend(["--output-format", "json"])
+        if contract_version >= 9:
             mcp_config = spec.get("mcp_config")
             if mcp_config is not None:
                 if isinstance(mcp_config, str) and mcp_config.strip():
@@ -59,10 +101,10 @@ def provider_contract(spec):
                     argv.extend(["--mcp-config", *mcp_config])
                 else:
                     raise SpecError("claude mcp_config must be a non-empty string or list of strings")
-        elif contract_version >= 6:
-            argv.extend(["--output-format", "json"])
-        argv.extend(["--permission-mode", "bypassPermissions", "--disallowedTools", CLAUDE_DISALLOWED_TOOLS,
-                     "--model", model, "--effort", effort])
+            argv.extend(["--permission-mode", "bypassPermissions", "--add-dir", str(Path(repo)),
+                         "--disallowedTools", CLAUDE_DISALLOWED_TOOLS, "--model", model, "--effort", effort])
+        else:
+            argv.extend(["--model", model, "--effort", effort, "--allowedTools", "Read,Write,Edit,Bash"])
     elif provider == "agy":
         if effort not in {"low", "medium", "high"}:
             raise SpecError("agy does not support requested effort")

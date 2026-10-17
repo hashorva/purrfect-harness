@@ -398,12 +398,36 @@ check "claude receives the prompt immediately after -p" \
   sh -c "grep -q -- '-p Read ' '$CLAUDE_OUT'"
 check "claude does not use --allowedTools" \
   sh -c "! grep -q -- '--allowedTools' '$CLAUDE_OUT'"
+check "claude uses strict mcp config" \
+  sh -c "grep -q -- '--strict-mcp-config' '$CLAUDE_OUT'"
 check "claude uses bypassPermissions" \
   sh -c "grep -q -- '--permission-mode bypassPermissions' '$CLAUDE_OUT'"
-check "claude uses the disallowed tools list" \
-  sh -c "grep -q -- '--disallowedTools Bash(rm -rf' '$CLAUDE_OUT'"
-check "claude prompt precedes --disallowedTools" \
-  sh -c "! grep -qE -- '--disallowedTools.* Read ' '$CLAUDE_OUT'"
+check "claude uses add-dir" \
+  sh -c "grep -q -- '--add-dir' '$CLAUDE_OUT'"
+check "claude deny-list blocks rm -rf" \
+  sh -c "grep -q -- 'Bash(*rm -rf *)' '$CLAUDE_OUT'"
+check "claude deny-list blocks rm -fr" \
+  sh -c "grep -q -- 'Bash(*rm -fr *)' '$CLAUDE_OUT'"
+check "claude deny-list blocks git push" \
+  sh -c "grep -q -- 'Bash(*git*push*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks git reset hard" \
+  sh -c "grep -q -- 'Bash(*git*reset*--hard*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks git clean -f" \
+  sh -c "grep -q -- 'Bash(*git*clean*-f*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks git branch -D" \
+  sh -c "grep -q -- 'Bash(*git*branch*-D*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks chmod -R" \
+  sh -c "grep -q -- 'Bash(*chmod*-R*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks sudo" \
+  sh -c "grep -q -- 'Bash(sudo *)' '$CLAUDE_OUT'"
+check "claude deny-list blocks curl pipe sh" \
+  sh -c "grep -q -- 'Bash(*curl*|*sh*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks .git/config edits" \
+  sh -c "grep -q -- 'Edit(.git/config)' '$CLAUDE_OUT'"
+check "claude deny-list blocks ~/.claude edits" \
+  sh -c "grep -q -- 'Edit(~/.claude/**)' '$CLAUDE_OUT'"
+check "claude prompt precedes add-dir and disallowedTools" \
+  sh -c "! grep -qE -- '--add-dir.* Read ' '$CLAUDE_OUT' && ! grep -qE -- '--disallowedTools.* Read ' '$CLAUDE_OUT'"
 
 # ---- codex prompt/argument and stdin regressions ----
 # Keep this stub's stdin read: codex waits for additional input unless its stdin is

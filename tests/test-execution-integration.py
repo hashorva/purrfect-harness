@@ -318,7 +318,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             return ["exec", "--json", "-C", repo, "-s", "workspace-write", "--add-dir", str(Path(repo) / ".git"), "-m", model, "-c", f'model_reasoning_effort="{effort}"', prompt]
         if provider == "claude":
             return ["-p", prompt, "--output-format", "stream-json", "--verbose", "--strict-mcp-config",
-                    "--permission-mode", "bypassPermissions", "--disallowedTools", CLAUDE_DISALLOWED_TOOLS,
+                    "--permission-mode", "bypassPermissions", "--add-dir", repo, "--disallowedTools", CLAUDE_DISALLOWED_TOOLS,
                     "--model", model, "--effort", effort]
         if provider == "agy":
             return ["--dangerously-skip-permissions", "--print-timeout", "30m", "--model", model,
@@ -361,7 +361,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertFalse(receipt["workspace_changed"])
         self.assertEqual(receipt["scope"]["result"], "pass")
         self.assertEqual(spec["schema_version"], 3)
-        self.assertEqual(spec["provider_contract_version"], 8)
+        self.assertEqual(spec["provider_contract_version"], 9)
         self.assertEqual(receipt["log_path"], f".tasks/logs/{spec['run_id']}.log")
         self.assertNotIn(spec["prompt"], json.dumps(receipt))
         invoked = json.loads((self.root / ".tasks/invoked.json").read_text())
@@ -414,7 +414,18 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                     self.assertEqual(invoked["argv"], self.expected_argv(provider, model, "high", speed, spec["prompt"]))
                     if provider == "claude":
                         self.assertNotIn("--allowedTools", invoked["argv"])
+                        self.assertLess(invoked["argv"].index(spec["prompt"]), invoked["argv"].index("--add-dir"))
                         self.assertLess(invoked["argv"].index(spec["prompt"]), invoked["argv"].index("--disallowedTools"))
+                        patterns = invoked["argv"][invoked["argv"].index("--disallowedTools") + 1].split(",")
+                        for literal in (
+                            "Bash(*rm -rf *)", "Bash(*rm -fr *)", "Bash(*rm --recursive*)", "Bash(*git*push*)",
+                            "Bash(*git*reset*--hard*)", "Bash(*git*clean*-f*)", "Bash(*git*clean*-d*)",
+                            "Bash(*git*clean*-x*)", "Bash(*git*checkout*-f*)", "Bash(*git*branch*-D*)",
+                            "Bash(*git*stash*clear*)", "Bash(*git*config*alias.*)", "Bash(*chmod*-R*)",
+                            "Bash(sudo *)", "Bash(*curl*|*sh*)", "Edit(../*)", "Edit(~/.claude/**)",
+                            "Edit(~/.zshrc)", "Edit(~/.ssh/**)", "Edit(.git/hooks/**)", "Edit(.git/config)",
+                        ):
+                            self.assertIn(literal, patterns)
                     if provider == "agy":
                         self.assertEqual(invoked["argv"][-2:], ["-p", spec["prompt"]])
                     self.clean_runs()

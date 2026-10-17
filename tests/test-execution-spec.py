@@ -9,12 +9,15 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 import uuid
 
 sys.dont_write_bytecode = True
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import execution_spec  # noqa: E402
+import execution_receipt  # noqa: E402
+import execute_provider  # noqa: E402
 from execute_provider import CLAUDE_DISALLOWED_TOOLS, SpecError, provider_contract  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,8 +33,9 @@ class ExecutionSpecContract(unittest.TestCase):
         self.command(["git", "init", "-q"], cwd=self.repo)
         self.command(["git", "config", "user.email", "test@example.invalid"], cwd=self.repo)
         self.command(["git", "config", "user.name", "Execution Spec Test"], cwd=self.repo)
+        (self.repo / ".gitignore").write_text(".tasks/\n")
         (self.repo / "README.md").write_text("fixture\n")
-        self.command(["git", "add", "README.md"], cwd=self.repo)
+        self.command(["git", "add", ".gitignore", "README.md"], cwd=self.repo)
         self.command(["git", "commit", "-qm", "fixture"], cwd=self.repo)
         self.commit = self.command(["git", "rev-parse", "HEAD"], cwd=self.repo).stdout.strip()
         self.sentinel = self.tmp / "provider-sentinel"
@@ -157,7 +161,8 @@ class ExecutionSpecContract(unittest.TestCase):
         self.assertEqual(self.persist(self.spec_v3(provider_contract_version=6), check=False).returncode, 0)
         self.assertEqual(self.persist(self.spec_v3(provider_contract_version=7), check=False).returncode, 0)
         self.assertEqual(self.persist(self.spec_v3(provider_contract_version=8), check=False).returncode, 0)
-        self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=9), check=False).returncode, 0)
+        self.assertEqual(self.persist(self.spec_v3(provider_contract_version=9), check=False).returncode, 0)
+        self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=10), check=False).returncode, 0)
         self.assertNotEqual(self.persist(self.spec_v3(provider_contract_version=True), check=False).returncode, 0)
 
     def test_persistence_is_canonical_hashed_and_no_clobber(self):
@@ -178,9 +183,8 @@ class ExecutionSpecContract(unittest.TestCase):
     def test_versioned_exact_dry_run_contract_for_every_provider_and_role(self):
         contract_one = {
             "codex": lambda s: ["codex", "exec", "-C", str(self.repo), "-s", "workspace-write", "-m", "test-model", "-c", 'model_reasoning_effort="medium"', "exact prompt"],
-            "claude": lambda s: ["claude", "-p", "exact prompt", "--permission-mode", "bypassPermissions",
-                                 "--disallowedTools", CLAUDE_DISALLOWED_TOOLS,
-                                 "--model", "test-model", "--effort", "medium"],
+            "claude": lambda s: ["claude", "-p", "exact prompt", "--model", "test-model", "--effort", "medium",
+                                 "--allowedTools", "Read,Write,Edit,Bash"],
             "agy": lambda s: ["agy", "--dangerously-skip-permissions", "--print-timeout", "30m", "--model", "test-model", "--effort", "medium", "-p", "exact prompt"],
             "agent": lambda s: ["agent", "-p", "--force", "--trust", "--workspace", str(self.repo), "--model", "test-model[effort=medium,fast=false]", "exact prompt"],
         }
@@ -277,21 +281,19 @@ class ExecutionSpecContract(unittest.TestCase):
             prompt="exact prompt", write_scope=["allowed.txt"],
         )
         self.assertEqual(spec["schema_version"], 3)
-        self.assertEqual(spec["provider_contract_version"], 8)
+        self.assertEqual(spec["provider_contract_version"], 9)
         self.assertEqual(json.loads(path.read_text()), spec)
 
     def test_contract_seven_claude_streams_with_no_mcp_servers_for_every_role(self):
-        tail = ["--permission-mode", "bypassPermissions", "--disallowedTools", CLAUDE_DISALLOWED_TOOLS,
-                "--model", "test-model", "--effort", "medium"]
+        tail = ["--model", "test-model", "--effort", "medium", "--allowedTools", "Read,Write,Edit,Bash"]
         for role in ("worker", "brain"):
             with self.subTest(role=role):
                 path, digest = self.persisted(self.spec_v3(provider="claude", role=role, provider_contract_version=7))
                 argv = json.loads(self.adapter(path, digest).stdout)["argv"]
                 self.assertEqual(argv, ["claude", "-p", "exact prompt", "--output-format", "stream-json",
                                         "--verbose", "--strict-mcp-config", *tail])
-                self.assertNotIn("--allowedTools", argv)
-                self.assertEqual(argv[argv.index("--permission-mode") + 1], "bypassPermissions")
-                self.assertEqual(argv[argv.index("--disallowedTools") + 1], CLAUDE_DISALLOWED_TOOLS)
+                self.assertNotIn("--permission-mode", argv)
+                self.assertNotIn("--disallowedTools", argv)
         for provider, extra in (("codex", {}), ("claude", {}), ("agent", {"speed": "standard"})):
             with self.subTest(provider=provider):
                 argvs = []
@@ -304,7 +306,7 @@ class ExecutionSpecContract(unittest.TestCase):
         for config, emitted in (("/tmp/mcp.json", ["/tmp/mcp.json"]),
                                 (["--a", "--b"], ["--a", "--b"])):
             with self.subTest(config=config):
-                argv, _ = provider_contract(self.spec_v3(provider="claude", provider_contract_version=7,
+                argv, _ = provider_contract(self.spec_v3(provider="claude", provider_contract_version=9,
                                                          mcp_config=config))
                 strict = argv.index("--strict-mcp-config")
                 self.assertEqual(argv[strict + 1:strict + 2 + len(emitted)], ["--mcp-config", *emitted])
@@ -312,8 +314,103 @@ class ExecutionSpecContract(unittest.TestCase):
             with self.subTest(config=config):
                 with self.assertRaisesRegex(SpecError,
                                             "claude mcp_config must be a non-empty string or list of strings"):
-                    provider_contract(self.spec_v3(provider="claude", provider_contract_version=7,
+                    provider_contract(self.spec_v3(provider="claude", provider_contract_version=9,
                                                    mcp_config=config))
+
+    def test_contract_nine_claude_unlocks_tools_pins_denylist_and_guards_protected_paths(self):
+        expected_patterns = (
+            "Bash(*rm -rf *)",
+            "Bash(*rm -fr *)",
+            "Bash(*rm -Rf *)",
+            "Bash(*rm -fR *)",
+            "Bash(*rm -r -f *)",
+            "Bash(*rm -f -r *)",
+            "Bash(*rm --recursive*)",
+            "Bash(*rm --force*)",
+            "Bash(*git*push*)",
+            "Bash(*git*reset*--hard*)",
+            "Bash(*git*checkout*-- *)",
+            "Bash(*git*checkout*-f*)",
+            "Bash(*git*checkout*--force*)",
+            "Bash(*git*clean*-f*)",
+            "Bash(*git*clean*-d*)",
+            "Bash(*git*clean*-x*)",
+            "Bash(*git*clean*--force*)",
+            "Bash(*git*branch*-D*)",
+            "Bash(*git*stash*clear*)",
+            "Bash(*git*stash*drop*)",
+            "Bash(*git*config*alias.*)",
+            "Bash(*git*config*--global*)",
+            "Bash(*chmod*-R*)",
+            "Bash(*chmod*--recursive*)",
+            "Bash(sudo *)",
+            "Bash(* sudo *)",
+            "Bash(*curl*|*sh*)",
+            "Bash(*wget*|*sh*)",
+            "Edit(../*)",
+            "Write(../*)",
+            "Edit(~/.claude/**)",
+            "Write(~/.claude/**)",
+            "Edit(~/.zshrc)",
+            "Write(~/.zshrc)",
+            "Edit(~/.ssh/**)",
+            "Write(~/.ssh/**)",
+            "Edit(.git/hooks/**)",
+            "Write(.git/hooks/**)",
+            "Edit(.git/config)",
+            "Write(.git/config)",
+        )
+        for role in ("worker", "brain"):
+            with self.subTest(role=role):
+                argv, _ = provider_contract(self.spec_v3(provider="claude", role=role, provider_contract_version=9))
+                self.assertIn("--strict-mcp-config", argv)
+                self.assertEqual(argv[argv.index("--add-dir") + 1], str(self.repo))
+                self.assertEqual(argv[argv.index("--disallowedTools") + 1].split(","), list(expected_patterns))
+        original = execute_provider.CLAUDE_DISALLOWED_TOOLS
+        try:
+            execute_provider.CLAUDE_DISALLOWED_TOOLS = "Bash(*rm -rf *)"
+            argv, _ = provider_contract(self.spec_v3(provider="claude", provider_contract_version=9))
+            with self.assertRaises(AssertionError):
+                self.assertEqual(argv[argv.index("--disallowedTools") + 1].split(","), list(expected_patterns))
+        finally:
+            execute_provider.CLAUDE_DISALLOWED_TOOLS = original
+
+        home = self.tmp / "home"
+        home.mkdir()
+        (home / ".claude").mkdir()
+        (home / ".ssh").mkdir()
+        (home / ".zshrc").write_text("# zshrc\n", encoding="utf-8")
+        cases = [
+            (lambda: (self.repo / ".git" / "config").write_text(
+                (self.repo / ".git" / "config").read_text() + "\n# touched\n", encoding="utf-8"),
+             "<protected:.git/config>"),
+            (lambda: (self.repo / ".git" / "hooks" / "pre-commit").write_text("#!/bin/sh\n", encoding="utf-8"),
+             "<protected:.git/hooks/pre-commit>"),
+            (lambda: (home / ".claude" / "settings.json").write_text("{}", encoding="utf-8"),
+             "<protected:~/.claude/settings.json>"),
+            (lambda: (home / ".zshrc").write_text("# changed\n", encoding="utf-8"),
+             "<protected:~/.zshrc>"),
+            (lambda: (home / ".ssh" / "authorized_keys").write_text("key\n", encoding="utf-8"),
+             "<protected:~/.ssh/authorized_keys>"),
+        ]
+        for mutate, violation in cases:
+            with self.subTest(violation=violation):
+                path, digest = self.persisted(self.spec_v3(provider="claude", provider_contract_version=9))
+                spec = json.loads(path.read_text())
+                with unittest.mock.patch.dict(os.environ, {"HOME": str(home)}):
+                    before = execution_receipt.capture_before(str(path), digest)
+                    mutate()
+                    log_dir = self.repo / ".tasks" / "logs"
+                    log_dir.mkdir(parents=True, exist_ok=True)
+                    log_path = log_dir / f"{spec['run_id']}.log"
+                    log_path.write_text("log\n", encoding="utf-8")
+                    receipt = execution_receipt.build_receipt(
+                        spec_path=str(path), digest=digest, before=before,
+                        started_at="2026-01-01T00:00:00Z", finished_at="2026-01-01T00:01:00Z",
+                        outcome="completed", exit_code=0, log_path=str(log_path),
+                    )
+                self.assertEqual(receipt["scope"]["result"], "fail")
+                self.assertIn(violation, receipt["scope"]["violations"])
 
     def test_contract_eight_agy_streams_and_validates_effort_before_launch(self):
         env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", EXECUTION_SENTINEL=str(self.sentinel))
@@ -349,8 +446,7 @@ class ExecutionSpecContract(unittest.TestCase):
             ("codex", {}, ["codex", "exec", "--json", "-C", repo, "-s", "workspace-write", "--add-dir", git_dir,
                            "-m", "test-model", "-c", 'model_reasoning_effort="medium"', "exact prompt"]),
             ("claude", {}, ["claude", "-p", "exact prompt", "--output-format", "json",
-                            "--permission-mode", "bypassPermissions", "--disallowedTools", CLAUDE_DISALLOWED_TOOLS,
-                            "--model", "test-model", "--effort", "medium"]),
+                            "--model", "test-model", "--effort", "medium", "--allowedTools", "Read,Write,Edit,Bash"]),
             ("agy", {}, ["agy", "--dangerously-skip-permissions", "--print-timeout", "30m", "--model", "test-model",
                          "--effort", "medium", "-p", "exact prompt"]),
             ("agent", {"speed": "standard"}, ["cursor-agent", "-p", "--force", "--trust", "--output-format", "stream-json",

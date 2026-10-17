@@ -16,6 +16,10 @@ from observe_output import all_unknown
 
 
 OUTCOMES = {"completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed"}
+CLAUDE_VOLATILE_DIRS = {
+    "projects", "todos", "statsig", "debug", "shell-snapshots", "ide", "telemetry",
+    "session-env", "file-history", "plans", "tasks", "backups", "cache",
+}
 COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
 RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$")
 SOURCES = {"observed", "estimated", "unknown"}
@@ -73,6 +77,71 @@ def dirty_paths(repo, reference="HEAD"):
     return sorted(set(nul_paths(tracked, "tracked Git delta") + nul_paths(untracked, "untracked Git delta")))
 
 
+def _protected_digest(path):
+    if path.is_symlink():
+        target = os.readlink(path)
+        return hashlib.sha256(b"symlink:" + target.encode("utf-8", "surrogateescape")).hexdigest()
+    if path.is_file():
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    return None
+
+
+def _protected_tree(snap, root, prefix, prune_top_dirs=None):
+    if not root.exists():
+        return
+    prune_top_dirs = prune_top_dirs or set()
+    for path in sorted(root.rglob("*")):
+        if path.is_dir():
+            continue
+        relative = path.relative_to(root).as_posix()
+        if prune_top_dirs and relative.split("/", 1)[0] in prune_top_dirs:
+            continue
+        digest = _protected_digest(path)
+        if digest is not None:
+            snap[f"{prefix}/{relative}"] = digest
+
+
+def protected_snapshot(repo):
+    """Return a deterministic digest map for paths that must not change during a run."""
+    repo = Path(repo)
+    home = Path(os.environ.get("HOME") or str(Path.home()))
+    snap = {}
+    git_config = repo / ".git" / "config"
+    digest = _protected_digest(git_config)
+    if digest is not None:
+        snap[".git/config"] = digest
+    _protected_tree(snap, repo / ".git" / "hooks", ".git/hooks")
+    zshrc = home / ".zshrc"
+    digest = _protected_digest(zshrc)
+    if digest is not None:
+        snap["~/.zshrc"] = digest
+    _protected_tree(snap, home / ".ssh", "~/.ssh")
+    _protected_tree(snap, home / ".claude", "~/.claude", prune_top_dirs=CLAUDE_VOLATILE_DIRS)
+    return snap
+
+
+def _protected_snapshot_file(spec, create=False):
+    return artifact_directory(spec["repo"], "specs", create=create) / f"{spec['run_id']}.protected"
+
+
+def protected_violations(spec):
+    path = _protected_snapshot_file(spec, create=False)
+    if not path.is_file():
+        return []
+    stored = json.loads(path.read_bytes())
+    if "violations" in stored:
+        return stored["violations"]
+    after_snap = protected_snapshot(spec["repo"])
+    before_snap = stored.get("before", {})
+    keys = sorted(set(before_snap) | set(after_snap))
+    violations = [f"<protected:{key}>" for key in keys if before_snap.get(key) != after_snap.get(key)]
+    stored["violations"] = violations
+    path.chmod(0o600)
+    path.write_bytes(canonical_bytes(stored))
+    path.chmod(0o400)
+    return violations
+
+
 def snapshot(repo):
     repo = Path(repo)
     head = git_bytes(repo, "rev-parse", "HEAD").stdout.decode().strip().lower()
@@ -96,6 +165,9 @@ def capture_before(spec_path, digest):
         fail("Git HEAD before launch does not match the authorized base commit")
     if before["status_entry_count"] != 0 or before["dirty_paths"]:
         fail("workspace must be clean at the attributable before snapshot")
+    protected_path = _protected_snapshot_file(spec, create=True)
+    protected_path.write_bytes(canonical_bytes({"before": protected_snapshot(spec["repo"])}))
+    protected_path.chmod(0o400)
     return before
 
 
@@ -133,6 +205,7 @@ def git_delta(spec, before):
     commits = [line for line in commits_raw.decode().splitlines() if line]
     changed = dirty_paths(repo, base)
     violations = [path for path in changed if not in_scope(path, spec["write_scope"])]
+    violations = sorted(set(violations + protected_violations(spec)))
     if not ancestor:
         violations = sorted(set(violations + ["<history-diverged>"]))
     return after, commits, changed, {
@@ -424,6 +497,7 @@ def validate_receipt(receipt, receipt_path):
     ).returncode != 0
     if history_diverged:
         expected_violations = sorted(set(expected_violations + ["<history-diverged>"]))
+    expected_violations = sorted(set(expected_violations + protected_violations(spec)))
     if scope["violations"] != expected_violations or scope["result"] != ("pass" if not expected_violations else "fail"):
         fail("receipt scope result contradicts changed paths")
     linked = receipt_link(
