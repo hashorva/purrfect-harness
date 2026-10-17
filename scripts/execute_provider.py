@@ -10,6 +10,13 @@ import sys
 
 from execution_spec import SpecError, load_persisted
 
+CODEX_CONFIG_OVERRIDES = (
+    "-c", "sandbox_workspace_write.network_access=true",
+    "-c", 'web_search="live"',
+    "-c", 'mcp_servers.cua_repl={command="true",enabled=false}',
+    "-c", 'mcp_servers.node_repl={command="true",enabled=false}',
+)
+
 CLAUDE_DISALLOWED_TOOLS_PATTERNS = (
     "Bash(*rm -rf *)",
     "Bash(*rm -fr *)",
@@ -78,7 +85,7 @@ def provider_contract(spec):
         if contract_version >= 6:
             argv.append("--json")
         argv.extend(["-C", repo, "-s", "workspace-write", *codex_git_dir, *codex_agents_dir, "-m", model,
-                     "-c", f'model_reasoning_effort="{effort}"', prompt])
+                     "-c", f'model_reasoning_effort="{effort}"', *CODEX_CONFIG_OVERRIDES, prompt])
     elif provider == "claude":
         if effort not in {"low", "medium", "high", "xhigh", "max"}:
             raise SpecError("claude does not support requested effort")
