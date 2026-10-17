@@ -180,3 +180,4 @@
 {"type":"architect-run","plan":"acc1","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1","input_tokens":255741,"output_tokens":31542,"cache_read_tokens":2713943,"outcome":"done"}
 {"type":"architect-run","plan":"acc2","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1","input_tokens":222373,"output_tokens":39277,"cache_read_tokens":4116593,"outcome":"done"}
 {"run_id":"e08073c3-de44-40ce-b0d2-e092459782be","task":"T-080","category":"f007-acceptance","size":"S","seat":"cursor.economy","model":"composer-2.5","effort":"medium","attempt":1,"outcome":"verify-failed","failure_class":"environment","duration_s":57,"tokens_or_cost":"unknown"}
+{"run_id":"407d8afb-6877-47ed-8de4-522984487257","task":"T-081","category":"f008-acceptance","size":"S","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":1,"outcome":"done","failure_class":"none","duration_s":24,"tokens_or_cost":"unknown"}
