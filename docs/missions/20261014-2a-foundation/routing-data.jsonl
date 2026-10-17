@@ -200,3 +200,5 @@
 {"type":"review","task":"drive-cli+T-053","reviewer":"claude opus (Claude seat)","rung":"escalation (owner-mandated)","verdict":"FAIL","input_tokens":88395,"output_tokens":23437,"cache_read_tokens":1382998}
 {"type":"review","task":"T-055/T-056 evidence","reviewer":"claude opus (Claude seat)","rung":"escalation (owner-mandated)","verdict":"PASS","input_tokens":68254,"output_tokens":9687,"cache_read_tokens":1303399}
 {"type":"note","note":"suite flake seen twice (T-056-R4, T-090 first verification), both passed on rerun while Opus review runs were active; suspected load-sensitive timing test"}
+{"type":"seat-pause","seat":"agy.premium","time":"2026-10-18T00:53+02","error_text":"Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 161h5m43s.","rule":"reset time in the error text is not trusted; probe again after 30 min (about 01:25)"}
+{"type":"plan-reformat","plan":"T-091","planner":"grok-4.7-high (cursor.premium, ask mode)","rung":"3 (Argon quota out)"}
