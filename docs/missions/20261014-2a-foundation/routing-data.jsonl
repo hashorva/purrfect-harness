@@ -173,3 +173,4 @@
 {"type":"architect-run","plan":"T-070-R6","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1","input_tokens":182155,"output_tokens":59537,"cache_read_tokens":1994347,"outcome":"done"}
 {"type":"architect-run","plan":"T-070-R7","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1","input_tokens":107845,"output_tokens":19326,"cache_read_tokens":960668,"outcome":"done"}
 {"run_id":"5c7bc129-b56a-4168-9fc7-33c16e0b7959","task":"T-070-R6","category":"claude-unlock","size":"M","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":7,"outcome":"verify-failed","failure_class":"task","duration_s":218,"tokens_or_cost":"unknown"}
+{"run_id":"77b3e322-6d5f-4a17-a107-44dbcd184dfc","task":"T-070-R8","category":"claude-unlock","size":"M","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":9,"outcome":"done","failure_class":"none","duration_s":169,"tokens_or_cost":"unknown"}
