@@ -405,27 +405,29 @@ check "claude uses bypassPermissions" \
 check "claude uses add-dir" \
   sh -c "grep -q -- '--add-dir' '$CLAUDE_OUT'"
 check "claude deny-list blocks rm -rf" \
-  sh -c "grep -q -- 'Bash(*rm -rf *)' '$CLAUDE_OUT'"
+  sh -c "grep -qF -- 'Bash(*rm -rf *)' '$CLAUDE_OUT'"
 check "claude deny-list blocks rm -fr" \
-  sh -c "grep -q -- 'Bash(*rm -fr *)' '$CLAUDE_OUT'"
+  sh -c "grep -qF -- 'Bash(*rm -fr *)' '$CLAUDE_OUT'"
 check "claude deny-list blocks git push" \
-  sh -c "grep -q -- 'Bash(*git*push*)' '$CLAUDE_OUT'"
+  sh -c "grep -qF -- 'Bash(*git*push*)' '$CLAUDE_OUT'"
 check "claude deny-list blocks git reset hard" \
-  sh -c "grep -q -- 'Bash(*git*reset*--hard*)' '$CLAUDE_OUT'"
+  sh -c "grep -qF -- 'Bash(*git*reset*--hard*)' '$CLAUDE_OUT'"
 check "claude deny-list blocks git clean -f" \
-  sh -c "grep -q -- 'Bash(*git*clean*-f*)' '$CLAUDE_OUT'"
+  sh -c "grep -qF -- 'Bash(*git*clean*-f*)' '$CLAUDE_OUT'"
 check "claude deny-list blocks git branch -D" \
-  sh -c "grep -q -- 'Bash(*git*branch*-D*)' '$CLAUDE_OUT'"
+  sh -c "grep -qF -- 'Bash(*git*branch*-D*)' '$CLAUDE_OUT'"
 check "claude deny-list blocks chmod -R" \
-  sh -c "grep -q -- 'Bash(*chmod*-R*)' '$CLAUDE_OUT'"
+  sh -c "grep -qF -- 'Bash(*chmod*-R*)' '$CLAUDE_OUT'"
 check "claude deny-list blocks sudo" \
-  sh -c "grep -q -- 'Bash(sudo *)' '$CLAUDE_OUT'"
+  sh -c "grep -qF -- 'Bash(sudo *)' '$CLAUDE_OUT'"
 check "claude deny-list blocks curl pipe sh" \
-  sh -c "grep -q -- 'Bash(*curl*|*sh*)' '$CLAUDE_OUT'"
+  sh -c "grep -qF -- 'Bash(*curl*|*sh*)' '$CLAUDE_OUT'"
 check "claude deny-list blocks .git/config edits" \
-  sh -c "grep -q -- 'Edit(.git/config)' '$CLAUDE_OUT'"
+  sh -c "grep -qF -- 'Edit(.git/config)' '$CLAUDE_OUT'"
 check "claude deny-list blocks ~/.claude edits" \
-  sh -c "grep -q -- 'Edit(~/.claude/**)' '$CLAUDE_OUT'"
+  sh -c "grep -qF -- 'Edit(~/.claude/**)' '$CLAUDE_OUT'"
+check "claude deny-list fixed-string check fails when pattern is absent" \
+  sh -c "! grep -qF -- 'Bash(*absent-sentinel-pattern*)' '$CLAUDE_OUT'"
 check "claude prompt precedes add-dir and disallowedTools" \
   sh -c "! grep -qE -- '--add-dir.* Read ' '$CLAUDE_OUT' && ! grep -qE -- '--disallowedTools.* Read ' '$CLAUDE_OUT'"
 
