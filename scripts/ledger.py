@@ -26,17 +26,8 @@ REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
 SOURCES = ("observed", "estimated", "unknown")
 CONFIGURED_SOURCES = ("observed", "configured", "estimated", "unknown")
 SELF_REPORTED_SOURCES = ("self_reported", "unknown")
-MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}\Z")
-
-
-def valid_model_id(value):
-    if not isinstance(value, str) or "\n" in value or "\r" in value or not MODEL_ID_RE.fullmatch(value):
-        return None
-    try:
-        check_privacy("model", value)
-    except LedgerError:
-        return None
-    return value
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from model_id import MODEL_ID_RE, valid_model_id
 
 
 # Privacy rule, applied to every text value at every nesting level (lists included).
@@ -137,7 +128,8 @@ def check_privacy(path, value, id_field=False):
                 or PROMPT_PREFIX in value or PROMPT_PREFIXES.search(value) or EMAIL.search(value)
                 or ABSOLUTE_PATH.search(value) or SENSITIVE_PATH.search(value) or HIDDEN_CHARS.search(value)
                 or (not id_field and UUID_SHAPE.search(value))
-                or any(pattern.search(value) for pattern in SECRET_PATTERNS)):
+                or any(pattern.search(value) for pattern in SECRET_PATTERNS)
+                or (path == "self_reported_model.value" and valid_model_id(value) is None)):
             fail(path or "row", "privacy")
 
 

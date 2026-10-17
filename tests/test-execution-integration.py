@@ -43,7 +43,7 @@ class WrapperIntegration(unittest.TestCase):
         self.root.mkdir()
         (self.root / "scripts").mkdir()
         for name in ("execution_spec.py", "execution_receipt.py", "execution_runner.py",
-                     "execute_provider.py", "observe_output.py", "fleet_state.py", "dispatch_policy.py",
+                     "execute_provider.py", "observe_output.py", "model_id.py", "fleet_state.py", "dispatch_policy.py",
                      "harness_registry.py", "ledger.py",
                      "spawn-worker.sh", "spawn-brain.sh", "verify-mission.sh", "verification_record.py",
                      "accept-feature.sh", "write-receipt.sh"):
@@ -2007,7 +2007,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             self.assertEqual(row["observed_model"], doc["observation"]["observed_model"])
 
         self.prove_runner_mutation_fails(
-            '"observed_model": {"value": observed_model_flag["value"], "source": observed_model_flag["source"]},',
+            '"observed_model": observed_model_flag,',
             '"observed_model": {"value": spec["model"], "source": observed_model_flag["source"]},',
             check,
         )

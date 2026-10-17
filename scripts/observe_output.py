@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ledger import valid_model_id
+from model_id import valid_model_id
 
 PROVIDERS = ("claude", "codex", "cursor", "agy")
 ALIASES = {"agent": "cursor"}

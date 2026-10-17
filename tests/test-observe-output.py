@@ -209,6 +209,12 @@ class ObserveOutputTest(unittest.TestCase):
                 )
                 self.assertEqual(identity["attributed_source"], "configured")
 
+        proc = subprocess.run(
+            [sys.executable, "-c", "import sys; sys.path.insert(0, 'scripts'); import observe_output; assert 'model_id' in sys.modules and 'ledger' not in sys.modules"],
+            cwd=ROOT, capture_output=True, text=True,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
     def test_observe_self_reported_validates_only_final_top_level_json_object(self):
         prose = (
             "example: "
