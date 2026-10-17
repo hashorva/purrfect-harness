@@ -310,6 +310,7 @@ assert_no_y_answer_event "$events"
 echo "== hostile telemetry question must not receive y"
 rm -f "$sentinel"
 find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+# a second prompt in the same pane is unknown, never answered
 echo "hostile-telemetry"
 cat >"$TMP/fake-hostile-telemetry.py" <<'PY'
 #!/usr/bin/env bash
