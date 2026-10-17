@@ -192,6 +192,18 @@
         "shellcheck and bash tests/run-tests.sh exit 0"
       ],
       "passes": false
+    },
+    {
+      "id": "F012",
+      "category": "functional",
+      "priority": 12,
+      "bootstrap": false,
+      "description": "Release 3.1.0 candidate (owner-approved 2026-10-17): version bump in manifest, README and CHANGELOG with the new capabilities and consumer migration notes; release checks from docs/RELEASING.md.",
+      "steps": [
+        "harness-manifest.json, README frontmatter and the top CHANGELOG entry say 3.1.0 / v3.1.0 together and the CHANGELOG lists the new capabilities and migration notes",
+        "shellcheck, JSON validation, bash tests/run-tests.sh and install-harness.sh --dev --validate-release exit 0"
+      ],
+      "passes": false
     }
   ]
 }
