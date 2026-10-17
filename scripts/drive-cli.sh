@@ -57,8 +57,8 @@ mkdir -p "$TRANSCRIPT_DIR"
 
 TMUX_SOCKET="drive-cli-$$-$(date -u +%s)"
 SESSION="drive-cli"
-answered_line_offset=0
-SKIP_RULES_ONCE=0
+ANSWERED_TEXT=""
+ANSWERED_DIGEST=""
 LAST_PANE=""
 LAST_CHANGE_EPOCH="$(date +%s)"
 
@@ -90,23 +90,6 @@ PY
 append_event() {
   local line="$1"
   printf '%s\n' "$line" >>"$TRANSCRIPT_DIR/events.jsonl"
-}
-
-active_pane_suffix() {
-  local pane_text="$1"
-  DRIVE_CLI_PANE_TEXT="$pane_text" python3 - "$answered_line_offset" <<'PY'
-import os, sys
-offset = int(sys.argv[1])
-pane = os.environ["DRIVE_CLI_PANE_TEXT"]
-lines = pane.splitlines()
-if offset >= len(lines):
-    active = ""
-else:
-    active = "\n".join(lines[offset:])
-    if pane.endswith("\n"):
-        active += "\n"
-sys.stdout.write(active)
-PY
 }
 
 # shellcheck disable=SC2317,SC2329
@@ -151,30 +134,15 @@ while true; do
     stop_session 4 stall null "$PANE_FULL"
   fi
 
-  if [ "$SKIP_RULES_ONCE" = 1 ]; then
-    SKIP_RULES_ONCE=0
-    sleep 0.25
-    PANE_DEAD="$(tmux -L "$TMUX_SOCKET" display-message -p -t "$SESSION" '#{pane_dead}' 2>/dev/null || echo 0)"
-    if [ "$PANE_DEAD" = "1" ]; then
-      PANE_FULL="$(tmux -L "$TMUX_SOCKET" capture-pane -J -p -t "$SESSION" 2>/dev/null || true)"
-      write_pane_log "$PANE_FULL"
-      DEAD_STATUS="$(tmux -L "$TMUX_SOCKET" display-message -p -t "$SESSION" '#{pane_dead_status}' 2>/dev/null || echo 0)"
-      write_result_json "$DEAD_STATUS" completed null
-      printf '%s' "$PANE_FULL"
-      printf '%s' "$PANE_FULL" >&2
-      trap - EXIT
-      tmux -L "$TMUX_SOCKET" kill-server 2>/dev/null || true
-      exit "$DEAD_STATUS"
-    fi
-    sleep 0.1
-    continue
-  fi
-
-  ACTIVE="$(active_pane_suffix "$PANE_FULL")"
-  DECISION_JSON="$(printf '%s' "$ACTIVE" | python3 "$RULES_PY" --workspace "$WORKSPACE" 2>/dev/null)" || {
+  CURRENT_DIGEST="$(PANE_TEXT="$PANE_FULL" python3 -c 'import os,sys; sys.path.insert(0, sys.argv[1]); import drive_cli_rules as R; print(R.pane_digest(os.environ["PANE_TEXT"]))' "$ROOT/scripts")"
+  if [ -n "$ANSWERED_DIGEST" ] && [ "$CURRENT_DIGEST" = "$ANSWERED_DIGEST" ]; then
+    DECISION_JSON='{"decision":"wait","category":"pane_unchanged","rule_id":null,"answer":null,"exit_code":null}'
+  else
+    DECISION_JSON="$(PANE_TEXT="$PANE_FULL" ANSWERED_TEXT="$ANSWERED_TEXT" python3 -c 'import os,sys,json; sys.path.insert(0, os.path.dirname(sys.argv[1])); import drive_cli_rules as R; print(json.dumps(R.classify_window(os.environ["PANE_TEXT"], sys.argv[2], os.environ.get("ANSWERED_TEXT") or None, R.load_rules())))' "$RULES_PY" "$WORKSPACE" 2>/dev/null)" || {
     echo "ERROR: drive_cli_rules.py failed" >&2
     stop_session 2 rules_error null "$PANE_FULL"
-  }
+    }
+  fi
 
   DECISION="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["decision"])' <<<"$DECISION_JSON")"
   CATEGORY="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("category") or "")' <<<"$DECISION_JSON")"
@@ -204,16 +172,15 @@ else:
         subprocess.check_call(tmux + ["Enter"])
 PY
     append_event "$DECISION_JSON"
-    answered_line_offset="$(python3 -c 'import sys; print(len(sys.stdin.read().splitlines()))' <<<"$PANE_FULL")"
+    ANSWERED_TEXT="$PANE_FULL"
+    ANSWERED_DIGEST="$CURRENT_DIGEST"
     LAST_CHANGE_EPOCH="$(date +%s)"
-    SKIP_RULES_ONCE=1
   fi
 
   PANE_DEAD="$(tmux -L "$TMUX_SOCKET" display-message -p -t "$SESSION" '#{pane_dead}' 2>/dev/null || echo 0)"
   if [ "$PANE_DEAD" = "1" ]; then
     PANE_FULL="$(tmux -L "$TMUX_SOCKET" capture-pane -J -p -t "$SESSION" 2>/dev/null || true)"
-    ACTIVE="$(active_pane_suffix "$PANE_FULL")"
-    FINAL_JSON="$(printf '%s' "$ACTIVE" | python3 "$RULES_PY" --workspace "$WORKSPACE")"
+    FINAL_JSON="$(PANE_TEXT="$PANE_FULL" ANSWERED_TEXT="$ANSWERED_TEXT" python3 -c 'import os,sys,json; sys.path.insert(0, os.path.dirname(sys.argv[1])); import drive_cli_rules as R; print(json.dumps(R.classify_window(os.environ["PANE_TEXT"], sys.argv[2], os.environ.get("ANSWERED_TEXT") or None, R.load_rules())))' "$RULES_PY" "$WORKSPACE")"
     FINAL_DECISION="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["decision"])' <<<"$FINAL_JSON")"
     if [ "$FINAL_DECISION" = "stop" ]; then
       CATEGORY="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("category") or "")' <<<"$FINAL_JSON")"

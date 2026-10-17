@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests for drive-cli rule table and deterministic prompt matcher (T-065)."""
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -31,6 +32,19 @@ class TestLoadRules(unittest.TestCase):
         self.assertEqual(self.rules["folder_trust_rule"].get("decision"), "answer")
         self.assertEqual(self.rules["folder_trust_rule"].get("answer"), "y\n")
         self.assertTrue(len(self.rules.get("prompt_patterns", [])) > 0)
+        self.assertEqual(self.rules["danger_words"], R.DANGER_WORDS)
+
+    def test_danger_words_must_be_exact(self):
+        doc = json.loads(R.DEFAULT_RULES_PATH.read_text(encoding="utf-8"))
+        doc["danger_words"].remove("push")
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tf:
+            json.dump(doc, tf)
+            path = tf.name
+        try:
+            with self.assertRaises(RulesError):
+                load_rules(path)
+        finally:
+            os.unlink(path)
 
     def test_missing_file_raises_rules_error(self):
         with self.assertRaises(RulesError):
@@ -223,8 +237,9 @@ class TestFolderTrustExactMatching(unittest.TestCase):
     def test_prompt_with_surrounding_quotes_accepted(self):
         pane = f"Do you trust the files in this folder?\n'{self.ws}'\n[y/n] "
         res = match_pane(pane, self.ws, self.rules)
-        self.assertEqual(res["decision"], "answer")
-        self.assertEqual(res["rule_id"], "folder_trust")
+        self.assertEqual(res["decision"], "stop")
+        self.assertEqual(res["category"], "unknown_prompt")
+        self.assertEqual(res["exit_code"], 3)
 
     def test_rejection_of_bad_workspace_paths(self):
         bad_paths = (
@@ -260,6 +275,53 @@ class TestFolderTrustExactMatching(unittest.TestCase):
         self.assertEqual(res["decision"], "stop")
         self.assertEqual(res["category"], "unknown_prompt")
         self.assertEqual(res["exit_code"], 3)
+        ordinary_output = f"Do you trust the files in this folder?\n{self.ws}\n[y/n]\nbuild ok"
+        res = match_pane(ordinary_output, self.ws, self.rules)
+        self.assertEqual((res["decision"], res["category"], res["exit_code"]), ("stop", "unknown_prompt", 3))
+
+    def test_normalization_boundaries_danger_words_and_hashing(self):
+        base = "Do you trust the files in this folder?\n/ws\n[y/n]"
+        cases = [
+            ("/ws:evil", "unknown_prompt"), ("/ws–evil", "unknown_prompt"),
+            ("/ws\x1b[0m-evil", "unknown_prompt"), ("/ws：evil", "unknown_prompt"),
+            ("'/ws'", "unknown_prompt"),
+        ]
+        for path, category in cases:
+            result = match_pane(f"Do you trust the files in this folder?\n{path}\n[y/n]", "/ws", self.rules)
+            self.assertEqual((result["decision"], result["category"], result["exit_code"]), ("stop", category, 3), path)
+        for word in self.rules["danger_words"]:
+            pane = f"Do you trust this folder /ws and {word} here? [y/n]"
+            result = match_pane(pane, "/ws", self.rules)
+            expected = "push_network_install" if word in {"curl", "wget", "fetch"} else "credits_payment" if word in {"credit", "payment", "billing", "purchase"} else None
+            self.assertEqual(result["decision"], "stop", word)
+            self.assertEqual(result["exit_code"], 3, word)
+            if expected:
+                self.assertEqual((result["category"], result["rule_id"]), ("never", expected), word)
+            else:
+                self.assertEqual((result["category"], result["rule_id"]), ("unknown_prompt", None), word)
+        self.assertEqual(match_pane("Do you trust this folder /ws while pushing files? [y/n]", "/ws", self.rules)["decision"], "answer")
+        self.assertEqual(match_pane("Do you trust this folder /ws and " + "a" * 4000 + " push? [y/n]", "/ws", self.rules)["category"], "unknown_prompt")
+        self.assertEqual(R.normalize_pane("/ws\x1b[0m-evil"), "/ws-evil")
+        self.assertEqual(R.normalize_pane("git\u200bpush"), "git push")
+        self.assertEqual(R.normalize_pane("git\u200cpush"), "git push")
+        self.assertEqual(R.pane_digest(base), hashlib.sha256(base.encode("utf-8")).hexdigest())
+        self.assertNotEqual(R.pane_digest("/ws"), R.pane_digest("/ws\u200b"))
+        changed = copy.deepcopy(self.rules)
+        changed["danger_words"].remove("push")
+        self.assertEqual(match_pane("Do you trust this folder /ws and push here? [y/n]", "/ws", changed)["decision"], "answer")
+
+    def test_answered_window_classification(self):
+        old = "Do you trust this folder /ws [y/n]"
+        rules = self.rules
+        same = R.classify_window(old, "/ws", old, rules)
+        self.assertEqual((same["decision"], same["answer"], same["exit_code"]), ("wait", None, None))
+        scrolled = R.classify_window("Allow git push origin main? [y/n]\n" + old, "/ws", old, rules)
+        self.assertEqual((scrolled["decision"], scrolled["exit_code"], scrolled["answer"]), ("stop", 3, None))
+        benign = R.classify_window(old + "\ntrusted and done", "/ws", old, rules)
+        self.assertEqual((benign["decision"], benign["exit_code"]), ("wait", None))
+        second = R.classify_window(old + "\n" + old, "/ws", old, rules)
+        self.assertEqual((second["decision"], second["exit_code"], second["answer"]), ("stop", 3, None))
+        self.assertEqual(R.classify_window("", "/ws", rules=rules)["decision"], "wait")
 
 
 class TestNeverRules(unittest.TestCase):

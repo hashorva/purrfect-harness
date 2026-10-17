@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "danger_words": ["push", "pull", "fetch", "clone", "curl", "wget", "install", "delete", "remove", "rm", "force", "reset", "rebase", "credit", "payment", "billing", "purchase"],
   "never_rules": [
     {
       "id": "write_outside_workspace",

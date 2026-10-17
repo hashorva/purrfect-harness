@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Fixed rule table loader and pure-Python prompt matcher for drive-cli (T-065)."""
 import argparse
+import hashlib
 import json
 import os
+import unicodedata
 from pathlib import Path
 import re
 import sys
@@ -16,6 +18,11 @@ REQUIRED_NEVER_IDS = (
     "git_history_changes",
     "credits_payment",
 )
+DANGER_WORDS = [
+    "push", "pull", "fetch", "clone", "curl", "wget", "install", "delete",
+    "remove", "rm", "force", "reset", "rebase", "credit", "payment",
+    "billing", "purchase",
+]
 
 
 class RulesError(ValueError):
@@ -39,6 +46,9 @@ def load_rules(path: str | Path | None = None) -> dict:
 
     if data.get("schema_version") != 1:
         raise RulesError(f"schema_version must be 1, got {data.get('schema_version')}")
+
+    if data.get("danger_words") != DANGER_WORDS:
+        raise RulesError("danger_words must match the required list")
 
     never_rules = data.get("never_rules")
     if not isinstance(never_rules, list):
@@ -123,6 +133,15 @@ def _validate_workspace(workspace: str) -> str:
     return workspace
 
 
+def normalize_pane(text: str) -> str:
+    """Normalize pane text before applying any prompt rules."""
+    text = unicodedata.normalize("NFKC", str(text or ""))
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+    text = re.sub(r"\x1b(?:[@-Z\\-_]|\][^\x07]*(?:\x07|\x1b\\))", "", text)
+    text = "".join(" " if unicodedata.category(ch) == "Cf" else ch for ch in text)
+    return "".join(ch for ch in text if unicodedata.category(ch) != "Cc" or ch in "\n\t\r")
+
+
 def _is_folder_trust_approved(
     pane_text: str,
     clean_ws: str,
@@ -144,23 +163,24 @@ def _is_folder_trust_approved(
         return False
 
     start_idx = ft_line_indices[0]
-    # Locate end of prompt block (look forward up to 4 lines)
-    end_idx = start_idx
-    for k in range(start_idx, min(len(lines), start_idx + 5)):
-        line = lines[k]
-        if re.search(r"(?i)\[y/n\]|\(y/n\)|yes/no|press enter", line):
-            end_idx = k
-            break
-        end_idx = k
-
-    block_lines = lines[start_idx : end_idx + 1]
-    block_text = "\n".join(block_lines)
+    nonempty = [line for line in lines if line.strip()]
+    if len(nonempty) > 3:
+        return False
+    block_text = "\n".join(nonempty)
+    marker_re = re.compile(r"(?i)\[y/n\]|\(y/n\)|\[yes/no\]|yes/no")
+    if not any(marker_re.search(line) for line in nonempty):
+        return False
 
     # Must match clean_ws on an exact path token boundary
-    ws_token_re = re.compile(
-        rf"(?<![A-Za-z0-9_./-]){re.escape(clean_ws)}(?:/)?(?![A-Za-z0-9_./-])"
-    )
+    ws_token_re = re.compile(rf"(?<![A-Za-z0-9_./-]){re.escape(clean_ws)}(?=$|\s|[?.,)](?=$|\s))")
     if not ws_token_re.search(block_text):
+        return False
+    if any(
+        not any(pattern.search(line) for pattern in ft_patterns)
+        and not ws_token_re.search(line)
+        and not marker_re.search(line)
+        for line in nonempty
+    ):
         return False
 
     # No .. traversal path in prompt block
@@ -171,14 +191,9 @@ def _is_folder_trust_approved(
     found_paths = re.findall(r"(?<![A-Za-z0-9_./-])(/[A-Za-z0-9_./-]+)(?![A-Za-z0-9_./-])", block_text)
     for p in found_paths:
         norm_p = p.rstrip("/") if len(p) > 1 else p
+        norm_p = re.sub(r"[?.,)]+$", "", norm_p)
         if norm_p != clean_ws:
             return False
-
-    # Check that no unapproved prompt lines exist outside [start_idx, end_idx]
-    for j, line in enumerate(lines):
-        if j < start_idx or j > end_idx:
-            if any(pat.search(line) for pat in prompt_patterns):
-                return False
 
     return True
 
@@ -196,6 +211,7 @@ def match_pane(pane_text: str, workspace: str, rules: dict | None = None) -> dic
     if not isinstance(pane_text, str):
         pane_text = str(pane_text or "")
 
+    pane_text = normalize_pane(pane_text)
     if rules is None:
         rules = load_rules()
 
@@ -210,6 +226,11 @@ def match_pane(pane_text: str, workspace: str, rules: dict | None = None) -> dic
                     "answer": None,
                     "exit_code": 3,
                 }
+
+    danger_words = rules.get("danger_words", [])
+    danger_re = re.compile(r"\b(?:" + "|".join(re.escape(word) for word in danger_words) + r")\b", re.I)
+    if danger_re.search(pane_text):
+        return {"decision": "stop", "category": "unknown_prompt", "rule_id": None, "answer": None, "exit_code": 3}
 
     # 2. Evaluate allowed_rules (folder_trust)
     folder_trust_rule = rules.get("folder_trust_rule")
@@ -258,6 +279,25 @@ def match_pane(pane_text: str, workspace: str, rules: dict | None = None) -> dic
         "answer": None,
         "exit_code": None,
     }
+
+
+def pane_digest(text: str) -> str:
+    """Hash the exact captured pane bytes as UTF-8."""
+    return hashlib.sha256(str(text).encode("utf-8")).hexdigest()
+
+
+def classify_window(pane_text: str, workspace: str, answered_text: str | None = None, rules: dict | None = None) -> dict:
+    if not answered_text:
+        return match_pane(pane_text, workspace, rules)
+    if pane_text == answered_text:
+        return {"decision": "wait", "category": "pane_unchanged", "rule_id": None, "answer": None, "exit_code": None}
+    if answered_text in pane_text:
+        residual = pane_text.replace(answered_text, "", 1)
+        result = match_pane(residual, workspace, rules)
+        if result["decision"] == "answer":
+            return {"decision": "stop", "category": "unknown_prompt", "rule_id": None, "answer": None, "exit_code": 3}
+        return result
+    return match_pane(pane_text, workspace, rules)
 
 
 def main():

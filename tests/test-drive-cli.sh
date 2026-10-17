@@ -19,6 +19,9 @@ ok = R.match_pane(f"Do you trust the files in this folder?\n{ws}\n[y/n] ", ws, r
 assert ok["decision"] == "answer" and ok["rule_id"] == "folder_trust", ok
 unk = R.match_pane("Enable telemetry uploads? [y/n]", ws, rules)
 assert unk["decision"] == "stop" and unk["exit_code"] == 3, unk
+answered = "Do you trust this folder /tmp/ws-exact [y/n]"
+scrolled = R.classify_window("Allow git push origin main? [y/n]\n" + answered, ws, answered, rules)
+assert scrolled["decision"] == "stop" and scrolled["exit_code"] == 3 and scrolled["answer"] is None, scrolled
 print("ok")
 PY
 
