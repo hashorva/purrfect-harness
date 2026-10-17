@@ -38,6 +38,21 @@ GOLDEN_SEAT_SPECS = {
     "claude.economy": ("claude", "haiku"),
 }
 class RegistryTests(unittest.TestCase):
+    def test_family_names_reject_secret_shapes(self):
+        good = ('opus', 'fable', 'sol', 'grok', 'composer', 'terra', 'luna', 'argon', 'flash', 'sonnet', 'haiku')
+        bad = ('argon\n', 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz', 'ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+               'github_pat_shortkey', 'xoxb-short', 'AKIAIOSFODNN7EXAMPLE', 'a' * 20, 'sk-ant')
+        for family in good:
+            with self.subTest(family=family):
+                self.assertIsNotNone(registry_module.FAMILY_RE.fullmatch(family))
+        for family in bad:
+            with self.subTest(family=family):
+                self.assertIsNone(registry_module.FAMILY_RE.fullmatch(family))
+                broken = copy.deepcopy(registry)
+                broken['seat_specs']['agy.premium'] = ['agy', family]
+                with self.assertRaises(registry_module.RegistryError):
+                    registry_module.validate_registry(broken)
+
     def test_model_encoding_and_door_provider_validation(self):
         for name, provider in registry["providers"].items():
             with self.subTest(provider=name):

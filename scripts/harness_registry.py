@@ -7,7 +7,7 @@ import re
 import sys
 
 REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
-FAMILY_RE = re.compile(r"^[a-z][a-z0-9._-]*$")
+FAMILY_RE = re.compile(r"^(?!sk-|ghp_|github_pat_|xox|AKIA)(?!.*[A-Za-z0-9]{20})[a-z][a-z0-9._-]*\Z")
 PROVIDER_FIELDS = ("binary", "legacy_names", "probe_command", "list_parser", "identity_check", "identity_pattern", "login_check", "effort_encoding", "fast_encoding", "model_name_encoding", "discovery_directory", "capabilities", "sandbox_limits", "structured_output")
 DOOR_FIELDS = ("provider", "billing_class", "pool", "no_zdr", "priority")
 POOL_FIELDS = ("windows", "evidence")

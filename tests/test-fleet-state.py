@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Mounted regressions for the public frozen-fleet policy entry points."""
 import hashlib, json, os, shutil, stat, subprocess, sys, tempfile
+import jsonschema
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -17,7 +18,12 @@ def conditional_rules(schema):
     return {(json.dumps(rule['if'],sort_keys=True),json.dumps(rule['then'],sort_keys=True)) for rule in schema['$defs']['seat']['allOf']}
 def require_schema_policy():
     inventory=json.loads((ROOT/'schemas/fleet-inventory.schema.json').read_text())
-    assert inventory['$defs']['family']=={'type':'string','pattern':'^[a-z][a-z0-9._-]*$'}
+    family_pattern=r"^(?!sk-|ghp_|github_pat_|xox|AKIA)(?!.*[A-Za-z0-9]{20})[a-z][a-z0-9._-]*\Z"
+    assert inventory['$defs']['family']=={'type':'string','pattern':family_pattern}
+    family_validator=jsonschema.Draft202012Validator(inventory['$defs']['family'])
+    assert family_validator.is_valid('argon') and family_validator.is_valid('composer')
+    for bad in ('argon\n','sk-ant-api03-abcdefghijklmnopqrstuvwxyz','ghp_abcdefghijklmnopqrstuvwxyz0123456789','github_pat_shortkey','xoxb-short','AKIAIOSFODNN7EXAMPLE','a'*20,'sk-ant'):
+      assert not family_validator.is_valid(bad), bad
     for provider_def in ('agyPremium','claudePremium','codexPremium','cursorPremium'):
       rule=inventory['$defs'][provider_def]['allOf'][1]['properties']
       assert 'family' not in rule
@@ -146,6 +152,13 @@ def main():
     except H.RegistryError: pass
     else: raise AssertionError('unsafe family accepted')
     assert F.choose(['gemini-4-argonx-high'],'argon') is None
+    assert F.choose(['not-gemini-4-argon-high'],'argon') is None
+    assert F.choose(['not-gemini-4-argon-high','gemini-4-argon-high'],'argon')=='gemini-4-argon-high'
+    assert F.choose(['gemini-4-argon-high-fast'],'argon') is None
+    assert F.choose(['gemini-4-argon-high-fast','gemini-4-argon-high'],'argon')=='gemini-4-argon-high'
+    assert F.choose(['gpt-terra-10-high'],'terra')=='gpt-terra-10-high'
+    assert F.choose(['not-gpt-terra-1'],'terra') is None
+    assert F.unlisted_models(['not-gemini-4-argon-high','gemini-4-argon-high','gemini-4-argon-high-fast'],['argon'])==['not-gemini-4-argon-high']
     write(home/'.codex/models_cache.json',{'models':['gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna']})
     # A bad cache is a current failure and retains the old record byte-for-byte semantically.
     (home/'.codex/models_cache.json').write_text('{bad')

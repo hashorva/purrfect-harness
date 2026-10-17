@@ -6,7 +6,7 @@
     "text":{"type":"string","minLength":1,"pattern":".*\\S.*"},
     "timestamp":{"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"},
     "models":{"type":"array","items":{"$ref":"#/$defs/text"}},
-    "family":{"type":"string","pattern":"^[a-z][a-z0-9._-]*$"},
+    "family":{"type":"string","pattern":"^(?!sk-|ghp_|github_pat_|xox|AKIA)(?!.*[A-Za-z0-9]{20})[a-z][a-z0-9._-]*\\Z"},
     "caps":{"type":"object","additionalProperties":false,"required":["efforts","speeds"],"properties":{"efforts":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/text"}},"speeds":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/text"}}}},
     "success":{"type":"object","additionalProperties":false,"required":["probed_at","capabilities","status","path","aliases","observed_models"],"properties":{"probed_at":{"$ref":"#/$defs/timestamp"},"capabilities":{"$ref":"#/$defs/caps"},"status":{"const":"success"},"path":{"$ref":"#/$defs/text"},"aliases":{"$ref":"#/$defs/models"},"observed_models":{"$ref":"#/$defs/models"}},"anyOf":[{"properties":{"aliases":{"minItems":1}}},{"properties":{"observed_models":{"minItems":1}}}]},
     "failure":{"type":"object","additionalProperties":false,"required":["probed_at","capabilities","status","path","error"],"properties":{"probed_at":{"$ref":"#/$defs/timestamp"},"capabilities":{"$ref":"#/$defs/caps"},"status":{"const":"failure"},"path":{"$ref":"#/$defs/text"},"error":{"$ref":"#/$defs/text"}}},

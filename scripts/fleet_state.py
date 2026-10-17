@@ -194,7 +194,7 @@ def model_rank(model):
 def has_family(model, family):
     mt = model_tokens(model)
     ft = model_tokens(family)
-    if not ft:
+    if not ft or (mt and mt[0] == "not"):
         return False
     for i in range(len(mt) - len(ft) + 1):
         if mt[i:i + len(ft)] == ft:
