@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import execution_spec  # noqa: E402
 import execution_receipt  # noqa: E402
 import execute_provider  # noqa: E402
-from execute_provider import CLAUDE_DISALLOWED_TOOLS, CODEX_CONFIG_OVERRIDES, SpecError, provider_contract  # noqa: E402
+from execute_provider import CLAUDE_DISALLOWED_TOOLS, SpecError, provider_contract  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC_TOOL = ROOT / "scripts" / "execution_spec.py"
@@ -182,8 +182,7 @@ class ExecutionSpecContract(unittest.TestCase):
 
     def test_versioned_exact_dry_run_contract_for_every_provider_and_role(self):
         contract_one = {
-            "codex": lambda s: ["codex", "exec", "-C", str(self.repo), "-s", "workspace-write", "-m", "test-model",
-                                "-c", 'model_reasoning_effort="medium"', *CODEX_CONFIG_OVERRIDES, "exact prompt"],
+            "codex": lambda s: ["codex", "exec", "-C", str(self.repo), "-s", "workspace-write", "-m", "test-model", "-c", 'model_reasoning_effort="medium"', "exact prompt"],
             "claude": lambda s: ["claude", "-p", "exact prompt", "--model", "test-model", "--effort", "medium",
                                  "--allowedTools", "Read,Write,Edit,Bash"],
             "agy": lambda s: ["agy", "--dangerously-skip-permissions", "--print-timeout", "30m", "--model", "test-model", "--effort", "medium", "-p", "exact prompt"],
@@ -229,35 +228,7 @@ class ExecutionSpecContract(unittest.TestCase):
                                                            write_scope=write_scope))
                 argv = json.loads(self.adapter(path, digest).stdout)["argv"]
                 self.assertEqual(argv, ["codex", "exec", "-C", str(self.repo), "-s", "workspace-write", *expected_dirs,
-                                        "-m", "test-model", "-c", 'model_reasoning_effort="medium"',
-                                        *CODEX_CONFIG_OVERRIDES, "exact prompt"])
-
-    def test_codex_config_overrides_unlock_network_and_disable_repl_servers(self):
-        expected_overrides = (
-            "-c", "sandbox_workspace_write.network_access=true",
-            "-c", 'web_search="live"',
-            "-c", 'mcp_servers.cua_repl={command="true",enabled=false}',
-            "-c", 'mcp_servers.node_repl={command="true",enabled=false}',
-        )
-        self.assertEqual(CODEX_CONFIG_OVERRIDES, expected_overrides)
-        for contract in (1, 2, 5, 6, 8, 9):
-            with self.subTest(contract=contract):
-                argv, _ = provider_contract(self.spec_v3(provider="codex", provider_contract_version=contract))
-                s_idx = argv.index("-s")
-                self.assertEqual(argv[s_idx + 1], "workspace-write")
-                self.assertEqual(argv[-1], "exact prompt")
-                overrides_slice = tuple(argv[-1 - len(expected_overrides):-1])
-                self.assertEqual(overrides_slice, expected_overrides)
-
-        original = execute_provider.CODEX_CONFIG_OVERRIDES
-        try:
-            execute_provider.CODEX_CONFIG_OVERRIDES = ("-c", "mutated=true")
-            argv, _ = provider_contract(self.spec_v3(provider="codex", provider_contract_version=9))
-            with self.assertRaises(AssertionError):
-                overrides_slice = tuple(argv[-1 - len(expected_overrides):-1])
-                self.assertEqual(overrides_slice, expected_overrides)
-        finally:
-            execute_provider.CODEX_CONFIG_OVERRIDES = original
+                                        "-m", "test-model", "-c", 'model_reasoning_effort="medium"', "exact prompt"])
 
     def test_cursor_contract_four_plain_models_and_prelaunch_rejections(self):
         cases = [
@@ -525,8 +496,7 @@ class ExecutionSpecContract(unittest.TestCase):
         git_dir = str(self.repo / ".git")
         cases = [
             ("codex", {}, ["codex", "exec", "--json", "-C", repo, "-s", "workspace-write", "--add-dir", git_dir,
-                           "-m", "test-model", "-c", 'model_reasoning_effort="medium"',
-                           *CODEX_CONFIG_OVERRIDES, "exact prompt"]),
+                           "-m", "test-model", "-c", 'model_reasoning_effort="medium"', "exact prompt"]),
             ("claude", {}, ["claude", "-p", "exact prompt", "--output-format", "json",
                             "--model", "test-model", "--effort", "medium", "--allowedTools", "Read,Write,Edit,Bash"]),
             ("agy", {}, ["agy", "--dangerously-skip-permissions", "--print-timeout", "30m", "--model", "test-model",
