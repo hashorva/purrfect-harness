@@ -193,3 +193,5 @@
 {"run_id":"d2cd8c4f-5a45-42c2-b0b1-d46140fa788d","task":"T-056-R3","category":"ledger","size":"M","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":4,"outcome":"verify-failed","failure_class":"task","duration_s":97,"tokens_or_cost":"unknown"}
 {"type":"architect-run","plan":"T-056-R4","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1","input_tokens":204146,"output_tokens":30711,"cache_read_tokens":3674739,"outcome":"done"}
 {"type":"architect-run","plan":"T-090 release","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1","input_tokens":156435,"output_tokens":12852,"cache_read_tokens":861185,"outcome":"done"}
+{"run_id":"a7fe494b-5be9-4d4f-9d0a-3b0d445ca507","task":"T-056-R4","category":"ledger","size":"M","seat":"cursor.economy","model":"composer-2.5","effort":"medium","attempt":5,"outcome":"done","failure_class":"none","duration_s":67,"tokens_or_cost":"unknown"}
+{"type":"note","task":"T-056-R4","note":"first verification failed in tests/run-tests.sh, rerun on the same run passed with identical commit; suite has an intermittent test (environment/flake), not yet identified"}
