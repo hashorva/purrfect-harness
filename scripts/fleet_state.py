@@ -22,7 +22,7 @@ from pathlib import Path
 _SCRIPTS_DIR = str(Path(__file__).resolve().parent)
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
-from harness_registry import RegistryError, canonical_provider, decode_model, encode_model, legacy_view, load_registry
+from harness_registry import RegistryError, canonical_provider, decode_model, encode_model, legacy_view, load_registry, seat_families
 
 BILLING_CLASSES = frozenset({"included", "credits", "api"})
 NO_ZDR_POLICY = frozenset({"allow", "forbid"})
@@ -134,9 +134,9 @@ def validate_provider(value, name):
 def provider_models(record, provider):
     return record["aliases"] if provider == "claude" else record["observed_models"]
 
-def seat_source_is_truthful(value, current, retained, seat, name):
-    provider, family = SEAT_SPECS[seat]
-    if value["provider"] != provider or value["family"] != family:
+def seat_source_is_truthful(value, current, retained, seat, name, s_fams=None):
+    provider, families = (s_fams or seat_families(load_registry()))[seat]
+    if value["provider"] != provider or value["family"] not in families:
         fail(f"{name} has an invalid canonical provider/family relationship")
     if value["capabilities"] != CAPABILITIES[provider]: fail(f"{name} capabilities must equal canonical provider matrix")
     model, health, source = value["model"], value["health"], value["source"]
@@ -163,11 +163,19 @@ def validate_inventory(doc):
         if provider in doc["last_good"]:
             validate_provider(doc["last_good"][provider],"inventory.last_good."+provider)
             if doc["last_good"][provider]["status"] != "success": fail("last_good must be successful")
+    s_fams = seat_families(load_registry())
     for seat, value in doc["seats"].items():
-        exact_keys(value,{"provider","model","family","health","source","capabilities"},"inventory.seats."+seat)
+        allowed = {"provider", "model", "family", "health", "source", "capabilities"}
+        if set(value) - {"unlisted"} != allowed:
+            fail(f"inventory.seats.{seat} has missing or extra fields")
+        if "unlisted" in value:
+            unlisted = value["unlisted"]
+            if (not isinstance(unlisted, list)
+                    or not all(isinstance(x, str) and x.strip() for x in unlisted)):
+                fail(f"inventory.seats.{seat}.unlisted invalid")
         if value["health"] not in {"healthy","degraded","unknown"} or value["source"] not in {"observed","alias","last_good","fallback","unavailable"}: fail("invalid inventory seat")
         text(value["model"],"inventory.seats."+seat+".model")
-        seat_source_is_truthful(value, doc["providers"][SEAT_SPECS[seat][0]], doc["last_good"].get(SEAT_SPECS[seat][0]), seat, "inventory.seats."+seat)
+        seat_source_is_truthful(value, doc["providers"][SEAT_SPECS[seat][0]], doc["last_good"].get(SEAT_SPECS[seat][0]), seat, "inventory.seats."+seat, s_fams=s_fams)
     return doc
 EFFORT_RANK = {"xhigh": 50, "max": 45, "high": 40, "medium": 20, "low": 10, "none": 0}
 UNSTABLE = {"preview", "exp", "experimental", "lite"}
@@ -183,28 +191,54 @@ def model_rank(model):
         elif version: break
     effort=next((EFFORT_RANK[t] for t in tokens if t in EFFORT_RANK), 0)
     return (not UNSTABLE.intersection(tokens), tuple(version), date, effort)
+def has_family(model, family):
+    mt = model_tokens(model)
+    ft = model_tokens(family)
+    if not ft:
+        return False
+    for i in range(len(mt) - len(ft) + 1):
+        if mt[i:i + len(ft)] == ft:
+            return True
+    return False
+def choose_with_family(values, families, allow_fast=False):
+    if isinstance(families, str):
+        families = (families,)
+    for family in families:
+        choices = [x for x in values if has_family(x, family) and (allow_fast or not is_fast(x))]
+        if choices:
+            return sorted(choices, key=model_rank, reverse=True)[0], family
+    fallback = families[0] if not isinstance(families, str) else families
+    return None, fallback
 def choose(values, family, allow_fast=False):
-    # Fast modes cost more and are opt-in only: never chosen unless allowed.
-    choices=[x for x in values if family in x.lower() and (allow_fast or not is_fast(x))]
-    # sorted() is stable, so equal ranks keep the provider's own order.
-    return sorted(choices, key=model_rank, reverse=True)[0] if choices else None
+    return choose_with_family(values, family, allow_fast=allow_fast)[0]
+def unlisted_models(values, families):
+    if isinstance(families, str):
+        families = (families,)
+    return [x for x in values if not any(has_family(x, f) for f in families)]
 def make_seats(providers,last_good):
+    s_fams = seat_families(load_registry())
+    p_fams = {
+        p: tuple(f for prov, fs in s_fams.values() if prov == p for f in fs)
+        for p in PROVIDERS
+    }
     result={}
-    for seat,(provider,family) in SEAT_SPECS.items():
+    for seat, (provider, families) in s_fams.items():
+        family_primary = families[0]
         current=providers[provider]; record=current; health="healthy"; source="alias" if provider=="claude" else "observed"
         if current["status"] != "success":
             if provider in last_good: record=last_good[provider]; health="degraded"; source="last_good"
             elif current["status"] == "unavailable":
                 # A missing executable must never advertise a viable binding.
-                result[seat]={"provider":provider,"model":"unavailable","family":family,"health":"unknown","source":"unavailable","capabilities":CAPABILITIES[provider]}; continue
+                result[seat]={"provider":provider,"model":"unavailable","family":family_primary,"health":"unknown","source":"unavailable","capabilities":CAPABILITIES[provider],"unlisted":[]}; continue
             else:
-                result[seat]={"provider":provider,"model":"unavailable","family":family,"health":"unknown","source":"unavailable","capabilities":CAPABILITIES[provider]}; continue
+                result[seat]={"provider":provider,"model":"unavailable","family":family_primary,"health":"unknown","source":"unavailable","capabilities":CAPABILITIES[provider],"unlisted":[]}; continue
         values=record.get("aliases",[]) if provider=="claude" else record.get("observed_models",[])
-        model=choose(values,family)
+        model, family = choose_with_family(values, families)
+        unlisted = unlisted_models(values, p_fams[provider])
         if not model:
             # A real model list without this family is a fact, not a reason to guess an id.
-            result[seat]={"provider":provider,"model":"unavailable","family":family,"health":"unknown","source":"unavailable","capabilities":CAPABILITIES[provider]}; continue
-        result[seat]={"provider":provider,"model":model,"family":family,"health":health,"source":source,"capabilities":record["capabilities"]}
+            result[seat]={"provider":provider,"model":"unavailable","family":family_primary,"health":"unknown","source":"unavailable","capabilities":CAPABILITIES[provider],"unlisted":unlisted}; continue
+        result[seat]={"provider":provider,"model":model,"family":family,"health":health,"source":source,"capabilities":record["capabilities"],"unlisted":unlisted}
     return result
 def inventory(out, json_only):
     out=Path(out); prior={}
@@ -217,7 +251,12 @@ def inventory(out, json_only):
     doc={"schema_version":1,"probed_at":now(),"providers":providers,"last_good":retained,"seats":make_seats(providers,retained)}
     validate_inventory(doc); raw=canonical(doc).encode(); atomic_write_new(out,raw)
     if json_only: print(raw.decode(),end="")
-    else: print(f"Fleet inventory @ {doc['probed_at']}\nWrote {out}")
+    else:
+        print(f"Fleet inventory @ {doc['probed_at']}")
+        for seat, s in doc["seats"].items():
+            if s.get("unlisted"):
+                print(f"note: {seat} unlisted: {', '.join(s['unlisted'])}")
+        print(f"Wrote {out}")
     return doc
 def validate_fleet_header(doc):
     exact_keys(doc["mission"],{"path"},"fleet.mission"); text(doc["mission"]["path"],"fleet.mission.path")
@@ -253,7 +292,7 @@ def validate_fleet_v2_seat(name,value,registry,policy):
         if value["effort"] not in caps["efforts"]: fail(f"{label} effort unsupported for door {door!r}")
         if value["speed"] not in caps["speeds"]: fail(f"{label} speed unsupported for door {door!r}")
     if value["speed"] == "fast" and not policy["fast"]: fail(f"{label} speed fast requires fleet.policy.fast")
-    families={(p,f) for p,f in registry["seat_specs"].values()}
+    families={(spec[0], f) for spec in registry["seat_specs"].values() for f in spec[1:]}
     if not any((door_map[door]["provider"],value["family"]) in families for door in doors): fail(f"{label} family {value['family']!r} unsupported for its doors")
     resolution=value["approved_resolution"]
     exact_keys(resolution,{"provider","model","effort","speed"},label+".approved_resolution")
@@ -276,7 +315,7 @@ def validate_fleet_v1(doc):
         if v["source"] == "observed" and v["provider"] == "claude": fail("observed is non-Claude")
         caps=v["capabilities"]
         if caps != CAPABILITIES[v["provider"]]: fail("fleet seat capabilities must equal canonical provider matrix")
-        if v["family"] not in {family for p,family in SEAT_SPECS.values() if p == v["provider"]}: fail("fleet seat provider/family mismatch")
+        if v["family"] not in {f for p, fams in seat_families(load_registry()).values() if p == v["provider"] for f in fams}: fail("fleet seat provider/family mismatch")
         if v["effort"] not in caps["efforts"] or v["speed"] not in caps["speeds"]: fail("fleet seat unsupported capability")
     return doc
 def validate_fleet_v2(doc,registry=None):
@@ -399,12 +438,20 @@ def resolve_v2(fleet,seat,registry,inventory):
         if door_spec["no_zdr"] and policy["no_zdr"]=="forbid": continue
         record=inventory["providers"][key]
         if record["status"]!="success": continue
-        raw=choose(provider_models(record,key),spec["family"],allow_fast=fast)
+        if seat in registry["seat_specs"] and registry["seat_specs"][seat][0] == provider:
+            families = tuple(registry["seat_specs"][seat][1:])
+        else:
+            families = next(
+                (tuple(s[1:]) for s in registry["seat_specs"].values()
+                 if s[0] == provider and spec["family"] in s[1:]),
+                (spec["family"],),
+            )
+        raw, matched_family = choose_with_family(provider_models(record, key), families, allow_fast=fast)
         if raw is None: continue
         # The inventory may list encoded names; encode_model needs the plain base.
         try:
             base=decode_model(registry,provider,raw)["base"]
-            model=encode_model(registry,provider,base,spec["family"],spec["effort"],fast)
+            model=encode_model(registry,provider,base,matched_family,spec["effort"],fast)
         except RegistryError as exc: fail(str(exc))
         return {"provider":provider,"door":door,"model":model,"effort":spec["effort"],"speed":spec["speed"],"source":"alias" if key=="claude" else "observed"}
     return {"provider":None,"door":None,"model":None,"effort":spec["effort"],"speed":spec["speed"],"source":"unavailable"}

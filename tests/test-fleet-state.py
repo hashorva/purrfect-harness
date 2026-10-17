@@ -17,6 +17,10 @@ def conditional_rules(schema):
     return {(json.dumps(rule['if'],sort_keys=True),json.dumps(rule['then'],sort_keys=True)) for rule in schema['$defs']['seat']['allOf']}
 def require_schema_policy():
     inventory=json.loads((ROOT/'schemas/fleet-inventory.schema.json').read_text())
+    assert inventory['$defs']['family']=={'type':'string','pattern':'^[a-z][a-z0-9._-]*$'}
+    for provider_def in ('agyPremium','claudePremium','codexPremium','cursorPremium'):
+      rule=inventory['$defs'][provider_def]['allOf'][1]['properties']
+      assert 'family' not in rule
     mission=json.loads((ROOT/'schemas/mission-fleet.schema.json').read_text())
     for schema, unavailable, effort in ((inventory,True,False),(mission,False,True)):
       rules=conditional_rules(schema)
@@ -87,6 +91,61 @@ def main():
     assert doc['seats']['cursor.economy']['model']=='composer-2.5' and doc['seats']['cursor.premium']['model']=='grok-4.7-xhigh'
     assert doc['seats']['agy.economy']['model']=='gemini-3.8-flash-high' and doc['seats']['agy.economy']['source']=='observed'
     assert doc['seats']['agy.premium']['model']=='gemini-4-argon-high' and doc['seats']['agy.premium']['family']=='argon' and doc['seats']['agy.premium']['source']=='observed'
+    # T-053: ranked families, unlisted models, registry-only family discovery.
+    sys.path.insert(0,str(ROOT/'scripts'))
+    import copy
+    import harness_registry as H
+    import fleet_state as F
+    agy_nova_stub="[ \"$1\" = models ] || exit 2\nprintf '%s\\n' 'gemini-3.8-flash-high     Gemini 3.8 Flash (High)' 'gemini-4-argon-high       Gemini 4 Argon (High)' 'gemini-5-nova-high        Gemini 5 Nova (High)'"
+    stub(clis,'agy',agy_nova_stub)
+    nova_inv=d/'nova-inventory.json'
+    human=run('/bin/bash',str(public),'--out',str(nova_inv),env=cli_env)
+    nova_doc=json.loads(nova_inv.read_text())
+    assert nova_doc['seats']['agy.premium']['model']=='gemini-4-argon-high'
+    assert nova_doc['seats']['agy.premium']['family']=='argon'
+    assert 'gemini-5-nova-high' in nova_doc['seats']['agy.premium']['unlisted']
+    assert 'note: agy.premium unlisted: gemini-5-nova-high' in human.stdout
+    run('/bin/bash',str(public),'--json','--out',str(nova_inv),env=cli_env)
+    nova_mission=d/'docs/missions/t053'; nova_mission.mkdir(parents=True)
+    bindings=d/'t053-bindings.json'
+    write(bindings,{'agy.premium':{'family':'argon','effort':'high','speed':'unknown','doors':['agy']}})
+    policy=d/'t053-policy.json'
+    write(policy,{'billing_classes':['included'],'fast':False,'no_zdr':'forbid'})
+    frozen=run('python3',str(FLEET_STATE),'freeze-v2','--mission-dir',str(nova_mission),'--inventory',str(nova_inv),'--bindings',str(bindings),'--policy',str(policy),'--approved-by','test','--approved-at','2026-10-17T00:00:00Z')
+    frozen_doc=json.loads(frozen.stdout)
+    assert frozen_doc['seats']['agy.premium']['approved_resolution']['model']=='gemini-4-argon-high'
+    reg_path=d/'harness-registry.json'
+    reg=copy.deepcopy(H.load_registry())
+    reg['seat_specs']['agy.premium']=['agy','nova','argon']
+    write(reg_path,reg)
+    reg_env={**cli_env,'HARNESS_REGISTRY':str(reg_path)}
+    nova2_inv=d/'nova2-inventory.json'
+    run('/bin/bash',str(public),'--json','--out',str(nova2_inv),env=reg_env)
+    nova2_doc=json.loads(nova2_inv.read_text())
+    assert nova2_doc['seats']['agy.premium']['model']=='gemini-5-nova-high'
+    assert nova2_doc['seats']['agy.premium']['family']=='nova'
+    assert 'gemini-5-nova-high' not in nova2_doc['seats']['agy.premium']['unlisted']
+    drift_log=d/'.tasks/drift/t053.jsonl'
+    if drift_log.exists(): drift_log.unlink()
+    resolved=run('python3',str(FLEET_STATE),'resolve','--fleet',str(nova_mission/'fleet.json'),'--seat','agy.premium','--inventory',str(nova2_inv),'--root',str(d),'--mission-path',str(nova_mission),env=reg_env)
+    assert json.loads(resolved.stdout)['model']=='gemini-5-nova-high'
+    events=[json.loads(line) for line in drift_log.read_text().splitlines()]
+    assert events[-1]['from']['model']=='gemini-4-argon-high' and events[-1]['to']['model']=='gemini-5-nova-high'
+    bad_unlisted=copy.deepcopy(nova_doc)
+    bad_unlisted['seats']['agy.premium']['unlisted']='bad'
+    reject(('python3',str(FLEET_STATE),'validate-inventory'),d/'bad-unlisted-type.json',bad_unlisted)
+    bad_unlisted2=copy.deepcopy(nova_doc)
+    bad_unlisted2['seats']['agy.premium']['unlisted']=['']
+    reject(('python3',str(FLEET_STATE),'validate-inventory'),d/'bad-unlisted-empty.json',bad_unlisted2)
+    dup=copy.deepcopy(reg); dup['seat_specs']['agy.premium']=['agy','argon','argon']
+    try: H.validate_registry(dup)
+    except H.RegistryError: pass
+    else: raise AssertionError('duplicate families accepted')
+    unsafe=copy.deepcopy(reg); unsafe['seat_specs']['agy.premium']=['agy','Nova!']
+    try: H.validate_registry(unsafe)
+    except H.RegistryError: pass
+    else: raise AssertionError('unsafe family accepted')
+    assert F.choose(['gemini-4-argonx-high'],'argon') is None
     write(home/'.codex/models_cache.json',{'models':['gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna']})
     # A bad cache is a current failure and retains the old record byte-for-byte semantically.
     (home/'.codex/models_cache.json').write_text('{bad')

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Load and validate the manifest-owned provider, door and seat registry."""
 import json
+import os
 from pathlib import Path
 import re
 import sys
 
 REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
+FAMILY_RE = re.compile(r"^[a-z][a-z0-9._-]*$")
 PROVIDER_FIELDS = ("binary", "legacy_names", "probe_command", "list_parser", "identity_check", "identity_pattern", "login_check", "effort_encoding", "fast_encoding", "model_name_encoding", "discovery_directory", "capabilities", "sandbox_limits", "structured_output")
 DOOR_FIELDS = ("provider", "billing_class", "pool", "no_zdr", "priority")
 POOL_FIELDS = ("windows", "evidence")
@@ -173,18 +175,23 @@ def validate_registry(data):
     if not isinstance(data["seat_specs"], dict):
         raise RegistryError("registry.seat_specs must be an object")
     for seat, spec in data["seat_specs"].items():
-        if (not isinstance(spec, list) or len(spec) != 2
-                or not isinstance(spec[0], str) or spec[0] not in providers
-                or not isinstance(spec[1], str) or not spec[1].strip()):
+        if (not isinstance(spec, list) or len(spec) < 2
+                or not isinstance(spec[0], str) or spec[0] not in providers):
+            raise RegistryError(f"registry.seat_specs.{seat} must be [provider key, non-empty family]")
+        families = spec[1:]
+        if (not families
+                or any(not isinstance(f, str) or not FAMILY_RE.fullmatch(f) for f in families)
+                or len(set(families)) != len(families)):
             raise RegistryError(f"registry.seat_specs.{seat} must be [provider key, non-empty family]")
     if "display_models" in data:
         _validate_display_models(data["display_models"])
     return data
 
 
-def load_registry(path=REGISTRY_PATH):
+def load_registry(path=None):
+    path = Path(path or os.environ.get("HARNESS_REGISTRY") or REGISTRY_PATH)
     try:
-        data = json.loads(Path(path).read_text())
+        data = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
         raise RegistryError(f"cannot load registry {path}: {exc}") from exc
     return validate_registry(data)
@@ -203,14 +210,27 @@ def legacy_view(registry):
         for key, provider in registry["providers"].items()
     }
     seat_specs = {
-        seat: (names[provider], family)
-        for seat, (provider, family) in registry["seat_specs"].items()
+        seat: (names[spec[0]], spec[1])
+        for seat, spec in registry["seat_specs"].items()
     }
     executables = {
         names[key]: provider["binary"]
         for key, provider in registry["providers"].items()
     }
     return providers, capabilities, seat_specs, executables
+
+
+def seat_families(registry):
+    """Return each seat's provider (legacy name) and ranked family tuple."""
+    validate_registry(registry)
+    names = {
+        key: provider["legacy_names"][0] if provider["legacy_names"] else key
+        for key, provider in registry["providers"].items()
+    }
+    return {
+        seat: (names[spec[0]], tuple(spec[1:]))
+        for seat, spec in registry["seat_specs"].items()
+    }
 
 
 def canonical_provider(registry, name):
