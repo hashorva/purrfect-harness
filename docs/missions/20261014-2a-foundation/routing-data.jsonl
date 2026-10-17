@@ -140,3 +140,4 @@
 {"run_id":"27af9247-b8a0-4417-ad9e-1930afb436ac","task":"T-066","category":"autopilot","size":"M","seat":"cursor.economy","model":"composer-2.5","effort":"medium","attempt":1,"outcome":"done","failure_class":"none","duration_s":538,"tokens_or_cost":"unknown"}
 {"run_id":"6a1d4c94-2891-4da8-a292-bc671691ccad","task":"T-053-R1","category":"inventory","size":"S","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":2,"outcome":"done","failure_class":"none","duration_s":77,"tokens_or_cost":"unknown"}
 {"type":"review","task":"T-053-R1","reviewer":"grok-4.7-high (cursor.premium)","rung":"1","verdict":"PASS"}
+{"type":"review","task":"T-065+T-066","reviewer":"grok-4.7-high (cursor.premium)","rung":"1","verdict":"FAIL","findings":3}
