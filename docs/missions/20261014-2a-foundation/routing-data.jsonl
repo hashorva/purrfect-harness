@@ -150,3 +150,4 @@
 {"type":"plan-reformat","plan":"T-065-R6","planner":"grok-4.7-high (cursor.premium, ask mode)","rung":"3"}
 {"type":"review","task":"T-065-R3","reviewer":"grok-4.7-high (cursor.premium)","rung":"1","verdict":"FAIL","findings":1}
 {"run_id":"24b8f844-59d0-4ecc-81f7-7242f1a502b8","task":"T-065-R6","category":"autopilot","size":"M","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":7,"outcome":"done","failure_class":"none","duration_s":88,"tokens_or_cost":"unknown"}
+{"type":"review","task":"T-065-R6","reviewer":"grok-4.7-high (cursor.premium)","rung":"1","verdict":"PASS","note":"after 4 FAIL rounds on T-065/R1/R3; drive-cli Opus review pending"}
