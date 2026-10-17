@@ -8,6 +8,14 @@
 #       [--provider codex|claude|cursor|agent|agy] [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N]
 set -euo pipefail
 export PYTHONDONTWRITEBYTECODE=1
+_HARNESS_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/harness-path.sh disable=SC1091
+if [ -f "$_HARNESS_SCRIPT_DIR/harness-path.sh" ]; then
+  . "$_HARNESS_SCRIPT_DIR/harness-path.sh"
+elif [ -f "$(pwd -P)/scripts/harness-path.sh" ]; then
+  . "$(pwd -P)/scripts/harness-path.sh"
+fi
+unset _HARNESS_SCRIPT_DIR
 
 # Refuse a bad timing value before any spec is persisted (a bad value would otherwise leave a spec without a receipt).
 for _secs_name in SPAWN_BRAIN_TIMEOUT_SECS SPAWN_BRAIN_STALL_SECS SPAWN_BRAIN_IDLE_SECS; do

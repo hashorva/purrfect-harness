@@ -5,6 +5,8 @@ export PYTHONDONTWRITEBYTECODE=1
 unset DRIVE_CLI_STALL_SECS
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+# shellcheck source=scripts/harness-path.sh disable=SC1091
+. "$ROOT/scripts/harness-path.sh"
 DRIVE_CLI="$ROOT/scripts/drive-cli.sh"
 
 echo "== drive-cli match_pane sanity (pure Python)"

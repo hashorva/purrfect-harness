@@ -8,6 +8,8 @@ set -euo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 
 HARNESS="$(pwd)"
+# shellcheck source=scripts/harness-path.sh disable=SC1091
+. "$HARNESS/scripts/harness-path.sh"
 [ -f "$HARNESS/CHANGELOG.md" ] || { echo "Run from the kit root."; exit 1; }
 
 FAIL=0
@@ -85,6 +87,7 @@ echo "== frozen fleet policy"
 check "fleet inventory retention and frozen resolution" python3 tests/test-fleet-state.py
 check "fleet v2 policy seat validation" python3 tests/test-fleet-v2.py
 check "registry and fleet-state legacy parity" python3 tests/test-registry.py
+check "harness PATH helper prepends existing tool directories once under set -u" bash -c 'set -u; unset PATH; . scripts/harness-path.sh; . scripts/harness-path.sh; python3 -c '\''import os,pathlib; p=os.environ["PATH"].split(":"); expected=[d for d in ("/opt/homebrew/bin","/usr/local/bin") if pathlib.Path(d).is_dir()]; assert p[:len(expected)] == expected and all(p.count(d)==1 for d in expected), p'\'''
 check "fleet doctor identity and login checks" python3 tests/test-fleet-doctor.py
 check "seat smoke scratch clone and dry-run plan" python3 tests/test-seat-smoke.py
 check "one frozen seat probe and classifications" python3 tests/test-probe-seat.py
