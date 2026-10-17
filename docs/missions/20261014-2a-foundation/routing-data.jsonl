@@ -164,3 +164,5 @@
 {"type":"review","task":"T-070-R1","reviewer":"claude opus (Claude seat)","rung":"escalation: safety code","verdict":"FAIL","findings":4}
 {"run_id":"c8b5b3d8-3581-4275-a862-74d2bc2783ec","task":"T-070-R3","category":"claude-unlock","size":"M","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":4,"outcome":"done","failure_class":"none","duration_s":176,"tokens_or_cost":"unknown"}
 {"run_id":"43bd1e73-d280-4a69-abfb-7b72e73df05a","task":"T-071","category":"codex-unlock","size":"M","seat":"agy.economy","model":"gemini-3.8-flash-medium","effort":"medium","attempt":1,"outcome":"scope-failed","failure_class":"environment","duration_s":582,"tokens_or_cost":"unknown"}
+{"type":"architect-run","plan":"T-070-R4","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1","input_tokens":175940,"output_tokens":30607,"cache_read_tokens":535007,"outcome":"done"}
+{"run_id":"87895d34-14b3-431b-88c4-43530402acd1","task":"T-071","category":"codex-unlock","size":"M","seat":"agy.economy","model":"gemini-3.8-flash-medium","effort":"medium","attempt":2,"outcome":"scope-failed","failure_class":"environment","duration_s":444,"tokens_or_cost":"unknown"}
