@@ -104,6 +104,11 @@ echo "== run evidence reconstruction (F007)"
 check "reconstruction reports complete and missing evidence" python3 tests/test-reconstruct.py
 check "reconstruction focused test leaves no bytecode" bash -c "test ! -e '$HARNESS/scripts/__pycache__' && test ! -e '$HARNESS/tests/__pycache__'"
 
+echo "== drive-cli autopilot (F009)"
+check "drive-cli rule matcher unit tests" python3 tests/test-drive-cli-rules.py
+check "drive-cli tmux driver and fake-cli integration" bash tests/test-drive-cli.sh
+check "drive-cli focused test leaves no bytecode" bash -c "test ! -e '$HARNESS/scripts/__pycache__' && test ! -e '$HARNESS/tests/__pycache__'"
+
 # F006 regressions must use the public propagation/release entry points. Tagged
 # and untagged source state is always isolated so this suite is independent of
 # the checkout from which it was invoked.
