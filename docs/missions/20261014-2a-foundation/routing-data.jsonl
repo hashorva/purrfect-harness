@@ -184,3 +184,4 @@
 {"run_id":"44b5362c-50ce-46d5-b75b-6b7317a3665a","task":"T-082","category":"f009-acceptance","size":"S","seat":"cursor.economy","model":"composer-2.5","effort":"medium","attempt":1,"outcome":"done","failure_class":"none","duration_s":31,"tokens_or_cost":"unknown"}
 {"type":"review","task":"drive-cli","reviewer":"claude opus (Claude seat)","rung":"escalation (owner-mandated)","verdict":"FAIL","input_tokens":77383,"output_tokens":26124,"cache_read_tokens":918816}
 {"type":"review","task":"T-054","reviewer":"claude opus (Claude seat)","rung":"escalation (owner-mandated)","verdict":"PASS","input_tokens":66641,"output_tokens":18108,"cache_read_tokens":988396}
+{"type":"architect-run","plan":"T-066-R1","seat":"agy.premium","model":"gemini-4-argon-high","rung":"1","input_tokens":92490,"output_tokens":31261,"cache_read_tokens":529119,"outcome":"done"}
