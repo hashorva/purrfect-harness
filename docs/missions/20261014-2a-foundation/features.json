@@ -159,7 +159,11 @@
         "The fleet inventory finds a new model family from vendor and tier without a code change (a test with an unknown family name)",
         "shellcheck and bash tests/run-tests.sh exit 0"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "44b5362c-50ce-46d5-b75b-6b7317a3665a",
+      "accepted_verification_sha256": "af5d75547f6244989f43253420ed425797d5acb6c380b058c0ea9776897e3729",
+      "accepted_at": "2026-10-17T20:42:49.775818Z",
+      "accepted_by": "Zamir (owner approval 2026-10-17; front desk executed)"
     },
     {
       "id": "F010",
