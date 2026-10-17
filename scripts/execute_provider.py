@@ -10,6 +10,11 @@ import sys
 
 from execution_spec import SpecError, load_persisted
 
+CLAUDE_DISALLOWED_TOOLS = (
+    "Bash(rm -rf *),Bash(git push*),Bash(git reset --hard*),"
+    "Bash(git checkout -- *),Bash(git clean -f*)"
+)
+
 
 def provider_contract(spec):
     """Return argv and explicit environment overrides for one validated spec."""
@@ -45,10 +50,19 @@ def provider_contract(spec):
         # an unattended run must not wait on an MCP server (--strict-mcp-config starts none).
         if contract_version >= 7:
             argv.extend(["--output-format", "stream-json", "--verbose", "--strict-mcp-config"])
+            mcp_config = spec.get("mcp_config")
+            if mcp_config is not None:
+                if isinstance(mcp_config, str) and mcp_config.strip():
+                    argv.extend(["--mcp-config", mcp_config])
+                elif (isinstance(mcp_config, list) and mcp_config and
+                      all(isinstance(item, str) and item.strip() for item in mcp_config)):
+                    argv.extend(["--mcp-config", *mcp_config])
+                else:
+                    raise SpecError("claude mcp_config must be a non-empty string or list of strings")
         elif contract_version >= 6:
             argv.extend(["--output-format", "json"])
-        argv.extend(["--model", model, "--effort", effort,
-                     "--allowedTools", "Read,Write,Edit,Bash"])
+        argv.extend(["--permission-mode", "bypassPermissions", "--disallowedTools", CLAUDE_DISALLOWED_TOOLS,
+                     "--model", model, "--effort", effort])
     elif provider == "agy":
         if effort not in {"low", "medium", "high"}:
             raise SpecError("agy does not support requested effort")

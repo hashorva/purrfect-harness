@@ -386,9 +386,7 @@ check "agy streams events and is not sent --effort under the current contract" \
   sh -c "grep -q -- '--output-format stream-json' '$STUB_OUT' && ! grep -q -- '--effort' '$STUB_OUT'"
 
 # ---- claude prompt-position regression (2.2.5) ----
-# claude's --allowedTools is VARIADIC: it keeps consuming following args as tool names,
-# so a prompt placed after it is swallowed and claude exits with "Input must be provided
-# either through stdin or as a prompt argument". The prompt must precede the flags.
+# Keep the positional prompt ahead of variadic permission and MCP flags.
 echo "== claude prompt position"
 CLAUDE_OUT="$TARGET/.claude-args"
 # shellcheck disable=SC2016  # printf template: $ must stay literal
@@ -398,8 +396,14 @@ chmod +x "$STUBBIN/claude"
     bash scripts/spawn-worker.sh claude docs/missions/20990101-fixture/tasks/T-001.md --tier premium --effort xhigh --feature F001 ) >/dev/null 2>&1 || true
 check "claude receives the prompt immediately after -p" \
   sh -c "grep -q -- '-p Read ' '$CLAUDE_OUT'"
-check "claude prompt is not placed after --allowedTools" \
-  sh -c "! grep -qE -- '--allowedTools [^ ]+ Read ' '$CLAUDE_OUT'"
+check "claude does not use --allowedTools" \
+  sh -c "! grep -q -- '--allowedTools' '$CLAUDE_OUT'"
+check "claude uses bypassPermissions" \
+  sh -c "grep -q -- '--permission-mode bypassPermissions' '$CLAUDE_OUT'"
+check "claude uses the disallowed tools list" \
+  sh -c "grep -q -- '--disallowedTools Bash(rm -rf' '$CLAUDE_OUT'"
+check "claude prompt precedes --disallowedTools" \
+  sh -c "! grep -qE -- '--disallowedTools.* Read ' '$CLAUDE_OUT'"
 
 # ---- codex prompt/argument and stdin regressions ----
 # Keep this stub's stdin read: codex waits for additional input unless its stdin is

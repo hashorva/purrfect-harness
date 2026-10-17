@@ -20,6 +20,7 @@ PROVIDERS = ("codex", "claude", "agent", "agy")
 sys.path.insert(0, str(ROOT / "scripts"))
 from observe_output import observe  # noqa: E402
 import fleet_state  # noqa: E402
+from execute_provider import CLAUDE_DISALLOWED_TOOLS  # noqa: E402
 
 
 class WrapperIntegration(unittest.TestCase):
@@ -316,7 +317,9 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         if provider == "codex":
             return ["exec", "--json", "-C", repo, "-s", "workspace-write", "--add-dir", str(Path(repo) / ".git"), "-m", model, "-c", f'model_reasoning_effort="{effort}"', prompt]
         if provider == "claude":
-            return ["-p", prompt, "--output-format", "stream-json", "--verbose", "--strict-mcp-config", "--model", model, "--effort", effort, "--allowedTools", "Read,Write,Edit,Bash"]
+            return ["-p", prompt, "--output-format", "stream-json", "--verbose", "--strict-mcp-config",
+                    "--permission-mode", "bypassPermissions", "--disallowedTools", CLAUDE_DISALLOWED_TOOLS,
+                    "--model", model, "--effort", effort]
         if provider == "agy":
             return ["--dangerously-skip-permissions", "--print-timeout", "30m", "--model", model,
                     "--output-format", "stream-json", "-p", prompt]
@@ -410,7 +413,8 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                                                        work_unit="T-001" if role == "worker" else "review", feature="F001" if role == "worker" else None)
                     self.assertEqual(invoked["argv"], self.expected_argv(provider, model, "high", speed, spec["prompt"]))
                     if provider == "claude":
-                        self.assertLess(invoked["argv"].index(spec["prompt"]), invoked["argv"].index("--allowedTools"))
+                        self.assertNotIn("--allowedTools", invoked["argv"])
+                        self.assertLess(invoked["argv"].index(spec["prompt"]), invoked["argv"].index("--disallowedTools"))
                     if provider == "agy":
                         self.assertEqual(invoked["argv"][-2:], ["-p", spec["prompt"]])
                     self.clean_runs()

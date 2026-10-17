@@ -15,6 +15,7 @@ sys.dont_write_bytecode = True
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import execution_spec  # noqa: E402
+from execute_provider import CLAUDE_DISALLOWED_TOOLS, SpecError, provider_contract  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC_TOOL = ROOT / "scripts" / "execution_spec.py"
@@ -177,7 +178,9 @@ class ExecutionSpecContract(unittest.TestCase):
     def test_versioned_exact_dry_run_contract_for_every_provider_and_role(self):
         contract_one = {
             "codex": lambda s: ["codex", "exec", "-C", str(self.repo), "-s", "workspace-write", "-m", "test-model", "-c", 'model_reasoning_effort="medium"', "exact prompt"],
-            "claude": lambda s: ["claude", "-p", "exact prompt", "--model", "test-model", "--effort", "medium", "--allowedTools", "Read,Write,Edit,Bash"],
+            "claude": lambda s: ["claude", "-p", "exact prompt", "--permission-mode", "bypassPermissions",
+                                 "--disallowedTools", CLAUDE_DISALLOWED_TOOLS,
+                                 "--model", "test-model", "--effort", "medium"],
             "agy": lambda s: ["agy", "--dangerously-skip-permissions", "--print-timeout", "30m", "--model", "test-model", "--effort", "medium", "-p", "exact prompt"],
             "agent": lambda s: ["agent", "-p", "--force", "--trust", "--workspace", str(self.repo), "--model", "test-model[effort=medium,fast=false]", "exact prompt"],
         }
@@ -278,13 +281,17 @@ class ExecutionSpecContract(unittest.TestCase):
         self.assertEqual(json.loads(path.read_text()), spec)
 
     def test_contract_seven_claude_streams_with_no_mcp_servers_for_every_role(self):
-        tail = ["--model", "test-model", "--effort", "medium", "--allowedTools", "Read,Write,Edit,Bash"]
+        tail = ["--permission-mode", "bypassPermissions", "--disallowedTools", CLAUDE_DISALLOWED_TOOLS,
+                "--model", "test-model", "--effort", "medium"]
         for role in ("worker", "brain"):
             with self.subTest(role=role):
                 path, digest = self.persisted(self.spec_v3(provider="claude", role=role, provider_contract_version=7))
                 argv = json.loads(self.adapter(path, digest).stdout)["argv"]
                 self.assertEqual(argv, ["claude", "-p", "exact prompt", "--output-format", "stream-json",
                                         "--verbose", "--strict-mcp-config", *tail])
+                self.assertNotIn("--allowedTools", argv)
+                self.assertEqual(argv[argv.index("--permission-mode") + 1], "bypassPermissions")
+                self.assertEqual(argv[argv.index("--disallowedTools") + 1], CLAUDE_DISALLOWED_TOOLS)
         for provider, extra in (("codex", {}), ("claude", {}), ("agent", {"speed": "standard"})):
             with self.subTest(provider=provider):
                 argvs = []
@@ -292,6 +299,21 @@ class ExecutionSpecContract(unittest.TestCase):
                     path, digest = self.persisted(self.spec_v3(provider=provider, provider_contract_version=contract, **extra))
                     argvs.append(json.loads(self.adapter(path, digest).stdout)["argv"])
                 self.assertEqual(argvs[0], argvs[1])
+
+    def test_claude_mcp_config_is_per_run_and_rejects_weak_values(self):
+        for config, emitted in (("/tmp/mcp.json", ["/tmp/mcp.json"]),
+                                (["--a", "--b"], ["--a", "--b"])):
+            with self.subTest(config=config):
+                argv, _ = provider_contract(self.spec_v3(provider="claude", provider_contract_version=7,
+                                                         mcp_config=config))
+                strict = argv.index("--strict-mcp-config")
+                self.assertEqual(argv[strict + 1:strict + 2 + len(emitted)], ["--mcp-config", *emitted])
+        for config in ("", [], [""], 123):
+            with self.subTest(config=config):
+                with self.assertRaisesRegex(SpecError,
+                                            "claude mcp_config must be a non-empty string or list of strings"):
+                    provider_contract(self.spec_v3(provider="claude", provider_contract_version=7,
+                                                   mcp_config=config))
 
     def test_contract_eight_agy_streams_and_validates_effort_before_launch(self):
         env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", EXECUTION_SENTINEL=str(self.sentinel))
@@ -326,8 +348,9 @@ class ExecutionSpecContract(unittest.TestCase):
         cases = [
             ("codex", {}, ["codex", "exec", "--json", "-C", repo, "-s", "workspace-write", "--add-dir", git_dir,
                            "-m", "test-model", "-c", 'model_reasoning_effort="medium"', "exact prompt"]),
-            ("claude", {}, ["claude", "-p", "exact prompt", "--output-format", "json", "--model", "test-model",
-                            "--effort", "medium", "--allowedTools", "Read,Write,Edit,Bash"]),
+            ("claude", {}, ["claude", "-p", "exact prompt", "--output-format", "json",
+                            "--permission-mode", "bypassPermissions", "--disallowedTools", CLAUDE_DISALLOWED_TOOLS,
+                            "--model", "test-model", "--effort", "medium"]),
             ("agy", {}, ["agy", "--dangerously-skip-permissions", "--print-timeout", "30m", "--model", "test-model",
                          "--effort", "medium", "-p", "exact prompt"]),
             ("agent", {"speed": "standard"}, ["cursor-agent", "-p", "--force", "--trust", "--output-format", "stream-json",
