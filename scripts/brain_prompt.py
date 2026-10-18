@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Print the planning prompt a Front Desk planning run starts from.
 
-Usage: python3 scripts/brain_prompt.py planning <mission> --provider claude
+Usage: python3 scripts/brain_prompt.py planning <mission> --provider claude [--request PATH]
 prints the planning prompt that a Front Desk planning run starts from.
 """
 import argparse
 import sys
+from pathlib import Path
 
 ROLES = {"mission-init": "planning", "planning": "planning", "gate0": "gate", "gate": "gate", "review": "review"}
 BUDGETS = {"planning": 1000000, "gate": 1000000, "review": 400000}
@@ -25,7 +26,7 @@ SUBAGENTS = ("Subagents: the explorer subagent (.claude/agents/explorer.md, mode
 NO_SUBAGENTS = "Subagents: none is named for this CLI, because no committed --help capture shows one."
 
 
-def render(action, mission, provider, log_rel=None):
+def render(action, mission, provider, log_rel=None, request=None):
     """The brain prompt for one run: Goal, Resources, Budget and Acceptance checks."""
     if action not in ROLES:
         raise ValueError(f"unknown action {action!r}")
@@ -50,7 +51,7 @@ def render(action, mission, provider, log_rel=None):
         "## Acceptance checks",
         f"shellcheck scripts/*.sh tests/*.sh, bash tests/run-tests.sh, and bash scripts/verify-mission.sh {mission} "
         "(ruff and a type check join when the repo adds them). A worker run counts only when .tasks/receipts/ proves it.",
-    ])
+    ]) + ("\n## Request\n" + request.strip() if request is not None else "")
 
 
 def main(argv=None):
@@ -59,10 +60,14 @@ def main(argv=None):
     parser.add_argument("mission")
     parser.add_argument("--provider", required=True)
     parser.add_argument("--log")
+    parser.add_argument("--request")
     args = parser.parse_args(argv)
     try:
-        print(render(args.action, args.mission, args.provider, args.log))
-    except ValueError as exc:
+        request = Path(args.request).read_text(encoding="utf-8") if args.request is not None else None
+        if request is not None and not request.strip():
+            raise ValueError("request file is empty")
+        print(render(args.action, args.mission, args.provider, args.log, request))
+    except (ValueError, OSError) as exc:
         print(f"brain_prompt: {exc}", file=sys.stderr)
         return 2
     return 0

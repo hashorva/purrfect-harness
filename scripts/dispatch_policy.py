@@ -284,15 +284,17 @@ def validate_brain(args):
     if args.action in {"mission-init", "gate0"}:
         if status != "draft":
             fail(f"brain/{args.action} requires a draft mission")
-    elif args.action == "review":
+    elif args.action in {"review", "plan"}:
         if status not in {"in-progress", "awaiting-gate"}:
-            fail("brain/review requires an in-progress or awaiting-gate mission")
+            fail(f"brain/{args.action} requires an in-progress or awaiting-gate mission")
         approved_fleet(mission, mission_relative, args.fleet)
     else:
         fail("unknown brain dispatch action")
     clean_workspace(root)
     if args.action == "review":
         return [f"{mission_relative}/PROGRESS.md"]
+    if args.action == "plan":
+        return [f"{mission_relative}/tasks/*"]
     return [f"{mission_relative}/**"]
 
 

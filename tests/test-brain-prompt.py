@@ -3,6 +3,7 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -53,6 +54,21 @@ class BrainPromptTests(unittest.TestCase):
             bad = subprocess.run(cli + list(args), capture_output=True, text=True, env=env)
             self.assertEqual((bad.returncode, bad.stdout), (2, ""))
             self.assertTrue(bad.stderr.startswith("brain_prompt: "))
+
+    def test_request_is_appended_under_its_own_heading(self):
+        prompt = B.render("planning", "m", "claude", request="  Do X.\n")
+        self.assertTrue(prompt.endswith("\n## Request\nDo X."))
+        self.assertNotIn("## Request", B.render("planning", "m", "claude"))
+        with tempfile.TemporaryDirectory() as directory:
+            (request := Path(directory) / "request.md").write_text("  Do X.\n", encoding="utf-8")
+            cli = [sys.executable, str(ROOT / "scripts/brain_prompt.py"), "planning", "m", "--provider", "claude", "--request", str(request)]
+            good = subprocess.run(cli, capture_output=True, text=True)
+            self.assertEqual((good.returncode, good.stdout, good.stderr), (0, prompt + "\n", ""))
+            for contents in ("", None):
+                request.write_text(contents) if contents is not None else request.unlink()
+                bad = subprocess.run(cli, capture_output=True, text=True)
+                self.assertEqual((bad.returncode, bad.stdout), (2, ""))
+                self.assertTrue(bad.stderr.startswith("brain_prompt: "))
 
     def test_spawn_brain_renders_through_brain_prompt(self):
         source = (ROOT / "scripts/spawn-brain.sh").read_text(encoding="utf-8")

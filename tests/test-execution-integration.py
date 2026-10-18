@@ -1446,6 +1446,66 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                              "--model", "cursor-test", "--feature", "F001", "--effort", "medium", "--speed", "fast"])
         self.assert_prelaunch_refused(result, provider="cursor", prefix=".agents/", pattern=".agents/skills/x/SKILL.md")
 
+    def install_plan_provider(self):
+        probe, path = self.parent / "plan-probe.json", self.bin / "claude"
+        path.write_text(f'''#!/usr/bin/env python3
+import json, os, pathlib, subprocess, sys
+g = lambda *a: subprocess.run(["git", *a], capture_output=True, text=True).stdout
+pathlib.Path({str(probe)!r}).write_text(json.dumps({{"cwd": os.getcwd(), "argv": sys.argv[1:], "remotes": g("remote"), "head": g("rev-parse", "HEAD").strip()}}))
+pathlib.Path("scratch-write.txt").write_text("x")
+p = os.environ.get("PLAN_LIVE_WRITE")
+p and pathlib.Path(p).write_text("x")
+sys.stdout.buffer.write(pathlib.Path({str(OBSERVE_FIXTURES / "claude-subagent.jsonl")!r}).read_bytes())
+''')
+        path.chmod(0o755)
+        return probe
+
+    def test_plan_runs_in_a_scratch_clone_with_receipt_and_ledger_row(self):
+        from execute_provider import provider_contract
+        probe = self.install_plan_provider()
+        self.write_fleet("claude", "plan-model", "high", "unknown", seat_name="brain")
+        (request := self.parent / "request.md").write_text("Do X.\n")
+        result = self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "plan", "--request", str(request)])
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        spec = json.loads(next((self.root / ".tasks/specs").glob("*.json")).read_text())
+        rid = spec["run_id"]
+        self.assertEqual(result.stdout.strip().splitlines()[-1], f"run_id={rid}")
+        self.assertEqual([spec[k] for k in ("role", "work_unit", "effort", "provider_contract_version")], ["brain", "plan", "high", 9])
+        self.assertIn("Role: planning.", spec["prompt"])
+        self.assertTrue(spec["prompt"].endswith("\n## Request\nDo X."))
+        seen = json.loads(probe.read_text())
+        self.assertEqual(seen["argv"], provider_contract(spec)[0][1:])
+        self.assertEqual((seen["cwd"] == self.physical_root, Path(seen["cwd"]).exists()), (False, False))
+        self.assertEqual((seen["remotes"], seen["head"]), ("", spec["base_commit"]))
+        self.assertEqual(((self.root / "scratch-write.txt").exists(), self.git("status", "--porcelain", "--untracked-files=all").stdout), (False, ""))
+        receipt = json.loads((self.root / f".tasks/receipts/{rid}.json").read_text())
+        self.assertEqual((receipt["outcome"], receipt["workspace_changed"], receipt["scope"]["result"]), ("completed", False, "pass"))
+        row = json.loads((self.root / f".tasks/ledger/{rid}.json").read_text())
+        self.assertEqual((row["task"], row["subagents"]["calls"]), ("plan", {"value": 2, "source": "observed"}))
+        self.assertIn("clone=" + seen["cwd"], (self.root / f".tasks/logs/{rid}.log").read_text())
+
+    def test_plan_refusals_start_no_provider(self):
+        self.write_fleet("claude", "plan-model", "high", "unknown", seat_name="brain")
+        (request := self.parent / "request.md").write_text("Do X.")
+        base = ["bash", "scripts/spawn-brain.sh", "docs/missions/fixture"]
+        for args in (["plan"], ["plan", "--request", str(request) + ".missing"], ["review", "--request", str(request)]):
+            self.assert_brain_rejected(base + args)
+        for provider, effort, message in (("claude", "medium", "planning runs need effort high; got medium"), ("codex", "high", "plan runs only on claude or agy seats: codex")):
+            self.write_fleet(provider, "plan-model", effort, "unknown", seat_name="brain")
+            args = base + ["plan", "--request", str(request)]
+            self.assert_brain_rejected(args)
+            self.assertIn(message, self.invoke(args).stderr)
+
+    def test_plan_run_that_writes_the_live_tree_fails(self):
+        self.install_plan_provider()
+        self.write_fleet("claude", "plan-model", "high", "unknown", seat_name="brain")
+        (request := self.parent / "request.md").write_text("Do X.")
+        result = self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "plan", "--request", str(request)], env={"PLAN_LIVE_WRITE": str(self.task.parent / "T-901.md")})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("plan run changed the live tree", result.stderr)
+        receipt = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())
+        self.assertTrue(receipt["workspace_changed"])
+
     def install_fixture_emitting_provider(self, provider, fixture_name):
         binary = "cursor-agent" if provider == "agent" else provider
         fixture = OBSERVE_FIXTURES / fixture_name
