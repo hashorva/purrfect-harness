@@ -70,10 +70,11 @@ committing. Review these operational changes when adopting `v3.1.0`:
   taken strictly from authoritative CLI session metadata (for Codex, only the
   top-level session `model` field, never nested or guessed values) and `no_turn`
   requires positive zero-turn evidence.
-- **Autopilot driver (`scripts/drive-cli.sh`, `scripts/drive_cli_rules.py`):**
+- **Autopilot driver (`scripts/drive-cli.sh`, `scripts/drive_cli_rules.py`, `scripts/drive-cli.rules.json`):**
   isolated `tmux` driver with deterministic regex rules that answers at most one
   exact folder-trust prompt and stops with exit code 3 on any later or
-  numbered/menu unknown prompt without sending input.
+  numbered/menu unknown prompt without sending input. Boxed menus and
+  alternate-screen redraws are accepted residuals that end as an exit-4 stall.
 - **Shared tool PATH (`scripts/harness-path.sh`):** idempotent PATH helper
   sourced by wrappers, `fleet-doctor.sh`, and tests; safe under `set -u`.
 - **Seeded-defect reviewer calibration:** `routing-data.jsonl` records 3/3
@@ -102,6 +103,7 @@ committing. Review these operational changes when adopting `v3.1.0`:
   and the explicitly snapshotted protected paths only.
 - One worker at a time per repository workspace lock.
 - Residual risks (docs/missions/20261014-2a-foundation/evidence/claude-unlock-residual-risk.md): a command that evades --disallowedTools can still read, exfiltrate or change paths outside the workspace, and the post-run snapshot detects changes only to the listed protected paths and Git workspace and index state.
+- drive-cli residuals: boxed menus and alternate-screen redraws are not classified as prompts; the driver sends no input and the run ends as an exit-4 stall.
 
 ## 3.0.0 (2026-10-14)
 
