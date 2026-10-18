@@ -75,6 +75,35 @@ documentation_truth_negative() { # documentation_truth_negative <repository-root
   rm -rf "$fixture"
 }
 
+# Test files are discovered, not listed: every tests/test-*.py runs under python3 and
+# every tests/test-*.sh under bash, from the kit root with no arguments. A new file
+# runs without editing this script; any other tests/test-* file is reported.
+run_test_files() {
+  local file found=0
+  echo "== test files (discovered)"
+  for file in tests/test-*; do
+    [ -e "$file" ] || [ -L "$file" ] || continue
+    found=1
+    case "$file" in
+      *.py)
+        check "$file is valid Python" python3 -c 'import ast, sys; ast.parse(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1])' "$file"
+        check "$file" python3 "$file" ;;
+      *.sh)
+        check "$file is valid bash" bash -n "$file"
+        check "$file" bash "$file" ;;
+      *) check "$file is a .py or .sh test" false ;;
+    esac
+  done
+  check "test discovery found test files" test "$found" -eq 1
+  check "test files leave no bytecode" bash -c "test ! -e scripts/__pycache__ && test ! -e tests/__pycache__"
+}
+
+# --files-only runs just the discovered test files.
+if [ "${1:-}" = "--files-only" ]; then
+  run_test_files
+  if [ "$FAIL" -eq 1 ]; then echo "TESTS FAILED"; exit 1; else echo "ALL TESTS PASSED"; exit 0; fi
+fi
+
 # ---- kit version consistency (same extraction as .github/workflows/ci.yml) ----
 # Catch README/CHANGELOG drift before push. CI remains the backstop; this fails in
 # seconds locally. Forgotten twice at v2.2.4 and v2.2.5 — that is the bar.
@@ -96,45 +125,12 @@ rm -rf "$VERSION_MISMATCH"
 echo "== documentation truth"
 check "documentation matches instruction and ownership truth" check_documentation_truth "$HARNESS"
 check "documentation guard rejects an enforced-permissions claim" documentation_truth_negative "$HARNESS"
-check "CI workflow matrix and suite Python header" python3 tests/test-ci-workflow.py
+check "CI workflow matrix and suite Python header" python3 "${HARNESS}/tests/test-ci-workflow.py"
 
-echo "== immutable execution spec and provider adapter"
-check "ExecutionSpec and provider adapter contracts" python3 tests/test-execution-spec.py
-check "golden provider argv for every recorded contract" python3 tests/test-golden-argv.py
-check "immutable spec integration through real wrappers" python3 tests/test-execution-integration.py
-check "VerificationRecord and acceptance real-entry contracts" python3 tests/test-verification-record.py
-check "committed 2A evidence passes the require-workers audit" python3 tests/test-evidence-2a.py
-check "ExecutionSpec focused test leaves no scripts bytecode" test ! -e "$HARNESS/scripts/__pycache__"
-
-echo "== frozen fleet policy"
-check "fleet inventory retention and frozen resolution" python3 tests/test-fleet-state.py
-check "fleet v2 policy seat validation" python3 tests/test-fleet-v2.py
-check "registry and fleet-state legacy parity" python3 tests/test-registry.py
+echo "== harness PATH helper"
 # shellcheck disable=SC2016  # bash -c body must expand $py at runtime
 check "harness PATH helper prepends existing tool directories once under set -u" bash -c 'set -u; py="$(command -v python3)"; unset PATH; . scripts/harness-path.sh; . scripts/harness-path.sh; "$py" -c '\''import os,pathlib; p=os.environ["PATH"].split(":"); expected=[d for d in ("/opt/homebrew/bin","/usr/local/bin") if pathlib.Path(d).is_dir()]; assert p[:len(expected)] == expected and all(p.count(d)==1 for d in expected), p'\'''
-check "fleet doctor identity and login checks" python3 tests/test-fleet-doctor.py
-check "seat smoke scratch clone and dry-run plan" python3 tests/test-seat-smoke.py
-check "one frozen seat probe and classifications" python3 tests/test-probe-seat.py
-
-echo "== observed CLI output (F003)"
-check "observed model and usage parser over real CLI samples" python3 tests/test-observe-output.py
-check "observe parser focused test leaves no scripts bytecode" test ! -e "$HARNESS/scripts/__pycache__"
-check "execution receipt v1 and v2 observation validation" python3 tests/test-execution-receipt.py
-check "execution receipt focused test leaves no scripts bytecode" test ! -e "$HARNESS/scripts/__pycache__"
-
-echo "== ledger row v1 (F005)"
-check "ledger row schema, source flags and validator contract" python3 tests/test-ledger.py
-check "task-plan and review verdict schema validation" python3 tests/test-verdict.py
-check "ledger focused test leaves no scripts or tests bytecode" bash -c "test ! -e '$HARNESS/scripts/__pycache__' && test ! -e '$HARNESS/tests/__pycache__'"
-
-echo "== run evidence reconstruction (F007)"
-check "reconstruction reports complete and missing evidence" python3 tests/test-reconstruct.py
-check "reconstruction focused test leaves no bytecode" bash -c "test ! -e '$HARNESS/scripts/__pycache__' && test ! -e '$HARNESS/tests/__pycache__'"
-
-echo "== drive-cli autopilot (F009)"
-check "drive-cli rule matcher unit tests" python3 tests/test-drive-cli-rules.py
-check "drive-cli tmux driver and fake-cli integration" bash tests/test-drive-cli.sh
-check "drive-cli focused test leaves no bytecode" bash -c "test ! -e '$HARNESS/scripts/__pycache__' && test ! -e '$HARNESS/tests/__pycache__'"
+run_test_files
 
 # F006 regressions must use the public propagation/release entry points. Tagged
 # and untagged source state is always isolated so this suite is independent of
