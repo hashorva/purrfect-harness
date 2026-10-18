@@ -199,7 +199,11 @@
         "Numbered and menu approval prompts are unknown prompts (tests, including real tmux)",
         "shellcheck and bash tests/run-tests.sh exit 0"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "25db6a5c-b056-432d-8031-d7ada06cafb9",
+      "accepted_verification_sha256": "a98437bd41a595c573da22a515f41c361dc1288e99a7d2b9e693ec36e2f3a46a",
+      "accepted_at": "2026-10-18T06:28:34.256324Z",
+      "accepted_by": "Zamir (owner approval 2026-10-18; front desk executed)"
     },
     {
       "id": "F012",
