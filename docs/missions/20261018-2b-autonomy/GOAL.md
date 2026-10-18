@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: awaiting-gate
 owner: Zamir
 orchestrator: opus
 created: 2026-10-18
