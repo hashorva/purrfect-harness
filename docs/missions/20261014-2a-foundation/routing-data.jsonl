@@ -231,3 +231,4 @@
 {"run_id":"406b3f31-1fda-4e4f-af59-9fa6b663efd7","task":"T-114","category":"receipts","size":"M","seat":"brain_codex","model":"gpt-6.1-sol","effort":"medium","attempt":2,"outcome":"verify-failed","failure_class":"task","duration_s":156,"tokens_or_cost":"unknown"}
 {"type":"architect-run","plan":"T-115","seat":"claude.brain-planning","model":"claude opus (high)","rung":"native: claude","input_tokens":59563,"output_tokens":19378,"cache_read_tokens":866927,"outcome":"done"}
 {"run_id":"a7946812-2199-4386-b13f-a7e784dcb503","task":"T-115","category":"receipts","size":"M","seat":"brain_codex","model":"gpt-6.1-sol","effort":"medium","attempt":3,"outcome":"done","failure_class":"none","duration_s":215,"tokens_or_cost":"unknown"}
+{"type":"review","task":"release 3.1.0 diff","reviewer":"claude opus (medium)","rung":"native: claude","verdict":"FAIL","input_tokens":34797,"output_tokens":7678,"cache_read_tokens":573853}
