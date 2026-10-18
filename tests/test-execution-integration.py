@@ -64,6 +64,10 @@ class WrapperIntegration(unittest.TestCase):
         }, indent=2) + "\n")
         (self.root / ".gitignore").write_text(".tasks/\nbin/\nsame.json\n")
         self.git("init", "-q")
+        # git commit can start a detached gc/maintenance that creates and removes
+        # .git/objects/maintenance.lock while tests snapshot this tree.
+        self.git("config", "gc.auto", "0")
+        self.git("config", "maintenance.auto", "false")
         self.git("config", "user.email", "t@example.invalid")
         self.git("config", "user.name", "t")
         self.git("add", ".")
@@ -141,7 +145,10 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         shutil.rmtree(self.parent)
 
     def git(self, *args):
-        return subprocess.run(["git", *args], cwd=self.root, check=True, capture_output=True, text=True)
+        # -c keeps every fixture git call free of background auto-maintenance,
+        # including calls made before the repo config below exists.
+        return subprocess.run(["git", "-c", "gc.auto=0", "-c", "maintenance.auto=false", *args],
+                              cwd=self.root, check=True, capture_output=True, text=True)
 
     def invoke(self, args, *, env=None, inherit_pydontwritebytecode=True):
         launch_env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",

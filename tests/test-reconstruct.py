@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -33,18 +34,28 @@ OTHER_MISSION = "docs/missions/other"
 
 
 def tree_snapshot(root):
+    # The fixture repo turns off gc.auto and maintenance.auto, but git can still
+    # create and delete short-lived lock or temp files under .git. Such a path can
+    # vanish between rglob listing it and lstat, so it is skipped. A path that
+    # vanishes anywhere else is a real change to the fixture and still raises.
     entries = []
     for path in sorted(root.rglob("*")):
-        if path.is_symlink():
+        rel = path.relative_to(root)
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            if rel.parts[0] == ".git":
+                continue
+            raise
+        if stat.S_ISLNK(info.st_mode):
             kind = "symlink"
-        elif path.is_file():
+        elif stat.S_ISREG(info.st_mode):
             kind = "file"
-        elif path.is_dir():
+        elif stat.S_ISDIR(info.st_mode):
             kind = "dir"
         else:
             kind = "other"
-        stat = path.lstat()
-        entries.append((path.relative_to(root).as_posix(), kind, stat.st_size, stat.st_mtime_ns))
+        entries.append((rel.as_posix(), kind, info.st_size, info.st_mtime_ns))
     return entries
 
 

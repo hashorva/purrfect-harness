@@ -509,15 +509,45 @@ PY
 unset DRIVE_CLI_STALL_SECS
 
 echo "== stall with no pane change (exit 4)"
+# drive-cli.sh measures a stall with date +%s from before the CLI starts, so on
+# a slow runner a 1-second stall could fire on an empty pane. This date shim
+# freezes that clock until the fake CLI has touched its ready file AND the
+# driver has logged the drawn line to pane.log. The stall can only fire on a
+# pane that holds the line. Every other date format goes to the real date.
+STALL_READY="$TMP/stall-ready"
+rm -f "$STALL_READY"
+mkdir -p "$TMP/stall-bin"
+cat >"$TMP/stall-bin/date" <<'FAKE'
+#!/bin/sh
+if [ "$#" -eq 1 ] && [ "$1" = "+%s" ]; then
+  if [ ! -e "$STALL_READY_FILE" ] || ! grep -Fqs "frozen pane line" "$DRIVE_CLI_OUT_ROOT"/*/pane.log; then
+    echo 1000000000
+    exit 0
+  fi
+fi
+exec "$REAL_DATE" "$@"
+FAKE
+chmod +x "$TMP/stall-bin/date"
 cat >"$TMP/fake-stall.sh" <<'FAKE'
 #!/usr/bin/env bash
 printf 'frozen pane line\n'
+touch "$1"
 sleep 120
 FAKE
 chmod +x "$TMP/fake-stall.sh"
 find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+REAL_DATE="$(command -v date)"
+STALL_READY_FILE="$STALL_READY"
+SAVED_PATH="$PATH"
+export REAL_DATE STALL_READY_FILE
 export DRIVE_CLI_STALL_SECS=1
-run_drive 4 "frozen pane line" -- "$TMP/fake-stall.sh"
-unset DRIVE_CLI_STALL_SECS
+export PATH="$TMP/stall-bin:$PATH"
+run_drive 4 "frozen pane line" -- "$TMP/fake-stall.sh" "$STALL_READY"
+export PATH="$SAVED_PATH"
+unset REAL_DATE STALL_READY_FILE DRIVE_CLI_STALL_SECS
+if [ ! -e "$STALL_READY" ]; then
+  echo "FAIL: stall fake never signalled readiness" >&2
+  exit 1
+fi
 
 echo "ALL drive-cli tmux tests passed"
