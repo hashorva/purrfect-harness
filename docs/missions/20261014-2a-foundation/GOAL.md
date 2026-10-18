@@ -1,5 +1,5 @@
 ---
-status: done
+status: in-progress
 owner: Zamir
 orchestrator: opus
 created: 2026-10-14
