@@ -181,7 +181,7 @@ class SeatSmoke(unittest.TestCase):
 
     NOW = "2026-10-16T18:00:00Z"
     V2_MODELS = {"claude": ["opus", "sonnet", "haiku"], "codex": ["gpt-6-luna"], "agent": ["grok-4.7-high"],
-                 "agy": ["gemini-3.8-flash-medium", "claude-opus-5-5-high"]}
+                 "agy": ["gemini-3.8-flash-medium"]}
 
     def make_v2(self, failed=()):
         """Replace the fixture fleet with a v2 fleet and give the live root its inventory."""
@@ -207,7 +207,7 @@ class SeatSmoke(unittest.TestCase):
         fleet = {"schema_version": 2, "mission": {"path": FIXTURE}, "inventory": {"sha256": "0" * 64, "probed_at": self.NOW},
                  "approval": {"status": "approved", "approved_by": "test", "approved_at": self.NOW},
                  "policy": {"billing_classes": ["included"], "fast": False, "no_zdr": "allow"},
-                 "seats": {"brain": seat("opus", "high", ["agy", "claude"], "unknown", "agy", "claude-opus-5-5-high"),
+                 "seats": {"brain": seat("opus", "high", ["claude"], "unknown", "claude", "opus"),
                            "agy.economy": seat("flash", "medium", ["agy"], "unknown", "agy", "gemini-3.8-flash-medium"),
                            "claude.economy": seat("haiku", "medium", ["claude"], "unknown", "claude", "haiku"),
                            "cursor.premium": seat("grok", "high", ["cursor-grok"], "standard", "cursor", "grok-4.7-high")}}

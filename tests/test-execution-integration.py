@@ -236,7 +236,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.commit_fixture("frozen v2 fleet")
 
     def write_v2_brain_fleet_and_inventory(self, *, claude_ok, agy_models):
-        """Chair seat on two doors: family opus, claude first, then agy (F009 step 5)."""
+        """Legacy brain seat with agy first, used to prove foreign doors are skipped (F013)."""
         (self.root / ".tasks").mkdir(exist_ok=True)
         providers = {}
         for name in fleet_state.PROVIDERS:
@@ -258,7 +258,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             "inventory": {"sha256": "0" * 64, "probed_at": "2026-10-16T00:00:00Z"},
             "approval": {"status": "approved", "approved_by": "human", "approved_at": "2026-10-16T00:00:00Z"},
             "policy": {"billing_classes": ["included"], "fast": False, "no_zdr": "allow"},
-            "seats": {"brain": {"family": "opus", "effort": "high", "speed": "unknown", "doors": ["claude", "agy"],
+            "seats": {"brain": {"family": "opus", "effort": "high", "speed": "unknown", "doors": ["agy", "claude"],
                                 "approved_resolution": {"provider": "claude", "model": "opus", "effort": "high", "speed": "unknown"}}},
         }
         path = self.mission / "fleet.json"
@@ -1256,17 +1256,14 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertEqual(third.returncode, 0, third.stderr + third.stdout)
         self.assertEqual(len(drift_path.read_text().splitlines()), 1)
 
-    def test_v2_brain_seat_moves_to_agy_opus_with_exactly_one_drift_event(self):
-        """F009 step 5: with the claude door down the chair resolves to agy claude-opus-5-5-high, logged once."""
+    def test_v2_brain_never_resolves_to_agy_opus(self):
+        """Native-only (F013): a legacy brain seat with an agy door never resolves to a Claude model on agy."""
         self.set_status("in-progress")
         agy_models = ["gemini-3.8-flash-low", "claude-opus-5-5-low", "claude-opus-5-5-medium", "claude-opus-5-5-high",
                       "claude-sonnet-5-5-high", "gemini-4-argon-high"]
         brain = ["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"]
         drift_path = self.root / ".tasks/drift/fixture.jsonl"
-        approved = {"provider": "claude", "model": "opus", "effort": "high", "speed": "unknown"}
-        moved_to = {"provider": "agy", "model": "claude-opus-5-5-high", "effort": "high", "speed": "unknown"}
-
-        # Door priority: a healthy claude door keeps the approved resolution and writes no drift event.
+        # A healthy native Claude door resolves normally and writes no drift event.
         self.write_v2_brain_fleet_and_inventory(claude_ok=True, agy_models=agy_models)
         stays = self.invoke(brain)
         self.assertEqual(stays.returncode, 0, stays.stderr + stays.stdout)
@@ -1275,33 +1272,9 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertFalse(drift_path.exists())
         self.drop_run_artifacts()
 
-        # The claude door is down: the chair moves to agy through the real wrapper and fake agy.
-        self.write_v2_brain_fleet_and_inventory(claude_ok=False, agy_models=agy_models)
-        moved = self.invoke(brain)
-        self.assertEqual(moved.returncode, 0, moved.stderr + moved.stdout)
-        spec, _, _, invoked = self.linked(role="brain", provider="agy", model="claude-opus-5-5-high", effort="high",
-                                          speed="unknown", work_unit="review", feature=None)
-        self.assertEqual(invoked["argv"], self.expected_argv("agy", "claude-opus-5-5-high", "high", "unknown", spec["prompt"]))
-        self.assertNotIn("--effort", invoked["argv"])
-        events = [json.loads(line) for line in drift_path.read_text().splitlines()]
-        self.assertEqual(len(events), 1)
-        self.assertEqual({k: events[0][k] for k in ("mission", "seat", "from", "to")},
-                         {"mission": "docs/missions/fixture", "seat": "brain", "from": approved, "to": moved_to})
-        self.assertEqual(events[0]["inventory_sha256"],
-                         hashlib.sha256((self.root / ".tasks/fleet-inventory.json").read_bytes()).hexdigest())
-
-        # The same resolution again is not a new drift event; the effort comes from the seat, not the list.
+        # A foreign agy model cannot satisfy the legacy Opus seat when Claude is down.
         self.drop_run_artifacts()
-        self.write_v2_brain_fleet_and_inventory(claude_ok=False, agy_models=["claude-opus-5-5-low", "gemini-3.8-flash-low"])
-        again = self.invoke(brain)
-        self.assertEqual(again.returncode, 0, again.stderr + again.stdout)
-        self.linked(role="brain", provider="agy", model="claude-opus-5-5-high", effort="high", speed="unknown",
-                    work_unit="review", feature=None)
-        self.assertEqual(len(drift_path.read_text().splitlines()), 1)
-
-        # agy lists no opus model and claude is down: unavailable, refused before any run artifact.
-        self.drop_run_artifacts()
-        self.write_v2_brain_fleet_and_inventory(claude_ok=False, agy_models=["gemini-3.8-flash-low", "claude-sonnet-5-5-high"])
+        self.write_v2_brain_fleet_and_inventory(claude_ok=False, agy_models=["claude-opus-5-5-high"])
         refused = self.invoke(brain)
         self.assertNotEqual(refused.returncode, 0, refused.stderr + refused.stdout)
         self.assertIn("ERROR: fleet seat resolved as unavailable", refused.stderr)
@@ -1309,26 +1282,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         for dirname in ("specs", "logs", "receipts", "locks"):
             path = self.root / ".tasks" / dirname
             self.assertFalse(list(path.glob("*")) if path.exists() else [], dirname)
-        self.assertEqual(len(drift_path.read_text().splitlines()), 1)
-
-    def test_v2_brain_move_fails_before_artifacts_when_drift_log_is_unwritable(self):
-        """F009 step 5: a chair move that cannot be logged never launches agy."""
-        self.set_status("in-progress")
-        self.write_v2_brain_fleet_and_inventory(claude_ok=False, agy_models=["claude-opus-5-5-high"])
-        drift_dir = self.root / ".tasks/drift"
-        drift_dir.mkdir(parents=True)
-        drift_dir.chmod(0o500)
-        try:
-            refused = self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"])
-            self.assertNotEqual(refused.returncode, 0, refused.stderr + refused.stdout)
-            self.assertIn("ERROR: drift event could not be written", refused.stderr)
-            self.assertFalse((self.root / ".tasks/invoked.json").exists())
-            for dirname in ("specs", "logs", "receipts", "locks"):
-                path = self.root / ".tasks" / dirname
-                self.assertFalse(list(path.glob("*")) if path.exists() else [], dirname)
-            self.assertFalse(list(drift_dir.glob("*")))
-        finally:
-            drift_dir.chmod(0o700)
+        self.assertFalse(drift_path.exists())
 
     def test_v2_worker_fails_before_artifacts_when_drift_directory_is_unwritable(self):
         self.set_status("in-progress")

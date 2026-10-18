@@ -239,7 +239,7 @@ class ProbeSeatTest(unittest.TestCase):
 
     NOW = "2026-10-16T18:00:00Z"
     MODELS = {"claude": ["opus", "sonnet", "haiku"], "codex": ["gpt-6-luna"], "agent": ["grok-4.7-high"],
-              "agy": ["gemini-3.8-flash-medium", "claude-opus-5-5-high"]}
+              "agy": ["gemini-3.8-flash-medium"]}
 
     def v2_files(self, failed=()):
         providers = {}
@@ -265,7 +265,7 @@ class ProbeSeatTest(unittest.TestCase):
                  "approval": {"status": "approved", "approved_by": "test", "approved_at": self.NOW},
                  "policy": {"billing_classes": ["included"], "fast": False, "no_zdr": "allow"},
                  "seats": {"cursor.premium": seat("grok", "high", ["cursor-grok"], "standard", "cursor", "grok-4.7-high"),
-                           "brain": seat("opus", "high", ["agy", "claude"], "unknown", "agy", "claude-opus-5-5-high"),
+                           "brain": seat("opus", "high", ["claude"], "unknown", "claude", "opus"),
                            "agy.economy": seat("flash", "medium", ["agy"], "unknown", "agy", "gemini-3.8-flash-medium")}}
         fleet_state.validate_fleet(fleet)
         self.fleet = self.temp / "fleet-v2.json"
@@ -281,7 +281,7 @@ class ProbeSeatTest(unittest.TestCase):
         self.v2_files()
         for seat, provider, model, effort, speed in (
                 ("cursor.premium", "agent", "grok-4.7-high", "high", "standard"),
-                ("brain", "agy", "claude-opus-5-5-high", "high", "unknown"),
+                ("brain", "claude", "opus", "high", "unknown"),
                 ("agy.economy", "agy", "gemini-3.8-flash-medium", "medium", "unknown")):
             with self.subTest(seat=seat):
                 result = self.dry(seat)

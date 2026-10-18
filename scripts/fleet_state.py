@@ -357,6 +357,9 @@ def freeze_v2(args):
     registry=load_registry(); seats={}
     for name,binding in bindings.items():
         exact_keys(binding,{"family","effort","doors","speed"},"bindings."+name)
+        for door in binding["doors"]:
+            if door not in registry["doors"]: fail(f"binding {name} unknown door {door!r}")
+            if not native_door(registry,door,binding["family"]): fail(f"binding {name} door {door!r} is not native to family {binding['family']!r}")
         seat={**binding,"approved_resolution":{"provider":registry["doors"][binding["doors"][0]]["provider"],"model":"pending","effort":binding["effort"],"speed":binding["speed"]}}
         seats[name]=seat
     mission=Path(args.mission_dir)
@@ -434,6 +437,7 @@ def resolve_v2(fleet,seat,registry,inventory):
     fast=policy["fast"] and spec["speed"]=="fast"
     for door in spec["doors"]:
         door_spec=registry["doors"][door]; provider=door_spec["provider"]; key=keys[provider]
+        if not native_door(registry,door,spec["family"]): continue
         if door_spec["billing_class"] not in policy["billing_classes"]: continue
         if door_spec["no_zdr"] and policy["no_zdr"]=="forbid": continue
         record=inventory["providers"][key]
@@ -455,6 +459,9 @@ def resolve_v2(fleet,seat,registry,inventory):
         except RegistryError as exc: fail(str(exc))
         return {"provider":provider,"door":door,"model":model,"effort":spec["effort"],"speed":spec["speed"],"source":"alias" if key=="claude" else "observed"}
     return {"provider":None,"door":None,"model":None,"effort":spec["effort"],"speed":spec["speed"],"source":"unavailable"}
+def native_door(registry,door,family):
+    provider=registry["doors"].get(door,{}).get("provider")
+    return any(spec[0]==provider and family in spec[1:] for spec in registry["seat_specs"].values())
 def resolve_v2_command(args):
     fleet,_=read_json(args.fleet,"fleet",require_canonical=True)
     inventory_doc,_=read_json(args.inventory,"inventory",require_canonical=True)

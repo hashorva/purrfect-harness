@@ -94,6 +94,39 @@ def require_frozen_family_and_schema():
 class FleetStateTests(unittest.TestCase):
   def test_resolve_v2_frozen_family_wins_and_schema_pattern_is_ecma262(self):
     require_frozen_family_and_schema()
+  def test_doors_are_native_only(self):
+    sys.path.insert(0,str(ROOT/'scripts'))
+    import harness_registry as H
+    import fleet_state as F
+    reg=H.load_registry(); now='2026-10-18T00:00:00Z'; providers={}
+    for key in F.PROVIDERS:
+      base={'probed_at':now,'capabilities':F.CAPABILITIES[key]}
+      if key=='claude': providers[key]={**base,'status':'success','path':'/bin/claude','aliases':['opus','sonnet','haiku'],'observed_models':[]}
+      elif key=='agy': providers[key]={**base,'status':'success','path':'/bin/agy','aliases':[],'observed_models':['claude-opus-5-5-high','gemini-4-argon-high']}
+      else: providers[key]={**base,'status':'unavailable','error':'none'}
+    inv={'schema_version':1,'probed_at':now,'providers':providers,'last_good':{},'seats':F.make_seats(providers,{})}
+    seat={'family':'opus','effort':'high','speed':'unknown','doors':['agy','claude'],'approved_resolution':{'provider':'agy','model':'claude-opus-5-5-high','effort':'high','speed':'unknown'}}
+    fleet={'schema_version':2,'mission':{'path':'docs/missions/x'},'inventory':{'sha256':'0'*64,'probed_at':now},'approval':{'status':'approved','approved_by':'t','approved_at':now},'policy':{'billing_classes':['included'],'fast':False,'no_zdr':'forbid'},'seats':{'brain':seat}}
+    self.assertEqual((F.resolve_v2(fleet,'brain',reg,inv)['provider'],F.resolve_v2(fleet,'brain',reg,inv)['door'],F.resolve_v2(fleet,'brain',reg,inv)['model']),('claude','claude','opus'))
+    providers['claude']={'probed_at':now,'capabilities':F.CAPABILITIES['claude'],'status':'failure','path':'/bin/claude','error':'down'}; inv['seats']=F.make_seats(providers,{})
+    self.assertEqual(F.resolve_v2(fleet,'brain',reg,inv)['source'],'unavailable')
+    for door,family in (('agy','opus'),('agy','sonnet'),('agy','gpt-oss'),('agy-argon','opus'),('codex','opus'),('cursor-grok','opus')):
+      self.assertFalse(F.native_door(reg,door,family),(door,family))
+    for door,family in (('claude','opus'),('claude','sonnet'),('claude','haiku'),('codex','sol'),('codex','terra'),('codex','luna'),('agy','flash'),('agy-argon','argon'),('cursor-grok','grok'),('cursor-composer','composer')):
+      self.assertTrue(F.native_door(reg,door,family),(door,family))
+    with tempfile.TemporaryDirectory() as tmp:
+      d=Path(tmp); mission=d/'mission'; mission.mkdir(); inv_path=d/'inventory.json'; write(inv_path,inv)
+      bindings=d/'bindings.json'; policy=d/'policy.json'; write(policy,{'billing_classes':['included'],'fast':False,'no_zdr':'forbid'})
+      command=('python3',str(FLEET_STATE),'freeze-v2','--mission-dir',str(mission),'--inventory',str(inv_path),'--bindings',str(bindings),'--policy',str(policy),'--approved-by','test','--approved-at',now)
+      write(bindings,{'brain':{'family':'opus','effort':'high','doors':['agy','claude'],'speed':'unknown'}})
+      refused=run(*command,ok=False)
+      self.assertIn("door 'agy' is not native to family 'opus'",refused.stderr)
+      self.assertFalse((mission/'fleet.json').exists())
+      providers['claude']={'probed_at':now,'capabilities':F.CAPABILITIES['claude'],'status':'success','path':'/bin/claude','aliases':['opus','sonnet','haiku'],'observed_models':[]}
+      inv['seats']=F.make_seats(providers,{})
+      write(inv_path,inv)
+      write(bindings,{'brain':{'family':'opus','effort':'high','doors':['claude'],'speed':'unknown'},'brain_argon':{'family':'argon','effort':'high','doors':['agy-argon'],'speed':'unknown'}})
+      run(*command)
 def main():
   with tempfile.TemporaryDirectory() as tmp:
     d=Path(tmp); bin=d/'bin'; bin.mkdir(); home=d/'home'; (home/'.codex').mkdir(parents=True)
