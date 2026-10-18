@@ -173,12 +173,7 @@ RUN_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
 LOG_REL=".tasks/logs/${RUN_ID}.log"
 LOG="$ROOT/$LOG_REL"
 
-PROMPT="You are the mission BRAIN for ${MISSION}. Action: ${ACTION}.
-Goal for mission-init: GOAL.md, features.json, PROGRESS.md and tasks/T-001.md exist (templates in docs/missions/templates/) and the status stays draft until Gate 0. Goal for gate0: the feature list and the fleet-inventory map are ready for the owner; no worker is dispatched. Goal for review: a verdict on the worker's change, judged by its effects against the task's exit criteria.
-Context: AGENTS.md, docs/missions/ORCHESTRATION.md, docs/missions/MODEL_ROUTING.md, the mission folder, and the repo skills in .agents/skills (mission-init, dispatch-worker).
-Resources: your CLI's native tools, web search, and subagents where your CLI has them (Claude Code: explorer on Haiku and the read-only code-reviewer; codex: Luna; cursor: Composer; agy: Flash). Delegate wide reading and searching to a cheap subagent and make the decisions yourself.
-Acceptance checks: shellcheck scripts/*.sh tests/*.sh, bash tests/run-tests.sh, and bash scripts/verify-mission.sh ${MISSION} (ruff and a type check join when the repo adds them). A worker run counts only when .tasks/receipts/ proves it.
-Budget: this one run, under the runner's timeout. Run your checks before you finish and stop when the goal is met. Your log: ${LOG_REL}."
+PROMPT="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/brain_prompt.py" "$ACTION" "$MISSION" --provider "$PROVIDER" --log "$LOG_REL")" || exit $?
 
 SPEC_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execution_spec.py" construct --run-id "$RUN_ID" --write-scope-json "$WRITE_SCOPE_JSON" --role brain --mission "$MISSION" --work-unit "$ACTION" --attempt "$ATTEMPT" --provider "$PROVIDER" --model "$MODEL" --effort "$EFFORT" --speed "$SPEED" --repo "$ROOT" --prompt "$PROMPT")" || exit $?
 RUN_ID="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["run_id"])' <<<"$SPEC_JSON")"

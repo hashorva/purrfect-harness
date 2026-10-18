@@ -72,7 +72,7 @@ class ExecutionReceiptObservation(unittest.TestCase):
         for name in (
             "execution_spec.py", "execution_receipt.py", "execution_runner.py",
             "execute_provider.py", "observe_output.py", "model_id.py", "run_id.py", "fleet_state.py", "dispatch_policy.py",
-            "harness_registry.py", "spawn-worker.sh", "spawn-brain.sh",
+            "harness_registry.py", "spawn-worker.sh", "spawn-brain.sh", "brain_prompt.py",
         ):
             shutil.copy2(ROOT / "scripts" / name, self.root / "scripts" / name)
         shutil.copy2(ROOT / "harness-registry.json", self.root / "harness-registry.json")
