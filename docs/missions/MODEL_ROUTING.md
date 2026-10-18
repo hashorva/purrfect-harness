@@ -39,6 +39,8 @@ file are durable. Always show the map at GATE 0 so the human can swap binds.
 - The reviewer is on a different vendor than the worker where possible.
 - Opus medium reviews dispatch, verification, acceptance, safety and privacy code.
 
+Note (F013): Launcher prompts give goal, resources, budget and acceptance checks; Claude Code runs delegate wide reading to the Haiku explorer subagent, receipts record subagent calls and their tokens, and the scope check rejects compiled-module and stdlib shadowing.
+
 These family labels describe routing preferences, not current vendor availability
 or pricing. The probed inventory reports the models this machine can bind.
 
