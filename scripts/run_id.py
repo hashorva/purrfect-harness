@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """The one run-id rule shared by every harness CLI: a canonical lowercase RFC 4122 UUID, versions 1-8."""
 import re
+import sys
 import uuid
 
 # Shape only, for privacy scans of free text. It never decides whether a run id is valid.
@@ -23,3 +24,20 @@ def validate_run_id(value):
             or parsed.version not in range(1, 9) or str(parsed) != value):
         raise ValueError(MESSAGE)
     return value
+
+
+def main(argv):
+    """CLI: run_id.py check <value>; exit 0 when canonical, else 2 without echoing the value."""
+    if len(argv) != 2 or argv[0] != "check":
+        print("Usage: run_id.py check <run-id>", file=sys.stderr)
+        return 2
+    try:
+        validate_run_id(argv[1])
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

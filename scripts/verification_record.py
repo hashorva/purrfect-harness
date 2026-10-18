@@ -71,6 +71,11 @@ def receipt_link_ok(value):
             and is_run_id(value[len(prefix):-len(suffix)]))
 
 
+def require_run_id(run_id):
+    """Refuse a non-canonical run id before it reaches any path, glob or existence check."""
+    if not is_run_id(run_id): fail("run_id must be a canonical RFC UUID")
+
+
 def safe_task_path(value):
     """Match the receipt's repository-relative task contract, plus line safety."""
     return (isinstance(value, str) and bool(value) and value.strip() == value and
@@ -205,6 +210,7 @@ def bind(root, mission, run_id):
 
 
 def verify(root, mission, run_id):
+    require_run_id(run_id)
     record_dir = mission / "verification"
     base = record_dir / f"{run_id}.json"
     destination = base
@@ -337,6 +343,7 @@ def load_record(path):
 
 def run_records(mission, run_id):
     """Return a run's numbered record paths, rejecting noncanonical suffixes."""
+    require_run_id(run_id)
     record_dir = mission / "verification"
     paths = {}
     base = record_dir / f"{run_id}.json"
@@ -389,6 +396,7 @@ def revalidate_record(root, mission, record):
 
 
 def accept(root, mission, run_id, expected_hash, accepted_by):
+    require_run_id(run_id)
     if not matches(HEX, expected_hash) or not isinstance(accepted_by, str) or not accepted_by.strip() or accepted_by.strip() != accepted_by: fail("verification hash or accepted_by is invalid")
     lock_dir = root / ".tasks/locks"
     if os.environ.get("PURRFECT_DISPATCH_LOCK_PATH") or (lock_dir.is_dir() and list(lock_dir.glob("*.lock"))):
@@ -467,6 +475,8 @@ def main():
     accept_p = subs.add_parser("accept"); accept_p.add_argument("--run-id", required=True); accept_p.add_argument("--verification-sha256", required=True); accept_p.add_argument("--accepted-by", required=True); accept_p.add_argument("mission")
     audit_p = subs.add_parser("audit"); audit_p.add_argument("--require-workers", action="store_true"); audit_p.add_argument("mission")
     args = parser.parse_args()
+    if args.command in ("verify", "accept") and not is_run_id(args.run_id):
+        print("VERIFY FAIL: run_id must be a canonical RFC UUID", file=sys.stderr); return 2
     try:
         root = root_path(); mission = mission_path(root, args.mission)
         if args.command == "verify":

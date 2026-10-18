@@ -1,10 +1,13 @@
+import contextlib
 import importlib
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -93,6 +96,90 @@ class RunIdTests(unittest.TestCase):
                 count = text.count(token)
                 expected = allowed.get((path.name, token), 0)
                 self.assertEqual(count, expected, (path.name, token))
+
+
+GOOD = "0b6f1c2e-9a4d-4c3b-8f2e-1d2c3b4a5f60"
+OTHER = "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"
+HOSTILE = ("../../../../tmp/x", "*", "a/b", GOOD.upper(), GOOD + "\n", "")
+SHA = "0" * 64
+RUN_ID_MSG = "run_id must be a canonical RFC UUID"
+
+
+class RunIdPathRefusalTests(unittest.TestCase):
+    def _mission_tree(self, base):
+        mission = base / "docs/missions/20990101-x"
+        (mission / "verification").mkdir(parents=True)
+        for name in (OTHER + ".json", OTHER + ".2.json"):
+            (mission / "verification" / name).write_text("{}")
+        (base / "tmp").mkdir()
+        (base / "tmp/x.json").write_text("{}")
+        return mission
+
+    def test_library_refuses_before_any_path_use(self):
+        verification_record = importlib.import_module("verification_record")
+        seen = []
+
+        def spy(name):
+            real = getattr(Path, name)
+
+            def wrapper(self, *a, **k):
+                seen.append((name, str(self)))
+                return real(self, *a, **k)
+
+            return mock.patch.object(Path, name, wrapper)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            t = Path(tmp).resolve()
+            mission = self._mission_tree(t)
+            patches = [spy(n) for n in ("exists", "is_symlink", "is_dir", "is_file",
+                                        "glob", "iterdir", "read_bytes", "read_text")]
+            with contextlib.ExitStack() as stack:
+                for p in patches:
+                    stack.enter_context(p)
+                for value in HOSTILE + (None,):
+                    for call, args in (
+                        (verification_record.verify, (t, mission, value)),
+                        (verification_record.accept, (t, mission, value, SHA, "o")),
+                        (verification_record.run_records, (mission, value)),
+                    ):
+                        seen.clear()
+                        with self.assertRaises(verification_record.VerificationError) as caught:
+                            call(*args)
+                        self.assertEqual(str(caught.exception), RUN_ID_MSG,
+                                         (call.__name__, repr(value)))
+                        self.assertEqual(seen, [], (call.__name__, repr(value), seen[:3]))
+
+    def test_clis_refuse_hostile_run_ids_with_exit_2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            t = Path(tmp).resolve()
+            shutil.copytree(ROOT / "scripts", t / "scripts",
+                            ignore=shutil.ignore_patterns("__pycache__"))
+            mission = self._mission_tree(t)
+            subprocess.run(["git", "init", "-q", str(t)], check=True)
+            env = {k: v for k, v in os.environ.items() if k != "PURRFECT_DISPATCH_LOCK_PATH"}
+            env["PYTHONDONTWRITEBYTECODE"] = "1"
+            m = "docs/missions/20990101-x"
+            shell_err = "ERROR: run_id must be a canonical UUID\n"
+            py_err = "VERIFY FAIL: run_id must be a canonical RFC UUID\n"
+            for value in HOSTILE:
+                cases = (
+                    (["bash", "scripts/verify-mission.sh", "--run-id", value, m], shell_err),
+                    (["bash", "scripts/accept-feature.sh", "--run-id", value,
+                      "--verification-sha256", SHA, "--accepted-by", "o", m], shell_err),
+                    ([sys.executable, "scripts/run_id.py", "check", value], shell_err),
+                    ([sys.executable, "scripts/verification_record.py", "verify",
+                      "--run-id", value, m], py_err),
+                    ([sys.executable, "scripts/verification_record.py", "accept",
+                      "--run-id", value, "--verification-sha256", SHA, "--accepted-by", "o", m], py_err),
+                )
+                for argv, err in cases:
+                    done = subprocess.run(argv, cwd=t, env=env, capture_output=True, text=True,
+                                          stdin=subprocess.DEVNULL)
+                    self.assertEqual((done.returncode, done.stdout, done.stderr), (2, "", err),
+                                     (argv[:3], repr(value), done.returncode, done.stderr[-300:]))
+            done = subprocess.run([sys.executable, "scripts/run_id.py", "check", GOOD],
+                                  cwd=t, env=env, capture_output=True, text=True)
+            self.assertEqual((done.returncode, done.stdout, done.stderr), (0, "", ""))
 
 
 if __name__ == "__main__":
