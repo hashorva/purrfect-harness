@@ -110,5 +110,22 @@ class PlanningStatsTests(unittest.TestCase):
             "all": {"runs": 36, "median_total": 1250599}, "duplicates": 3, "unmeasured": 2,
         })
 
+    def test_docs_describe_the_batch_format_and_frozen_fixtures(self):
+        fmt = '{"name": "<batch name>", "run_ids": ["<run id>", ...]}'
+        usage_batch = "python3 scripts/planning_stats.py batch <batch.json> <data.jsonl>"
+        usage_routing = "python3 scripts/planning_stats.py <routing-data.jsonl>"
+        doc = P.__doc__ or ""
+        for needle in (fmt, usage_batch, usage_routing, "plan:<plan>"):
+            self.assertIn(needle, doc)
+        readme_path = ROOT / "tests/fixtures/planning-stats/README.md"
+        readme = readme_path.read_text(encoding="utf-8")
+        for needle in (fmt, usage_batch, "routing-data.jsonl", "2a-baseline-routing-data.jsonl", "06481fd", NEW.decode(), "plan:<plan>"):
+            self.assertIn(needle, readme)
+        self.assertNotIn(OLD.decode(), readme)
+        lines = readme.splitlines()
+        self.assertLessEqual(len(lines), 40)
+        bad = [n for n, t in enumerate(lines, 1) if L.EMAIL.search(t) or L.ABSOLUTE_PATH.search(t) or any(p.search(t) for p in L.SECRET_PATTERNS)]
+        self.assertEqual(bad, [])
+
 if __name__ == "__main__":
     unittest.main()

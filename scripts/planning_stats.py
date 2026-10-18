@@ -1,5 +1,24 @@
 #!/usr/bin/env python3
-"""Summarize planning-run token counts by seat and model."""
+"""Summarize planning-run token counts by seat and model, or for a named batch of runs.
+
+Usage:
+  python3 scripts/planning_stats.py <routing-data.jsonl>
+  python3 scripts/planning_stats.py batch <batch.json> <data.jsonl>
+
+Batch file: one JSON object, {"name": "<batch name>", "run_ids": ["<run id>", ...]}.
+  name is a non-empty string; run_ids holds at least 10 distinct non-empty strings.
+  Run ids are opaque: they are matched as written, never parsed.
+
+Data file: UTF-8 JSONL. Two kinds of row are runs; every other row is ignored:
+  ledger row: schema_version 2 with run_id and tokens_input; its id is run_id.
+  routing planning row: type architect-run; its id is run_id, else plan:<plan>.
+  Exact duplicate rows count once; two different rows with one id are refused.
+
+Output: six tab-separated lines: batch, runs, median_parent_total,
+  median_parent_plus_subagent_total, median_subagent_calls (unknown when any
+  run's count is unknown) and done_rate <done>/<runs>. Exit 0 on success; exit 2
+  with planning_stats: <reason> on stderr for a refused batch or unreadable data.
+"""
 import json
 import sys
 from collections import defaultdict
