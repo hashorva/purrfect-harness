@@ -39,13 +39,12 @@ def self_reported(value):
     return {"value": value, "source": "self_reported"}
 
 
-def observe_self_reported(provider, raw):
-    """Read only a well-formed self_reported_model from the final CLI answer."""
+def final_answer(provider, raw):
+    """Return the final answer text from one CLI run, or None."""
     name = ALIASES.get(provider, provider) if isinstance(provider, str) else None
     if name not in PARSERS or not isinstance(raw, bytes):
-        return unknown()
+        return None
     stream = events(raw)
-    final_text = None
     if name in ("claude", "cursor"):
         matches = [e for e in stream if e.get("type") == "result"]
         final_text = matches[-1].get("result") if matches else None
@@ -56,6 +55,12 @@ def observe_self_reported(provider, raw):
         matches = [e for e in stream if e.get("type") == "item.completed"
                    and dig(e, "item", "type") == "agent_message"]
         final_text = dig(matches[-1], "item", "text") if matches else None
+    return final_text if isinstance(final_text, str) else None
+
+
+def observe_self_reported(provider, raw):
+    """Read only a well-formed self_reported_model from the final CLI answer."""
+    final_text = final_answer(provider, raw)
     if not isinstance(final_text, str):
         return unknown()
     body = final_text.strip()
