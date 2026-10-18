@@ -230,7 +230,7 @@
     },
     "google": {
       "windows": "unknown",
-      "evidence": "not yet recorded for agy Flash and the Claude models in agy (Google AI Pro)."
+      "evidence": "not yet recorded for agy Flash (Google AI Pro); models that agy lists from other vendors are never bound (native-only, owner 2026-10-18)."
     },
     "agy-argon": {
       "windows": ["weekly"],

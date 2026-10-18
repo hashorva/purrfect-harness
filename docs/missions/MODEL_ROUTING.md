@@ -1,7 +1,7 @@
 ---
 title: Model Routing Policy
-version: 3.0.0
-updated: 2026-10-14
+version: 3.1.0
+updated: 2026-10-18
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -15,6 +15,29 @@ updated: 2026-10-14
 Opus / you name the chair). Cursor workers: Grok premium, Composer economy.
 Concrete slugs come from a probed fleet inventory at GATE 0; families in this
 file are durable. Always show the map at GATE 0 so the human can swap binds.
+
+## Native-only (owner 2026-10-18)
+
+- Every model runs only on its own vendor's quota: claude (Opus, Sonnet, Haiku),
+  codex (Sol, Terra, Luna), agy (Argon, Flash), cursor (Composer and Grok, one
+  Cursor pool).
+- A door never serves another vendor's model. Models that agy lists from other
+  vendors are never bound.
+- `freeze-v2` refuses a foreign door and `resolve_v2` skips one.
+- A move to another vendor is an explicit choice of another approved native seat,
+  never a door fallback.
+
+| Role | claude | codex | agy | cursor |
+| --- | --- | --- | --- | --- |
+| Brain and planning (up to high) | Opus high (`brain`) | Sol high (`brain_codex`) | Argon high (`brain_argon`) | none |
+| Review (up to medium) | Opus medium (`claude.premium`; Sonnet medium is the swap) | Sol medium (`codex.premium`) | Argon medium, or low when agy lists no medium (`agy.premium`) | Grok medium (`cursor.premium`) |
+| Worker (medium, economy seats) | Haiku (`claude.economy`) | Luna (`codex.economy`) | Flash (`agy.economy`) | Composer (`cursor.economy`) |
+
+- Opus is the brain. When Claude has no quota, use Argon or Sol on their own
+  quota, through `bash scripts/spawn-brain.sh <mission> review --seat brain_argon`,
+  then `--seat brain_codex`.
+- The reviewer is on a different vendor than the worker where possible.
+- Opus medium reviews dispatch, verification, acceptance, safety and privacy code.
 
 These family labels describe routing preferences, not current vendor availability
 or pricing. The probed inventory reports the models this machine can bind.
@@ -37,7 +60,7 @@ the local inventory cannot change an active mission's authorization.
 
 | Situation                                        | Chair                                                |
 | ------------------------------------------------ | ---------------------------------------------------- |
-| **Default**                                      | **Opus** (Claude Code _or_ Cursor UI — same logic)   |
+| **Default**                                      | **Opus** on Claude Code (claude quota)               |
 | Already chatting with Opus                       | This session is the chair (no handoff)               |
 | Human: “you are the orchestrator” / “no handoff” | Current model chairs                                 |
 | Human: “no orchestration — just execute”         | Skip mission loop; current chat implements           |
@@ -100,7 +123,7 @@ is on PATH with a healthy inventory bind.
 
 | Seat    | Family (typical today)                                              | Notes                                          |
 | ------- | ------------------------------------------------------------------- | ---------------------------------------------- |
-| Premium | Gemini **Pro**-class (e.g. `gemini-*-pro-high`), else Sonnet on agy | Heavier UI / multi-file layout                 |
+| Premium | **Argon** (e.g. `gemini-4-argon-high`)                              | Heavier UI / multi-file layout                 |
 | Economy | Gemini **Flash**-class (e.g. `gemini-*-flash-high`)                 | Fast UI passes, polish, boilerplate components |
 
 **Home-fleet defaults (intake context):**
@@ -114,14 +137,15 @@ is on PATH with a healthy inventory bind.
 GATE 0 must list `agy.premium` / `agy.economy` whenever `agy` is present so the
 human can assign UI features there and spend those credits on purpose.
 
-Note (F009): In Google AI Pro, agy.premium binds gemini-4-argon on its weekly-only agy-argon pool, agy.economy binds gemini-3.8-flash, the chair can resolve to claude-opus-5-5-high on agy, and contract 8 encodes agy effort only in the model name over stream-json with stdin closed.
+Note (F009): In Google AI Pro, agy.premium binds gemini-4-argon on its weekly-only agy-argon pool, agy.economy binds gemini-3.8-flash, and contract 8 encodes agy effort only in the model name over stream-json with stdin closed.
 
-### Claude (`claude -p` workers — not the chair)
+### Claude (Claude Code and `claude -p` workers)
 
-| Seat    | Family         |
-| ------- | -------------- |
-| Premium | `sonnet` alias |
-| Economy | `haiku` alias  |
+| Seat    | Family / effort                         |
+| ------- | --------------------------------------- |
+| Brain   | `opus` alias, effort high               |
+| Premium | `opus` or `sonnet` alias, effort medium |
+| Economy | `haiku` alias, effort medium            |
 
 ## Fleet inventory (mandatory at GATE 0)
 
