@@ -3,105 +3,116 @@ status: draft
 owner: Zamir
 orchestrator: opus
 created: 2026-10-18
-intake: docs/proposals/20261014-phase-2.md (section 13), docs/proposals/20261016-structured-progress.md, docs/proposals/20261015-parallel-dispatch.md (section 5), owner list of 2026-10-18
+intake: owner spec 2026-10-18 (dark factory, items a-h), docs/proposals/20261014-phase-2.md (sections 6-10, 13), docs/proposals/20261016-structured-progress.md, docs/proposals/20261015-parallel-dispatch.md (section 5), 2A DAY 6 REPORT
 ---
 
 # Goal
 
 ## Mission (2–4 sentences, outcome not tasks)
 
-Mission 2B "Autonomy" makes Phase 2 yield per token: a quota meter, then a scripted loop the Front Desk starts, watches and reports. The meter reads percent left and reset time per pool, spends the quota that expires soonest, and keeps every reading as the training set. Later gates add structured progress, the worker's own check-and-repair loop, a task-size signal, a two-lane merge, a phone-readable board, a held-out benchmark, Front Desk skills, and a prediction model that does not override the meter.
+Mission 2B "The Dark Factory": a prompt goes in; the planner splits it into tasks small enough for economy seats; workers build with their full abilities; deterministic checks judge every piece; failures are re-prompted automatically, and broken tools are repaired first; it stops only at the goal or a real blocker. No human in the loop between gates.
 
 ## Why now / forcing function
 
-2A made runs provable. There is still no quota meter: day-5 pause notes are error text and are not trusted. PROGRESS.md is still written by hand. This folder stays `draft` while 2A is the active mission (`docs/missions/20261014-2a-foundation`, status `in-progress`). A second `in-progress` GOAL would make `scripts/active-mission.sh` fail.
+2A (v3.1.0) made every run provable and the fleet native-only, but a human still drives each step. There is no quota meter: the 2A pause notes are error text and are not trusted. The median planning run costs 1.23M tokens (1.82M on Claude Opus), and PROGRESS.md is still written by hand. 2A is done, so this folder can go `approved` → `in-progress` after Gate 0 without a second active mission.
 
 ## In scope
 
-- Features F001–F010 in `features.json`, in that order.
-- Owner order, which replaces the proposal's 2B numbering: quota meter, loop driver, structured progress, worker inner loop, task-size signal, parallel lanes (minimum slice), static board, held-out benchmark, Front Desk skills, prediction model.
-- The structured-progress proposal is Gate 2, not the first feature. The parallel-dispatch minimum slice is Gate 3, not the start of the mission.
+Features in `features.json`, in the owner's order (item → id):
+
+- a → F001 Delegation and full ability (finish and measure 2A item B; planning-run median under 1M tokens with no drop in review quality)
+- b → F002 Quota meter (real usage screens, 2% floor, expiring quota first, native-only, pauses end at the vendor-shown reset, training set)
+- c → F003 Loop driver (dispatch → checks → review → fix → re-review; repair a broken seat or tool first)
+- d → F004 Structured progress (progress.jsonl, progress.py, generated PROGRESS.md)
+- e → F005 Worker inner loop (ruff, type checker, shellcheck; resumed repair for lint/type; fresh run for logic)
+- f → F006 Task-size signal (more than 2 review rounds → back to the planner to split)
+- g → F007 Parallel lanes, minimum slice (two disjoint tasks, two providers, one serial merge)
+- h → F008 static board, F009 held-out benchmark, F010 Front Desk skills for every CLI, F011 prediction model, F012 OS-level Bash sandbox for Claude bypassPermissions workers
+
+Item h is five features, so each one is accepted on its own evidence (Gate 0 decision 1).
 
 ## Explicitly OUT of scope (workers: do not touch)
 
-- The 2A mission directory, and accepting 2A features.
-- Proposal items not in the owner list: anti-gaming checks, lessons intake, the STE rewrite (X-003), and an overnight smoke mission.
-- Fast modes, usage credits, API billing, and X-FAST.
-- A `grok` provider. Grok stays on `cursor-agent`, inside the cursor ladder.
-- More than two parallel lanes, the same provider twice, a Codex lane, parallel Architect runs, parallel acceptance, and automatic merge resolution.
-- Live `claude`, `codex`, `cursor-agent`, `agy`, or `drive-cli.sh` inside tests.
-- Letting the prediction model override the 98% rule.
+- The 2A mission directory (read-only input: `routing-data.jsonl` is the token baseline).
+- Proposal items not in the owner list: anti-gaming checks, lessons intake, the STE rewrite (X-003), the overnight non-Claude-chair smoke.
+- Fast modes, usage credits, API billing, X-FAST. A `grok` provider (Grok stays on `cursor-agent`).
+- Cross-vendor seats: no vendor's door resolves another vendor's family (2A T-100). No agy Opus/Sonnet/GPT-OSS seat.
+- More than two lanes, the same provider twice, a Codex lane, parallel planner runs, parallel acceptance, automatic merge resolution.
+- Live `claude`, `codex`, `cursor-agent`, `agy`, or `drive-cli.sh` against a real CLI inside `tests/run-tests.sh` or CI. Live checks are local-only task verification commands.
+- Letting the prediction model dispatch or override the 2% floor.
 
 ## Constraints
 
 - Hard rules: see AGENTS.md — all apply.
-- Every number carries a source flag: `observed`, `estimated`, or `unknown`. Unparsable text stays `unknown`. Never guess.
-- The 98% rule replaces the 2A pool stop (80% of a 5-hour window, 70% of the weekly cap). Dispatch only if percent left minus the forecast is greater than 2, on the 5-hour window and on the weekly window, with the same comparison. Gate 0 confirms this replacement.
-- Choosing a pool may prefer the soonest reset across vendors. After a task starts, repair and escalation stay inside that vendor: claude haiku → sonnet → opus; codex luna → terra → sol; cursor composer → grok; agy flash → argon → opus-on-agy. An agy pause does not select a claude seat.
-- Pauses end at the reset time on the vendor usage screen. Re-read after that time. Never trust a reset time parsed from error text. If the new read is unknown or still over the rule, probe again after 30 minutes.
-- Runtime Python stays the standard library. Draft dev tools, confirmed at Gate 0: `ruff` and `ty`, installed only with `uv tool install`.
-- Draft prediction threshold, confirmed at Gate 0: 300 kept readings.
-- Verification bullets are one Markdown code span whose text is a non-empty JSON argv of non-empty strings, with no backtick inside the span.
-- A test command names the file and `Class.method`. The full file and `bash tests/run-tests.sh` are their own bullets.
-- Verification commands are frozen at the task commit. The verifier reads that commit. A bad oracle is a new task with a real change, not an edit of the frozen commands.
-- The verifier checks a run against that run's own commit. A later commit does not make the old run pass.
-- A planner run writes at most 3 task files. This run writes T-001 only.
-- Workers never edit `features.json`, `fleet.json`, or `PROGRESS.md`.
-- `scripts/progress.py` is the only PROGRESS writer, and only after F003. Until then the loop writes `loop-state.json`, not PROGRESS.md.
+- Native-only: every model runs only on its own vendor's quota. claude: Opus, Sonnet, Haiku. codex: Sol, Terra, Luna. agy: Argon, Flash. cursor: Composer, Grok. Repair and escalation stay inside the vendor: haiku → sonnet → opus; luna → terra → sol; composer → grok; flash → argon.
+- Effort by role: brain (planner) high; reviewers medium; economy workers medium; premium workers medium, and only on escalation or a planner-justified guard task.
+- Review rule: the reviewer is a different vendor than the worker (fleet-proposal.md). Guard and safety code is reviewed by Claude Opus, so guard tasks never go to a Claude worker.
+- Quota rule (replaces the 2A 80%/70% pool stop; Gate 0 decision 2): dispatch only if percent left minus the batch forecast is greater than 2 on every window the vendor shows for that pool. Unknown is refused. Among allowed pools, the soonest reset wins.
+- Pauses end at the reset time on the vendor usage screen. Never trust a reset time parsed from error text. An unparsable screen is `unknown`, and the meter probes again after 30 minutes.
+- Every number carries a source flag: `observed`, `estimated`, or `unknown`. Never guess.
+- Runtime Python is the standard library. Dev tools (`ruff`, the type checker) are installed only with `uv tool install`.
+- Real CLI behaviour first: before a task relies on a CLI feature (a flag, a usage screen, a stream event), a recorded real `--help` output or real stream/screen capture is committed under `evidence/` and cited by the task.
+- Provider contract: any adapter argv change bumps the provider contract in the same task, and old receipts still validate.
+- Verification bullets are one Markdown code span whose text is a JSON argv of non-empty strings, with no backtick inside the span. Tests are named by file and `Class.method`, as `["env","PYTHONDONTWRITEBYTECODE=1","python3","tests/<file>.py","<Class>.<method>"]`, never `python -m unittest <path>`. The full file, `shellcheck scripts/*.sh tests/*.sh`, `bash tests/run-tests.sh`, clean tree and no `__pycache__` are their own bullets. Allow-list bullets are backtick-quoted paths only.
+- Frozen oracle: verification commands are immutable per run (frozen at the task commit). A bad oracle needs a new task or a retry with a real change, never an edit of the frozen commands. The verifier checks a run against that run's own commit.
+- Rule 6: before a task is committed, the planner or Front Desk runs its oracle in a scratch clone: it must fail on the base and pass after the reference patch (kept outside the repo tree).
+- Planner runs write at most 3 task files, each at most 150 changed lines. Planner output is plain task files in four-backtick fenced blocks or `=== FILE: <path> ===` blocks.
+- Flaky is failing: a test that passes only on rerun is a failure. Never skip, retry-wrap, or loosen it; make it deterministic.
+- CI (ubuntu-latest with Python 3.12, and macos-latest; tmux, jq and jsonschema installed) must be green on every gate commit.
+- Workers never edit `features.json`, `fleet.json`, or `PROGRESS.md`. Until F004 is accepted, the loop writes only `loop-state.json`; after it, `scripts/progress.py` is the only PROGRESS writer.
 
 ## Architect instructions (read before you change features.json)
 
-- Keep ids F001–F010. Do not renumber. You may tighten steps. Do not drop the 98% rule, the unknown-not-guessed rule, or the vendor ladder.
-- T-001 is the parser slice of F001 (steps 1 and 2). It does not implement snapshots, the ledger column, dispatch, pauses, or drive-cli capture.
+- Keep ids F001–F012. Do not renumber. You may tighten steps. Do not drop the 2% floor, the unknown-not-guessed rule, native-only, or the in-vendor ladder.
+- T-001 is the first slice of F001: the stdlib measurement tool and its fixture tests (new files only). T-002 wires it into `tests/run-tests.sh` and adds ledger-sourced planning rows.
 - Every feature stays `passes: false` and `bootstrap: false`.
 - A step a script cannot decide is a defect. Rewrite it until a command can decide it.
-- At most 3 tasks per planner run.
 
-## Fleet (proposal and narrative copy of this mission's frozen fleet.json)
+## Fleet
 
-Proposal only. Not a new probe. Copied from the 2A frozen fleet recorded in that mission's PROGRESS.md on 2026-10-18. Gate 0 runs `bash scripts/fleet-doctor.sh` and `bash scripts/fleet-inventory.sh` and replaces this table. Error-text pause notes from 2A are not meter readings.
+See `fleet-proposal.md` (bindings JSON, policy JSON, review pairing). Gate 0 runs `bash scripts/fleet-doctor.sh` and `bash scripts/fleet-inventory.sh` first, then `freeze-v2` with the approved bindings. Dispatch reads only `fleet.json`.
 
 Tier chosen at GATE 0: mixed (economy first), proposed.
-Orchestrator (brain): Opus, effort high, proposed. The door is not frozen. 2A's chair is `agy` / `claude-opus-5-5-high`.
+Orchestrator (brain): claude / Opus, effort high; fallbacks `brain_argon` (agy / Argon high) and `brain_codex` (codex / Sol high), each on its own vendor's quota, proposed.
 
-Verified local CLIs: not re-checked in this draft. 2A recorded claude, codex, cursor-agent, agy, and grok, with `grok` not a provider.
+## Budgets (confirmed at Gate 0)
 
-### Proposed seat binds (from the 2A fleet — edit only with human GATE 0 approval)
+- Per spawn: 40 min wall time.
+- Per 24 h: at most 24 worker runs, 24 review runs, 8 planner runs. The loop stops at the cap, not at a guess.
+- Per pool: the 2% floor (above). Never credits, never fast modes.
+- Planning tokens: target median under 1,000,000 total (input + output + cache read) per planning run, measured by `scripts/planning_stats.py`. A single planning run over 3,000,000 is listed in the next gate report.
+- Per task: at most 2 worker attempts per rung, and at most 2 review rounds before the F006 split signal.
+- Mission estimate: about 45 tasks, 69 worker runs, 59 review runs, 36 planner/gate runs (estimates.md).
 
-| Seat | CLI | Model | Family | Health | Source |
-| --- | --- | --- | --- | --- | --- |
-| brain | agy | claude-opus-5-5-high | opus | copied, not re-probed | 2A fleet 2026-10-18 |
-| cursor.premium | cursor-agent | grok-4.7-high | grok | copied, not re-probed | 2A fleet 2026-10-18 |
-| cursor.economy | cursor-agent | composer-2.5 | composer | copied, not re-probed | 2A fleet 2026-10-18 |
-| codex.premium | codex | gpt-5.6-terra | terra | copied, not re-probed | 2A fleet 2026-10-18 |
-| codex.economy | codex | gpt-6-luna | luna | copied, not re-probed | 2A fleet 2026-10-18 |
-| agy.premium | agy | gemini-4-argon-high | argon | copied, not re-probed | 2A fleet 2026-10-18 |
-| agy.economy | agy | gemini-3.8-flash-medium | flash | copied, not re-probed | 2A fleet 2026-10-18 |
-| claude.premium | claude | sonnet | sonnet | copied, not re-probed | 2A fleet 2026-10-18 |
-| claude.economy | claude | haiku | haiku | copied, not re-probed | 2A fleet 2026-10-18 |
+## Risks
 
-Spawn helpers (prefer these so logs land in `.tasks/logs/`):
-
-| Worker | Economy | Premium |
-| --- | --- | --- |
-| cursor (`agent` legacy key) | `bash scripts/spawn-worker.sh agent <task> --tier economy --feature F00X --effort <approved> --speed <approved>` | same flags with `--tier premium` |
-| codex | `bash scripts/spawn-worker.sh codex <task> --tier economy --feature F00X --effort <approved> --speed <approved>` | same flags with `--tier premium` |
-| agy | `bash scripts/spawn-worker.sh agy <task> --tier economy --feature F00X --effort <approved> --speed <approved>` | same flags with `--tier premium` |
-| claude | `bash scripts/spawn-worker.sh claude <task> --tier economy --feature F00X --effort <approved> --speed <approved>` | same flags with `--tier premium` |
-
-Freeze the human-approved bindings with `scripts/fleet_state.py freeze` as described in the mission-init skill. Dispatch reads only `fleet.json`. Per-task `invocation:` documents the approved bind; `--model`, `--effort`, and `--speed` are equality assertions and cannot override the frozen seat. Worker dispatch requires `status: in-progress` and a committed task. Cross-repository execution is disabled.
-
-Proposed budgets, confirmed at Gate 0: per spawn 40 min; per night max 12 worker + 4 Architect runs; pool stop is the 98% rule; never credits; never fast modes.
+1. Usage screens change format or are boxed TUI panels: drive-cli stalls (exit 4) on boxed menus and alt-screen clears (2A residual). Mitigation: F002 starts with real captures; an unparsable screen is `unknown`, and the factory waits safely rather than guessing.
+2. Claude Pro is shared by the planner, the Opus reviewer, the Front Desk and claude.ai chat. Mitigation: the meter sees it; planner fallbacks run on Argon or Sol quota, never on another vendor's door.
+3. Unattended `bypassPermissions` Claude workers before F012: Bash is a net, not a wall (evidence/claude-unlock-residual-risk.md). Mitigation: Gate 0 decision 5 (F012 first), or no Claude worker on unattended nights until F012 is accepted.
+4. Plan defects dominate failures (2A: 5 of 6 early failures were plan text). Mitigation: rule 6 per task, the size cap, and the F006 split signal.
+5. Loop runaway or silent spending. Mitigation: per-24h caps, a forecast before every batch, stops at ladder exhaustion, and gate-wait as a terminal state.
+6. Hot files (`tests/run-tests.sh`, `harness-manifest.json`) block lane pairs. Mitigation: F007 admission refuses overlap; lane demo tasks are chosen for disjoint files.
+7. The F001 1M target may not be met. Then F001 stays `passes: false` and the gate report shows the measured median. Later features still proceed (they do not depend on the target).
+8. F011 needs 300 kept forecasts; it may not be reachable within this mission. Gate 5 then records an owner amendment, not a relaxed step.
 
 ## Human gates
 
-- GATE 0: owner approval of this feature list, the fleet inventory map from a fresh probe, the brain receipt (`verify-mission.sh`), and the four draft choices above (98% rule, `ty`, threshold 300, deferred proposal items). No dispatch before that.
-- GATE 1: after F001 and F002 (quota meter and loop driver).
-- GATE 2: after F003, F004, and F005 (structured progress, worker inner loop, task-size signal).
-- GATE 3: after F006 (parallel lanes, minimum slice).
-- GATE 4: after F007, F008, F009, and F010 (board, benchmark, Front Desk skills, prediction).
+- GATE 0: owner approval of this package (GOAL, features.json, fleet-proposal.md, estimates.md, T-001), a fresh fleet inventory and `freeze-v2`, and the brain receipt (`verify-mission.sh`). Decisions:
+  1. Item h as F008–F012.
+  2. The 2% floor replaces the 2A 80%/70% pool stop.
+  3. Type checker `ty` via `uv tool install ty` (fallback `mypy`), confirmed by a real `--help` capture.
+  4. Prediction threshold: 300 kept batch forecasts with before and after readings.
+  5. Order: F012 (sandbox) before F003, or keep the owner order (recommended: before).
+  6. Budgets above.
+  7. Mid seats `claude.mid` (Sonnet) and `codex.mid` (Terra) frozen now, dispatchable after F005.
+  8. T-001 creates new files only; T-002 wires the test (exception to the wiring lesson).
+- GATE 1: after F001 and F002. The factory can see its own cost.
+- GATE 2: after F003 and F004. The factory runs its loop and records it.
+- GATE 3: after F005 and F006. The factory repairs and re-splits its own work.
+- GATE 4: after F007. Two lanes run in parallel.
+- GATE 5: after F008–F012.
 
-When a human gate is reached: run `bash scripts/verify-mission.sh` (must exit 0), set `status: awaiting-gate`, get the human verdict, append a **Human — GATE n** entry to PROGRESS.md, then set `status: done` or `in-progress`. Chat approval alone is not the record — receipts are.
+When a human gate is reached: run `bash scripts/verify-mission.sh` (must exit 0), confirm CI is green on the gate commit, set `status: awaiting-gate`, get the human verdict, and record it (a **Human — GATE n** entry before F004; a `gate` event with `by: human` after F004). Then set `status: done` or `in-progress`. Chat approval alone is not the record — receipts are.
 
 ## Source of truth
 

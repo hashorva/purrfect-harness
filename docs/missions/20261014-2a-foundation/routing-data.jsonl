@@ -244,3 +244,4 @@
 {"run_id":"54fad46c-d8e0-43ba-92e9-69a7f15b64b4","task":"T-128","category":"drive-cli","size":"M","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":1,"outcome":"done","failure_class":"none","duration_s":53,"tokens_or_cost":"unknown"}
 {"type":"architect-run","plan":"T-129","seat":"claude.brain-planning","model":"claude opus (high)","rung":"native: claude","input_tokens":80938,"output_tokens":33508,"cache_read_tokens":1025121,"outcome":"done"}
 {"run_id":"02e9c769-5c85-4204-9d8e-9933f8c3f819","task":"T-129","category":"flaky-tests","size":"M","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":1,"outcome":"done","failure_class":"none","duration_s":76,"tokens_or_cost":"unknown"}
+{"type":"architect-run","plan":"2B Gate 0 package","seat":"claude.brain-planning","model":"claude opus (high)","rung":"native: claude","input_tokens":78684,"output_tokens":93873,"cache_read_tokens":4277212,"outcome":"done"}
