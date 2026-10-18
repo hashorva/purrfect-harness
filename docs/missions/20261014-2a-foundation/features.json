@@ -231,7 +231,11 @@
         "Scope check treats compiled-module shadowing and listed persistence paths as violations",
         "shellcheck and bash tests/run-tests.sh exit 0"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "bb7cc506-59c2-4776-86b8-28bede7bbd79",
+      "accepted_verification_sha256": "dc882c9dfdb995054ef36c435bfa061a9bf69d5a401f388b856d67572473bef5",
+      "accepted_at": "2026-10-18T06:42:26.101354Z",
+      "accepted_by": "Zamir (owner approval 2026-10-18; front desk executed)"
     }
   ]
 }
