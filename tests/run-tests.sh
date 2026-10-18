@@ -98,6 +98,7 @@ check "documentation guard rejects an enforced-permissions claim" documentation_
 
 echo "== immutable execution spec and provider adapter"
 check "ExecutionSpec and provider adapter contracts" python3 tests/test-execution-spec.py
+check "golden provider argv for every recorded contract" python3 tests/test-golden-argv.py
 check "immutable spec integration through real wrappers" python3 tests/test-execution-integration.py
 check "VerificationRecord and acceptance real-entry contracts" python3 tests/test-verification-record.py
 check "ExecutionSpec focused test leaves no scripts bytecode" test ! -e "$HARNESS/scripts/__pycache__"
