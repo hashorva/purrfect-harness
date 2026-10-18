@@ -14,8 +14,8 @@ import tempfile
 
 from execution_receipt import ReceiptError, canonical_bytes, load_receipt, snapshot
 from execution_spec import SpecError, load_persisted, spec_sha256
+from run_id import validate_run_id
 
-UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 HEX = re.compile(r"^[0-9a-f]{64}$")
 COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
 RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$")
@@ -54,6 +54,21 @@ def skip_kind(data):
 def matches(pattern, value):
     """Return false, rather than leaking TypeError, for malformed JSON values."""
     return isinstance(value, str) and pattern.fullmatch(value) is not None
+
+
+def is_run_id(value):
+    """True only for a canonical run id; the rule lives in run_id.py."""
+    try:
+        validate_run_id(value)
+    except ValueError:
+        return False
+    return True
+
+
+def receipt_link_ok(value):
+    prefix, suffix = ".tasks/receipts/", ".json"
+    return (isinstance(value, str) and value.startswith(prefix) and value.endswith(suffix)
+            and is_run_id(value[len(prefix):-len(suffix)]))
 
 
 def safe_task_path(value):
@@ -172,7 +187,7 @@ def task_at_base(root, receipt):
 
 
 def bind(root, mission, run_id):
-    if not UUID.fullmatch(run_id): fail("run_id must be a canonical RFC UUID")
+    if not is_run_id(run_id): fail("run_id must be a canonical RFC UUID")
     receipt_path = root / ".tasks/receipts" / f"{run_id}.json"
     try: receipt = load_receipt(receipt_path)
     except (ReceiptError, SpecError) as exc: raise VerificationError(str(exc)) from exc
@@ -283,14 +298,14 @@ def verify(root, mission, run_id):
 
 def validate_record(record):
     if not isinstance(record, dict) or set(record) != RECORD_FIELDS or record.get("schema_version") != 1: fail("VerificationRecord has invalid fields")
-    if not matches(UUID, record["run_id"]) or not isinstance(record["result"], str) or record["result"] not in {"pass", "fail"}: fail("VerificationRecord has invalid identity or result")
+    if not is_run_id(record["run_id"]) or not isinstance(record["result"], str) or record["result"] not in {"pass", "fail"}: fail("VerificationRecord has invalid identity or result")
     for field in ("mission", "feature", "work_unit"):
         if not isinstance(record[field], str) or not record[field]: fail("VerificationRecord has invalid identity")
     if isinstance(record["attempt"], bool) or not isinstance(record["attempt"], int) or record["attempt"] < 1: fail("VerificationRecord attempt is invalid")
     for item in (record["execution_spec"], record["execution_receipt"], record["task"]):
         if not isinstance(item, dict) or not isinstance(item.get("path"), str) or not matches(HEX, item.get("sha256")): fail("VerificationRecord link is invalid")
     if set(record["execution_spec"]) != {"path", "sha256"} or not Path(record["execution_spec"]["path"]).is_absolute(): fail("VerificationRecord spec link is invalid")
-    if set(record["execution_receipt"]) != {"path", "sha256"} or not matches(re.compile(r"\.tasks/receipts/" + UUID.pattern[1:-1] + r"\.json"), record["execution_receipt"]["path"]): fail("VerificationRecord receipt link is invalid")
+    if set(record["execution_receipt"]) != {"path", "sha256"} or not receipt_link_ok(record["execution_receipt"]["path"]): fail("VerificationRecord receipt link is invalid")
     if set(record["task"]) != {"path", "sha256", "git_commit"} or not safe_task_path(record["task"]["path"]) or not matches(COMMIT, record["task"]["git_commit"]): fail("VerificationRecord task link is invalid")
     for name in ("receipt_git_after", "verification_git_before", "verification_git_after"):
         state = record[name]
@@ -401,7 +416,7 @@ def audit(root, mission, require_workers=False):
     receipt_dir = root / ".tasks/receipts"
     if receipt_dir.is_dir():
         for path in receipt_dir.glob("*.json"):
-            if not UUID.fullmatch(path.stem):
+            if not is_run_id(path.stem):
                 continue
             try:
                 candidate = load_receipt(path)
@@ -424,7 +439,7 @@ def audit(root, mission, require_workers=False):
                 continue
             if any(k not in feature for k in required):
                 failures.append(f"feature {feature.get('id')}: missing acceptance evidence"); continue
-            if (not matches(UUID, feature["accepted_run_id"]) or not matches(HEX, feature["accepted_verification_sha256"])
+            if (not is_run_id(feature["accepted_run_id"]) or not matches(HEX, feature["accepted_verification_sha256"])
                     or not isinstance(feature["accepted_at"], str) or not RFC3339.fullmatch(feature["accepted_at"])
                     or not isinstance(feature["accepted_by"], str) or not feature["accepted_by"].strip()
                     or feature["accepted_by"].strip() != feature["accepted_by"]):

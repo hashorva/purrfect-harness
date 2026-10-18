@@ -28,6 +28,7 @@ from dispatch_policy import mission_path
 from execution_receipt import load_receipt, snapshot
 from fleet_state import PolicyError, canonical, read_json, resolve_v2, validate_fleet, validate_inventory
 from harness_registry import canonical_provider, load_registry
+from run_id import validate_run_id
 
 FIXTURE_DIR = "docs/missions/00000000-seat-smoke"
 F007_DIR = "docs/missions/00000000-f007-smoke"
@@ -38,8 +39,8 @@ FAST_REASON = "fast mode is never smoked"
 GIT_AUTHOR = ["-c", "user.name=seat smoke", "-c", "user.email=smoke@localhost.invalid"]
 DEFAULT_TIMEOUT = 600
 REASON_LIMIT = 300
-RUN_ID = re.compile(r"spawn-worker: .*\brun_id=([0-9a-f-]{36})\b")
-BRAIN_RUN_ID = re.compile(r"spawn-brain: .*\brun_id=([0-9a-f-]{36})\b")
+RUN_ID = re.compile(r"spawn-worker: .*\brun_id=(\S+)")
+BRAIN_RUN_ID = re.compile(r"spawn-brain: .*\brun_id=(\S+)")
 USABLE = {"usable", "usable-with-limit"}
 
 
@@ -229,18 +230,24 @@ def discard(dest, created, clone):
         shutil.rmtree(target)
 
 
-def run_id_of(out_path):
+def logged_run_id(pattern, out_path):
     if not out_path.is_file():
         return None
-    match = RUN_ID.search(out_path.read_text(errors="replace"))
-    return match.group(1) if match else None
+    match = pattern.search(out_path.read_text(errors="replace"))
+    if not match:
+        return None
+    try:
+        return validate_run_id(match.group(1))
+    except ValueError:
+        return None
+
+
+def run_id_of(out_path):
+    return logged_run_id(RUN_ID, out_path)
 
 
 def brain_run_id_of(out_path):
-    if not out_path.is_file():
-        return None
-    match = BRAIN_RUN_ID.search(out_path.read_text(errors="replace"))
-    return match.group(1) if match else None
+    return logged_run_id(BRAIN_RUN_ID, out_path)
 
 
 def capture(argv, cwd, out_path, env):

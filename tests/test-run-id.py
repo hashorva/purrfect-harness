@@ -59,6 +59,41 @@ class RunIdTests(unittest.TestCase):
                                  (2, "ERROR: reconstruct: invalid run id\n"))
                 self.assertNotIn(value, done.stderr)
 
+    def test_slice_two_modules_share_one_rule(self):
+        verification_record = importlib.import_module("verification_record")
+        seat_smoke = importlib.import_module("seat_smoke")
+        self.assertIs(verification_record.validate_run_id, self.run_id.validate_run_id)
+        self.assertIs(seat_smoke.validate_run_id, self.run_id.validate_run_id)
+        self.assertFalse(hasattr(verification_record, "UUID"))
+        good = "0b6f1c2e-9a4d-4c3b-8f2e-1d2c3b4a5f60"
+        nil = "00000000-0000-0000-0000-000000000000"
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp) / "seat.out"
+            out.write_text(f"spawn-worker: worker=codex run_id={good} log=x\n")
+            self.assertEqual(seat_smoke.run_id_of(out), good)
+            out.write_text(f"spawn-worker: worker=codex run_id={nil} log=x\n")
+            self.assertIsNone(seat_smoke.run_id_of(out))
+            out.write_text(f"spawn-worker: worker=codex run_id={good.upper()} log=x\n")
+            self.assertIsNone(seat_smoke.run_id_of(out))
+            out.write_text(f"spawn-brain: action=a run_id={good} log=x\n")
+            self.assertEqual(seat_smoke.brain_run_id_of(out), good)
+            out.write_text(f"spawn-brain: action=a run_id={nil} log=x\n")
+            self.assertIsNone(seat_smoke.brain_run_id_of(out))
+            out.write_text(f"spawn-brain: action=a run_id={good.upper()} log=x\n")
+            self.assertIsNone(seat_smoke.brain_run_id_of(out))
+
+    def test_no_script_parses_run_ids_itself(self):
+        tokens = ("uuid.UUID(", "[1-8]", "[89ab]", "{36}", "{8}-")
+        allowed = {("observe_output.py", "{8}-"): 1}
+        for path in sorted((ROOT / "scripts").iterdir()):
+            if path.suffix not in (".py", ".sh") or path.name == "run_id.py":
+                continue
+            text = path.read_text(encoding="utf-8")
+            for token in tokens:
+                count = text.count(token)
+                expected = allowed.get((path.name, token), 0)
+                self.assertEqual(count, expected, (path.name, token))
+
 
 if __name__ == "__main__":
     unittest.main()
