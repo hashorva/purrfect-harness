@@ -21,12 +21,13 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 
 ## Current status (2026-10-18)
 - **Mission:** 2A Foundation, branch mission/2a-foundation, status: in-progress, owner: Zamir, orchestrator: opus.
+- **Roles:** Front Desk = Sonnet 5.5 (Claude Pro pool, per GOAL.md); brain = fleet.json seat brain: agy/claude-opus-5-5-high, effort high; planner per rung: Argon (agy.premium), then agy Opus (brain), then grok ask mode (cursor.premium); reviewers: Argon (agy.premium) or grok (cursor.premium); Claude Opus is the owner-mandated escalation reviewer for safety and evidence code; workers: economy seats first, a premium seat on escalation.
 - **Features:** accepted (passes: true): F001 (f1824d4b-2683-4410-974c-383c5f13012e), F003 (86a9c529-95d9-42b3-9e23-b24c18fec0ff), F004 (35ecb39a-5c22-4108-acef-41f7fc694ad6), F005 (fdf5dd38-1433-45eb-972b-823493f9e671), F006 (db01ac53-00de-4d30-9230-05894b952ebe), F008 (407d8afb-6877-47ed-8de4-522984487257), F009 (44b5362c-50ce-46d5-b75b-6b7317a3665a); open (passes: false): F007, F010, F011, F012 (F002 removed at Gate 0).
 - **Fleet (schema_version 2, billing_classes: ["included"], fast: false, no_zdr: "forbid"):** agy.economy=agy/gemini-3.8-flash-medium/medium/unknown, agy.premium=agy/gemini-4-argon-high/high/unknown, brain=agy/claude-opus-5-5-high/high/unknown, claude.economy=claude/haiku/medium/unknown, claude.premium=claude/sonnet/medium/unknown, codex.economy=codex/gpt-6-luna/medium/unknown, codex.premium=codex/gpt-5.6-terra/medium/unknown, cursor.economy=cursor/composer-2.5/medium/standard, cursor.premium=cursor/grok-4.7-high/high/standard.
-- **Evidence and routing:** archives: progress-archive/2026-10-14_15.md, progress-archive/2026-10-15_16.md, progress-archive/2026-10-16.md, progress-archive/2026-10-18.md; routing-data.jsonl: 204 rows (135 runs, 90 done, 3 review-calibration, 6 seeded-calibration); local receipts: .tasks/receipts/ (every accepted_run_id verified in verification/).
+- **Evidence and routing:** archives: progress-archive/2026-10-14_15.md, progress-archive/2026-10-15_16.md, progress-archive/2026-10-16.md, progress-archive/2026-10-18.md, progress-archive/2026-10-18b.md; routing-data.jsonl: 204 rows (135 runs, 90 done, 3 review-calibration, 6 seeded-calibration); local receipts: .tasks/receipts/ (every accepted_run_id verified in verification/).
 
 ## Open decisions / waiting on the owner
-- Proposal `docs/proposals/20261016-structured-progress.md` (progress.jsonl + progress.py + generated PROGRESS.md): to be written by the Architect; owner decides whether it starts 2B or is pulled into 2A.
+- None open here: owner decisions are listed under Decisions for you in the DAY 5 REPORT above. The structured-progress proposal is written (docs/proposals/20261016-structured-progress.md, status: proposal); its stale entry is archived in progress-archive/2026-10-18b.md.
 
 ## Active lessons (candidates; none promoted through skillify)
 - State why a check exists, not only its rule. Run a long check once; never start a duplicate.
