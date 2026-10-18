@@ -230,7 +230,7 @@ export PURRFECT_DISPATCH_LOCK_PATH="$LOCK_PATH"
 mkdir -p "$ROOT/.tasks/logs" "$ROOT/.tasks/receipts"
 
 PROMPT_TASK="$TASK_REL"
-PROMPT="Read ${PROMPT_TASK} and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Do not write PROGRESS.md; the Front Desk records your run from its receipt. End with a short plain-text report: what you changed and the exit code of each check you ran."
+PROMPT="Goal: ${PROMPT_TASK} is done when its verification commands pass and one scoped commit leaves a clean tree; the Front Desk runs the full suite, you do not. Scope: the task's allow-list; PROGRESS.md and features.json belong to the Front Desk. Budget: the task's max_attempts and long-command rule; the runner stops a stalled or overlong run. Resources: your CLI's native tools, the repo skills in .agents/skills, web search, and subagents where your CLI has them (Claude Code: explorer on Haiku; codex: Luna; cursor: Composer; agy: Flash). Delegate wide reading and searching to a cheap subagent, run the task's checks yourself before you finish, and stop when they pass. End with a short plain-text report: what you changed and the exit code of each check you ran."
 [ -z "$EXTRA" ] || PROMPT+=" $EXTRA"
 
 RUN_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"

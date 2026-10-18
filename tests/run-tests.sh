@@ -288,6 +288,7 @@ check "inventory has agy seats when CLI present" sh -c "cd '$TARGET' && python3 
 import shutil; 
 assert 'agy.premium' in d['seats'] and 'agy.economy' in d['seats']\""
 check "spawn-brain.sh installed +x" test -x "$TARGET/scripts/spawn-brain.sh"
+check "spawn-brain refuses a non-brain --seat" sh -c "cd '$TARGET' && bash scripts/spawn-brain.sh no-such-mission review --seat claude.premium 2>&1 | grep -q 'ERROR: --seat must be brain'"
 check "verify-mission.sh installed +x" test -x "$TARGET/scripts/verify-mission.sh"
 check "VerificationRecord policy installed" test -f "$TARGET/scripts/verification_record.py"
 check "accept-feature.sh installed +x" test -x "$TARGET/scripts/accept-feature.sh"
@@ -458,7 +459,7 @@ CODEX_STUB_PID="$TARGET/.codex-stub-pid"
 printf '#!/usr/bin/env bash\nset -euo pipefail\nprintf "%%s\\n" "$$" > "%s"\nwhile IFS= read -r _codex_stdin_line; do :; done\ntouch "%s"\nprintf "%%s\\n" "$(basename "$0")" "$@" > "%s"\nexit 0\n' "$CODEX_STUB_PID" "$CODEX_EOF_MARK" "$CODEX_OUT" > "$STUBBIN/codex"
 chmod +x "$STUBBIN/codex"
 CODEX_MODEL="codex-test-model"
-CODEX_PROMPT="Read docs/missions/20990101-fixture/tasks/T-001.md and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Do not write PROGRESS.md; the Front Desk records your run from its receipt. End with a short plain-text report: what you changed and the exit code of each check you ran."
+CODEX_PROMPT="Goal: docs/missions/20990101-fixture/tasks/T-001.md is done when its verification commands pass and one scoped commit leaves a clean tree; the Front Desk runs the full suite, you do not. Scope: the task's allow-list; PROGRESS.md and features.json belong to the Front Desk. Budget: the task's max_attempts and long-command rule; the runner stops a stalled or overlong run. Resources: your CLI's native tools, the repo skills in .agents/skills, web search, and subagents where your CLI has them (Claude Code: explorer on Haiku; codex: Luna; cursor: Composer; agy: Flash). Delegate wide reading and searching to a cheap subagent, run the task's checks yourself before you finish, and stop when they pass. End with a short plain-text report: what you changed and the exit code of each check you ran."
 CODEX_EXPECTED="$TARGET/.codex-expected"
 printf '%s\n' codex exec --json -C "$TARGET_CANONICAL" -s workspace-write --add-dir "$TARGET_CANONICAL/.git" -m "$CODEX_MODEL" \
   '-c' 'model_reasoning_effort="medium"' \
