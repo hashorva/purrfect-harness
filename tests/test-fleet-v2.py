@@ -104,7 +104,101 @@ def seat(family, doors, effort="medium", speed="unknown"):
             "approved_resolution": {"provider": provider, "model": model, "effort": effort, "speed": speed}}
 
 
+def doors_never_resolve_a_foreign_family():
+    registry = fixture_registry()
+
+    def resolve_seat(seat_spec, inventory_doc, **policy):
+        return fleet_state.resolve_v2(fleet_with({"s": seat_spec}, **policy), "s", registry, inventory_doc)
+
+    def pick(family, doors, effort="medium", speed="unknown", inventory_doc=None, **policy):
+        inv = inventory_doc if inventory_doc is not None else inventory()
+        return resolve_seat(seat(family, doors, effort, speed), inv, **policy)
+
+    def expect(result, door_name, model, source="observed", provider=None):
+        got = (result["door"], result["model"], result["source"])
+        assert got == (door_name, model, source), (got, result)
+        if provider is not None:
+            assert result["provider"] == provider, result
+
+    def agy_first_seat(family, doors, effort="medium", model="fixture-model"):
+        return {
+            "family": family, "effort": effort, "speed": "unknown", "doors": doors,
+            "approved_resolution": {"provider": "agy", "model": model, "effort": effort, "speed": "unknown"},
+        }
+
+    expect(
+        pick("luna", ["claude-alt", "codex"], inventory_doc=inventory(
+            {"claude": ["luna-fixture-2.0"], "codex": ["gpt-5.6-luna", "gpt-5.7-luna"]})),
+        "codex", "gpt-5.7-luna",
+    )
+    expect(
+        pick("terra", ["claude-alt", "codex"], inventory_doc=inventory(
+            {"claude": ["terra-fixture"], "codex": ["gpt-5.6-terra"]})),
+        "codex", "gpt-5.6-terra",
+    )
+    expect(
+        pick("sol", ["claude", "codex"], inventory_doc=inventory(
+            {"claude": ["sol-fixture"], "codex": ["gpt-5.6-sol"]})),
+        "codex", "gpt-5.6-sol",
+    )
+    expect(
+        pick("flash", ["claude-alt", "agy"], effort="high", inventory_doc=inventory(
+            {"claude": ["flash-fixture"], "agy": ["gemini-3.8-flash-high"]})),
+        "agy", "gemini-3.8-flash-high", provider="agy",
+    )
+    expect(
+        pick("argon", ["claude", "agy-argon"], effort="high", inventory_doc=inventory(
+            {"claude": ["argon-fixture"], "agy": ["gemini-4-argon-high"]})),
+        "agy-argon", "gemini-4-argon-high", provider="agy",
+    )
+    for family, bait in (("opus", "gpt-opus-1"), ("sonnet", "sonnet-bait"), ("haiku", "haiku-bait"), ("fable", "fable-bait")):
+        expect(
+            pick(family, ["codex", "claude"], inventory_doc=inventory(
+                {"codex": [bait], "claude": [family]})),
+            "claude", family, source="alias",
+        )
+    for family, doors, bait in (
+        ("opus", ["agy", "claude"], "claude-opus-5-5-high"),
+        ("sonnet", ["agy", "claude"], "sonnet-bait"),
+        ("haiku", ["agy-argon", "claude"], "haiku-bait"),
+        ("fable", ["agy", "claude"], "fable-bait"),
+    ):
+        inv = inventory({"agy": [bait], "claude": [family]})
+        expect(resolve_seat(agy_first_seat(family, doors, model=bait), inv), "claude", family, source="alias")
+
+    for door in ("claude", "claude-alt"):
+        for family in ("sol", "terra", "luna", "argon", "flash", "grok", "composer"):
+            assert not fleet_state.native_door(registry, door, family), (door, family)
+    for family in ("opus", "fable", "sonnet", "haiku"):
+        assert not fleet_state.native_door(registry, "codex", family), family
+    for door in ("agy", "agy-argon"):
+        for family in ("opus", "fable", "sonnet", "haiku"):
+            assert not fleet_state.native_door(registry, door, family), (door, family)
+    for door in ("cursor-grok", "cursor-composer"):
+        for family in ("opus", "fable", "sonnet", "haiku"):
+            assert not fleet_state.native_door(registry, door, family), (door, family)
+
+    def expect_unsupported(family, door, effort="medium", speed="unknown"):
+        try:
+            fleet_state.resolve_v2(fleet_with({"s": seat(family, [door], effort, speed)}), "s", registry, inventory())
+            raise AssertionError(f"expected PolicyError for {family} on {door}")
+        except fleet_state.PolicyError as exc:
+            assert str(exc) == f"fleet.seats.s family '{family}' unsupported for its doors"
+
+    for family in ("sol", "terra", "luna"):
+        expect_unsupported(family, "claude")
+    expect_unsupported("argon", "claude", effort="high")
+    expect_unsupported("flash", "claude", effort="high")
+    expect_unsupported("grok", "claude-alt", effort="high")
+    expect_unsupported("composer", "claude-alt")
+    expect_unsupported("opus", "cursor-grok", effort="high", speed="standard")
+    expect_unsupported("haiku", "cursor-grok", speed="standard")
+    expect_unsupported("fable", "cursor-composer", effort="high", speed="standard")
+    expect_unsupported("sonnet", "cursor-composer", speed="standard")
+
+
 def resolver_checks(d):
+    doors_never_resolve_a_foreign_family()
     registry = fixture_registry()
     inv = inventory({"codex": ["gpt-5.6-luna", "gpt-5.7-luna"], "agent": ["grok-4.8-high-fast", "grok-4.7-high"], "claude": ["luna-fixture-2.0"]})
 
@@ -124,11 +218,11 @@ def resolver_checks(d):
     # no_zdr doors are skipped only when the policy forbids them
     expect(pick(["nozdr-codex", "codex"], no_zdr="forbid"), "codex", "gpt-5.7-luna")
     expect(pick(["nozdr-codex", "codex"]), "nozdr-codex", "gpt-5.7-luna")
-    # an unhealthy first door falls through to the next included door
-    expect(pick(["claude-alt", "codex"]), "claude-alt", "luna-fixture-2.0", source="alias")
+    # claude-alt is skipped because its provider does not own luna, even though the door is healthy and the alias list contains luna-fixture-2.0
+    expect(pick(["claude-alt", "codex"]), "codex", "gpt-5.7-luna")
     unhealthy = inventory({"codex": ["gpt-5.6-luna", "gpt-5.7-luna"], "claude": ["luna-fixture-2.0"]}, failed=("claude",))
     expect(pick(["claude-alt", "codex"], inventory_doc=unhealthy), "codex", "gpt-5.7-luna")
-    # a healthy first door with no model of the family falls through to the next door
+    # claude-alt is skipped as non-native
     no_family_on_first = inventory({"claude": ["opus"], "codex": ["gpt-5.6-luna", "gpt-5.7-luna"]})
     expect(pick(["claude-alt", "codex"], inventory_doc=no_family_on_first), "codex", "gpt-5.7-luna")
     # a -fast model is never chosen with fast false, even when it is the newest
