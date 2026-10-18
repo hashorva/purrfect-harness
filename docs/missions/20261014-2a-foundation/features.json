@@ -204,6 +204,22 @@
         "shellcheck, JSON validation, bash tests/run-tests.sh and install-harness.sh --dev --validate-release exit 0"
       ],
       "passes": false
+    },
+    {
+      "id": "F013",
+      "category": "functional",
+      "priority": 13,
+      "bootstrap": false,
+      "description": "Native-only fleet, effort by role, goal-style launcher prompts, explorer subagents, subagent usage in receipts, flaky-test fix, residual-risk follow-up and PROGRESS.md role fixes (owner decisions 2026-10-18).",
+      "steps": [
+        "Registry, doors and fleet carry no third-party model inside another vendor quota (agy Opus/Sonnet/GPT-OSS removed) and MODEL_ROUTING.md has no third-party escalation wording",
+        "Launcher prompts give goal, resources, budget and acceptance checks; the brain prompt no longer says to append PROGRESS.md; explorer subagent definitions exist",
+        "Receipts record subagent calls and their tokens",
+        "The suite has no test that passes only on rerun (stress check under load 5/5)",
+        "Scope check treats compiled-module shadowing and listed persistence paths as violations",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
     }
   ]
 }
