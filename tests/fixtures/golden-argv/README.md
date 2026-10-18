@@ -1,6 +1,7 @@
 # Golden provider argv
 
 Recorded files are immutable: an argv change adds contract N+1 and four new provider files, then bumps `PROVIDER_CONTRACTS_V3` and `CURRENT_PROVIDER_CONTRACT`.
+`MANIFEST.json` pins each file's sha256 and contract; `scripts/check-golden-argv.py` (CI, against `origin/main`) refuses any modified, deleted or renamed recorded file and allows only new `<provider>-v<N>.json` files above the newest recorded contract.
 
 Fixture specs use repo `/golden/repo`, prompt `GOLDEN PROMPT`, and write scope `scripts/*`; versions 2–9 use schema 3 and contract N, while v1 uses schema 2 without a contract field. Codex also has a case with `.agents/skills/*` in scope. Provider models are `gpt-5.5`, `golden-claude`, `golden-agy-high`, and `golden-agent-high`; effort is high and speed is unknown except agent standard.
 

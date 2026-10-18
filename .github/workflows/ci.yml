@@ -85,5 +85,10 @@ jobs:
       - name: Audit committed 2A evidence (old receipts must keep validating)
         run: python3 tests/test-evidence-2a.py
 
+      - name: Golden argv fixtures only grow (history check)
+        env:
+          CI: "true"
+        run: python3 scripts/check-golden-argv.py
+
       - name: End-to-end install/update test
         run: bash tests/run-tests.sh
