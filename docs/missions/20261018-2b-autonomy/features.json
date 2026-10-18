@@ -1,7 +1,21 @@
 {
   "mission": "2B The Dark Factory",
   "rules": "Workers never edit this file. Only the orchestrator accepts a non-bootstrap feature using accept-feature.sh after a matching passing VerificationRecord exists, recording accepted_run_id, accepted_verification_sha256, accepted_at, and accepted_by with passes:true. Editing or removing approved descriptions/steps is unacceptable. Keep bootstrap on every feature: false (default) requires verified worker execution and separate acceptance; true exempts work no worker will ever run, such as mission scaffolding or orchestrator decisions. Set it when authoring; never add it after GATE 0 to excuse missing evidence. Features run in run_order; each feature's priority is its index in run_order.",
-  "run_order": ["F000", "F001", "F002", "F004", "F003", "F005", "F006", "F007", "F008", "F009", "F010", "F011", "F012"],
+  "run_order": [
+    "F000",
+    "F001",
+    "F002",
+    "F004",
+    "F003",
+    "F005",
+    "F006",
+    "F007",
+    "F008",
+    "F009",
+    "F010",
+    "F011",
+    "F012"
+  ],
   "features": [
     {
       "id": "F000",
@@ -20,7 +34,11 @@
         "The orchestrator (not a worker) refreshes docs/missions/20261014-2a-foundation/PROGRESS.md one last time: its Current status block lists F001 to F017 as accepted with each accepted_run_id from the 2A features.json and names the Day 6 report as final; docs/missions/20261014-2a-foundation/PROGRESS.md.sha256 records its hash; a test fails when the file's sha256 differs from that record or when a 2A feature with passes true is missing from the status block",
         "shellcheck scripts/*.sh tests/*.sh and bash tests/run-tests.sh exit 0; the CI run for the F000 gate commit is green on all four jobs, including the golden-argv check and the 2A evidence audit"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "eae40004-3719-47ed-bb33-ac99922ec562",
+      "accepted_verification_sha256": "0ca4dbb0fcbc66c95e0438dc3fc08dc61b3ecdbc481f4472373a8e9fd7bf0cbb",
+      "accepted_at": "2026-10-18T19:27:07.541360Z",
+      "accepted_by": "Zamir (owner approval 2026-10-18; front desk executed)"
     },
     {
       "id": "F001",
