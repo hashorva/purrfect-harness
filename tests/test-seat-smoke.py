@@ -180,7 +180,7 @@ class SeatSmoke(unittest.TestCase):
         return json.loads(result.stdout)
 
     NOW = "2026-10-16T18:00:00Z"
-    V2_MODELS = {"claude": ["opus", "sonnet", "haiku"], "codex": ["gpt-6-luna"], "agent": ["grok-4.7-high"],
+    V2_MODELS = {"claude": ["opus", "sonnet", "haiku"], "codex": ["gpt-6-luna"], "agent": ["grok-4.7-medium"],
                  "agy": ["gemini-3.8-flash-medium"]}
 
     def make_v2(self, failed=()):
@@ -210,7 +210,7 @@ class SeatSmoke(unittest.TestCase):
                  "seats": {"brain": seat("opus", "high", ["claude"], "unknown", "claude", "opus"),
                            "agy.economy": seat("flash", "medium", ["agy"], "unknown", "agy", "gemini-3.8-flash-medium"),
                            "claude.economy": seat("haiku", "medium", ["claude"], "unknown", "claude", "haiku"),
-                           "cursor.premium": seat("grok", "high", ["cursor-grok"], "standard", "cursor", "grok-4.7-high")}}
+                           "cursor.premium": seat("grok", "medium", ["cursor-grok"], "standard", "cursor", "grok-4.7-medium")}}
         validate_fleet(fleet)
         (self.source / FIXTURE / "fleet.json").write_text(canonical(fleet))
         self.git("commit", "-qam", "v2 fleet")
@@ -221,7 +221,7 @@ class SeatSmoke(unittest.TestCase):
         self.assertEqual(sorted(data["seats"]), ["agy.economy", "claude.economy", "cursor.premium"])
         argv = data["seats"]["cursor.premium"]["argv"]
         self.assertEqual((argv[2], argv[argv.index("--effort") + 1], argv[argv.index("--speed") + 1]),
-                         ("cursor", "high", "standard"))
+                         ("cursor", "medium", "standard"))
         self.assertEqual(data["seats"]["agy.economy"]["argv"][2], "agy")
         clone = Path(data["clone"])
         self.assertEqual((clone / ".tasks/fleet-inventory.json").read_bytes(), self.inventory_bytes)
@@ -230,7 +230,7 @@ class SeatSmoke(unittest.TestCase):
              "--seat", "cursor.premium", "--inventory", str(clone / ".tasks/fleet-inventory.json"), "--root", str(clone)],
             cwd=clone, text=True, capture_output=True, env=ENV)
         self.assertEqual(resolved.returncode, 0, resolved.stderr)
-        self.assertEqual(json.loads(resolved.stdout)["model"], "grok-4.7-high")
+        self.assertEqual(json.loads(resolved.stdout)["model"], "grok-4.7-medium")
 
     def test_v2_seat_launches_with_resolved_provider_and_model(self):
         self.make_v2()
@@ -240,7 +240,7 @@ class SeatSmoke(unittest.TestCase):
         entry = json.loads(result.stdout)["seats"]["cursor.premium"]
         self.assertEqual(entry["status"], "usable")
         self.assertEqual((entry["provider"], entry["model"], entry["effort"], entry["speed"]),
-                         ("cursor", "grok-4.7-high", "high", "standard"))
+                         ("cursor", "grok-4.7-medium", "medium", "standard"))
         self.assertEqual((self.parent / "probe" / "launched.cursor.premium").read_text(), "cursor-agent")
 
     def test_v2_unavailable_seat_exits_2_before_the_destination_exists(self):

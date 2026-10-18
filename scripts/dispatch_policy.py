@@ -15,6 +15,8 @@ from execution_spec import artifact_directory, SpecError, validate_write_scope
 from fleet_state import CAPABILITIES, read_json, validate_fleet
 from harness_registry import RegistryError, canonical_provider, load_registry
 
+ROLE_EFFORTS = {"planning": "high", "review": "medium", "worker": "medium"}
+
 
 class PolicyError(ValueError):
     """The requested dispatch is not authorized by the current mission state."""
@@ -216,6 +218,30 @@ def validate_capability(provider, effort, speed):
         fail("provider does not support the requested speed")
 
 
+def validate_role_effort(role, effort, fleet=None, seat=None):
+    want = ROLE_EFFORTS[role]
+    if role == "planning":
+        if effort != want:
+            fail(f"planning runs need effort high; got {effort}")
+        return
+    if not fleet or not seat:
+        fail(f"{role} runs need --fleet and --seat")
+    try:
+        with open(fleet, encoding="utf-8") as stream:
+            document = json.load(stream)
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise PolicyError("frozen fleet is unreadable") from exc
+    if not isinstance(document, dict) or document.get("schema_version") != 2:
+        return
+    seats = document.get("seats")
+    entry = seats.get(seat) if isinstance(seats, dict) else None
+    frozen = entry.get("effort") if isinstance(entry, dict) else None
+    if frozen != want:
+        fail(f"{role} runs need a seat frozen at effort {want}; {seat} is frozen at {frozen}")
+    if effort != frozen:
+        fail(f"launch effort {effort} differs from the frozen effort {frozen}")
+
+
 def validate_worker(args):
     root = git_root(args.root)
     workspace = git_root(args.workspace)
@@ -342,6 +368,7 @@ def main():
     worker = commands.add_parser("validate-worker")
     brain = commands.add_parser("validate-brain")
     capability = commands.add_parser("validate-capability")
+    role_effort = commands.add_parser("validate-role-effort")
     acquire = commands.add_parser("acquire-lock")
     release = commands.add_parser("release-lock")
     for command in (worker, brain, acquire, release):
@@ -359,6 +386,10 @@ def main():
     capability.add_argument("--provider", required=True)
     capability.add_argument("--effort", required=True)
     capability.add_argument("--speed", required=True)
+    role_effort.add_argument("--role", choices=ROLE_EFFORTS, required=True)
+    role_effort.add_argument("--effort", required=True)
+    role_effort.add_argument("--fleet")
+    role_effort.add_argument("--seat")
     release.add_argument("--lock", required=True)
     release.add_argument("--token", required=True)
     args = parser.parse_args()
@@ -371,6 +402,8 @@ def main():
             print(json.dumps({"write_scope": write_scope}, sort_keys=True, separators=(",", ":")))
         elif args.command == "validate-capability":
             validate_capability(args.provider, args.effort, args.speed)
+        elif args.command == "validate-role-effort":
+            validate_role_effort(args.role, args.effort, args.fleet, args.seat)
         elif args.command == "acquire-lock":
             acquire_lock(args)
         else:

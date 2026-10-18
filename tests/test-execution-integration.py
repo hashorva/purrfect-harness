@@ -212,7 +212,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.commit_fixture("frozen fleet")
         return doc
 
-    def write_v2_fleet_and_inventory(self, model):
+    def write_v2_fleet_and_inventory(self, model, *, effort="medium"):
         (self.root / ".tasks").mkdir(exist_ok=True)
         providers = {}
         for name in fleet_state.PROVIDERS:
@@ -232,8 +232,8 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             "inventory": {"sha256": "0" * 64, "probed_at": "2026-08-21T00:00:00Z"},
             "approval": {"status": "approved", "approved_by": "human", "approved_at": "2026-08-21T00:00:00Z"},
             "policy": {"billing_classes": ["included"], "fast": False, "no_zdr": "allow"},
-            "seats": {"codex.economy": {"family": "luna", "effort": "medium", "speed": "unknown", "doors": ["codex"],
-                                             "approved_resolution": {"provider": "codex", "model": "gpt-5.6-luna", "effort": "medium", "speed": "unknown"}}},
+            "seats": {"codex.economy": {"family": "luna", "effort": effort, "speed": "unknown", "doors": ["codex"],
+                                             "approved_resolution": {"provider": "codex", "model": "gpt-5.6-luna", "effort": effort, "speed": "unknown"}}},
         }
         path = self.mission / "fleet.json"
         if path.exists():
@@ -242,7 +242,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         path.chmod(0o444)
         self.commit_fixture("frozen v2 fleet")
 
-    def write_v2_brain_fleet_and_inventory(self, *, claude_ok, agy_models):
+    def write_v2_brain_fleet_and_inventory(self, *, claude_ok, agy_models, effort="medium"):
         """Legacy brain seat with agy first, used to prove foreign doors are skipped (F013)."""
         (self.root / ".tasks").mkdir(exist_ok=True)
         providers = {}
@@ -265,8 +265,8 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             "inventory": {"sha256": "0" * 64, "probed_at": "2026-10-16T00:00:00Z"},
             "approval": {"status": "approved", "approved_by": "human", "approved_at": "2026-10-16T00:00:00Z"},
             "policy": {"billing_classes": ["included"], "fast": False, "no_zdr": "allow"},
-            "seats": {"brain": {"family": "opus", "effort": "high", "speed": "unknown", "doors": ["agy", "claude"],
-                                "approved_resolution": {"provider": "claude", "model": "opus", "effort": "high", "speed": "unknown"}}},
+            "seats": {"brain": {"family": "opus", "effort": effort, "speed": "unknown", "doors": ["agy", "claude"],
+                                "approved_resolution": {"provider": "claude", "model": "opus", "effort": effort, "speed": "unknown"}}},
         }
         path = self.mission / "fleet.json"
         if path.exists():
@@ -1277,7 +1277,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.write_v2_brain_fleet_and_inventory(claude_ok=True, agy_models=agy_models)
         stays = self.invoke(brain)
         self.assertEqual(stays.returncode, 0, stays.stderr + stays.stdout)
-        self.linked(role="brain", provider="claude", model="opus", effort="high", speed="unknown",
+        self.linked(role="brain", provider="claude", model="opus", effort="medium", speed="unknown",
                     work_unit="review", feature=None)
         self.assertFalse(drift_path.exists())
         self.drop_run_artifacts()
@@ -1293,6 +1293,33 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             path = self.root / ".tasks" / dirname
             self.assertFalse(list(path.glob("*")) if path.exists() else [], dirname)
         self.assertFalse(drift_path.exists())
+
+    def test_effort_by_role_is_refused_before_any_spec(self):
+        def refused(args, message):
+            result = self.invoke(args)
+            self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn(message, result.stderr)
+            self.assertFalse((self.root / ".tasks/invoked.json").exists())
+            for dirname in ("specs", "logs", "receipts", "locks"):
+                path = self.root / ".tasks" / dirname
+                self.assertFalse(list(path.glob("*")) if path.exists() else [], dirname)
+            self.clean_runs()
+
+        self.set_status("draft")
+        for action in ("mission-init", "gate0"):
+            refused(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", action,
+                     "--provider", "codex", "--model", "draft-model", "--effort", "medium", "--speed", "unknown"],
+                    "planning runs need effort high; got medium")
+
+        self.set_status("in-progress")
+        self.write_v2_brain_fleet_and_inventory(claude_ok=True, agy_models=["gemini-3.8-flash-low"], effort="high")
+        refused(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"],
+                "review runs need a seat frozen at effort medium; brain is frozen at high")
+
+        self.write_v2_fleet_and_inventory("gpt-5.6-luna", effort="high")
+        refused(["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                 "--feature", "F001", "--effort", "high", "--speed", "unknown"],
+                "worker runs need a seat frozen at effort medium; codex.economy is frozen at high")
 
     def test_v2_worker_fails_before_artifacts_when_drift_directory_is_unwritable(self):
         self.set_status("in-progress")

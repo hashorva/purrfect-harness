@@ -151,6 +151,13 @@ else
   [ -n "$SPEED" ] || { [ "$PROVIDER" = agent ] && SPEED="standard" || SPEED="unknown"; }
 fi
 
+if [ "$ACTION" = review ]; then
+  ROLE_EFFORT_ARGS=(--role review --fleet "$FLEET" --seat "$SEAT")
+else
+  ROLE_EFFORT_ARGS=(--role planning)
+fi
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-role-effort "${ROLE_EFFORT_ARGS[@]}" --effort "$EFFORT"
+
 case "$PROVIDER" in codex|claude|agent|agy) ;; *) echo "ERROR: --provider must be codex, claude, cursor, agent, or agy" >&2; exit 2 ;; esac
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-capability \
   --provider "$PROVIDER" --effort "$EFFORT" --speed "$SPEED"

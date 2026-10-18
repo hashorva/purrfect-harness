@@ -218,6 +218,7 @@ RESOLVE_ARGS=(python3 "$ROOT/scripts/fleet_state.py" resolve
 BINDING_JSON="$(PYTHONDONTWRITEBYTECODE=1 "${RESOLVE_ARGS[@]}")" || exit $?
 MODEL="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["model"])' <<<"$BINDING_JSON")"
 [ -n "$MODEL" ] || { echo "ERROR: frozen fleet returned an empty model" >&2; exit 1; }
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-role-effort --role worker --effort "$EFFORT" --fleet "$FLEET" --seat "$FLEET_SEAT"
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-capability \
   --provider "$WORKER" --effort "$EFFORT" --speed "$SPEED"
 
