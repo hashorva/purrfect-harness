@@ -39,6 +39,7 @@ committing. Review these operational changes when adopting `v3.1.0`:
    acceptance. Ledger rows carry `self_reported_model` alongside `observed_model`
    and enforce the `[A-Za-z0-9 ._:/-]{0,200}` allow rule on harness-generated
    text fields.
+6. **Native-only doors:** freeze-v2 refuses, and resolve_v2 skips, a door that is not native to the seat family; re-freeze any v2 fleet that binds a foreign model on agy before dispatch.
 
 ### What changes
 
@@ -46,8 +47,7 @@ committing. Review these operational changes when adopting `v3.1.0`:
   resolve through ranked doors (`included` before `credits`/`api` unless
   opted in, never `-fast` unless enabled), encode Cursor effort in the model id
   and Antigravity effort in the model name (`agy.economy` = `gemini-3.8-flash`,
-  `agy.premium` = `gemini-4-argon` on its weekly-only pool, chair resolution on
-  `agy`), and require a writable drift log whenever resolution changes.
+  `agy.premium` = `gemini-4-argon` on its weekly-only pool, native doors only), and require a writable drift log whenever resolution changes.
 - **Provider contracts 7–9 (`scripts/execute_provider.py`, `scripts/execution_runner.py`, `scripts/execution_receipt.py`):**
   contract 7 adds the 90s stall watchdog, zero-turn failure guard, and Claude
   `--strict-mcp-config`; contract 8 restores the `agy` `stream-json` lane with
@@ -80,6 +80,15 @@ committing. Review these operational changes when adopting `v3.1.0`:
   planted-bug catches (cases A, B, C) for `grok-4.7-high` and
   `gemini-4-argon-high (agy)` to qualify guard-review lanes from evidence.
 
+### Phase 2A features F010 to F013
+
+- F010 capability unlock: every adapter runs its full native toolset under provider contract 9; Claude keeps the deny-list and --strict-mcp-config, Codex keeps workspace-write with network and live web search and cua_repl/node_repl off per run, and probe-seat.sh diffs each CLI --help flag list.
+- F011 drive-cli hardening: after one answered trust prompt, any later prompt-like pane and every numbered or menu approval prompt stops with exit 3, and no input is sent.
+- F012 release 3.1.0 candidate: harness-manifest.json, README frontmatter and this CHANGELOG say 3.1.0 / v3.1.0 together, and the docs/RELEASING.md checks pass.
+- F013 native-only fleet: launcher prompts give goal, resources, budget and acceptance checks; Claude Code runs delegate wide reading to the Haiku explorer subagent; receipts record subagent calls and their tokens; the load-sensitive tests pass 5/5 under load; compiled-module and stdlib shadowing are scope violations.
+- Native-only rule: a door never serves a model from another vendor, so the agy Opus, Sonnet and GPT-OSS bindings are gone, and a move to another vendor is an explicit choice of another approved native seat.
+- Effort by role: brain seats (brain, brain_codex, brain_argon) run at high effort; review and worker seats run at medium effort.
+
 ### Known limits
 
 - **Claude `bypassPermissions` + `Bash` is a net, not a wall:** headless Claude
@@ -92,6 +101,7 @@ committing. Review these operational changes when adopting `v3.1.0`:
 - Scope checks and protected-path snapshots cover Git-visible workspace changes
   and the explicitly snapshotted protected paths only.
 - One worker at a time per repository workspace lock.
+- Residual risks (docs/missions/20261014-2a-foundation/evidence/claude-unlock-residual-risk.md): a command that evades --disallowedTools can still read, exfiltrate or change paths outside the workspace, and the post-run snapshot detects changes only to the listed protected paths and Git workspace and index state.
 
 ## 3.0.0 (2026-10-14)
 
