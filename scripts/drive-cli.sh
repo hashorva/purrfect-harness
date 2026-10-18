@@ -75,14 +75,26 @@ write_pane_log() {
   printf '%s' "$pane_text" >"$TRANSCRIPT_DIR/pane.log"
 }
 
+normalize_dead_status() {
+  local raw="$1"
+  if [[ "$raw" =~ ^[0-9]+$ ]]; then
+    printf '%s' "$raw"
+  else
+    printf '0'
+  fi
+}
+
 write_result_json() {
   local exit_code="$1" reason="$2" rule_id="${3:-null}"
   python3 - "$exit_code" "$reason" "$rule_id" <<'PY' >"$TRANSCRIPT_DIR/result.json"
-import json, sys
-rule_id = sys.argv[3]
+import json, re, sys
+raw, reason, rule_id = sys.argv[1], sys.argv[2], sys.argv[3]
 if rule_id == "null":
     rule_id = None
-doc = {"exit_code": int(sys.argv[1]), "reason": sys.argv[2], "rule_id": rule_id}
+if re.fullmatch(r"[0-9]+", raw) is None:
+    raw = "4"
+    reason = "internal: non-numeric exit code"
+doc = {"exit_code": int(raw), "reason": reason, "rule_id": rule_id}
 print(json.dumps(doc, indent=2))
 PY
 }
@@ -189,6 +201,7 @@ PY
       stop_session 3 "$CATEGORY" "$RID" "$PANE_FULL"
     fi
     DEAD_STATUS="$(tmux -L "$TMUX_SOCKET" display-message -p -t "$SESSION" '#{pane_dead_status}' 2>/dev/null || echo 0)"
+    DEAD_STATUS="$(normalize_dead_status "$DEAD_STATUS")"
     write_pane_log "$PANE_FULL"
     write_result_json "$DEAD_STATUS" completed null
     printf '%s' "$PANE_FULL"

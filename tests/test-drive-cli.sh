@@ -31,6 +31,28 @@ assert scrolled["decision"] == "stop" and scrolled["exit_code"] == 3 and scrolle
 print("ok")
 PY
 
+echo "== non-numeric pane_dead_status normalises to 0"
+fn="$(sed -n '/^normalize_dead_status() {$/,/^}$/p' "$DRIVE_CLI")"
+if [ -z "$fn" ]; then
+  echo "FAIL: normalize_dead_status is missing from $DRIVE_CLI" >&2
+  exit 1
+fi
+check_norm() {
+  local raw="$1" want="$2" got
+  got="$(bash --noprofile --norc -c 'eval "$1"; normalize_dead_status "$2"' _ "$fn" "$raw")"
+  if [ "$got" != "$want" ]; then
+    echo "FAIL: normalize_dead_status [$raw] -> [$got] want [$want]" >&2
+    exit 1
+  fi
+}
+check_norm "" 0
+check_norm " " 0
+check_norm "nope" 0
+check_norm "-1" 0
+check_norm "1.5" 0
+check_norm "0" 0
+check_norm "137" 137
+
 if ! command -v tmux >/dev/null 2>&1; then
   echo "SKIP: tmux not installed; skipping tmux integration tests"
   exit 0
@@ -90,6 +112,59 @@ run_drive() {
   fi
   printf '%s' "$combined"
 }
+
+echo "== empty pane_dead_status from tmux shim exits 0"
+real_tmux="$(command -v tmux)"
+shim_dir="$TMP/shim-bin"
+mkdir -p "$shim_dir"
+{
+  printf '%s\n' '#!/bin/sh'
+  printf 'real=%q\n' "$real_tmux"
+  printf '%s\n' 'for arg in "$@"; do'
+  printf '%s\n' "  if [ \"\$arg\" = '#{pane_dead_status}' ]; then"
+  printf '%s\n' '    exit 0'
+  printf '%s\n' '  fi'
+  printf '%s\n' 'done'
+  # shellcheck disable=SC2016  # shim script body: $ must stay literal in generated tmux
+  printf '%s\n' 'exec "$real" "$@"'
+} >"$shim_dir/tmux"
+chmod +x "$shim_dir/tmux"
+cat >"$TMP/fake-shim-ok.sh" <<'FAKE'
+#!/bin/sh
+echo shim-ok
+exit 0
+FAKE
+chmod +x "$TMP/fake-shim-ok.sh"
+find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+set +e
+combined="$(DRIVE_CLI_STALL_SECS=8 PATH="$shim_dir:$PATH" bash "$DRIVE_CLI" "$WS" -- "$TMP/fake-shim-ok.sh" 2>&1)"
+status=$?
+set -e
+if [ "$status" -ne 0 ]; then
+  echo "FAIL: empty pane_dead_status should exit 0, got $status" >&2
+  printf '%s\n' "$combined" >&2
+  exit 1
+fi
+if ! printf '%s' "$combined" | grep -Fq "shim-ok"; then
+  echo "FAIL: expected shim-ok in pane output" >&2
+  exit 1
+fi
+if printf '%s' "$combined" | grep -Fq "Traceback"; then
+  echo "FAIL: traceback on empty pane_dead_status" >&2
+  exit 1
+fi
+if printf '%s' "$combined" | grep -Fq "ValueError"; then
+  echo "FAIL: ValueError on empty pane_dead_status" >&2
+  exit 1
+fi
+result="$(find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -type d | head -n 1)/result.json"
+python3 - "$result" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+assert doc.get("exit_code") == 0, doc
+assert doc.get("reason") == "completed", doc
+assert doc.get("rule_id") is None, doc
+PY
 
 echo "== folder trust for exact workspace (answer y, exit 0)"
 cat >"$TMP/fake-trust-ok.sh" <<'FAKE'
