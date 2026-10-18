@@ -36,6 +36,8 @@ file are durable. Always show the map at GATE 0 so the human can swap binds.
 - Opus is the brain. When Claude has no quota, use Argon or Sol on their own
   quota, through `bash scripts/spawn-brain.sh <mission> review --seat brain_argon`,
   then `--seat brain_codex`.
+- Planning runs use the same seats: `bash scripts/spawn-brain.sh <mission> plan --request <file>`,
+  with `--seat brain_argon` when Claude has no quota. `brain_codex` is refused for plan, because codex argv names the live repo (`-C`), so the run would not stay in the scratch clone.
 - The reviewer is on a different vendor than the worker where possible.
 - Opus medium reviews dispatch, verification, acceptance, safety and privacy code.
 
