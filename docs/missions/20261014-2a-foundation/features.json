@@ -48,7 +48,7 @@
       "category": "functional",
       "priority": 4,
       "bootstrap": false,
-      "description": "Fleet v2: policy seats, per-spawn resolution recorded in the spec, drift events, door priority, fast and credits opt-in. Cursor effort through the model name. Resolves the unproven `model[effort=…,fast=…]` format. Needs Gate 0 decision 2 (frozen-fleet amendment).",
+      "description": "Fleet v2: policy seats, per-spawn resolution recorded in the spec, drift events, door priority, fast and credits opt-in. Cursor effort through the model name. Resolves the unproven `model[effort=\u2026,fast=\u2026]` format. Needs Gate 0 decision 2 (frozen-fleet amendment).",
       "steps": [
         "A fleet v2 seat names a family and a policy; a v1 fleet.json still validates",
         "Each spawn records the resolved model in the spec and the observed model in the receipt",
@@ -56,7 +56,7 @@
         "Door priority picks the first included, healthy door; a credits or api door is skipped unless the mission approves it",
         "A `-fast` model is never chosen unless the mission enables fast",
         "Cursor effort is encoded in the model name from the registry; a test lists the encoding for each",
-        "The unproven `model[effort=…,fast=…]` format is either proven by a recorded probe or removed; no unproven format ships",
+        "The unproven `model[effort=\u2026,fast=\u2026]` format is either proven by a recorded probe or removed; no unproven format ships",
         "The FALLBACKS constant is deleted from scripts/fleet_state.py (`grep -nE '^FALLBACKS *= *[({]' scripts/*.py` exits 1); an unavailable family stays `unavailable`, never a guessed model",
         "shellcheck and bash tests/run-tests.sh exit 0"
       ],
@@ -257,6 +257,19 @@
       "accepted_verification_sha256": "e3bac313e61d91e929bbfe260fa2fc9d68470e024a02e2489a694436e334a79e",
       "accepted_at": "2026-10-18T07:58:20.563494Z",
       "accepted_by": "Zamir (owner approval 2026-10-18; front desk executed)"
+    },
+    {
+      "id": "F015",
+      "category": "functional",
+      "priority": 15,
+      "bootstrap": false,
+      "description": "Release 3.1.0 fixes found by the Opus release review: install payload gaps, drive-cli residuals in the CHANGELOG, RELEASING.md currency.",
+      "steps": [
+        "Every new script, schema and capability folder shipped by 3.1.0 is in install_payload_paths and update_paths",
+        "CHANGELOG lists the drive-cli residuals; docs/RELEASING.md names 3.1.0 and no hard-coded Phase 1 tag message",
+        "shellcheck, bash tests/run-tests.sh, install-harness.sh --dev --validate-release and git diff --check exit 0"
+      ],
+      "passes": false
     }
   ]
 }

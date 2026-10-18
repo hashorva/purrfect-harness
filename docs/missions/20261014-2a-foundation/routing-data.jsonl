@@ -232,3 +232,4 @@
 {"type":"architect-run","plan":"T-115","seat":"claude.brain-planning","model":"claude opus (high)","rung":"native: claude","input_tokens":59563,"output_tokens":19378,"cache_read_tokens":866927,"outcome":"done"}
 {"run_id":"a7946812-2199-4386-b13f-a7e784dcb503","task":"T-115","category":"receipts","size":"M","seat":"brain_codex","model":"gpt-6.1-sol","effort":"medium","attempt":3,"outcome":"done","failure_class":"none","duration_s":215,"tokens_or_cost":"unknown"}
 {"type":"review","task":"release 3.1.0 diff","reviewer":"claude opus (medium)","rung":"native: claude","verdict":"FAIL","input_tokens":34797,"output_tokens":7678,"cache_read_tokens":573853}
+{"type":"architect-run","plan":"T-124","seat":"claude.brain-planning","model":"claude opus (high)","rung":"native: claude","input_tokens":73048,"output_tokens":27623,"cache_read_tokens":1499258,"outcome":"done"}
