@@ -15,8 +15,19 @@ HARNESS="$(pwd)"
 FAIL=0
 check() { # check <description> <command...>
   local desc="$1"; shift
-  if "$@" >/dev/null 2>&1; then echo "  ok   : $desc"
-  else echo "  FAIL : $desc"; FAIL=1; fi
+  local out line
+  out="$(mktemp -t purrfect-check.XXXXXX)"
+  if "$@" >"$out" 2>&1; then
+    rm -f "$out" || true
+    echo "  ok   : $desc"
+  else
+    echo "  FAIL : $desc"
+    while IFS= read -r line || [ -n "$line" ]; do
+      printf '    | %s\n' "$line"
+    done < <(tail -n 60 "$out") || true
+    rm -f "$out" || true
+    FAIL=1
+  fi
 }
 copy_harness_tree() { # copy_harness_tree <src> <dst>: never read the live .git/ or .tasks/ (concurrent writers)
   local src="$1" dst="$2" entry
