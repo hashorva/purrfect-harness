@@ -1,7 +1,9 @@
+import ast
 import contextlib
 import importlib
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -9,9 +11,105 @@ import tempfile
 import unittest
 from unittest import mock
 import uuid
+import warnings
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+
+SAMPLE = "0b6f1c2e-9a4d-4c3b-8f2e-1d2c3b4a5f60"
+EXEMPT_NAMES = {("observe_output.py", "CODEX_THREAD_ID_RE")}  # Codex thread id: a provider id, not a run id
+
+def uuid_shaped(pattern):
+    """True when pattern finds a UUID's hex-and-dash shape but not the same shape in non-hex letters."""
+    attempts = [pattern]
+    if "\\" in pattern:
+        attempts.append(pattern.replace("\\-", "-"))
+
+    def finds(rx, sample):
+        return any(sample[:13] in m.group(0) for text in (sample, f"x {sample} x") for m in rx.finditer(text))
+
+    for attempt in attempts:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                rx = re.compile(attempt)
+            except (re.error, RecursionError, OverflowError, ValueError):
+                continue
+        if any(finds(rx, s) and not finds(rx, re.sub("[0-9A-Fa-f]", g, s))
+               for s, g in ((SAMPLE, "g"), (SAMPLE.upper(), "G"))):
+            return True
+    return False
+
+
+def fold(node, env):
+    """The string value of a constant, a known name, a + concatenation or an f-string; else None."""
+    if isinstance(node, ast.Constant):
+        return node.value if isinstance(node.value, str) else None
+    if isinstance(node, ast.Name):
+        return env.get(node.id)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = fold(node.left, env), fold(node.right, env)
+        return None if left is None or right is None else left + right
+    if isinstance(node, ast.JoinedStr):
+        parts = [fold(v.value if isinstance(v, ast.FormattedValue) else v, env) for v in node.values]
+        return None if None in parts else "".join(parts)
+    return None
+
+
+def python_findings(rel, text):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        tree = ast.parse(text)
+    found, env, modules, skip = [], {}, set(), set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            value = fold(node.value, env)
+            if value is not None:
+                env[node.targets[0].id] = value
+            if (rel, node.targets[0].id) in EXEMPT_NAMES:
+                skip.update(id(n) for n in ast.walk(node.value))
+        elif isinstance(node, ast.Import):
+            modules.update(a.asname or a.name for a in node.names if a.name.split(".")[0] == "uuid")
+        elif isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == "uuid":
+            found += [(rel, "imports uuid." + a.name) for a in node.names if a.name != "uuid4"]
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in modules and node.attr != "uuid4":
+            found.append((rel, "uses uuid." + node.attr))
+        elif isinstance(node, ast.Call):
+            name = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None)
+            if name == "UUID":
+                found.append((rel, "calls UUID("))
+            elif name in ("__import__", "import_module") and node.args and fold(node.args[0], env) == "uuid":
+                found.append((rel, "imports uuid dynamically"))
+        elif isinstance(node, (ast.Constant, ast.BinOp, ast.JoinedStr)) and id(node) not in skip:
+            value = fold(node, env)
+            if value == "UUID":
+                found.append((rel, "names UUID"))
+            elif value and uuid_shaped(value):
+                found.append((rel, "UUID-shaped pattern"))
+    return found
+
+
+def shell_findings(rel, text):
+    found = []
+    if re.search(r"uuid\.(?!uuid4\b)|UUID\(|from uuid import|\{8\}\\?-", text):
+        found.append((rel, "uuid parser text"))
+    quoted = re.findall(r"'([^'\n]*)'|\"([^\"\n]*)\"", text)
+    candidates = {a or b for a, b in quoted} | {w.strip("'\"") for w in text.split()}
+    if any(uuid_shaped(c) for c in candidates if c):
+        found.append((rel, "UUID-shaped pattern"))
+    return found
+
+
+def private_run_id_parsers(scripts):
+    """(path relative to scripts/, reason) for every private run-id parser; never file content."""
+    found = []
+    for path in sorted(p for p in scripts.rglob("*") if p.suffix in (".py", ".sh") and "__pycache__" not in p.parts):
+        rel = path.relative_to(scripts).as_posix()
+        if rel != "run_id.py":
+            text = path.read_text(encoding="utf-8")
+            found += python_findings(rel, text) if path.suffix == ".py" else shell_findings(rel, text)
+    return found
 
 
 class RunIdTests(unittest.TestCase):
@@ -86,16 +184,48 @@ class RunIdTests(unittest.TestCase):
             self.assertIsNone(seat_smoke.brain_run_id_of(out))
 
     def test_no_script_parses_run_ids_itself(self):
-        tokens = ("uuid.UUID(", "[1-8]", "[89ab]", "{36}", "{8}-")
-        allowed = {("observe_output.py", "{8}-"): 1}
-        for path in sorted((ROOT / "scripts").iterdir()):
-            if path.suffix not in (".py", ".sh") or path.name == "run_id.py":
-                continue
-            text = path.read_text(encoding="utf-8")
-            for token in tokens:
-                count = text.count(token)
-                expected = allowed.get((path.name, token), 0)
-                self.assertEqual(count, expected, (path.name, token))
+        self.assertEqual(private_run_id_parsers(ROOT / "scripts"), [])
+
+    def test_scanner_catches_known_bypasses(self):
+        n = "\n"
+        h = "[0-9a-f]"
+        dashed = h + "{8}-" + h + "{4}-" + h + "{4}-" + h + "{4}-" + h + "{12}"
+        bypass = {
+            "bypass_import.py": "from uuid import UUID" + n + "def ok(value):" + n + "    return UUID(value).version in range(1, 9)" + n,
+            "bypass_alias.py": "import uuid as u" + n + "def ok(value):" + n + "    return u.UUID(value).int != 0" + n,
+            "bypass_getattr.py": "import uuid" + n + 'PARSE = getattr(uuid, "UUID")' + n,
+            "bypass_escaped.py": "import re" + n + "RID = re.compile(" + repr(dashed.replace("-", "\\-")) + ")" + n,
+            "bypass_concat.py": "import re" + n + "HEXC = " + repr(h) + n + "RID = re.compile(HEXC + " + repr("{8}-") + " + HEXC + " + repr("{4}-") + " + HEXC + " + repr("{4}") + ")" + n,
+            "bypass_fstring.py": "import re" + n + "HEXC = " + repr(h) + n + "RID = re.compile(f" + repr("{HEXC}{{8}}-{HEXC}{{4}}-{HEXC}{{4}}") + ")" + n,
+            "lib/ids.py": "import re" + n + "RID = re.compile(" + repr("^" + "[0-9A-F]{8}-[0-9A-F]{4}-[1-8][0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$") + ")" + n,
+            "lib/run_id.py": "import re" + n + "RID = re.compile(" + repr(dashed) + ")" + n,
+            "observe_output.py": (ROOT / "scripts/observe_output.py").read_text().replace("CODEX_THREAD_ID_RE", "THREAD_RE"),
+            "bypass.sh": "#!/usr/bin/env bash" + n + "grep -Eq '^" + dashed.replace("-", "\\-") + "' <<<\"$1\"" + n,
+            "bypass_xdigit.sh": "#!/usr/bin/env bash" + n + "grep -Eq '[[:xdigit:]]{8}-[[:xdigit:]]{4}' <<<x" + n,
+        }
+        allowed = {
+            "gen_ok.py": "import re, uuid" + n + "TOKEN = str(uuid.uuid4())" + n + "LOC = re.compile(" + repr("run_id=(\\S+)") + ")" + n + "SHA = re.compile(" + repr(h + "{64}") + ")" + n,
+            "gen_ok.sh": "#!/usr/bin/env bash" + n + "RUN_ID=\"$(python3 -c 'import uuid; print(uuid.uuid4())')\"" + n,
+            "observe_output.py": (ROOT / "scripts/observe_output.py").read_text(),
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            scripts = Path(tmp) / "scripts"
+            scripts.mkdir()
+            for rel, text in allowed.items():
+                p = scripts / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(text)
+                self.assertEqual(private_run_id_parsers(scripts), [], rel)
+            for rel, text in bypass.items():
+                with tempfile.TemporaryDirectory() as case_tmp:
+                    case_scripts = Path(case_tmp) / "scripts"
+                    case_scripts.mkdir()
+                    p = case_scripts / rel
+                    p.parent.mkdir(parents=True, exist_ok=True)
+                    p.write_text(text)
+                    findings = private_run_id_parsers(case_scripts)
+                    self.assertTrue(findings, rel)
+                    self.assertEqual(findings[0][0], rel, (rel, findings))
 
 
 GOOD = "0b6f1c2e-9a4d-4c3b-8f2e-1d2c3b4a5f60"
