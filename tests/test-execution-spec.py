@@ -259,6 +259,33 @@ class ExecutionSpecContract(unittest.TestCase):
         finally:
             execute_provider.CODEX_CONFIG_OVERRIDES = original
 
+    def test_contract_nine_codex_pre_t071_argv_reproduces_historical_receipts(self):
+        fixtures = [
+            ({'schema_version': 3, 'provider': 'codex', 'model': 'gpt-6-luna', 'effort': 'medium', 'speed': 'unknown', 'repo': '/Users/zamirhashorva/dev/purrfect-harness', 'prompt': 'Read docs/missions/20261014-2a-foundation/tasks/T-070-R2.md and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Do not write PROGRESS.md; the Front Desk records your run from its receipt. End with a short plain-text report: what you changed and the exit code of each check you ran.', 'write_scope': ['tests/run-tests.sh'], 'provider_contract_version': 9},
+             'c67f41f8c3545466ee447d3df797c51ea9b2f234a56196e9496fbd0fa6a81357'),
+            ({'schema_version': 3, 'provider': 'codex', 'model': 'gpt-6-luna', 'effort': 'medium', 'speed': 'unknown', 'repo': '/Users/zamirhashorva/dev/purrfect-harness', 'prompt': 'Read docs/missions/20261014-2a-foundation/tasks/T-070-R4.md and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Do not write PROGRESS.md; the Front Desk records your run from its receipt. End with a short plain-text report: what you changed and the exit code of each check you ran.', 'write_scope': ['scripts/execution_receipt.py', 'tests/test-execution-receipt.py'], 'provider_contract_version': 9},
+             '632ad969bcb2902fbabca9324322d7b8956591e06242c038ec357ddb03d0bfbe'),
+        ]
+        self.assertEqual(execute_provider.CODEX_PRE_T071_CONFIG_OVERRIDES, ())
+        self.assertEqual(execute_provider.CODEX_PRE_T071_CONTRACTS, frozenset({9}))
+        for spec, expected in fixtures:
+            with self.subTest(expected=expected):
+                argv = provider_contract(spec, codex_overrides=execute_provider.CODEX_PRE_T071_CONFIG_OVERRIDES)[0]
+                self.assertEqual(execute_provider.argv_sha256(argv), expected)
+                self.assertEqual(execute_provider.historical_argv_sha256s(spec), {expected})
+                current = execute_provider.argv_sha256(provider_contract(spec)[0])
+                self.assertNotEqual(current, expected)
+                arbitrary = execute_provider.argv_sha256(argv[:-1] + ["-c", 'web_search="live"', argv[-1]])
+                self.assertNotIn(arbitrary, execute_provider.historical_argv_sha256s(spec) | {current})
+        for negative in (
+            dict(spec, provider_contract_version=8),
+            dict(spec, provider_contract_version=True),
+            dict(spec, schema_version=2),
+            self.spec_v3(provider="claude", provider_contract_version=9),
+        ):
+            with self.subTest(negative=negative):
+                self.assertEqual(execute_provider.historical_argv_sha256s(negative), frozenset())
+
     def test_cursor_contract_four_plain_models_and_prelaunch_rejections(self):
         cases = [
             ("composer-2.5", "medium", "standard", "composer-2.5"),

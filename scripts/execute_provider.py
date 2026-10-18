@@ -17,6 +17,11 @@ CODEX_CONFIG_OVERRIDES = (
     "-c", 'mcp_servers.node_repl={command="true",enabled=false}',
 )
 
+# T-071 changed contract-9 codex argv without a bump; earlier receipts keep validating.
+# Future argv changes must bump the contract.
+CODEX_PRE_T071_CONFIG_OVERRIDES = ()
+CODEX_PRE_T071_CONTRACTS = frozenset({9})
+
 CLAUDE_DISALLOWED_TOOLS_PATTERNS = (
     "Bash(*rm -rf *)",
     "Bash(*rm -fr *)",
@@ -95,7 +100,7 @@ CLAUDE_DISALLOWED_TOOLS_PATTERNS = (
 CLAUDE_DISALLOWED_TOOLS = ",".join(CLAUDE_DISALLOWED_TOOLS_PATTERNS)
 
 
-def provider_contract(spec):
+def provider_contract(spec, codex_overrides=None):
     """Return argv and explicit environment overrides for one validated spec."""
     provider, model, effort, speed, repo, prompt = (
         spec["provider"], spec["model"], spec["effort"], spec["speed"], spec["repo"], spec["prompt"]
@@ -114,11 +119,13 @@ def provider_contract(spec):
         writes_agents = any(pattern.startswith(".agents/") for pattern in spec.get("write_scope", []))
         codex_agents_dir = (["--add-dir", str(Path(repo) / ".agents")]
                             if contract_version >= 5 and writes_agents else [])
+        if codex_overrides is None:
+            codex_overrides = CODEX_CONFIG_OVERRIDES
         argv = ["codex", "exec"]
         if contract_version >= 6:
             argv.append("--json")
         argv.extend(["-C", repo, "-s", "workspace-write", *codex_git_dir, *codex_agents_dir, "-m", model,
-                     "-c", f'model_reasoning_effort="{effort}"', *CODEX_CONFIG_OVERRIDES, prompt])
+                     "-c", f'model_reasoning_effort="{effort}"', *codex_overrides, prompt])
     elif provider == "claude":
         if effort not in {"low", "medium", "high", "xhigh", "max"}:
             raise SpecError("claude does not support requested effort")
@@ -185,6 +192,19 @@ def provider_contract(spec):
             argv.extend(["--output-format", "stream-json"])
         argv.extend(["--workspace", repo, "--model", resolved_model, prompt])
     return argv, {}
+
+
+def argv_sha256(argv):
+    return hashlib.sha256((json.dumps(argv, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")).hexdigest()
+
+
+def historical_argv_sha256s(spec):
+    contract = spec.get("provider_contract_version")
+    if (spec.get("schema_version") != 3 or spec.get("provider") != "codex" or
+            not isinstance(contract, int) or isinstance(contract, bool) or
+            contract not in CODEX_PRE_T071_CONTRACTS):
+        return frozenset()
+    return frozenset({argv_sha256(provider_contract(spec, codex_overrides=CODEX_PRE_T071_CONFIG_OVERRIDES)[0])})
 
 
 def main():

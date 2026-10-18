@@ -38,6 +38,8 @@ STDLIB_SHADOW_MODULES = frozenset(getattr(sys, "stdlib_module_names", ())) | {
 COMPILED_SUFFIXES = tuple(sorted(
     (set(importlib.machinery.all_suffixes()) - set(importlib.machinery.SOURCE_SUFFIXES))
     | {".pyc", ".pyo", ".pyd", ".so", ".dylib"}))
+# Contract 9 (F010, ed1fa71) introduced the protected-path baseline; earlier specs never had one.
+PROTECTED_GUARD_CONTRACT = 9
 _PROTECTED_BASELINES = {}
 COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
 RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$")
@@ -327,10 +329,22 @@ def _protected_snapshot_file(spec, create=False):
     return artifact_directory(spec["repo"], "specs", create=create) / f"{spec['run_id']}.protected"
 
 
+def _protected_guard_expected(spec):
+    if spec.get("schema_version") == 2:
+        return False
+    contract = spec.get("provider_contract_version")
+    if (spec.get("schema_version") == 3 and isinstance(contract, int) and
+            not isinstance(contract, bool) and contract < PROTECTED_GUARD_CONTRACT):
+        return False
+    return True
+
+
 def protected_violations(spec, protected_before=None, finalize=False):
     path = _protected_snapshot_file(spec, create=False)
     baseline_violation = f"<protected:.tasks/specs/{spec['run_id']}.protected>"
     if not finalize:
+        if not _protected_guard_expected(spec) and not path.exists() and not path.is_symlink():
+            return []
         try:
             if path.is_symlink() or not path.is_file():
                 return [baseline_violation]
@@ -758,9 +772,14 @@ def validate_receipt(receipt, receipt_path):
         run_id=spec["run_id"], path=spec_path, digest=digest, role=spec["role"],
         mission=spec["mission"], work_unit=spec["work_unit"], provider=spec["provider"], model=spec["model"],
     )
+    from execute_provider import historical_argv_sha256s
+
     for field, expected in (("requested_configuration", linked["requested"]),
                             ("resolved_configuration", linked["resolved"]),
                             ("observed_configuration", linked["observed"])):
+        if (field == "resolved_configuration" and isinstance(receipt[field], dict) and
+                receipt[field].get("argv_sha256") in historical_argv_sha256s(spec)):
+            expected = dict(expected, argv_sha256=receipt[field]["argv_sha256"])
         if receipt[field] != expected:
             fail(f"receipt {field} does not match shared adapter evidence")
     return receipt

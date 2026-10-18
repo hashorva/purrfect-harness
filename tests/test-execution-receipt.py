@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import execution_receipt
 import execution_spec
+import execute_provider
 from execution_receipt import ReceiptError, canonical_bytes, load_receipt
 
 SCHEMA_PATH = ROOT / "schemas" / "execution-receipt.schema.json"
@@ -318,6 +319,77 @@ raise SystemExit(0)
                     self.assertIn(f"<protected:.tasks/specs/{run_id}.protected>", receipt["scope"]["violations"])
                     self.assertIn("<protected:~/.claude/settings.json>", receipt["scope"]["violations"])
                 shutil.rmtree(self.root / ".tasks")
+
+    def test_legacy_specs_without_protected_guard_expect_no_baseline(self):
+        execution_spec.artifact_directory(str(self.root), "specs", create=True)
+        for version, contract in ((2, None), (3, 8)):
+            spec = {"repo": str(self.root), "run_id": f"legacy-{version}", "schema_version": version}
+            if contract is not None:
+                spec["provider_contract_version"] = contract
+            self.assertEqual(execution_receipt.protected_violations(spec), [])
+        baseline = execution_receipt._protected_snapshot_file(spec, create=True)
+        baseline.write_bytes(canonical_bytes({"before": {}, "violations": ["<protected:~/.ssh>"]}))
+        self.assertEqual(execution_receipt.protected_violations(spec), ["<protected:~/.ssh>"])
+        baseline.write_bytes(b'{ "before": {}, "violations": [] }')
+        self.assertEqual(execution_receipt.protected_violations(spec), [f"<protected:.tasks/specs/{spec['run_id']}.protected>"])
+        unknown = {"repo": str(self.root), "run_id": "unknown-version"}
+        self.assertEqual(execution_receipt.protected_violations(unknown), ["<protected:.tasks/specs/unknown-version.protected>"])
+        self.assertEqual(execution_receipt.PROTECTED_GUARD_CONTRACT, 9)
+        self.assertLessEqual(execution_receipt.PROTECTED_GUARD_CONTRACT, execution_spec.CURRENT_PROVIDER_CONTRACT)
+
+    def test_guard_bearing_spec_with_deleted_baseline_still_contradicts(self):
+        execution_spec.artifact_directory(str(self.root), "specs", create=True)
+        spec = {"repo": str(self.root), "run_id": "guard-bearing", "schema_version": 3,
+                "provider_contract_version": 9}
+        expected = ["<protected:.tasks/specs/guard-bearing.protected>"]
+        self.assertEqual(execution_receipt.protected_violations(spec), expected)
+        baseline = execution_receipt._protected_snapshot_file(spec, create=True)
+        baseline.symlink_to(self.parent / "missing-target")
+        self.assertEqual(execution_receipt.protected_violations(spec), expected)
+        baseline.unlink()
+        home = self.parent / "fake-home"
+        (home / ".claude").mkdir(parents=True)
+        (home / ".claude.json").write_text(json.dumps({"numStartups": 1, "caches": {"gate": True}, "projects": {"/tmp/p": {"lastCost": 0.1, "mcpServers": {}}}}))
+        result = self.invoke([
+            "bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+            "--model", "model", "--feature", "F001",
+        ], {"HOME": str(home), "PROVIDER_ACTION": "protected-volatile"})
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        path = next((self.root / ".tasks/receipts").glob("*.json"))
+        receipt = json.loads(path.read_text())
+        self.assertEqual(receipt["scope"]["result"], "pass")
+        spec = json.loads(Path(receipt["execution_spec_path"]).read_text())
+        self.assertEqual(spec["provider_contract_version"], execution_spec.CURRENT_PROVIDER_CONTRACT)
+        load_receipt(path)
+        baseline = execution_receipt._protected_snapshot_file(spec)
+        baseline.chmod(0o600)
+        baseline.unlink()
+        with self.assertRaisesRegex(ReceiptError, "receipt scope result contradicts changed paths"):
+            load_receipt(path)
+
+    def test_contract_nine_codex_receipt_accepts_pre_t071_argv_only(self):
+        path, receipt = self.spawn_receipt()
+        spec = json.loads(Path(receipt["execution_spec_path"]).read_text())
+        self.assertEqual(spec["provider"], "codex")
+        self.assertEqual(spec["provider_contract_version"], 9)
+        self.assertEqual(receipt["resolved_configuration"]["argv_sha256"],
+                         execute_provider.argv_sha256(execute_provider.provider_contract(spec)[0]))
+        load_receipt(path)
+        hashes = execute_provider.historical_argv_sha256s(spec)
+        self.assertEqual(len(hashes), 1)
+        historical, = hashes
+        receipt["resolved_configuration"]["argv_sha256"] = historical
+        self.write_canonical(path, receipt)
+        load_receipt(path)
+        argv = execute_provider.provider_contract(spec, codex_overrides=execute_provider.CODEX_PRE_T071_CONFIG_OVERRIDES)[0]
+        receipt["resolved_configuration"]["argv_sha256"] = execute_provider.argv_sha256(argv[:-1] + ["-c", "mutated=true", argv[-1]])
+        self.write_canonical(path, receipt)
+        with self.assertRaisesRegex(ReceiptError, "resolved_configuration does not match shared adapter evidence"):
+            load_receipt(path)
+        receipt["resolved_configuration"].update(argv_sha256=historical, executable="codex2")
+        self.write_canonical(path, receipt)
+        with self.assertRaisesRegex(ReceiptError, "resolved_configuration does not match shared adapter evidence"):
+            load_receipt(path)
 
     def test_claude_json_protects_only_mcp_and_hooks_configuration(self):
         home = self.parent / "claude-json-home"
