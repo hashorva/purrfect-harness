@@ -11,6 +11,7 @@ HARNESS="$(pwd)"
 # shellcheck source=scripts/harness-path.sh disable=SC1091
 . "$HARNESS/scripts/harness-path.sh"
 [ -f "$HARNESS/CHANGELOG.md" ] || { echo "Run from the kit root."; exit 1; }
+echo "== python $(python3 -c 'import platform; print(platform.python_version())')"
 
 FAIL=0
 check() { # check <description> <command...>
@@ -95,6 +96,7 @@ rm -rf "$VERSION_MISMATCH"
 echo "== documentation truth"
 check "documentation matches instruction and ownership truth" check_documentation_truth "$HARNESS"
 check "documentation guard rejects an enforced-permissions claim" documentation_truth_negative "$HARNESS"
+check "CI workflow matrix and suite Python header" python3 tests/test-ci-workflow.py
 
 echo "== immutable execution spec and provider adapter"
 check "ExecutionSpec and provider adapter contracts" python3 tests/test-execution-spec.py
