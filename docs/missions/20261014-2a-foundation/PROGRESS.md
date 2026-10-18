@@ -43,6 +43,9 @@ note: Current state only. Full history is in progress-archive/ (read-only). Newe
 - The Front Desk writes nothing into the repository while a worker or Architect run is in progress.
 
 ## Recent entries (newest first)
+- **2026-10-18 — Human — GATE 2** Verdict: approved (owner pre-approved in chat 2026-10-18 for when the criteria are met; criteria met and checked below).
+  Notes: F007..F014 accepted; real smoke green on this Mac (4 workers + Claude Opus brain, 2026-10-18); suite green in the T-115 verification; verify-mission.sh --require-workers exit 0 (VERIFY OK).
+  Next: done (mission 2A closed; release 3.1.0 follows).
 - **2026-10-16 — Human — GATE 1** Verdict: approved (owner, in chat day 4; verify-mission.sh exit 0 with status awaiting-gate, then back).
   Notes: F001, F003, F004, F005, F006 accepted; suite green. Receipts are the record.
   Next: in-progress (Gate 2 after F007).
