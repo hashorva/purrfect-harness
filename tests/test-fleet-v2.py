@@ -9,6 +9,11 @@ import sys
 import tempfile
 from pathlib import Path
 
+try:
+    import jsonschema
+except ImportError:
+    sys.exit("FAIL: jsonschema required for this test (test-only dependency: python3 -m pip install jsonschema)")
+
 ROOT = Path(__file__).resolve().parents[1]
 FLEET_STATE = ROOT / "scripts" / "fleet_state.py"
 SCHEMA = ROOT / "schemas" / "mission-fleet.schema.json"
@@ -372,18 +377,13 @@ def main():
                           "--inventory", resolve_inventory, "--root", d)
         assert resolve.returncode == 0 and json.loads(resolve.stdout)["model"] == "gpt-5.7-luna", (resolve.returncode, resolve.stdout, resolve.stderr)
 
-        spec = importlib.util.find_spec("jsonschema")
-        if spec is None:
-            print("SKIP schema/code agreement: jsonschema is not installed")
-        else:
-            import jsonschema
-            validator = jsonschema.Draft202012Validator(json.loads(SCHEMA.read_text()))
-            for document in (good_v2(),):
-                path = d / "schema-check.json"
-                write(path, document)
-                code_ok = run_cli("validate-fleet", path).returncode == 0
-                schema_ok = validator.is_valid(document)
-                assert code_ok == schema_ok, (code_ok, schema_ok, document)
+        validator = jsonschema.Draft202012Validator(json.loads(SCHEMA.read_text()))
+        for document in (good_v2(),):
+            path = d / "schema-check.json"
+            write(path, document)
+            code_ok = run_cli("validate-fleet", path).returncode == 0
+            schema_ok = validator.is_valid(document)
+            assert code_ok == schema_ok, (code_ok, schema_ok, document)
 
         resolver_checks(d)
 
@@ -459,7 +459,6 @@ def main():
         argon_doc["seats"]["agy.premium"] = copy.deepcopy(argon_doc["seats"]["agy.economy"])
         argon_doc["seats"]["agy.premium"].update(
             family="argon", model="gemini-4-argon-high", effort="high")
-        import jsonschema
         validator = jsonschema.Draft202012Validator(json.loads(SCHEMA.read_text()))
         assert validator.is_valid(argon_doc), "frozen v1 fleet with agy Argon premium seat must satisfy schema"
         v1_path = v1_root / "fleet.json"

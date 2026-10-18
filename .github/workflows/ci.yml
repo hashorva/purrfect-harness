@@ -47,5 +47,22 @@ jobs:
           echo "README=$README_V CHANGELOG=$CHANGELOG_V"
           [ "$README_V" = "$CHANGELOG_V" ] || { echo "::error::Version mismatch"; exit 1; }
 
+      # Gate 0 (T-073) requires tmux and jq; jq is preinstalled but the install is idempotent.
+      - name: Install tmux and jq (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tmux jq
+
+      - name: Install tmux and jq (macOS)
+        if: runner.os == 'macOS'
+        run: brew install tmux jq
+
+      # jsonschema is a test-only dependency; the harness runtime stays standard library.
+      - name: Install test dependency jsonschema
+        run: |
+          python3 -m pip install jsonschema || python3 -m pip install --break-system-packages jsonschema
+          python3 -c "import jsonschema"
+
       - name: End-to-end install/update test
         run: bash tests/run-tests.sh

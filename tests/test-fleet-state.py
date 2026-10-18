@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Mounted regressions for the public frozen-fleet policy entry points."""
 import hashlib, json, os, shutil, stat, subprocess, sys, tempfile, unittest
-import jsonschema
+try:
+    import jsonschema
+except ImportError:
+    sys.exit("FAIL: jsonschema required for this test (test-only dependency: python3 -m pip install jsonschema)")
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]

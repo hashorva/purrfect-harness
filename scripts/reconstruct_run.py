@@ -134,10 +134,14 @@ def reconstruct(root, mission, run_id):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mission")
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("run_ids", nargs="*")
-    group.add_argument("--all", action="store_true", dest="all_runs")
+    # Python 3.12 rejects a nargs="*" positional in a mutually exclusive group,
+    # so run ids and --all are kept exclusive by hand below.
+    parser.add_argument("run_ids", nargs="*", default=[])
+    parser.add_argument("--all", action="store_true", dest="all_runs")
     args = parser.parse_args(argv)
+    if args.all_runs and args.run_ids:
+        print("ERROR: reconstruct: run ids and --all cannot be combined", file=sys.stderr)
+        return 2
     root = Path.cwd().resolve()
     try:
         mission = mission_root(root, args.mission)

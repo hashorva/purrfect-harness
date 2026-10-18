@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Reconstruction reports complete evidence and refuses hostile run ids."""
 import contextlib
+import argparse
 import hashlib
 import importlib.util
 import io
@@ -12,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -86,6 +88,31 @@ class ReconstructFixture(unittest.TestCase):
         if stderr:
             return code, stdout.getvalue(), stderr_buf.getvalue()
         return code, stdout.getvalue()
+
+    def test_run_ids_with_all_exit_two_and_touch_nothing(self):
+        before = tree_snapshot(self.root)
+        code, stdout, stderr = self.invoke(MISSION, self.run_id, "--all", stderr=True)
+        self.assertEqual(code, 2)
+        self.assertEqual(stdout, "")
+        self.assertEqual(stderr.strip(), "ERROR: reconstruct: run ids and --all cannot be combined")
+        self.assertEqual(tree_snapshot(self.root), before)
+
+    def test_no_run_ids_and_no_all_exit_two(self):
+        code, _, stderr = self.invoke(MISSION, stderr=True)
+        self.assertEqual(code, 2)
+        self.assertEqual(stderr.strip(), "ERROR: no runs selected")
+
+    def test_parser_builds_under_python312_group_rules(self):
+        original = argparse._MutuallyExclusiveGroup._add_action
+
+        def strict(group, action):
+            if action.required or not action.option_strings:
+                raise ValueError("mutually exclusive arguments must be optional")
+            return original(group, action)
+
+        with mock.patch.object(argparse._MutuallyExclusiveGroup, "_add_action", strict):
+            code, _ = self.invoke(MISSION, self.run_id)
+        self.assertEqual(code, 0)
 
     def spec_raw(self):
         path = self.root / ".tasks/specs" / f"{self.run_id}.json"
