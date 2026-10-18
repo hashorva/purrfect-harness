@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "release": {
-    "version": "3.0.0",
-    "required_tag": "v3.0.0"
+    "version": "3.1.0",
+    "required_tag": "v3.1.0"
   },
   "ownership": {
     "canonical_skills": [
@@ -16,11 +16,17 @@
       "skillify",
       "supabase-migration"
     ],
-    "discovery_targets": [".claude/skills", ".cursor/skills", ".gemini/skills", ".codex/skills"],
+    "discovery_targets": [
+      ".claude/skills",
+      ".cursor/skills",
+      ".gemini/skills",
+      ".codex/skills"
+    ],
     "install_payload_roots": [
       "docs/missions/templates",
       ".claude/rules",
-      ".claude/agents"
+      ".claude/agents",
+      "docs/missions/capabilities"
     ],
     "install_payload_paths": [
       "docs/missions/ORCHESTRATION.md",
@@ -32,8 +38,20 @@
       ".claude/settings.json",
       "scripts/sync-skills.sh",
       "scripts/harness-manifest.py",
+      "scripts/harness_registry.py",
+      "scripts/harness-path.sh",
+      "scripts/fleet-doctor.sh",
+      "scripts/fleet_doctor.py",
+      "scripts/seat_smoke.py",
+      "scripts/probe-seat.sh",
+      "scripts/probe_seat.py",
+      "scripts/drive-cli.sh",
+      "scripts/drive_cli_rules.py",
+      "scripts/drive-cli.rules.json",
       "scripts/execution_spec.py",
       "scripts/execution_receipt.py",
+      "scripts/observe_output.py",
+      "scripts/model_id.py",
       "scripts/execution_runner.py",
       "scripts/execute_provider.py",
       "scripts/dispatch_policy.py",
@@ -46,12 +64,21 @@
       "scripts/verification_record.py",
       "scripts/accept-feature.sh",
       "scripts/write-receipt.sh",
+      "scripts/ledger.py",
+      "scripts/reconstruct-run.sh",
+      "scripts/reconstruct_run.py",
+      "scripts/validate_verdict.py",
       "schemas/execution-spec.schema.json",
       "schemas/execution-receipt.schema.json",
       "schemas/fleet-inventory.schema.json",
       "schemas/mission-fleet.schema.json",
       "schemas/verification-record.schema.json",
+      "schemas/ledger-row.schema.json",
+      "schemas/task-plan.schema.json",
+      "schemas/review-verdict.schema.json",
+      "schemas/worker-output.schema.json",
       "harness-manifest.json",
+      "harness-registry.json",
       "CLAUDE.md",
       "GEMINI.md"
     ],
@@ -60,6 +87,7 @@
       "docs/missions/MODEL_ROUTING.md",
       "docs/missions/README.md",
       "docs/missions/templates",
+      "docs/missions/capabilities",
       "docs/ORCHESTRATION.md",
       "docs/MODEL_ROUTING.md",
       "docs/templates",
@@ -67,8 +95,20 @@
       ".claude/agents",
       "scripts/sync-skills.sh",
       "scripts/harness-manifest.py",
+      "scripts/harness_registry.py",
+      "scripts/harness-path.sh",
+      "scripts/fleet-doctor.sh",
+      "scripts/fleet_doctor.py",
+      "scripts/seat_smoke.py",
+      "scripts/probe-seat.sh",
+      "scripts/probe_seat.py",
+      "scripts/drive-cli.sh",
+      "scripts/drive_cli_rules.py",
+      "scripts/drive-cli.rules.json",
       "scripts/execution_spec.py",
       "scripts/execution_receipt.py",
+      "scripts/observe_output.py",
+      "scripts/model_id.py",
       "scripts/execution_runner.py",
       "scripts/execute_provider.py",
       "scripts/dispatch_policy.py",
@@ -82,12 +122,21 @@
       "scripts/verification_record.py",
       "scripts/accept-feature.sh",
       "scripts/write-receipt.sh",
+      "scripts/ledger.py",
+      "scripts/reconstruct-run.sh",
+      "scripts/reconstruct_run.py",
+      "scripts/validate_verdict.py",
       "schemas/execution-spec.schema.json",
       "schemas/execution-receipt.schema.json",
       "schemas/fleet-inventory.schema.json",
       "schemas/mission-fleet.schema.json",
       "schemas/verification-record.schema.json",
-      "harness-manifest.json"
+      "schemas/ledger-row.schema.json",
+      "schemas/task-plan.schema.json",
+      "schemas/review-verdict.schema.json",
+      "schemas/worker-output.schema.json",
+      "harness-manifest.json",
+      "harness-registry.json"
     ],
     "consumer_agents_template": "docs/templates/AGENTS.md.template"
   }

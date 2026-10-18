@@ -1,0 +1,49 @@
+# F004 evidence: Cursor model argument (2026-10-14)
+
+Source for the F004 fix in `scripts/execute_provider.py` and for a test built from the real rejection message.
+
+## 1. Bracket form is rejected (run fa4bb81a-ae84-4e2f-9ae6-03f1ad5bcc1c)
+
+`scripts/spawn-worker.sh cursor ... --tier economy --effort medium --speed standard` built the model
+argument `composer-2.5[effort=medium,fast=false]` (spec: provider `agent`, model `composer-2.5`,
+effort `medium`, speed `standard`, provider_contract_version 3). `cursor-agent` exited 1 with this
+message (from the dispatch output, verbatim):
+
+```text
+Cannot use this model: composer-2.5[effort=medium,fast=false]. Available models: auto, gpt-5.3-codex-low, gpt-5.3-codex-low-fast, gpt-5.3-codex, gpt-5.3-codex-fast, gpt-5.3-codex-high, gpt-5.3-codex-high-fast, gpt-5.3-codex-xhigh, gpt-5.3-codex-xhigh-fast, gpt-5.2, composer-2.5, claude-opus-5-thinking-high, claude-opus-5-thinking-high-fast, gpt-5.6-sol-high, gpt-5.6-sol-high-fast, gpt-5.6-sol-xhigh, gpt-5.6-sol-xhigh-fast, claude-fable-5-thinking-high, claude-fable-5-thinking-xhigh, cursor-grok-4.5-high, cursor-grok-4.5-high-fast, gemini-3.7-flash-high, claude-sonnet-5-thinking-high, claude-sonnet-5-thinking-xhigh, gpt-5.6-luna-high, grok-4.7-low, grok-4.7-low-fast, grok-4.7-medium, grok-4.7-medium-fast, grok-4.7-high, grok-4.7-high-fast, grok-4.7-xhigh, grok-4.7-xhigh-fast, cursor-grok-4.6-low, cursor-grok-4.6-low-fast, cursor-grok-4.6-medium, cursor-grok-4.6-medium-fast, cursor-grok-4.6-high, cursor-grok-4.6-high-fast, cursor-grok-4.6-xhigh, cursor-grok-4.6-xhigh-fast, composer-2.5-fast, claude-opus-5-5-low, claude-opus-5-5-low-fast, claude-opus-5-5-medium, claude-opus-5-5-medium-fast, claude-opus-5-5-high, claude-opus-5-5-high-fast, claude-opus-5-5-xhigh, claude-opus-5-5-xhigh-fast, claude-opus-5-5-max, claude-opus-5-5-max-fast, claude-opus-5-low, claude-opus-5-low-fast, claude-opus-5-medium, claude-opus-5-medium-fast, claude-opus-5-high, claude-opus-5-high-fast, claude-opus-5-thinking-low, claude-opus-5-thinking-low-fast, claude-opus-5-thinking-medium, claude-opus-5-thinking-medium-fast, claude-opus-5-thinking-xhigh, claude-opus-5-thinking-xhigh-fast, claude-opus-5-thinking-max, claude-opus-5-thinking-max-fast, claude-opus-4-8-low, claude-opus-4-8-low-fast, claude-opus-4-8-medium, claude-opus-4-8-medium-fast, claude-opus-4-8-high, claude-opus-4-8-high-fast, claude-opus-4-8-xhigh, claude-opus-4-8-xhigh-fast, claude-opus-4-8-max, claude-opus-4-8-max-fast, claude-opus-4-8-thinking-low, claude-opus-4-8-thinking-low-fast, claude-opus-4-8-thinking-medium, claude-opus-4-8-thinking-medium-fast, claude-opus-4-8-thinking-high, claude-opus-4-8-thinking-high-fast, claude-opus-4-8-thinking-xhigh, claude-opus-4-8-thinking-xhigh-fast, claude-opus-4-8-thinking-max, claude-opus-4-8-thinking-max-fast, gpt-5.6-sol-none, gpt-5.6-sol-none-fast, gpt-5.6-sol-low, gpt-5.6-sol-low-fast, gpt-5.6-sol-medium, gpt-5.6-sol-medium-fast, gpt-5.6-sol-max, gpt-5.6-sol-max-fast, gemini-4-argon-low, gemini-4-argon-medium, gemini-4-argon-high, gpt-5.5-none, gpt-5.5-none-fast, gpt-5.5-low, gpt-5.5-low-fast, gpt-5.5-medium, gpt-5.5-medium-fast, gpt-5.5-high, gpt-5.5-high-fast, gpt-5.5-extra-high, gpt-5.5-extra-high-fast, claude-fable-5-1-low, claude-fable-5-1-medium, claude-fable-5-1-high, claude-fable-5-1-xhigh, claude-fable-5-1-max, claude-fable-5-1-thinking-low, claude-fable-5-1-thinking-medium, claude-fable-5-1-thinking-high, claude-fable-5-1-thinking-xhigh, claude-fable-5-1-thinking-max, claude-fable-5-low, claude-fable-5-medium, claude-fable-5-high, claude-fable-5-xhigh, claude-fable-5-max, claude-fable-5-thinking-low, claude-fable-5-thinking-medium, claude-fable-5-thinking-max, cursor-grok-4.5-low, cursor-grok-4.5-low-fast, cursor-grok-4.5-medium, cursor-grok-4.5-medium-fast, gemini-3.8-flash-low, gemini-3.8-flash-medium, gemini-3.8-flash-high, gemini-3.7-flash-low, gemini-3.7-flash-medium, muse-spark-1.3-minimal, muse-spark-1.3-low, muse-spark-1.3-medium, muse-spark-1.3-high, muse-spark-1.3-xhigh, muse-spark-1.3-max, gpt-5.6-terra-none, gpt-5.6-terra-none-fast, gpt-5.6-terra-low, gpt-5.6-terra-low-fast, gpt-5.6-terra-medium, gpt-5.6-terra-medium-fast, gpt-5.6-terra-high, gpt-5.6-terra-high-fast, gpt-5.6-terra-xhigh, gpt-5.6-terra-xhigh-fast, gpt-5.6-terra-max, gpt-5.6-terra-max-fast, claude-sonnet-5-5-low, claude-sonnet-5-5-medium, claude-sonnet-5-5-high, claude-sonnet-5-5-xhigh, claude-sonnet-5-5-max, claude-sonnet-5-low, claude-sonnet-5-medium, claude-sonnet-5-high, claude-sonnet-5-xhigh, claude-sonnet-5-max, claude-sonnet-5-thinking-low, claude-sonnet-5-thinking-medium, claude-sonnet-5-thinking-max, claude-4.6-sonnet-medium, claude-4.6-sonnet-medium-thinking, claude-opus-4-7-low, claude-opus-4-7-low-fast, claude-opus-4-7-medium, claude-opus-4-7-medium-fast, claude-opus-4-7-high, claude-opus-4-7-high-fast, claude-opus-4-7-xhigh, claude-opus-4-7-xhigh-fast, claude-opus-4-7-max, claude-opus-4-7-max-fast, claude-opus-4-7-thinking-low, claude-opus-4-7-thinking-low-fast, claude-opus-4-7-thinking-medium, claude-opus-4-7-thinking-medium-fast, claude-opus-4-7-thinking-high, claude-opus-4-7-thinking-high-fast, claude-opus-4-7-thinking-xhigh, claude-opus-4-7-thinking-xhigh-fast, claude-opus-4-7-thinking-max, claude-opus-4-7-thinking-max-fast, gpt-5.4-low, gpt-5.4-medium, gpt-5.4-medium-fast, gpt-5.4-high, gpt-5.4-high-fast, gpt-5.4-xhigh, gpt-5.4-xhigh-fast, claude-4.6-opus-high, claude-4.6-opus-max, claude-4.6-opus-high-thinking, claude-4.6-opus-max-thinking, claude-4.5-opus-high, claude-4.5-opus-high-thinking, gpt-5.2-low, gpt-5.2-low-fast, gpt-5.2-fast, gpt-5.2-high, gpt-5.2-high-fast, gpt-5.2-xhigh, gpt-5.2-xhigh-fast, gpt-5.6-luna-none, gpt-5.6-luna-none-fast, gpt-5.6-luna-low, gpt-5.6-luna-low-fast, gpt-5.6-luna-medium, gpt-5.6-luna-medium-fast, gpt-5.6-luna-high-fast, gpt-5.6-luna-xhigh, gpt-5.6-luna-xhigh-fast, gpt-5.6-luna-max, gpt-5.6-luna-max-fast, gemini-3.6-flash-minimal, gemini-3.6-flash-low, gemini-3.6-flash-medium, gemini-3.6-flash-high, gemini-3.1-pro, gpt-5.4-mini-none, gpt-5.4-mini-low, gpt-5.4-mini-medium, gpt-5.4-mini-high, gpt-5.4-mini-xhigh, gpt-5.4-nano-none, gpt-5.4-nano-low, gpt-5.4-nano-medium, gpt-5.4-nano-high, gpt-5.4-nano-xhigh, claude-haiku-5-5-low, claude-haiku-5-5-medium, claude-haiku-5-5-high, claude-haiku-5-5-xhigh, claude-haiku-5-5-max, claude-haiku-5-5-thinking-low, claude-haiku-5-5-thinking-medium, claude-haiku-5-5-thinking-high, claude-haiku-5-5-thinking-xhigh, claude-haiku-5-5-thinking-max, claude-4.5-sonnet, claude-4.5-sonnet-thinking, gpt-5.1-low, gpt-5.1, gpt-5.1-high, gemini-3-flash, gemini-3.5-flash, claude-4-sonnet, claude-4-sonnet-thinking, gpt-5-mini, kimi-k3-low, kimi-k3-high, kimi-k3-max, kimi-k2.7-code, glm-5.2-high, glm-5.2-max
+```
+
+## 2. Plain ID is accepted
+
+Command, run from a fresh `mktemp -d` directory outside the repository (no repository changes):
+
+```bash
+cd "$(mktemp -d)" && cursor-agent -p --trust --model composer-2.5 "Reply with OK only."
+```
+
+Exit code: 0. stdout: `OK`. stderr: empty.
+
+## 3. Conclusion
+
+The bracket form `[effort=…,fast=…]` is rejected by this `cursor-agent` for `composer-2.5`; the plain
+model ID `composer-2.5` is accepted. Effort and fast state go in the model name for other Cursor models
+(for example `grok-4.7-high-fast`, `gemini-3.8-flash-high`); `composer-2.5` and `composer-2.5-fast` are
+the only Composer IDs listed, with no effort variants. Not tested: the bracket form with a Grok model.
+
+## 4. Name encoding by family
+
+Patterns below are read from the Available models list in section 1; a token is listed only when that family has at least one model name ending in it.
+
+| family | effort tokens in the name | `-fast` variant |
+|---|---|---|
+| composer-2.5 | none | yes |
+| grok-4.7 | low, medium, high, xhigh | yes |
+| cursor-grok-4.6 | low, medium, high, xhigh | yes |
+| gemini-3.8-flash | low, medium, high | no |
+| claude-opus-5-5 | low, medium, high, xhigh, max | yes |
+| claude-sonnet-5-5 | low, medium, high, xhigh, max | no |
+| claude-haiku-5-5 | low, medium, high, xhigh, max | no |
+| gpt-5.6-terra | none, low, medium, high, xhigh, max | yes |
+| gpt-5.6-luna | none, low, medium, high, xhigh, max | yes |
+
+The frozen `cursor.premium` seat (`grok-4.7-xhigh`, effort `medium`) is refused under contract 4 until the owner decides.

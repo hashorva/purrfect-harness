@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # spawn-worker.sh — run a WORKER_TASK via a real local CLI agent (Mac Mini / studio).
 # Usage (from the consuming repo root):
-#   bash scripts/spawn-worker.sh [<codex|agent|agy|claude>] <path-to-task.md> \
+#   bash scripts/spawn-worker.sh [<codex|cursor|agent|agy|claude>] <path-to-task.md> \
 #        [--provider NAME] [--tier economy|premium] [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N] [--feature F00X] [--repo PATH] \
 #        [extra prompt...]
 #
@@ -26,6 +26,24 @@ if [ -z "${SPAWN_WORKER_SNAPSHOT:-}" ]; then
   exec bash "$_snap" "$@"
 fi
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
+_HARNESS_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/harness-path.sh disable=SC1091
+if [ -f "$_HARNESS_SCRIPT_DIR/harness-path.sh" ]; then
+  . "$_HARNESS_SCRIPT_DIR/harness-path.sh"
+elif [ -f "$(pwd -P)/scripts/harness-path.sh" ]; then
+  . "$(pwd -P)/scripts/harness-path.sh"
+fi
+unset _HARNESS_SCRIPT_DIR
+
+# Refuse a bad timing value before any spec is persisted (a bad value would otherwise leave a spec without a receipt).
+for _secs_name in SPAWN_WORKER_TIMEOUT_SECS SPAWN_WORKER_STALL_SECS SPAWN_WORKER_IDLE_SECS; do
+  _secs_value="${!_secs_name:-}"
+  if [ -n "$_secs_value" ] && ! [[ "$_secs_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+    echo "ERROR: $_secs_name must be a non-negative number" >&2
+    exit 2
+  fi
+done
 
 # Delete only the snapshot copy — never the real scripts/spawn-worker.sh. The
 # same EXIT cleanup also owns the workspace lock after it is acquired.
@@ -71,13 +89,13 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 usage() {
-  echo "Usage: spawn-worker.sh [provider] <task.md> --provider NAME [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N]" >&2
+  echo "Usage: spawn-worker.sh [codex|cursor|agent|agy|claude] <task.md> --provider NAME [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N]" >&2
   exit 2
 }
 
 [ $# -ge 1 ] || usage
 WORKER=""
-if [[ "$1" == codex || "$1" == agent || "$1" == agy || "$1" == claude ]]; then
+if [[ "$1" == codex || "$1" == cursor || "$1" == agent || "$1" == agy || "$1" == claude ]]; then
   WORKER="$1"
   shift
 fi
@@ -107,12 +125,24 @@ while [ $# -gt 0 ]; do
   esac
 done
 EXTRA="${EXTRA_ARGS[*]:-}"
-[ -n "${PROVIDER_FLAG:-}" ] && {
-  [ -z "$WORKER" ] || [ "$WORKER" = "$PROVIDER_FLAG" ] || { echo "ERROR: positional provider and --provider disagree" >&2; exit 2; }
-  WORKER="$PROVIDER_FLAG"
+_REGISTRY_PY="$(pwd -P)/scripts/harness_registry.py"
+_persisted_provider_name() {
+  PYTHONDONTWRITEBYTECODE=1 python3 "$_REGISTRY_PY" persisted-name "$1"
 }
-[ -n "$WORKER" ] || usage
-case "$WORKER" in codex|claude|agent|agy) ;; *) usage ;; esac
+if [ -n "${PROVIDER_FLAG:-}" ]; then
+  if [ -n "$WORKER" ]; then
+    WORKER_PERSISTED="$(_persisted_provider_name "$WORKER")" || exit $?
+    FLAG_PERSISTED="$(_persisted_provider_name "$PROVIDER_FLAG")" || exit $?
+    [ "$WORKER_PERSISTED" = "$FLAG_PERSISTED" ] || { echo "ERROR: positional provider and --provider disagree" >&2; exit 2; }
+    WORKER="$WORKER_PERSISTED"
+  else
+    WORKER="$(_persisted_provider_name "$PROVIDER_FLAG")" || exit $?
+  fi
+else
+  [ -n "$WORKER" ] || usage
+  WORKER="$(_persisted_provider_name "$WORKER")" || exit $?
+fi
+case "$WORKER" in codex|claude|agent|agy) ;; *) echo "ERROR: provider must be codex, cursor, agent, agy, or claude" >&2; exit 2 ;; esac
 case "$ATTEMPT" in *[!0-9]*|'') echo "ERROR: --attempt must be positive" >&2; exit 2 ;; esac
 [ "$ATTEMPT" -gt 0 ] || { echo "ERROR: --attempt must be positive" >&2; exit 2; }
 
@@ -178,12 +208,12 @@ fi
 # persistence, and provider adapter so every rejection is mechanically pre-launch.
 POLICY_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-worker \
   --root "$ROOT" --workspace "$WORKSPACE" --mission "$MISSION" --fleet "$FLEET" \
-  --task "$TASK_ABS" --feature "$FEATURE" --work-unit "$BASE")" || exit $?
+  --task "$TASK_ABS" --feature "$FEATURE" --work-unit "$BASE" --provider "$WORKER")" || exit $?
 WRITE_SCOPE_JSON="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["write_scope"],separators=(",",":")))' <<<"$POLICY_JSON")"
 
 RESOLVE_ARGS=(python3 "$ROOT/scripts/fleet_state.py" resolve
   --fleet "$FLEET" --seat "$FLEET_SEAT" --mission-path "$MISSION"
-  --provider "$WORKER" --effort "$EFFORT" --speed "$SPEED")
+  --provider "$WORKER" --effort "$EFFORT" --speed "$SPEED" --inventory "$ROOT/.tasks/fleet-inventory.json" --root "$ROOT")
 [ -z "$MODEL_OVERRIDE" ] || RESOLVE_ARGS+=(--model "$MODEL_OVERRIDE")
 BINDING_JSON="$(PYTHONDONTWRITEBYTECODE=1 "${RESOLVE_ARGS[@]}")" || exit $?
 MODEL="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["model"])' <<<"$BINDING_JSON")"
@@ -200,7 +230,7 @@ export PURRFECT_DISPATCH_LOCK_PATH="$LOCK_PATH"
 mkdir -p "$ROOT/.tasks/logs" "$ROOT/.tasks/receipts"
 
 PROMPT_TASK="$TASK_REL"
-PROMPT="Read ${PROMPT_TASK} and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder."
+PROMPT="Goal: ${PROMPT_TASK} is done when its verification commands pass and one scoped commit leaves a clean tree; the Front Desk runs the full suite, you do not. Scope: the task's allow-list; PROGRESS.md and features.json belong to the Front Desk. Budget: the task's max_attempts and long-command rule; the runner stops a stalled or overlong run. Resources: your CLI's native tools, the repo skills in .agents/skills, web search, and subagents where your CLI has them (Claude Code: explorer on Haiku; codex: Luna; cursor: Composer; agy: Flash). Delegate wide reading and searching to a cheap subagent, run the task's checks yourself before you finish, and stop when they pass. End with a short plain-text report: what you changed and the exit code of each check you ran."
 [ -z "$EXTRA" ] || PROMPT+=" $EXTRA"
 
 RUN_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
@@ -223,7 +253,8 @@ SPAWN_WORKER_TIMEOUT_SECS="${SPAWN_WORKER_TIMEOUT_SECS:-2400}"
 set +e
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execution_runner.py" \
   --spec "$SPEC_PATH" --spec-sha256 "$SPEC_SHA256" --log "$LOG" \
-  --timeout "$SPAWN_WORKER_TIMEOUT_SECS" --task "$TASK_REL" --tier "$TIER" &
+  --timeout "$SPAWN_WORKER_TIMEOUT_SECS" \
+  --stall-seconds "${SPAWN_WORKER_STALL_SECS:-90}" --idle-seconds "${SPAWN_WORKER_IDLE_SECS:-900}" --task "$TASK_REL" --tier "$TIER" &
 RUNNER_PID=$!
 wait "$RUNNER_PID"
 EC=$?

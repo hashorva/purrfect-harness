@@ -1,0 +1,318 @@
+#!/usr/bin/env python3
+"""End-to-end fixtures for the one-seat probe; no real provider is invoked."""
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / "scripts"
+sys.path.insert(0, str(SCRIPTS))
+from execute_provider import provider_contract
+from execution_spec import CURRENT_PROVIDER_CONTRACT
+import fleet_state
+import probe_seat
+
+
+FAKE = r'''#!__PYTHON__
+import json, os, sys, time
+name = os.path.basename(sys.argv[0])
+if sys.argv[1:] == ["mcp", "list"]:
+    print("Checking MCP server health...")
+    print("alpha: https://private.example/?token=S1 - Connected")
+    print("beta: npx private --key S2 - Failed")
+    raise SystemExit(0)
+if sys.argv[1:] == ["--help"]:
+    print(os.environ.get("PROBE_HELP_TEXT", "Usage: " + name + "\n  --add-dir <dir>\n  --model <model>\n  -p\n"))
+    raise SystemExit(0)
+mode = os.environ.get("PROBE_MODE", "ok")
+if mode == "hang": time.sleep(10)
+if mode == "mcp-init-wait": print("MCP server alpha: starting...", file=sys.stderr); time.sleep(10)
+if mode == "permission-wait": print("Allow this command to run? [y/n]", file=sys.stderr); time.sleep(10)
+if mode == "input-wait": print("waiting for input on stdin", file=sys.stderr); time.sleep(10)
+if mode == "auth": print("Error: not logged in", file=sys.stderr); raise SystemExit(1)
+if mode == "limit": print("You have hit your usage limit.", file=sys.stderr); raise SystemExit(1)
+if name == "claude":
+    event = {"type":"result", "num_turns": 0 if mode == "no-turn" else 1, "result":"OK", "usage":{"input_tokens":3,"output_tokens":1}}
+    print(json.dumps(event))
+elif name == "codex":
+    if mode == "no-turn": print(json.dumps({"type":"thread.started"}))
+    else: print(json.dumps({"type":"turn.completed", "usage":{"input_tokens":3,"output_tokens":1,"cached_input_tokens":0,"reasoning_output_tokens":0}})); print("OK")
+elif name == "cursor-agent":
+    if mode == "no-turn": print(json.dumps({"type":"result", "result":"OK", "usage":{"inputTokens":0,"outputTokens":0}}))
+    else: print(json.dumps({"type":"system", "subtype":"init", "model":"grok"})); print(json.dumps({"type":"result", "result":"OK", "usage":{"inputTokens":3,"outputTokens":1}})); print("OK")
+else: print("OK")
+'''
+
+
+class ProbeSeatTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = Path(tempfile.mkdtemp(prefix="probe-seat-test-"))
+        self.bin = self.temp / "bin"
+        self.bin.mkdir()
+        for name in ("claude", "codex", "cursor-agent", "agy"):
+            path = self.bin / name
+            path.write_text(FAKE.replace("__PYTHON__", sys.executable))
+            path.chmod(0o755)
+        self.out = self.temp / "out"
+        seats = {
+            "claude.test": ["claude", "sonnet", "medium", "unknown"],
+            "codex.test": ["codex", "gpt-6", "medium", "unknown"],
+            "cursor.test": ["cursor", "grok-high", "high", "standard"],
+            "agy.test": ["agy", "gemini-medium", "medium", "unknown"],
+        }
+        self.fleet = self.temp / "fleet.json"
+        self.fleet.write_text(json.dumps({"seats": {key: {"provider": value[0], "model": value[1],
+            "effort": value[2], "speed": value[3]} for key, value in seats.items()}}))
+
+    def tearDown(self):
+        shutil.rmtree(self.temp)
+
+    def run_probe(self, seat, mode="ok", timeout=2, wrapper=False):
+        env = dict(os.environ, PATH=f"{self.bin}:/usr/bin:/bin", PROBE_MODE=mode, PYTHONDONTWRITEBYTECODE="1")
+        executable = ["bash", str(SCRIPTS / "probe-seat.sh")] if wrapper else [sys.executable, str(SCRIPTS / "probe_seat.py")]
+        return subprocess.run(executable + [seat, "--fleet", str(self.fleet), "--out-root", str(self.out), "--timeout", str(timeout)],
+                              text=True, capture_output=True, env=env, check=False)
+
+    def one(self, seat, mode, expected, timeout=2):
+        original_out = self.out
+        self.out = original_out / f"{seat}-{mode}"
+        result = self.run_probe(seat, mode, timeout)
+        self.assertEqual(result.returncode, 0 if expected == "ok" else 1, result.stderr)
+        folder = next(self.out.glob(f"*-{seat}"))
+        for name in ("command.json", "stdout.txt", "stderr.txt", "events.jsonl", "mcp.json", "result.json", "help.json"):
+            self.assertTrue((folder / name).is_file(), name)
+        help_payload = json.loads((folder / "help.json").read_text())
+        self.assertEqual(help_payload["cli"], json.loads((folder / "command.json").read_text())["argv"][0])
+        self.assertIn("flags", help_payload)
+        self.assertIn("new_flags", help_payload)
+        sha = help_payload["sha256"]
+        self.assertIsInstance(sha, str)
+        self.assertRegex(sha, r"^[0-9a-f]{64}$")
+        saved = "\n".join(path.read_text() for path in folder.iterdir())
+        self.assertNotIn("S1", saved)
+        self.assertNotIn("private.example", saved)
+        self.assertNotIn("npx private", saved)
+        self.assertEqual(json.loads((folder / "mcp.json").read_text())["names"], ["alpha", "beta"])
+        self.assertEqual(json.loads((folder / "result.json").read_text())["class"], expected)
+        self.assertEqual("search the CLI's GitHub issues for the exact symptom first" in result.stderr, expected != "ok")
+        command = json.loads((folder / "command.json").read_text())
+        self.assertNotEqual(Path(command["folder"]).resolve(), ROOT.resolve())
+        self.assertTrue((Path(command["folder"]) / ".git").is_dir())
+        expected, _ = provider_contract({"provider": {"cursor": "agent"}.get(seat.split(".")[0], seat.split(".")[0]),
+            "model": {"claude": "sonnet", "codex": "gpt-6", "cursor": "grok-high", "agy": "gemini-medium"}[seat.split(".")[0]],
+            "effort": {"claude": "medium", "codex": "medium", "cursor": "high", "agy": "medium"}[seat.split(".")[0]],
+            "speed": {"claude": "unknown", "codex": "unknown", "cursor": "standard", "agy": "unknown"}[seat.split(".")[0]],
+            "repo": command["folder"], "prompt": "Reply with OK only.", "write_scope": [], "role": "worker",
+            "provider_contract_version": CURRENT_PROVIDER_CONTRACT})
+        self.assertEqual(command["argv"], expected)
+        self.out = original_out
+
+    def test_ok_all_clis(self):
+        for seat in ("claude.test", "codex.test", "cursor.test", "agy.test"):
+            with self.subTest(seat=seat): self.one(seat, "ok", "ok")
+
+    def test_no_turn(self):
+        for seat in ("claude.test", "codex.test", "cursor.test"):
+            with self.subTest(seat=seat): self.one(seat, "no-turn", "no-turn")
+
+    def test_waits_auth_and_limit(self):
+        for mode, expected in (("mcp-init-wait", "mcp-init-wait"), ("permission-wait", "permission-wait"),
+                               ("input-wait", "input-wait"), ("hang", "unknown"), ("auth", "auth"), ("limit", "limit")):
+            with self.subTest(mode=mode): self.one("claude.test", mode, expected, 1 if "wait" in mode or mode == "hang" else 2)
+
+    def test_mcp_names_rejects_hostile_mcp_list(self):
+        hostile = "MCP_URL=https://user:password@evil.example/mcp?token=S1"
+        mcp_lines = "\n".join(
+            [
+                "Checking MCP server health...",
+                "claude.ai Claude Docs: https://api.example/v1/pages/mcp - Connected",
+                "supabase: https://mcp.example/mcp (HTTP) - Pending approval",
+                "Name          Command   Args   Env   Cwd   Status   Auth",
+                "node_repl     /Applications/x/bin/node_repl   -   TOKEN=abc   -   enabled   Unsupported",
+                hostile,
+                "no MCP servers configured",
+                "https://user:password@evil.example/x",
+            ]
+        )
+        fake = FAKE.replace(
+            '    print("Checking MCP server health...")\n'
+            '    print("alpha: https://private.example/?token=S1 - Connected")\n'
+            '    print("beta: npx private --key S2 - Failed")',
+            "    print(" + repr(mcp_lines) + ")",
+        )
+        path = self.bin / "claude"
+        path.write_text(fake.replace("__PYTHON__", sys.executable))
+        path.chmod(0o755)
+        result = self.run_probe("claude.test", "ok")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        folder = next(self.out.glob("*-claude.test"))
+        expected = ["claude.ai Claude Docs", "supabase", "node_repl"]
+        self.assertEqual(json.loads((folder / "mcp.json").read_text())["names"], expected)
+        blobs = [result.stdout, result.stderr]
+        blobs.extend(path.read_text() for path in folder.iterdir())
+        joined = "\n".join(blobs)
+        for bad in ("password", "token=", "S1", "://"):
+            self.assertNotIn(bad, joined, bad)
+
+    def test_help_flags_parses_fixture_and_ignores_secrets(self):
+        sample = (
+            "Usage: tool [options]\n"
+            "  -p, --print  Print\n"
+            "  -Z  Short new\n"
+            "  --brand-new-flag <v>  Secret https://u:p@example.com?token=S1\n"
+        )
+        self.assertEqual(probe_seat.help_flags(sample), ["--brand-new-flag", "--print", "-Z", "-p"])
+
+    def test_help_new_flags_from_capabilities_baseline(self):
+        cap = self.temp / "capabilities"
+        cap.mkdir()
+        (cap / "claude.txt").write_text("--add-dir\n--model\n-p\n")
+        env = dict(os.environ, PATH=f"{self.bin}:/usr/bin:/bin", PROBE_MODE="ok", PYTHONDONTWRITEBYTECODE="1",
+                   PROBE_HELP_TEXT="Usage: claude\n  --add-dir <dir>\n  --model <model>\n  -p\n  --brand-new-flag <v>\n")
+        result = subprocess.run(
+            [sys.executable, str(SCRIPTS / "probe_seat.py"), "claude.test", "--fleet", str(self.fleet),
+             "--out-root", str(self.out), "--capabilities-dir", str(cap), "--timeout", "2"],
+            text=True, capture_output=True, env=env, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        folder = next(self.out.glob("*-claude.test"))
+        help_payload = json.loads((folder / "help.json").read_text())
+        self.assertEqual(help_payload["new_flags"], ["--brand-new-flag"])
+        self.assertIn("--brand-new-flag", result.stdout)
+
+    def test_help_new_flags_empty_when_fixture_matches_baseline(self):
+        cap = self.temp / "capabilities"
+        cap.mkdir()
+        (cap / "claude.txt").write_text("--add-dir\n--model\n-p\n")
+        env = dict(os.environ, PATH=f"{self.bin}:/usr/bin:/bin", PROBE_MODE="ok", PYTHONDONTWRITEBYTECODE="1",
+                   PROBE_HELP_TEXT="Usage: claude\n  --add-dir <dir>\n  --model <model>\n  -p\n")
+        result = subprocess.run(
+            [sys.executable, str(SCRIPTS / "probe_seat.py"), "claude.test", "--fleet", str(self.fleet),
+             "--out-root", str(self.out), "--capabilities-dir", str(cap), "--timeout", "2"],
+            text=True, capture_output=True, env=env, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        folder = next(self.out.glob("*-claude.test"))
+        help_payload = json.loads((folder / "help.json").read_text())
+        self.assertEqual(help_payload["new_flags"], [])
+
+    def test_help_new_flags_compares_to_prior_probe_in_out_root(self):
+        cap = self.temp / "capabilities"
+        cap.mkdir()
+        (cap / "claude.txt").write_text("--add-dir\n--model\n-p\n")
+        base_env = dict(os.environ, PATH=f"{self.bin}:/usr/bin:/bin", PROBE_MODE="ok", PYTHONDONTWRITEBYTECODE="1")
+        first_env = {**base_env, "PROBE_HELP_TEXT": "Usage: claude\n  --add-dir <dir>\n  --model <model>\n  -p\n"}
+        subprocess.run(
+            [sys.executable, str(SCRIPTS / "probe_seat.py"), "claude.test", "--fleet", str(self.fleet),
+             "--out-root", str(self.out), "--capabilities-dir", str(cap), "--timeout", "2"],
+            text=True, capture_output=True, env=first_env, check=True)
+        time.sleep(1.1)
+        second_env = {**base_env, "PROBE_HELP_TEXT": "Usage: claude\n  --add-dir <dir>\n  --model <model>\n  -p\n  --only-in-second <v>\n"}
+        result = subprocess.run(
+            [sys.executable, str(SCRIPTS / "probe_seat.py"), "claude.test", "--fleet", str(self.fleet),
+             "--out-root", str(self.out), "--capabilities-dir", str(cap), "--timeout", "2"],
+            text=True, capture_output=True, env=second_env, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        folders = sorted(self.out.glob("*-claude.test"))
+        help_payload = json.loads((folders[-1] / "help.json").read_text())
+        self.assertEqual(help_payload["new_flags"], ["--only-in-second"])
+        self.assertIn("--only-in-second", result.stdout)
+
+    def test_dry_run_and_bad_seats(self):
+        result = self.run_probe("claude.test", wrapper=True)
+        self.assertEqual(result.returncode, 0)
+        shutil.rmtree(self.out)
+        env = dict(os.environ, PATH=f"{self.bin}:/usr/bin:/bin", PYTHONDONTWRITEBYTECODE="1")
+        dry = subprocess.run(["bash", str(SCRIPTS / "probe-seat.sh"), "claude.test", "--fleet", str(self.fleet),
+                              "--out-root", str(self.out), "--dry-run"], text=True, capture_output=True, env=env)
+        self.assertEqual(dry.returncode, 0)
+        self.assertFalse(self.out.exists())
+        for seat in ("missing.test", "../../bad"):
+            bad = self.run_probe(seat)
+            self.assertEqual(bad.returncode, 2)
+            self.assertFalse(self.out.exists())
+
+    NOW = "2026-10-16T18:00:00Z"
+    MODELS = {"claude": ["opus", "sonnet", "haiku"], "codex": ["gpt-6-luna"], "agent": ["grok-4.7-high"],
+              "agy": ["gemini-3.8-flash-medium"]}
+
+    def v2_files(self, failed=()):
+        providers = {}
+        for key in fleet_state.PROVIDERS:
+            base = {"probed_at": self.NOW, "capabilities": fleet_state.CAPABILITIES[key]}
+            if key in failed:
+                providers[key] = {**base, "status": "failure", "path": "/bin/" + key, "error": "fixture failure"}
+            elif key == "claude":
+                providers[key] = {**base, "status": "success", "path": "/bin/claude", "aliases": self.MODELS[key], "observed_models": []}
+            else:
+                providers[key] = {**base, "status": "success", "path": "/bin/" + key, "aliases": [], "observed_models": self.MODELS[key]}
+        inventory = {"schema_version": 1, "probed_at": self.NOW, "providers": providers, "last_good": {},
+                     "seats": fleet_state.make_seats(providers, {})}
+        fleet_state.validate_inventory(inventory)
+        self.inventory = self.temp / "inventory.json"
+        self.inventory.write_text(fleet_state.canonical(inventory))
+
+        def seat(family, effort, doors, speed, provider, model):
+            return {"family": family, "effort": effort, "speed": speed, "doors": doors,
+                    "approved_resolution": {"provider": provider, "model": model, "effort": effort, "speed": speed}}
+        fleet = {"schema_version": 2, "mission": {"path": "docs/missions/fixture"},
+                 "inventory": {"sha256": "0" * 64, "probed_at": self.NOW},
+                 "approval": {"status": "approved", "approved_by": "test", "approved_at": self.NOW},
+                 "policy": {"billing_classes": ["included"], "fast": False, "no_zdr": "allow"},
+                 "seats": {"cursor.premium": seat("grok", "high", ["cursor-grok"], "standard", "cursor", "grok-4.7-high"),
+                           "brain": seat("opus", "high", ["claude"], "unknown", "claude", "opus"),
+                           "agy.economy": seat("flash", "medium", ["agy"], "unknown", "agy", "gemini-3.8-flash-medium")}}
+        fleet_state.validate_fleet(fleet)
+        self.fleet = self.temp / "fleet-v2.json"
+        self.fleet.write_text(fleet_state.canonical(fleet))
+
+    def dry(self, seat, inventory=None):
+        args = ["bash", str(SCRIPTS / "probe-seat.sh"), seat, "--fleet", str(self.fleet), "--out-root", str(self.out), "--dry-run"]
+        if inventory is not False:
+            args += ["--inventory", str(inventory or self.inventory)]
+        return subprocess.run(args, text=True, capture_output=True, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+
+    def test_v2_seats_resolve_like_dispatch(self):
+        self.v2_files()
+        for seat, provider, model, effort, speed in (
+                ("cursor.premium", "agent", "grok-4.7-high", "high", "standard"),
+                ("brain", "claude", "opus", "high", "unknown"),
+                ("agy.economy", "agy", "gemini-3.8-flash-medium", "medium", "unknown")):
+            with self.subTest(seat=seat):
+                result = self.dry(seat)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                plan = json.loads(result.stdout)
+                self.assertEqual(plan["argv"], self.expected_argv_for(plan, provider, model, effort, speed))
+        self.assertFalse(self.out.exists())
+
+    def expected_argv_for(self, plan, provider, model, effort, speed):
+        folder = plan["folder"]
+        argv, _ = provider_contract({"provider": provider, "model": model, "effort": effort, "speed": speed,
+            "repo": folder, "prompt": "Reply with OK only.", "write_scope": [], "role": "worker",
+            "provider_contract_version": CURRENT_PROVIDER_CONTRACT})
+        return argv
+
+    def test_v2_failed_door_and_bad_inputs(self):
+        self.v2_files(failed=("agy",))
+        result = self.dry("agy.economy")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("seat agy.economy resolves as unavailable", result.stderr)
+        brain = self.dry("brain")
+        self.assertEqual(brain.returncode, 0, brain.stderr)
+        plan = json.loads(brain.stdout)
+        self.assertEqual(plan["argv"], self.expected_argv_for(plan, "claude", "opus", "high", "unknown"))
+        self.assertEqual(self.dry("nope.seat").returncode, 2)
+        missing = self.dry("brain", inventory=self.temp / "absent.json")
+        self.assertEqual(missing.returncode, 2)
+        self.assertNotIn("Traceback", missing.stderr)
+        self.assertFalse(self.out.exists())
+        self.assertFalse((self.temp / ".tasks").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

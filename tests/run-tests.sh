@@ -8,13 +8,34 @@ set -euo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 
 HARNESS="$(pwd)"
+# shellcheck source=scripts/harness-path.sh disable=SC1091
+. "$HARNESS/scripts/harness-path.sh"
 [ -f "$HARNESS/CHANGELOG.md" ] || { echo "Run from the kit root."; exit 1; }
 
 FAIL=0
 check() { # check <description> <command...>
   local desc="$1"; shift
-  if "$@" >/dev/null 2>&1; then echo "  ok   : $desc"
-  else echo "  FAIL : $desc"; FAIL=1; fi
+  local out line
+  out="$(mktemp -t purrfect-check.XXXXXX)"
+  if "$@" >"$out" 2>&1; then
+    rm -f "$out" || true
+    echo "  ok   : $desc"
+  else
+    echo "  FAIL : $desc"
+    while IFS= read -r line || [ -n "$line" ]; do
+      printf '    | %s\n' "$line"
+    done < <(tail -n 60 "$out") || true
+    rm -f "$out" || true
+    FAIL=1
+  fi
+}
+copy_harness_tree() { # copy_harness_tree <src> <dst>: never read the live .git/ or .tasks/ (concurrent writers)
+  local src="$1" dst="$2" entry
+  for entry in "$src"/* "$src"/.[!.]* "$src"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    case "${entry##*/}" in .git|.tasks) continue ;; esac
+    cp -R "$entry" "$dst/" || return 1
+  done
 }
 
 # Documentation is a public entry point for the harness protocol. Keep these checks
@@ -83,6 +104,33 @@ check "ExecutionSpec focused test leaves no scripts bytecode" test ! -e "$HARNES
 
 echo "== frozen fleet policy"
 check "fleet inventory retention and frozen resolution" python3 tests/test-fleet-state.py
+check "fleet v2 policy seat validation" python3 tests/test-fleet-v2.py
+check "registry and fleet-state legacy parity" python3 tests/test-registry.py
+# shellcheck disable=SC2016  # bash -c body must expand $py at runtime
+check "harness PATH helper prepends existing tool directories once under set -u" bash -c 'set -u; py="$(command -v python3)"; unset PATH; . scripts/harness-path.sh; . scripts/harness-path.sh; "$py" -c '\''import os,pathlib; p=os.environ["PATH"].split(":"); expected=[d for d in ("/opt/homebrew/bin","/usr/local/bin") if pathlib.Path(d).is_dir()]; assert p[:len(expected)] == expected and all(p.count(d)==1 for d in expected), p'\'''
+check "fleet doctor identity and login checks" python3 tests/test-fleet-doctor.py
+check "seat smoke scratch clone and dry-run plan" python3 tests/test-seat-smoke.py
+check "one frozen seat probe and classifications" python3 tests/test-probe-seat.py
+
+echo "== observed CLI output (F003)"
+check "observed model and usage parser over real CLI samples" python3 tests/test-observe-output.py
+check "observe parser focused test leaves no scripts bytecode" test ! -e "$HARNESS/scripts/__pycache__"
+check "execution receipt v1 and v2 observation validation" python3 tests/test-execution-receipt.py
+check "execution receipt focused test leaves no scripts bytecode" test ! -e "$HARNESS/scripts/__pycache__"
+
+echo "== ledger row v1 (F005)"
+check "ledger row schema, source flags and validator contract" python3 tests/test-ledger.py
+check "task-plan and review verdict schema validation" python3 tests/test-verdict.py
+check "ledger focused test leaves no scripts or tests bytecode" bash -c "test ! -e '$HARNESS/scripts/__pycache__' && test ! -e '$HARNESS/tests/__pycache__'"
+
+echo "== run evidence reconstruction (F007)"
+check "reconstruction reports complete and missing evidence" python3 tests/test-reconstruct.py
+check "reconstruction focused test leaves no bytecode" bash -c "test ! -e '$HARNESS/scripts/__pycache__' && test ! -e '$HARNESS/tests/__pycache__'"
+
+echo "== drive-cli autopilot (F009)"
+check "drive-cli rule matcher unit tests" python3 tests/test-drive-cli-rules.py
+check "drive-cli tmux driver and fake-cli integration" bash tests/test-drive-cli.sh
+check "drive-cli focused test leaves no bytecode" bash -c "test ! -e '$HARNESS/scripts/__pycache__' && test ! -e '$HARNESS/tests/__pycache__'"
 
 # F006 regressions must use the public propagation/release entry points. Tagged
 # and untagged source state is always isolated so this suite is independent of
@@ -97,9 +145,12 @@ PY"
 RELEASE_FIXTURE="$(mktemp -d)"
 UNTAGGED_FIXTURE="$(mktemp -d)"
 trap 'rm -rf "$RELEASE_FIXTURE" "$UNTAGGED_FIXTURE"' EXIT
-cp -R "$HARNESS/." "$RELEASE_FIXTURE"
+copy_harness_tree "$HARNESS" "$RELEASE_FIXTURE"
 rm -rf "$RELEASE_FIXTURE/.git"
 git -C "$RELEASE_FIXTURE" init -q
+# Background gc --auto races with cp -R of the fixture; keep the fixtures gc-free.
+git -C "$RELEASE_FIXTURE" config gc.auto 0
+git -C "$RELEASE_FIXTURE" config maintenance.auto false
 git -C "$RELEASE_FIXTURE" config user.email ci@test && git -C "$RELEASE_FIXTURE" config user.name CI
 git -C "$RELEASE_FIXTURE" add -A && git -C "$RELEASE_FIXTURE" commit -qm fixture
 RELEASE_TAG="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["release"]["required_tag"])' "$HARNESS/harness-manifest.json")"
@@ -107,6 +158,8 @@ git -C "$RELEASE_FIXTURE" tag -a "$RELEASE_TAG" -m fixture
 cp -R "$RELEASE_FIXTURE/." "$UNTAGGED_FIXTURE"
 rm -rf "$UNTAGGED_FIXTURE/.git"
 git -C "$UNTAGGED_FIXTURE" init -q
+git -C "$UNTAGGED_FIXTURE" config gc.auto 0
+git -C "$UNTAGGED_FIXTURE" config maintenance.auto false
 git -C "$UNTAGGED_FIXTURE" config user.email ci@test && git -C "$UNTAGGED_FIXTURE" config user.name CI
 git -C "$UNTAGGED_FIXTURE" add -A && git -C "$UNTAGGED_FIXTURE" commit -qm fixture
 check "manifest omission of guard-verification fails release entry point" sh -c "
@@ -268,6 +321,7 @@ check "inventory has agy seats when CLI present" sh -c "cd '$TARGET' && python3 
 import shutil; 
 assert 'agy.premium' in d['seats'] and 'agy.economy' in d['seats']\""
 check "spawn-brain.sh installed +x" test -x "$TARGET/scripts/spawn-brain.sh"
+check "spawn-brain refuses a non-brain --seat" sh -c "cd '$TARGET' && bash scripts/spawn-brain.sh no-such-mission review --seat claude.premium 2>&1 | grep -q 'ERROR: --seat must be brain'"
 check "verify-mission.sh installed +x" test -x "$TARGET/scripts/verify-mission.sh"
 check "VerificationRecord policy installed" test -f "$TARGET/scripts/verification_record.py"
 check "accept-feature.sh installed +x" test -x "$TARGET/scripts/accept-feature.sh"
@@ -295,7 +349,7 @@ doc = {
     "approval": {"status": "approved", "approved_by": "human", "approved_at": "2026-08-21T00:00:00Z"},
     "seats": {
         "brain": seat("codex", "gpt-5.6-sol", "sol", "high", "unknown"),
-        "agy.premium": seat("agy", "agy-test-model", "pro", "high", "unknown"),
+        "agy.premium": seat("agy", "agy-test-model-high", "argon", "high", "unknown"),
         "claude.premium": seat("claude", "claude-test-model", "sonnet", "xhigh", "unknown"),
         "codex.economy": seat("codex", "codex-test-model", "luna", "medium", "unknown"),
         "codex.premium": seat("codex", "codex-test-model", "terra", "xhigh", "unknown"),
@@ -307,9 +361,10 @@ PY
 chmod 444 "$FEAT/fleet.json"
 check "verify fails without receipts" sh -c "cd '$TARGET' && ! bash scripts/verify-mission.sh docs/missions/20990101-fixture"
 printf '%s\n' '.tasks/' '.verifybin/' > "$TARGET/.git/info/exclude"
+printf '%s\n' '.tasks/' '.verifybin/' > "$TARGET/.gitignore"
 VERIFY_BIN="$TARGET/.verifybin"; mkdir -p "$VERIFY_BIN"
 # shellcheck disable=SC2016  # generated stub must expand VERIFY_WRITE at runtime
-printf '%s\n' '#!/usr/bin/env bash' '[ "${VERIFY_WRITE:-0}" != 1 ] || printf "%s\n" verified > proof.txt' 'exit 0' > "$VERIFY_BIN/codex"
+printf '%s\n' '#!/usr/bin/env bash' '[ "${VERIFY_WRITE:-0}" != 1 ] || { printf "%s\n" verified > proof.txt && git add proof.txt && git commit -qm proof; }' 'exit 0' > "$VERIFY_BIN/codex"
 chmod +x "$VERIFY_BIN/codex"
 git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "strict receipt fixture"
 ( cd "$TARGET" && PATH="$VERIFY_BIN:$PATH" SPAWN_BRAIN_TIMEOUT_SECS=0 \
@@ -343,6 +398,7 @@ check "spawn-worker --repo rejects missing path" sh -c "cd '$TARGET' && bash scr
 # machine-local harness evidence and test sentinels outside Git truth, make F001
 # pending again after the receipt-verification fixture, then commit the baseline.
 printf '%s\n' '.tasks/' '.stubbin/' '.agy-args' '.claude-args' '.codex-*' '.agent-*' >> "$TARGET/.git/info/exclude"
+printf '%s\n' '.tasks/' '.stubbin/' '.agy-args' '.claude-args' '.codex-*' '.agent-*' >> "$TARGET/.gitignore"
 printf '%s\n' '{"goal":"t","features":[{"id":"F001","description":"Provider wrapper contract","bootstrap":false,"steps":[],"passes":false,"priority":1},{"id":"F002","description":"Other pending work","bootstrap":false,"steps":[],"passes":false,"priority":2}]}' > "$FEAT/features.json"
 git -C "$TARGET" add -A && git -C "$TARGET" commit -qm "installed harness dispatch fixture"
 
@@ -360,16 +416,16 @@ chmod +x "$STUBBIN/agy"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh agy docs/missions/20990101-fixture/tasks/T-001.md --tier premium --effort high --feature F001 ) >/dev/null 2>&1 || true
 check "agy receives the real prompt as the value of -p" \
-  sh -c "grep -q -- '-p Read ' '$STUB_OUT'"
+  sh -c "grep -qF -- '-p Goal: ' '$STUB_OUT'"
 check "agy -p is not fed the permissions flag" \
   sh -c "! grep -q -- '-p --dangerously-skip-permissions' '$STUB_OUT'"
 check "agy gets a print-timeout longer than the 5m default" \
   sh -c "grep -q -- '--print-timeout' '$STUB_OUT'"
+check "agy streams events and is not sent --effort under the current contract" \
+  sh -c "grep -q -- '--output-format stream-json' '$STUB_OUT' && ! grep -q -- '--effort' '$STUB_OUT'"
 
 # ---- claude prompt-position regression (2.2.5) ----
-# claude's --allowedTools is VARIADIC: it keeps consuming following args as tool names,
-# so a prompt placed after it is swallowed and claude exits with "Input must be provided
-# either through stdin or as a prompt argument". The prompt must precede the flags.
+# Keep the positional prompt ahead of variadic permission and MCP flags.
 echo "== claude prompt position"
 CLAUDE_OUT="$TARGET/.claude-args"
 # shellcheck disable=SC2016  # printf template: $ must stay literal
@@ -378,9 +434,51 @@ chmod +x "$STUBBIN/claude"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh claude docs/missions/20990101-fixture/tasks/T-001.md --tier premium --effort xhigh --feature F001 ) >/dev/null 2>&1 || true
 check "claude receives the prompt immediately after -p" \
-  sh -c "grep -q -- '-p Read ' '$CLAUDE_OUT'"
-check "claude prompt is not placed after --allowedTools" \
-  sh -c "! grep -qE -- '--allowedTools [^ ]+ Read ' '$CLAUDE_OUT'"
+  sh -c "grep -qF -- '-p Goal: ' '$CLAUDE_OUT'"
+check "claude does not use --allowedTools" \
+  sh -c "! grep -q -- '--allowedTools' '$CLAUDE_OUT'"
+check "claude uses strict mcp config" \
+  sh -c "grep -q -- '--strict-mcp-config' '$CLAUDE_OUT'"
+check "claude uses bypassPermissions" \
+  sh -c "grep -q -- '--permission-mode bypassPermissions' '$CLAUDE_OUT'"
+check "claude uses add-dir" \
+  sh -c "grep -q -- '--add-dir' '$CLAUDE_OUT'"
+check "claude deny-list blocks rm -rf" \
+  sh -c "grep -qF -- 'Bash(*rm -rf *)' '$CLAUDE_OUT'"
+check "claude deny-list blocks rm -fr" \
+  sh -c "grep -qF -- 'Bash(*rm -fr *)' '$CLAUDE_OUT'"
+check "claude deny-list blocks recursive rm" \
+  sh -c "grep -qF -- 'Bash(*rm -r*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks find delete" \
+  sh -c "grep -qF -- 'Bash(*find*-delete*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks rmtree" \
+  sh -c "grep -qF -- 'Bash(*rmtree*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks exec rm" \
+  sh -c "grep -qF -- 'Bash(*-exec rm*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks parent edit globs" \
+  sh -c "grep -qF -- 'Edit(../../**)' '$CLAUDE_OUT'"
+check "claude deny-list blocks git push" \
+  sh -c "grep -qF -- 'Bash(*git*push*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks git reset hard" \
+  sh -c "grep -qF -- 'Bash(*git*reset*--hard*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks git clean -f" \
+  sh -c "grep -qF -- 'Bash(*git*clean*-f*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks git branch -D" \
+  sh -c "grep -qF -- 'Bash(*git*branch*-D*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks chmod -R" \
+  sh -c "grep -qF -- 'Bash(*chmod*-R*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks sudo" \
+  sh -c "grep -qF -- 'Bash(sudo *)' '$CLAUDE_OUT'"
+check "claude deny-list blocks curl pipe sh" \
+  sh -c "grep -qF -- 'Bash(*curl*|*sh*)' '$CLAUDE_OUT'"
+check "claude deny-list blocks .git/config edits" \
+  sh -c "grep -qF -- 'Edit(.git/config)' '$CLAUDE_OUT'"
+check "claude deny-list blocks ~/.claude edits" \
+  sh -c "grep -qF -- 'Edit(~/.claude/**)' '$CLAUDE_OUT'"
+check "claude deny-list fixed-string check fails when pattern is absent" \
+  sh -c "! grep -qF -- 'Bash(*absent-sentinel-pattern*)' '$CLAUDE_OUT'"
+check "claude prompt precedes add-dir and disallowedTools" \
+  sh -c "! grep -qE -- '--add-dir.* Read ' '$CLAUDE_OUT' && ! grep -qE -- '--disallowedTools.* Read ' '$CLAUDE_OUT'"
 
 # ---- codex prompt/argument and stdin regressions ----
 # Keep this stub's stdin read: codex waits for additional input unless its stdin is
@@ -394,10 +492,15 @@ CODEX_STUB_PID="$TARGET/.codex-stub-pid"
 printf '#!/usr/bin/env bash\nset -euo pipefail\nprintf "%%s\\n" "$$" > "%s"\nwhile IFS= read -r _codex_stdin_line; do :; done\ntouch "%s"\nprintf "%%s\\n" "$(basename "$0")" "$@" > "%s"\nexit 0\n' "$CODEX_STUB_PID" "$CODEX_EOF_MARK" "$CODEX_OUT" > "$STUBBIN/codex"
 chmod +x "$STUBBIN/codex"
 CODEX_MODEL="codex-test-model"
-CODEX_PROMPT="Read docs/missions/20990101-fixture/tasks/T-001.md and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder."
+CODEX_PROMPT="Goal: docs/missions/20990101-fixture/tasks/T-001.md is done when its verification commands pass and one scoped commit leaves a clean tree; the Front Desk runs the full suite, you do not. Scope: the task's allow-list; PROGRESS.md and features.json belong to the Front Desk. Budget: the task's max_attempts and long-command rule; the runner stops a stalled or overlong run. Resources: your CLI's native tools, the repo skills in .agents/skills, web search, and subagents where your CLI has them (Claude Code: explorer on Haiku; codex: Luna; cursor: Composer; agy: Flash). Delegate wide reading and searching to a cheap subagent, run the task's checks yourself before you finish, and stop when they pass. End with a short plain-text report: what you changed and the exit code of each check you ran."
 CODEX_EXPECTED="$TARGET/.codex-expected"
-printf '%s\n' codex exec -C "$TARGET_CANONICAL" -s workspace-write --add-dir "$TARGET_CANONICAL/.git" -m "$CODEX_MODEL" \
-  '-c' 'model_reasoning_effort="medium"' "$CODEX_PROMPT" > "$CODEX_EXPECTED"
+printf '%s\n' codex exec --json -C "$TARGET_CANONICAL" -s workspace-write --add-dir "$TARGET_CANONICAL/.git" -m "$CODEX_MODEL" \
+  '-c' 'model_reasoning_effort="medium"' \
+  '-c' 'sandbox_workspace_write.network_access=true' \
+  '-c' 'web_search="live"' \
+  '-c' 'mcp_servers.cua_repl={command="true",enabled=false}' \
+  '-c' 'mcp_servers.node_repl={command="true",enabled=false}' \
+  "$CODEX_PROMPT" > "$CODEX_EXPECTED"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/tasks/T-001.md \
       --tier economy --model "$CODEX_MODEL" --feature F001 ) >/dev/null 2>&1 || true
@@ -405,8 +508,13 @@ check "codex receives the exact invocation with medium default" \
   cmp -s "$CODEX_EXPECTED" "$CODEX_OUT"
 
 CODEX_EXPECTED_XHIGH="$TARGET/.codex-expected-xhigh"
-printf '%s\n' codex exec -C "$TARGET_CANONICAL" -s workspace-write --add-dir "$TARGET_CANONICAL/.git" -m "$CODEX_MODEL" \
-  '-c' 'model_reasoning_effort="xhigh"' "$CODEX_PROMPT" > "$CODEX_EXPECTED_XHIGH"
+printf '%s\n' codex exec --json -C "$TARGET_CANONICAL" -s workspace-write --add-dir "$TARGET_CANONICAL/.git" -m "$CODEX_MODEL" \
+  '-c' 'model_reasoning_effort="xhigh"' \
+  '-c' 'sandbox_workspace_write.network_access=true' \
+  '-c' 'web_search="live"' \
+  '-c' 'mcp_servers.cua_repl={command="true",enabled=false}' \
+  '-c' 'mcp_servers.node_repl={command="true",enabled=false}' \
+  "$CODEX_PROMPT" > "$CODEX_EXPECTED_XHIGH"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/tasks/T-001.md \
       --tier premium --model "$CODEX_MODEL" --effort xhigh --feature F001 ) >/dev/null 2>&1 || true
@@ -461,7 +569,7 @@ printf '#!/usr/bin/env bash\ntouch "%s"\nexit 0\n' "$GROK_DECOY" > "$STUBBIN/age
 chmod +x "$STUBBIN/agent"
 AGENT_MODEL="agent-test-model"
 AGENT_EXPECTED="$TARGET/.agent-expected"
-printf '%s\n' cursor-agent -p --force --trust --workspace "$TARGET_CANONICAL" --model "${AGENT_MODEL}[effort=xhigh,fast=false]" "$CODEX_PROMPT" > "$AGENT_EXPECTED"
+printf '%s\n' cursor-agent -p --force --trust --output-format stream-json --workspace "$TARGET_CANONICAL" --model "$AGENT_MODEL" "$CODEX_PROMPT" > "$AGENT_EXPECTED"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" \
     bash scripts/spawn-worker.sh agent docs/missions/20990101-fixture/tasks/T-001.md \
       --tier economy --model "$AGENT_MODEL" --effort xhigh --feature F001 ) >/dev/null 2>&1 || true

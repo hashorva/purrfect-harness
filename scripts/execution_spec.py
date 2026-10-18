@@ -17,9 +17,14 @@ FIELDS_V1 = frozenset(("schema_version", "run_id", "mission", "work_unit", "role
                        "attempt", "prompt"))
 FIELDS_V2 = FIELDS_V1 | {"write_scope"}
 FIELDS_V3 = FIELDS_V2 | {"provider_contract_version"}
-# Contract 2 is retained history; contract 3 calls the Cursor CLI as `cursor-agent`.
-PROVIDER_CONTRACTS_V3 = (2, 3)
-CURRENT_PROVIDER_CONTRACT = 3
+# Contracts 2 and 3 are retained history; contract 4 sends Cursor a plain model ID;
+# contract 5 adds Codex's --add-dir <repo>/.agents when write_scope names .agents/;
+# contract 6 requests machine-readable CLI output for receipt observation (F003).
+# contract 7 streams Claude events and starts Claude with no MCP servers (F008).
+# contract 8 streams agy events and sends agy effort only in the model name (F009).
+# contract 9 unlocks Claude native tools with deny-list and protected-path guards (F010).
+PROVIDER_CONTRACTS_V3 = (2, 3, 4, 5, 6, 7, 8, 9)
+CURRENT_PROVIDER_CONTRACT = 9
 ROLES = frozenset(("brain", "worker"))
 PROVIDERS = frozenset(("codex", "claude", "agent", "agy"))
 COMMIT = re.compile(r"^[0-9a-fA-F]{40,64}$")
@@ -122,7 +127,7 @@ def validate(spec):
         validate_write_scope(spec["write_scope"])
     if version == 3 and (isinstance(spec["provider_contract_version"], bool) or
                          spec["provider_contract_version"] not in PROVIDER_CONTRACTS_V3):
-        raise SpecError("provider_contract_version must equal 2 or 3")
+        raise SpecError("provider_contract_version must equal 2, 3, 4, 5, 6, 7, 8 or 9")
     repo = _repo(spec["repo"])
     if not COMMIT.fullmatch(spec["base_commit"]):
         raise SpecError("base_commit must be a full Git object ID")

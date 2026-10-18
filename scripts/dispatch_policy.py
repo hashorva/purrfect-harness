@@ -10,8 +10,10 @@ import subprocess
 import sys
 import uuid
 
-from fleet_state import CAPABILITIES, read_json, validate_fleet
+from execution_receipt import glob_regex
 from execution_spec import artifact_directory, SpecError, validate_write_scope
+from fleet_state import CAPABILITIES, read_json, validate_fleet
+from harness_registry import RegistryError, canonical_provider, load_registry
 
 
 class PolicyError(ValueError):
@@ -120,7 +122,7 @@ def feature_record(mission, feature):
     return matches[0]
 
 
-def worker_write_scope(task):
+def worker_allow_list(task):
     try:
         lines = task.read_text().splitlines()
     except (OSError, UnicodeError) as exc:
@@ -139,9 +141,16 @@ def worker_write_scope(task):
             fail("Files you MAY touch must contain only backtick-quoted path bullets")
         patterns.append(match.group(1))
     try:
-        return validate_write_scope(patterns)
+        # Validate the original task grammar. Registry prefixes may be normalized,
+        # but accepting ./ here would widen the existing allow-list language.
+        validate_write_scope(patterns)
+        return patterns
     except SpecError as exc:
         raise PolicyError(str(exc)) from exc
+
+
+def worker_write_scope(task):
+    return worker_allow_list(task)
 
 
 def clean_workspace(root):
@@ -155,6 +164,46 @@ def clean_workspace(root):
         fail("cannot inspect workspace cleanliness")
     if result.stdout:
         fail("workspace must be clean before dispatch")
+
+
+def normalize_relative_path(value):
+    while value.startswith("./"):
+        value = value[2:]
+    return value
+
+
+def validate_write_scope_against_sandbox(provider, raw_patterns):
+    try:
+        registry = load_registry()
+        canonical = canonical_provider(registry, provider)
+    except RegistryError as exc:
+        raise PolicyError(str(exc)) from exc
+    prefixes = registry["providers"][canonical]["sandbox_limits"]["write_denied_prefixes"]
+    for raw_pattern in raw_patterns:
+        for prefix in prefixes:
+            norm_prefix = normalize_relative_path(prefix)
+            if not norm_prefix:
+                fail(f"seat limit prefix {prefix!r} normalizes to empty and would refuse every task")
+            prefix_segments = norm_prefix.rstrip("/").split("/")
+            pattern_segments = raw_pattern.split("/")
+            hits_prefix = True
+            for index, prefix_segment in enumerate(prefix_segments):
+                if index >= len(pattern_segments):
+                    hits_prefix = False
+                    break
+                pattern_segment = pattern_segments[index]
+                if "**" in pattern_segment:
+                    break
+                if not glob_regex(pattern_segment).fullmatch(prefix_segment):
+                    hits_prefix = False
+                    break
+            else:
+                hits_prefix = len(pattern_segments) > len(prefix_segments)
+            if hits_prefix:
+                fail(
+                    f"seat limit: {canonical} cannot write {prefix} (allow-list: {raw_pattern}); "
+                    "route this task to another seat"
+                )
 
 
 def validate_capability(provider, effort, speed):
@@ -192,7 +241,9 @@ def validate_worker(args):
     if not args.feature or values.get("feature") != args.feature:
         fail("worker task feature must equal --feature")
     feature_record(mission, args.feature)
+    raw_scope = worker_allow_list(task)
     write_scope = worker_write_scope(task)
+    validate_write_scope_against_sandbox(args.provider, raw_scope)
     clean_workspace(root)
     return write_scope
 
@@ -301,6 +352,7 @@ def main():
     worker.add_argument("--task", required=True)
     worker.add_argument("--feature", required=True)
     worker.add_argument("--work-unit", required=True)
+    worker.add_argument("--provider", required=True)
     brain.add_argument("--mission", required=True)
     brain.add_argument("--fleet", required=True)
     brain.add_argument("--action", required=True)

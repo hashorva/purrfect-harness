@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Purrfect Harness LedgerRow v2",
+  "description": "One summary row per run (proposal section 8). Every number and model name carries a source flag. scripts/ledger.py is the dependency-free validator for this contract.",
+  "type": "object",
+  "required": ["schema_version", "mission", "feature", "task", "run_id", "parent_run", "group_id", "attempt", "repair_round", "cli", "cli_version", "door", "tier", "pool", "billing_class", "requested_model", "resolved_model", "observed_model", "effort", "fast_state", "task_class_tags", "allow_list_size", "task_text_tokens", "ste_flag", "active_lesson_ids", "experiment_id", "wall_time_s", "turns", "tool_calls", "tokens_input", "tokens_output", "tokens_cache", "tokens_reasoning", "cost", "quota_share", "checks", "diff_size", "scope_result", "anti_gaming_flags", "failure_class", "escalation_reason", "outcome"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 2 },
+    "mission": { "$ref": "#/$defs/text" },
+    "feature": { "$ref": "#/$defs/text" },
+    "task": { "$ref": "#/$defs/text" },
+    "run_id": { "$ref": "#/$defs/runId" },
+    "parent_run": { "anyOf": [{ "$ref": "#/$defs/runId" }, { "type": "null" }] },
+    "group_id": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "repair_round": { "type": "integer", "minimum": 0 },
+    "cli": { "$ref": "#/$defs/text" },
+    "cli_version": { "$ref": "#/$defs/textFlag" },
+    "door": { "$ref": "#/$defs/text" },
+    "tier": { "enum": ["economy", "premium", null] },
+    "pool": { "$ref": "#/$defs/text" },
+    "billing_class": { "$ref": "#/$defs/text" },
+    "requested_model": { "$ref": "#/$defs/configuredTextFlag" },
+    "resolved_model": { "$ref": "#/$defs/configuredTextFlag" },
+    "observed_model": { "$ref": "#/$defs/textFlag" },
+    "self_reported_model": { "$ref": "#/$defs/selfReportedTextFlag" },
+    "effort": { "$ref": "#/$defs/configuredTextFlag" },
+    "fast_state": { "$ref": "#/$defs/textFlag" },
+    "task_class_tags": { "$ref": "#/$defs/textList" },
+    "allow_list_size": { "$ref": "#/$defs/numberFlag" },
+    "task_text_tokens": { "$ref": "#/$defs/numberFlag" },
+    "ste_flag": { "type": "boolean" },
+    "active_lesson_ids": { "$ref": "#/$defs/textList" },
+    "experiment_id": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
+    "wall_time_s": { "$ref": "#/$defs/numberFlag" },
+    "turns": { "$ref": "#/$defs/numberFlag" },
+    "tool_calls": { "$ref": "#/$defs/numberFlag" },
+    "tokens_input": { "$ref": "#/$defs/numberFlag" },
+    "tokens_output": { "$ref": "#/$defs/numberFlag" },
+    "tokens_cache": { "$ref": "#/$defs/numberFlag" },
+    "tokens_reasoning": { "$ref": "#/$defs/numberFlag" },
+    "cost": {
+      "type": "object",
+      "required": ["value", "source", "currency"],
+      "additionalProperties": false,
+      "properties": {
+        "value": { "type": ["number", "null"], "minimum": 0 },
+        "source": { "enum": ["observed", "estimated", "unknown"] },
+        "currency": { "$ref": "#/$defs/text" }
+      },
+      "allOf": [{ "$ref": "#/$defs/sourceRule" }]
+    },
+    "quota_share": { "$ref": "#/$defs/numberFlag" },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "exit_code"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "$ref": "#/$defs/text" },
+          "exit_code": { "type": "integer", "minimum": 0, "maximum": 255 }
+        }
+      }
+    },
+    "diff_size": {
+      "type": "object",
+      "required": ["files", "lines"],
+      "additionalProperties": false,
+      "properties": {
+        "files": { "$ref": "#/$defs/numberFlag" },
+        "lines": { "$ref": "#/$defs/numberFlag" }
+      }
+    },
+    "scope_result": { "enum": ["pass", "fail", "not_checked"] },
+    "anti_gaming_flags": { "$ref": "#/$defs/textList" },
+    "failure_class": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
+    "escalation_reason": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
+    "outcome": { "enum": ["completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed"] }
+  },
+  "$defs": {
+    "text": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$" },
+    "textList": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/text" } },
+    "runId": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sourceRule": {
+      "if": { "properties": { "source": { "const": "unknown" } }, "required": ["source"] },
+      "then": { "properties": { "value": { "type": "null" } } },
+      "else": { "properties": { "value": { "not": { "type": "null" } } }, "required": ["value"] }
+    },
+    "numberFlag": {
+      "type": "object",
+      "required": ["value", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "value": { "type": ["number", "null"], "minimum": 0 },
+        "source": { "enum": ["observed", "estimated", "unknown"] }
+      },
+      "allOf": [{ "$ref": "#/$defs/sourceRule" }, { "if": { "properties": { "source": { "not": { "const": "unknown" } } }, "required": ["source"] }, "then": { "properties": { "value": { "type": "number" } } } }]
+    },
+    "textFlag": {
+      "type": "object",
+      "required": ["value", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "value": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
+        "source": { "enum": ["observed", "estimated", "unknown"] }
+      },
+      "allOf": [{ "$ref": "#/$defs/sourceRule" }, { "if": { "properties": { "source": { "not": { "const": "unknown" } } }, "required": ["source"] }, "then": { "properties": { "value": { "$ref": "#/$defs/text" } } } }]
+    },
+    "configuredTextFlag": {
+      "type": "object",
+      "required": ["value", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "value": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
+        "source": { "enum": ["observed", "configured", "estimated", "unknown"] }
+      },
+      "allOf": [{ "$ref": "#/$defs/sourceRule" }, { "if": { "properties": { "source": { "not": { "const": "unknown" } } }, "required": ["source"] }, "then": { "properties": { "value": { "$ref": "#/$defs/text" } } } }]
+    },
+    "selfReportedTextFlag": {
+      "type": "object",
+      "required": ["value", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "value": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
+        "source": { "enum": ["self_reported", "unknown"] }
+      },
+      "allOf": [{ "$ref": "#/$defs/sourceRule" }, { "if": { "properties": { "source": { "not": { "const": "unknown" } } }, "required": ["source"] }, "then": { "properties": { "value": { "$ref": "#/$defs/text" } } } }]
+    }
+  }
+}

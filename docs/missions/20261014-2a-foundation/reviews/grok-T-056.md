@@ -1,0 +1,3 @@
+`scripts/ledger.py:103` (`check_object`, called from `validate_row` at `scripts/ledger.py:318` and `load_rows` at `scripts/ledger.py:578`): all 29 rows in `docs/missions/ledger.jsonl` are `schema_version` 2 and omit `self_reported_model`. First input is line 1, `run_id` `255afe50-0813-4ca2-bac4-fa6dc137f079`. `validate_row` and `ledger.py view` raise `self_reported_model: is required`. `schemas/ledger-row.schema.json:6` adds the field to `required` while `:9` keeps `"schema_version": {"const": 2}` (`scripts/ledger.py:24`). `existing_run_ids` (`scripts/ledger.py:414`) records those lines by `run_id` only, so `fold` still appends; `view` cannot load the file.
+
+Verdict: FAIL

@@ -1,0 +1,16 @@
+{
+  "run_ids": [
+    "run-1"
+  ],
+  "commits": [
+    {
+      "commit": "abc123",
+      "verdict": false,
+      "evidence": [
+        "Focused test passed"
+      ]
+    }
+  ],
+  "findings": [],
+  "verdict": "PASS"
+}

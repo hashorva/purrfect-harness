@@ -25,12 +25,13 @@ Fable is named only, never an automatic escalation.
 ## 2. Inventory the local fleet
 
 ```bash
-command -v claude
-command -v codex
-command -v agent
-command -v agy
+bash scripts/fleet-doctor.sh
 bash scripts/fleet-inventory.sh
 ```
+
+Any `ERROR` from the doctor (two different programs under one name, wrong
+identity, logged out) must be fixed before Gate 0. `WARN` lines (duplicate PATH
+entries, symlinks to the same binary, a missing CLI) are listed in the Gate 0 report.
 
 Present the actual seat/provider/model/family/health/source map at Gate 0.
 Unavailable providers cannot be bound. Failed probes preserve per-provider
@@ -70,6 +71,22 @@ Example command bullet:
 
 Commit the finalized task before dispatch: verification reads its authorized
 commands from the receipt's base commit, not from a later edited task.
+
+### Task planning (structured plan)
+
+When the brain decomposes work into a structured task plan (a JSON document,
+not only committed `tasks/T-*.md` files), that plan must validate against
+`schemas/task-plan.schema.json`. Check a saved plan file:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_verdict.py \
+  schemas/task-plan.schema.json /path/to/plan.json
+```
+
+When the plan JSON is taken from a provider transcript saved to a file, use
+`validate_verdict.py --after-run` as documented in dispatch-worker for
+providers whose registry `structured_output.json_schema_flag` is null; otherwise
+validate the saved JSON file directly with the command above.
 
 ### Bootstrap is an authoring decision
 

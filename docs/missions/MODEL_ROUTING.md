@@ -1,7 +1,7 @@
 ---
 title: Model Routing Policy
-version: 3.0.0
-updated: 2026-10-14
+version: 3.1.0
+updated: 2026-10-18
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -15,6 +15,31 @@ updated: 2026-10-14
 Opus / you name the chair). Cursor workers: Grok premium, Composer economy.
 Concrete slugs come from a probed fleet inventory at GATE 0; families in this
 file are durable. Always show the map at GATE 0 so the human can swap binds.
+
+## Native-only (owner 2026-10-18)
+
+- Every model runs only on its own vendor's quota: claude (Opus, Sonnet, Haiku),
+  codex (Sol, Terra, Luna), agy (Argon, Flash), cursor (Composer and Grok, one
+  Cursor pool).
+- A door never serves another vendor's model. Models that agy lists from other
+  vendors are never bound.
+- `freeze-v2` refuses a foreign door and `resolve_v2` skips one.
+- A move to another vendor is an explicit choice of another approved native seat,
+  never a door fallback.
+
+| Role | claude | codex | agy | cursor |
+| --- | --- | --- | --- | --- |
+| Brain and planning (up to high) | Opus high (`brain`) | Sol high (`brain_codex`) | Argon high (`brain_argon`) | none |
+| Review (up to medium) | Opus medium (`claude.premium`; Sonnet medium is the swap) | Sol medium (`codex.premium`) | Argon medium, or low when agy lists no medium (`agy.premium`) | Grok medium (`cursor.premium`) |
+| Worker (medium, economy seats) | Haiku (`claude.economy`) | Luna (`codex.economy`) | Flash (`agy.economy`) | Composer (`cursor.economy`) |
+
+- Opus is the brain. When Claude has no quota, use Argon or Sol on their own
+  quota, through `bash scripts/spawn-brain.sh <mission> review --seat brain_argon`,
+  then `--seat brain_codex`.
+- The reviewer is on a different vendor than the worker where possible.
+- Opus medium reviews dispatch, verification, acceptance, safety and privacy code.
+
+Note (F013): Launcher prompts give goal, resources, budget and acceptance checks; Claude Code runs delegate wide reading to the Haiku explorer subagent, receipts record subagent calls and their tokens, and the scope check rejects compiled-module and stdlib shadowing.
 
 These family labels describe routing preferences, not current vendor availability
 or pricing. The probed inventory reports the models this machine can bind.
@@ -37,7 +62,7 @@ the local inventory cannot change an active mission's authorization.
 
 | Situation                                        | Chair                                                |
 | ------------------------------------------------ | ---------------------------------------------------- |
-| **Default**                                      | **Opus** (Claude Code _or_ Cursor UI — same logic)   |
+| **Default**                                      | **Opus** on Claude Code (claude quota)               |
 | Already chatting with Opus                       | This session is the chair (no handoff)               |
 | Human: “you are the orchestrator” / “no handoff” | Current model chairs                                 |
 | Human: “no orchestration — just execute”         | Skip mission loop; current chat implements           |
@@ -66,9 +91,10 @@ Rule of thumb: **judgment up, volume down.**
 
 ### Cursor (`cursor-agent` CLI)
 
-The provider name stays `agent`. The harness calls the `cursor-agent` binary:
-Grok Build also installs a bare `agent`, and on a machine with both, `agent`
-can start Grok Build. Run `cursor-agent login` with the account the Cursor app uses.
+The provider name is `cursor`, and the harness calls the `cursor-agent` binary;
+`agent` is a legacy name kept for frozen fleets and v3 evidence, and the launcher
+converts `cursor` to it. Grok Build also installs a bare `agent`, and on a machine
+with both, `agent` can start Grok Build. Run `cursor-agent login` with the account the Cursor app uses.
 
 | Seat    | Family                                      | Fallback                                       |
 | ------- | ------------------------------------------- | ---------------------------------------------- |
@@ -99,7 +125,7 @@ is on PATH with a healthy inventory bind.
 
 | Seat    | Family (typical today)                                              | Notes                                          |
 | ------- | ------------------------------------------------------------------- | ---------------------------------------------- |
-| Premium | Gemini **Pro**-class (e.g. `gemini-*-pro-high`), else Sonnet on agy | Heavier UI / multi-file layout                 |
+| Premium | **Argon** (e.g. `gemini-4-argon-high`)                              | Heavier UI / multi-file layout                 |
 | Economy | Gemini **Flash**-class (e.g. `gemini-*-flash-high`)                 | Fast UI passes, polish, boilerplate components |
 
 **Home-fleet defaults (intake context):**
@@ -113,12 +139,15 @@ is on PATH with a healthy inventory bind.
 GATE 0 must list `agy.premium` / `agy.economy` whenever `agy` is present so the
 human can assign UI features there and spend those credits on purpose.
 
-### Claude (`claude -p` workers — not the chair)
+Note (F009): In Google AI Pro, agy.premium binds gemini-4-argon on its weekly-only agy-argon pool, agy.economy binds gemini-3.8-flash, and contract 8 encodes agy effort only in the model name over stream-json with stdin closed.
 
-| Seat    | Family         |
-| ------- | -------------- |
-| Premium | `sonnet` alias |
-| Economy | `haiku` alias  |
+### Claude (Claude Code and `claude -p` workers)
+
+| Seat    | Family / effort                         |
+| ------- | --------------------------------------- |
+| Brain   | `opus` alias, effort high               |
+| Premium | `opus` or `sonnet` alias, effort medium |
+| Economy | `haiku` alias, effort medium            |
 
 ## Fleet inventory (mandatory at GATE 0)
 
@@ -164,6 +193,10 @@ effort, and speed are equality assertions; task frontmatter `invocation:` is
 descriptive. None can override `fleet.json`. A fallback is a Gate 0 proposal or
 an explicit selection of another already-approved seat, never a silent dispatch
 rebind. External `--repo` execution is disabled in Phase 1.
+Every seat may be checked before dispatch with `bash scripts/probe-seat.sh <seat>`, runs under the runner's stall and zero-turn guards, and launches Claude with `--strict-mcp-config`; workers never write `PROGRESS.md`.
+Interactive CLIs driven by scripts/drive-cli.sh stop with exit 3 on any prompt after an answered trust prompt and on numbered or menu approval prompts; boxed menus and alternate-screen redraws are accepted residuals that end as an exit-4 stall, and no wrong answer is ever sent.
+
+Note (F010): Contract 9 runs every provider with its full native toolset (Claude bypassPermissions with CLAUDE_DISALLOWED_TOOLS and --strict-mcp-config, Codex workspace-write with network and live web search on and cua_repl/node_repl disabled per run, and CLI --help flag baselines tracked by probe-seat.sh).
 
 ## Pricing
 

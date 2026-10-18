@@ -10,14 +10,106 @@ import sys
 
 from execution_spec import SpecError, load_persisted
 
+# T-071 extras apply from contract 9; contracts ≤ 8 keep their pre-T-071 argv.
+CODEX_CONFIG_OVERRIDES_CONTRACT = 9
+CODEX_CONFIG_OVERRIDES = (
+    "-c", "sandbox_workspace_write.network_access=true",
+    "-c", 'web_search="live"',
+    "-c", 'mcp_servers.cua_repl={command="true",enabled=false}',
+    "-c", 'mcp_servers.node_repl={command="true",enabled=false}',
+)
 
-def provider_contract(spec):
+# T-071 changed contract-9 codex argv without a bump; earlier receipts keep validating.
+# Contracts ≤ 8 need no historical form because their launch argv is the pre-T-071 argv.
+# Future argv changes must bump the contract.
+CODEX_PRE_T071_CONFIG_OVERRIDES = ()
+CODEX_PRE_T071_CONTRACTS = frozenset({9})
+
+CLAUDE_DISALLOWED_TOOLS_PATTERNS = (
+    "Bash(*rm -rf *)",
+    "Bash(*rm -fr *)",
+    "Bash(*rm -Rf *)",
+    "Bash(*rm -fR *)",
+    "Bash(*rm -r -f *)",
+    "Bash(*rm -f -r *)",
+    "Bash(*rm -r*)",
+    "Bash(*rm -R*)",
+    "Bash(*rm -fr*)",
+    "Bash(*rm -fR*)",
+    "Bash(*rm --recursive*)",
+    "Bash(*rm --force*)",
+    "Bash(*find*-delete*)",
+    "Bash(*rmtree*)",
+    "Bash(*-exec rm*)",
+    "Bash(*git*push*)",
+    "Bash(*git*reset*--hard*)",
+    "Bash(*git*checkout*-- *)",
+    "Bash(*git*checkout*-f*)",
+    "Bash(*git*checkout*--force*)",
+    "Bash(*git*clean*-f*)",
+    "Bash(*git*clean*-d*)",
+    "Bash(*git*clean*-x*)",
+    "Bash(*git*clean*--force*)",
+    "Bash(*git*branch*-D*)",
+    "Bash(*git*stash*clear*)",
+    "Bash(*git*stash*drop*)",
+    "Bash(*git*config*alias.*)",
+    "Bash(*git*config*--global*)",
+    "Bash(*git*update-index*--skip-worktree*)",
+    "Bash(*git*update-index*--assume-unchanged*)",
+    "Bash(*chmod*-R*)",
+    "Bash(*chmod*--recursive*)",
+    "Bash(sudo *)",
+    "Bash(* sudo *)",
+    "Bash(*curl*|*sh*)",
+    "Bash(*wget*|*sh*)",
+    "Edit(../*)",
+    "Write(../*)",
+    "Edit(../**)",
+    "Write(../**)",
+    "Edit(../../**)",
+    "Write(../../**)",
+    "Edit(../../../**)",
+    "Write(../../../**)",
+    "Edit(~/.claude/**)",
+    "Write(~/.claude/**)",
+    "Edit(~/.claude.json)",
+    "Write(~/.claude.json)",
+    "Edit(~/.zshrc)",
+    "Write(~/.zshrc)",
+    "Edit(~/.zshenv)",
+    "Write(~/.zshenv)",
+    "Edit(~/.zprofile)",
+    "Write(~/.zprofile)",
+    "Edit(~/.bash_profile)",
+    "Write(~/.bash_profile)",
+    "Edit(~/.bashrc)",
+    "Write(~/.bashrc)",
+    "Edit(~/.gitconfig)",
+    "Write(~/.gitconfig)",
+    "Edit(~/.config/git/**)",
+    "Write(~/.config/git/**)",
+    "Edit(~/Library/LaunchAgents/**)",
+    "Write(~/Library/LaunchAgents/**)",
+    "Edit(~/.ssh/**)",
+    "Write(~/.ssh/**)",
+    "Edit(.git/hooks/**)",
+    "Write(.git/hooks/**)",
+    "Edit(.git/info/**)",
+    "Write(.git/info/**)",
+    "Edit(.git/config)",
+    "Write(.git/config)",
+)
+CLAUDE_DISALLOWED_TOOLS = ",".join(CLAUDE_DISALLOWED_TOOLS_PATTERNS)
+
+
+def provider_contract(spec, codex_overrides=None):
     """Return argv and explicit environment overrides for one validated spec."""
     provider, model, effort, speed, repo, prompt = (
         spec["provider"], spec["model"], spec["effort"], spec["speed"], spec["repo"], spec["prompt"]
     )
     # v1/v2 predate the marker and therefore bind the historical contract 1.
-    # Only a v3 authorization can select contract 2 or 3.
+    # Only a v3 authorization can select contract 2 or later.
     contract_version = spec.get("provider_contract_version", 1)
     if provider == "codex":
         if effort not in {"low", "medium", "high", "xhigh"}:
@@ -26,20 +118,59 @@ def provider_contract(spec):
             raise SpecError("codex speed must be unknown")
         codex_git_dir = (["--add-dir", str(Path(repo) / ".git")]
                          if contract_version >= 2 else [])
-        argv = ["codex", "exec", "-C", repo, "-s", "workspace-write", *codex_git_dir, "-m", model,
-                "-c", f'model_reasoning_effort="{effort}"', prompt]
+        # Contract 5+: the workspace-write sandbox refuses .agents/ unless it is mounted too (probe P-1).
+        writes_agents = any(pattern.startswith(".agents/") for pattern in spec.get("write_scope", []))
+        codex_agents_dir = (["--add-dir", str(Path(repo) / ".agents")]
+                            if contract_version >= 5 and writes_agents else [])
+        if codex_overrides is None:
+            codex_overrides = (CODEX_CONFIG_OVERRIDES
+                               if contract_version >= CODEX_CONFIG_OVERRIDES_CONTRACT else ())
+        argv = ["codex", "exec"]
+        if contract_version >= 6:
+            argv.append("--json")
+        argv.extend(["-C", repo, "-s", "workspace-write", *codex_git_dir, *codex_agents_dir, "-m", model,
+                     "-c", f'model_reasoning_effort="{effort}"', *codex_overrides, prompt])
     elif provider == "claude":
         if effort not in {"low", "medium", "high", "xhigh", "max"}:
             raise SpecError("claude does not support requested effort")
         if speed != "unknown":
             raise SpecError("claude speed must be unknown")
-        argv = ["claude", "-p", prompt, "--model", model, "--effort", effort,
-                "--allowedTools", "Read,Write,Edit,Bash"]
+        argv = ["claude", "-p", prompt]
+        # Contract 7: a stall watchdog needs output before the end;
+        # an unattended run must not wait on an MCP server (--strict-mcp-config starts none).
+        if contract_version >= 7:
+            argv.extend(["--output-format", "stream-json", "--verbose", "--strict-mcp-config"])
+        elif contract_version >= 6:
+            argv.extend(["--output-format", "json"])
+        if contract_version >= 9:
+            mcp_config = spec.get("mcp_config")
+            if mcp_config is not None:
+                if isinstance(mcp_config, str) and mcp_config.strip():
+                    argv.extend(["--mcp-config", mcp_config])
+                elif (isinstance(mcp_config, list) and mcp_config and
+                      all(isinstance(item, str) and item.strip() for item in mcp_config)):
+                    argv.extend(["--mcp-config", *mcp_config])
+                else:
+                    raise SpecError("claude mcp_config must be a non-empty string or list of strings")
+            argv.extend(["--permission-mode", "bypassPermissions", "--add-dir", str(Path(repo)),
+                         "--disallowedTools", CLAUDE_DISALLOWED_TOOLS, "--model", model, "--effort", effort])
+        else:
+            argv.extend(["--model", model, "--effort", effort, "--allowedTools", "Read,Write,Edit,Bash"])
     elif provider == "agy":
         if effort not in {"low", "medium", "high"}:
             raise SpecError("agy does not support requested effort")
         if speed != "unknown":
             raise SpecError("agy speed must be unknown")
+        if contract_version >= 8:
+            match = re.search(r"-(low|medium|high)$", model)
+            if not match:
+                raise SpecError("agy model name must end in an effort token (-low, -medium or -high)")
+            token = match.group(1)
+            if token != effort:
+                raise SpecError(f"agy model name encodes effort {token}; spec effort is {effort}")
+            argv = ["agy", "--dangerously-skip-permissions", "--print-timeout", "30m", "--model", model,
+                    "--output-format", "stream-json", "-p", prompt]
+            return argv, {}
         argv = ["agy", "--dangerously-skip-permissions", "--print-timeout", "30m", "--model", model,
                 "--effort", effort, "-p", prompt]
     else:
@@ -47,12 +178,37 @@ def provider_contract(spec):
             raise SpecError("agent requires a supported explicit effort and speed")
         if "[" in model or "]" in model:
             raise SpecError("agent model must not already contain parameters")
-        resolved_model = f"{model}[effort={effort},fast={'true' if speed == 'fast' else 'false'}]"
-        # Contract 3: Grok Build also installs a bare `agent`, so the Cursor CLI
-        # is called by its unambiguous name. Contracts 1/2 keep their history.
+        # Contract 4 sends only the model ID; models without name-encoded effort receive no effort argument.
+        if contract_version >= 4:
+            fast_model = model.endswith("-fast")
+            if fast_model != (speed == "fast"):
+                raise SpecError("cursor model -fast suffix and spec speed must agree")
+            effort_match = re.search(r"-(none|minimal|low|medium|high|xhigh|max)(?:-fast)?$", model)
+            if effort_match and effort_match.group(1) != effort:
+                raise SpecError(f"cursor model name encodes effort {effort_match.group(1)}; spec effort is {effort}")
+            resolved_model = model
+        else:
+            resolved_model = f"{model}[effort={effort},fast={'true' if speed == 'fast' else 'false'}]"
+        # Contract 3+: Grok Build also installs a bare `agent`, so use Cursor's unambiguous CLI.
         cursor_cli = "cursor-agent" if contract_version >= 3 else "agent"
-        argv = [cursor_cli, "-p", "--force", "--trust", "--workspace", repo, "--model", resolved_model, prompt]
+        argv = [cursor_cli, "-p", "--force", "--trust"]
+        if contract_version >= 6:
+            argv.extend(["--output-format", "stream-json"])
+        argv.extend(["--workspace", repo, "--model", resolved_model, prompt])
     return argv, {}
+
+
+def argv_sha256(argv):
+    return hashlib.sha256((json.dumps(argv, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")).hexdigest()
+
+
+def historical_argv_sha256s(spec):
+    contract = spec.get("provider_contract_version")
+    if (spec.get("schema_version") != 3 or spec.get("provider") != "codex" or
+            not isinstance(contract, int) or isinstance(contract, bool) or
+            contract not in CODEX_PRE_T071_CONTRACTS):
+        return frozenset()
+    return frozenset({argv_sha256(provider_contract(spec, codex_overrides=CODEX_PRE_T071_CONFIG_OVERRIDES)[0])})
 
 
 def main():

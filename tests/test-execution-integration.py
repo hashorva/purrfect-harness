@@ -4,30 +4,51 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import time
 import unittest
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+OBSERVE_FIXTURES = ROOT / "tests/fixtures/observe"
 PROVIDERS = ("codex", "claude", "agent", "agy")
+sys.path.insert(0, str(ROOT / "scripts"))
+from observe_output import observe  # noqa: E402
+import fleet_state  # noqa: E402
+from execute_provider import CLAUDE_DISALLOWED_TOOLS, CODEX_CONFIG_OVERRIDES  # noqa: E402
 
 
 class WrapperIntegration(unittest.TestCase):
     def setUp(self):
         self.parent = Path(tempfile.mkdtemp())
+        self.codex_sessions = self.parent / "codex-sessions"
+        self.codex_sessions.mkdir()
+        self._prev_codex_sessions_dir = os.environ.get("CODEX_SESSIONS_DIR")
+        os.environ["CODEX_SESSIONS_DIR"] = str(self.codex_sessions)
+
+        def restore_codex_sessions_dir():
+            if self._prev_codex_sessions_dir is None:
+                os.environ.pop("CODEX_SESSIONS_DIR", None)
+            else:
+                os.environ["CODEX_SESSIONS_DIR"] = self._prev_codex_sessions_dir
+
+        self.addCleanup(restore_codex_sessions_dir)
         self.root = self.parent / "repo"
         self.root.mkdir()
         (self.root / "scripts").mkdir()
         for name in ("execution_spec.py", "execution_receipt.py", "execution_runner.py",
-                     "execute_provider.py", "fleet_state.py", "dispatch_policy.py",
+                     "execute_provider.py", "observe_output.py", "model_id.py", "fleet_state.py", "dispatch_policy.py",
+                     "harness_registry.py", "ledger.py",
                      "spawn-worker.sh", "spawn-brain.sh", "verify-mission.sh", "verification_record.py",
                      "accept-feature.sh", "write-receipt.sh"):
             shutil.copy2(ROOT / "scripts" / name, self.root / "scripts" / name)
+        shutil.copy2(ROOT / "harness-registry.json", self.root / "harness-registry.json")
         self.task = self.root / "docs/missions/fixture/tasks/T-001.md"
         self.task.parent.mkdir(parents=True)
         self.mission = self.task.parent.parent
@@ -43,6 +64,10 @@ class WrapperIntegration(unittest.TestCase):
         }, indent=2) + "\n")
         (self.root / ".gitignore").write_text(".tasks/\nbin/\nsame.json\n")
         self.git("init", "-q")
+        # git commit can start a detached gc/maintenance that creates and removes
+        # .git/objects/maintenance.lock while tests snapshot this tree.
+        self.git("config", "gc.auto", "0")
+        self.git("config", "maintenance.auto", "false")
         self.git("config", "user.email", "t@example.invalid")
         self.git("config", "user.name", "t")
         self.git("add", ".")
@@ -61,17 +86,40 @@ pathlib.Path('.tasks/invoked.json').write_text(json.dumps({
     'argv': sys.argv[1:], 'spec_existed': True,
     'lock_existed': pathlib.Path(os.environ.get('PURRFECT_DISPATCH_LOCK_PATH', '')).is_dir(),
     'pid': os.getpid(),
+    'python_dont_write_bytecode': os.environ.get('PYTHONDONTWRITEBYTECODE'),
 }))
 child_path = os.environ.get('PROVIDER_CHILD_PID_PATH')
 if child_path:
     import subprocess
     child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
     pathlib.Path(child_path).write_text(str(child.pid))
+if os.environ.get('PROVIDER_PRINT'):
+    print(os.environ['PROVIDER_PRINT'], flush=True)
+for _ in range(int(os.environ.get('PROVIDER_TICKS', '0'))):
+    print('tick', flush=True)
+    time.sleep(0.1)
 wait_for = os.environ.get('PROVIDER_WAIT_FOR')
 if wait_for:
     while not pathlib.Path(wait_for).exists():
         time.sleep(0.02)
 action = os.environ.get('PROVIDER_ACTION', 'noop')
+if action == 'protected-volatile':
+    home = pathlib.Path.home()
+    (home / '.claude/sessions').mkdir(parents=True, exist_ok=True)
+    (home / '.claude/sessions/67107.key').write_text('session')
+    active = home / '.claude/plugins/synced/x/.in_use'
+    active.mkdir(parents=True, exist_ok=True)
+    (active / '67107').write_text('active')
+    (home / '.claude/projects/p').mkdir(parents=True, exist_ok=True)
+    (home / '.claude/projects/p/transcript.jsonl').write_text('{}\\n')
+if action == 'gitignore-stdlib-shadow':
+    pathlib.Path('scripts/.gitignore').write_text('.gitignore\\njson.py\\n')
+    pathlib.Path('scripts/json.py').write_text('x = 1\\n')
+if action == 'protected-tamper':
+    home = pathlib.Path.home()
+    (home / '.claude/settings.json').write_text('{}')
+    spec = json.loads(next(pathlib.Path('.tasks/specs').glob('*.json')).read_text())
+    (pathlib.Path('.tasks/specs') / (spec['run_id'] + '.protected')).unlink()
 if action in ('dirty', 'commit', 'mixed'):
     pathlib.Path('allowed.txt').write_text(f'allowed change {time.time_ns()}\\n')
 if action == 'outside':
@@ -90,16 +138,27 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             path.chmod(0o755)
 
     def tearDown(self):
+        if self._prev_codex_sessions_dir is None:
+            os.environ.pop("CODEX_SESSIONS_DIR", None)
+        else:
+            os.environ["CODEX_SESSIONS_DIR"] = self._prev_codex_sessions_dir
         shutil.rmtree(self.parent)
 
     def git(self, *args):
-        return subprocess.run(["git", *args], cwd=self.root, check=True, capture_output=True, text=True)
+        # -c keeps every fixture git call free of background auto-maintenance,
+        # including calls made before the repo config below exists.
+        return subprocess.run(["git", "-c", "gc.auto=0", "-c", "maintenance.auto=false", *args],
+                              cwd=self.root, check=True, capture_output=True, text=True)
 
-    def invoke(self, args, *, env=None):
+    def invoke(self, args, *, env=None, inherit_pydontwritebytecode=True):
         launch_env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
-                          PYTHONDONTWRITEBYTECODE="1", SPAWN_WORKER_TIMEOUT_SECS="0",
+                          SPAWN_WORKER_TIMEOUT_SECS="0",
                           SPAWN_BRAIN_TIMEOUT_SECS="0",
                           EMPTY_OVERRIDE_SENTINEL="retained")
+        if inherit_pydontwritebytecode:
+            launch_env["PYTHONDONTWRITEBYTECODE"] = "1"
+        else:
+            launch_env.pop("PYTHONDONTWRITEBYTECODE", None)
         if env:
             launch_env.update(env)
         return subprocess.run(args, cwd=self.root, env=launch_env, text=True, capture_output=True)
@@ -122,7 +181,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         family = {
             ("agent", "premium"): "grok", ("agent", "economy"): "composer",
             ("codex", "premium"): "terra", ("codex", "economy"): "luna",
-            ("agy", "premium"): "pro", ("agy", "economy"): "flash",
+            ("agy", "premium"): "argon", ("agy", "economy"): "flash",
             ("claude", "premium"): "sonnet", ("claude", "economy"): "haiku",
         }[(provider, tier)]
         capabilities = {
@@ -152,6 +211,75 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         fleet.chmod(0o444)
         self.commit_fixture("frozen fleet")
         return doc
+
+    def write_v2_fleet_and_inventory(self, model):
+        (self.root / ".tasks").mkdir(exist_ok=True)
+        providers = {}
+        for name in fleet_state.PROVIDERS:
+            base = {"probed_at": "2026-08-21T00:00:00Z", "capabilities": fleet_state.CAPABILITIES[name]}
+            if name == "codex":
+                providers[name] = {**base, "status": "success", "path": "/bin/codex", "aliases": [], "observed_models": [model]}
+            elif name == "claude":
+                providers[name] = {**base, "status": "success", "path": "/bin/claude", "aliases": ["opus", "sonnet", "haiku"], "observed_models": []}
+            else:
+                providers[name] = {**base, "status": "success", "path": f"/bin/{name}", "aliases": [], "observed_models": ["fixture-1.0-low"]}
+        inventory = {"schema_version": 1, "probed_at": "2026-08-21T00:00:00Z", "providers": providers,
+                     "last_good": {}, "seats": fleet_state.make_seats(providers, {})}
+        fleet_state.validate_inventory(inventory)
+        (self.root / ".tasks/fleet-inventory.json").write_text(fleet_state.canonical(inventory))
+        fleet = {
+            "schema_version": 2, "mission": {"path": "docs/missions/fixture"},
+            "inventory": {"sha256": "0" * 64, "probed_at": "2026-08-21T00:00:00Z"},
+            "approval": {"status": "approved", "approved_by": "human", "approved_at": "2026-08-21T00:00:00Z"},
+            "policy": {"billing_classes": ["included"], "fast": False, "no_zdr": "allow"},
+            "seats": {"codex.economy": {"family": "luna", "effort": "medium", "speed": "unknown", "doors": ["codex"],
+                                             "approved_resolution": {"provider": "codex", "model": "gpt-5.6-luna", "effort": "medium", "speed": "unknown"}}},
+        }
+        path = self.mission / "fleet.json"
+        if path.exists():
+            path.chmod(0o644)
+        path.write_text(fleet_state.canonical(fleet))
+        path.chmod(0o444)
+        self.commit_fixture("frozen v2 fleet")
+
+    def write_v2_brain_fleet_and_inventory(self, *, claude_ok, agy_models):
+        """Legacy brain seat with agy first, used to prove foreign doors are skipped (F013)."""
+        (self.root / ".tasks").mkdir(exist_ok=True)
+        providers = {}
+        for name in fleet_state.PROVIDERS:
+            base = {"probed_at": "2026-10-16T00:00:00Z", "capabilities": fleet_state.CAPABILITIES[name]}
+            if name == "claude" and not claude_ok:
+                providers[name] = {**base, "status": "failure", "path": "/bin/claude", "error": "fixture: claude door down"}
+            elif name == "claude":
+                providers[name] = {**base, "status": "success", "path": "/bin/claude", "aliases": ["opus", "sonnet", "haiku"], "observed_models": []}
+            elif name == "agy":
+                providers[name] = {**base, "status": "success", "path": "/bin/agy", "aliases": [], "observed_models": list(agy_models)}
+            else:
+                providers[name] = {**base, "status": "success", "path": f"/bin/{name}", "aliases": [], "observed_models": ["fixture-1.0-low"]}
+        inventory = {"schema_version": 1, "probed_at": "2026-10-16T00:00:00Z", "providers": providers,
+                     "last_good": {}, "seats": fleet_state.make_seats(providers, {})}
+        fleet_state.validate_inventory(inventory)
+        (self.root / ".tasks/fleet-inventory.json").write_text(fleet_state.canonical(inventory))
+        fleet = {
+            "schema_version": 2, "mission": {"path": "docs/missions/fixture"},
+            "inventory": {"sha256": "0" * 64, "probed_at": "2026-10-16T00:00:00Z"},
+            "approval": {"status": "approved", "approved_by": "human", "approved_at": "2026-10-16T00:00:00Z"},
+            "policy": {"billing_classes": ["included"], "fast": False, "no_zdr": "allow"},
+            "seats": {"brain": {"family": "opus", "effort": "high", "speed": "unknown", "doors": ["agy", "claude"],
+                                "approved_resolution": {"provider": "claude", "model": "opus", "effort": "high", "speed": "unknown"}}},
+        }
+        path = self.mission / "fleet.json"
+        if path.exists():
+            path.chmod(0o644)
+        path.write_text(fleet_state.canonical(fleet))
+        path.chmod(0o444)
+        self.commit_fixture("frozen v2 brain fleet")
+
+    def drop_run_artifacts(self):
+        """Remove one run's spec, log, receipt and stub record; keep the inventory and the drift log."""
+        for dirname in ("specs", "logs", "receipts", "ledger", "locks"):
+            shutil.rmtree(self.root / ".tasks" / dirname, ignore_errors=True)
+        (self.root / ".tasks/invoked.json").unlink(missing_ok=True)
 
     def assert_worker_rejected(self, args):
         result = self.invoke(args)
@@ -206,18 +334,21 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
 
     @staticmethod
     def prompt_worker():
-        return ("Read docs/missions/fixture/tasks/T-001.md and complete it exactly. Follow AGENTS.md and the skills "
-                "the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder.")
+        return ("Goal: docs/missions/fixture/tasks/T-001.md is done when its verification commands pass and one scoped commit leaves a clean tree; the Front Desk runs the full suite, you do not. Scope: the task's allow-list; PROGRESS.md and features.json belong to the Front Desk. Budget: the task's max_attempts and long-command rule; the runner stops a stalled or overlong run. Resources: your CLI's native tools, the repo skills in .agents/skills, web search, and subagents where your CLI has them (Claude Code: explorer on Haiku; codex: Luna; cursor: Composer; agy: Flash). Delegate wide reading and searching to a cheap subagent, run the task's checks yourself before you finish, and stop when they pass. End with a short plain-text report: what you changed and the exit code of each check you ran.")
 
     def expected_argv(self, provider, model, effort, speed, prompt):
         repo = self.physical_root
         if provider == "codex":
-            return ["exec", "-C", repo, "-s", "workspace-write", "--add-dir", str(Path(repo) / ".git"), "-m", model, "-c", f'model_reasoning_effort="{effort}"', prompt]
+            return ["exec", "--json", "-C", repo, "-s", "workspace-write", "--add-dir", str(Path(repo) / ".git"), "-m", model,
+                    "-c", f'model_reasoning_effort="{effort}"', *CODEX_CONFIG_OVERRIDES, prompt]
         if provider == "claude":
-            return ["-p", prompt, "--model", model, "--effort", effort, "--allowedTools", "Read,Write,Edit,Bash"]
+            return ["-p", prompt, "--output-format", "stream-json", "--verbose", "--strict-mcp-config",
+                    "--permission-mode", "bypassPermissions", "--add-dir", repo, "--disallowedTools", CLAUDE_DISALLOWED_TOOLS,
+                    "--model", model, "--effort", effort]
         if provider == "agy":
-            return ["--dangerously-skip-permissions", "--print-timeout", "30m", "--model", model, "--effort", effort, "-p", prompt]
-        return ["-p", "--force", "--trust", "--workspace", repo, "--model", f"{model}[effort={effort},fast={'true' if speed == 'fast' else 'false'}]", prompt]
+            return ["--dangerously-skip-permissions", "--print-timeout", "30m", "--model", model,
+                    "--output-format", "stream-json", "-p", prompt]
+        return ["-p", "--force", "--trust", "--output-format", "stream-json", "--workspace", repo, "--model", model, prompt]
 
     def linked(self, *, role, provider, model, effort, speed, work_unit, feature):
         specs = list((self.root / ".tasks/specs").glob("*.json"))
@@ -239,12 +370,23 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertEqual(receipt["resolved_configuration"]["env_override_keys"], [])
         self.assertRegex(receipt["resolved_configuration"]["argv_sha256"], r"^[0-9a-f]{64}$")
         self.assertEqual(receipt["observed_configuration"], {"model": "unknown", "effort": "unknown", "speed": "unknown"})
+        self.assertEqual(receipt["schema_version"], 2)
+        self.assertEqual(receipt["observation"], {
+            "observed_model": {"value": None, "source": "unknown"},
+            "usage": {
+                "input": {"value": None, "source": "unknown"},
+                "output": {"value": None, "source": "unknown"},
+                "cache": {"value": None, "source": "unknown"},
+                "reasoning": {"value": None, "source": "unknown"},
+            },
+            "fast_state": {"value": None, "source": "unknown"},
+        })
         self.assertEqual(receipt["outcome"], "completed")
         self.assertEqual(receipt["exit_code"], 0)
         self.assertFalse(receipt["workspace_changed"])
         self.assertEqual(receipt["scope"]["result"], "pass")
         self.assertEqual(spec["schema_version"], 3)
-        self.assertEqual(spec["provider_contract_version"], 3)
+        self.assertEqual(spec["provider_contract_version"], 9)
         self.assertEqual(receipt["log_path"], f".tasks/logs/{spec['run_id']}.log")
         self.assertNotIn(spec["prompt"], json.dumps(receipt))
         invoked = json.loads((self.root / ".tasks/invoked.json").read_text())
@@ -253,12 +395,36 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertEqual(invoked["provider"], {"agent": "cursor-agent"}.get(provider, provider))
         return spec, specs[0], receipt, invoked
 
+    def test_launchers_export_python_dont_write_bytecode_to_provider(self):
+        """Provider inherits PYTHONDONTWRITEBYTECODE=1 from the wrapper, not the test harness."""
+        self.write_fleet("codex", "bytecode-model", "medium", "unknown")
+        worker = self.invoke(
+            ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+             "--model", "bytecode-model", "--feature", "F001"],
+            inherit_pydontwritebytecode=False,
+        )
+        self.assertEqual(worker.returncode, 0, worker.stderr + worker.stdout)
+        invoked = json.loads((self.root / ".tasks/invoked.json").read_text())
+        self.assertEqual(invoked["python_dont_write_bytecode"], "1")
+        self.clean_runs()
+
+        self.write_fleet("codex", "bytecode-brain", "high", "unknown", seat_name="brain")
+        brain = self.invoke(
+            ["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"],
+            inherit_pydontwritebytecode=False,
+        )
+        self.assertEqual(brain.returncode, 0, brain.stderr + brain.stdout)
+        invoked = json.loads((self.root / ".tasks/invoked.json").read_text())
+        self.assertEqual(invoked["python_dont_write_bytecode"], "1")
+        self.clean_runs()
+
     def test_exact_provider_contracts_through_both_wrappers(self):
         for role in ("worker", "brain"):
             for provider in PROVIDERS:
                 with self.subTest(role=role, provider=provider):
-                    model = f"{provider}-model"
                     speed = "fast" if provider == "agent" else "unknown"
+                    model = (f"{provider}-model-fast" if provider == "agent" else
+                             f"{provider}-model-high" if provider == "agy" else f"{provider}-model")
                     self.write_fleet(provider, model, "high", speed,
                                      seat_name="brain" if role == "brain" else None)
                     args = (["bash", "scripts/spawn-worker.sh", provider, "docs/missions/fixture/tasks/T-001.md", "--provider", provider,
@@ -272,10 +438,148 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                                                        work_unit="T-001" if role == "worker" else "review", feature="F001" if role == "worker" else None)
                     self.assertEqual(invoked["argv"], self.expected_argv(provider, model, "high", speed, spec["prompt"]))
                     if provider == "claude":
-                        self.assertLess(invoked["argv"].index(spec["prompt"]), invoked["argv"].index("--allowedTools"))
+                        self.assertNotIn("--allowedTools", invoked["argv"])
+                        self.assertLess(invoked["argv"].index(spec["prompt"]), invoked["argv"].index("--add-dir"))
+                        self.assertLess(invoked["argv"].index(spec["prompt"]), invoked["argv"].index("--disallowedTools"))
+                        patterns = invoked["argv"][invoked["argv"].index("--disallowedTools") + 1].split(",")
+                        for literal in (
+                            "Bash(*rm -rf *)", "Bash(*rm -fr *)", "Bash(*rm --recursive*)", "Bash(*git*push*)",
+                            "Bash(*rm -r*)", "Bash(*find*-delete*)", "Bash(*rmtree*)", "Bash(*-exec rm*)",
+                            "Edit(../../**)", "Edit(../../../**)", "Edit(~/.gitconfig)", "Edit(~/.claude.json)",
+                            "Edit(~/Library/LaunchAgents/**)", "Edit(.git/info/**)",
+                            "Bash(*git*reset*--hard*)", "Bash(*git*clean*-f*)", "Bash(*git*clean*-d*)",
+                            "Bash(*git*clean*-x*)", "Bash(*git*checkout*-f*)", "Bash(*git*branch*-D*)",
+                            "Bash(*git*stash*clear*)", "Bash(*git*config*alias.*)", "Bash(*chmod*-R*)",
+                            "Bash(sudo *)", "Bash(*curl*|*sh*)", "Edit(../*)", "Edit(~/.claude/**)",
+                            "Edit(~/.zshrc)", "Edit(~/.ssh/**)", "Edit(.git/hooks/**)", "Edit(.git/config)",
+                        ):
+                            self.assertIn(literal, patterns)
                     if provider == "agy":
                         self.assertEqual(invoked["argv"][-2:], ["-p", spec["prompt"]])
                     self.clean_runs()
+
+    def test_protected_baseline_tamper_and_claude_volatile_ignore_through_runner(self):
+        home = self.parent / "fake-home"
+        home.mkdir()
+        claude_target = self.parent / "external-claude"
+        projects_target = self.parent / "external-projects"
+        (claude_target / "sessions").mkdir(parents=True)
+        (claude_target / "plugins").mkdir()
+        (claude_target / "projects").symlink_to(projects_target)
+        (projects_target / "p").mkdir(parents=True)
+        (claude_target / "settings.json").write_text('{"stable":true}')
+        (home / ".claude").symlink_to(claude_target)
+        self.write_fleet("codex", "protected-model", "medium", "unknown")
+        args = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                "--model", "protected-model", "--feature", "F001"]
+        for action in ("protected-volatile", "protected-tamper"):
+            with self.subTest(action=action):
+                result = self.invoke(args, env={"HOME": str(home), "PROVIDER_ACTION": action})
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                receipt_path = next((self.root / ".tasks/receipts").glob("*.json"))
+                receipt = json.loads(receipt_path.read_text())
+                if action == "protected-volatile":
+                    self.assertEqual(receipt["scope"]["result"], "pass")
+                    self.assertEqual(receipt["scope"]["violations"], [])
+                else:
+                    self.assertEqual(receipt["scope"]["result"], "fail")
+                    self.assertIn(f"<protected:.tasks/specs/{receipt['run_id']}.protected>", receipt["scope"]["violations"])
+                    self.assertIn("<protected:~/.claude/settings.json>", receipt["scope"]["violations"])
+                self.clean_runs()
+
+        result = self.invoke(args, env={
+            "HOME": str(home), "PROVIDER_ACTION": "gitignore-stdlib-shadow",
+            "PYTHONSAFEPATH": "1",
+            "PYTHONPATH": f"{sysconfig.get_path('stdlib')}:{self.root / 'scripts'}",
+        })
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        receipt = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())
+        self.assertEqual(receipt["scope"]["result"], "fail")
+        self.assertIn("scripts/.gitignore", receipt["scope"]["violations"])
+        self.assertIn("scripts/json.py", receipt["scope"]["violations"])
+        self.assertNotIn("protected_snapshot(", (self.root / "scripts/execution_runner.py").read_text())
+
+    def test_cursor_alias_persists_agent_contract_through_wrappers(self):
+        model, speed = "cursor-model-fast", "fast"
+        self.write_fleet("agent", model, "high", speed)
+        outcomes = []
+        runs = (
+            ["cursor", "docs/missions/fixture/tasks/T-001.md"],
+            ["docs/missions/fixture/tasks/T-001.md", "--provider", "cursor"],
+            ["agent", "docs/missions/fixture/tasks/T-001.md"],
+        )
+        for provider_args in runs:
+            result = self.invoke([
+                "bash", "scripts/spawn-worker.sh", *provider_args,
+                "--model", model, "--effort", "high", "--speed", speed, "--feature", "F001",
+            ])
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            spec, _, _, invoked = self.linked(
+                role="worker", provider="agent", model=model, effort="high", speed=speed,
+                work_unit="T-001", feature="F001",
+            )
+            self.assertEqual(invoked["argv"], self.expected_argv("agent", model, "high", speed, spec["prompt"]))
+            outcomes.append((spec["provider"], invoked["provider"], invoked["argv"]))
+            self.clean_runs()
+        self.assertEqual(outcomes[0], outcomes[1])
+
+        self.write_fleet("agent", model, "high", speed, seat_name="brain", include_brain=True)
+        result = self.invoke([
+            "bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review",
+            "--provider", "cursor", "--model", model, "--effort", "high", "--speed", speed,
+        ])
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        spec, _, _, invoked = self.linked(
+            role="brain", provider="agent", model=model, effort="high", speed=speed,
+            work_unit="review", feature=None,
+        )
+        self.assertEqual(invoked["argv"], self.expected_argv("agent", model, "high", speed, spec["prompt"]))
+
+    def test_cursor_provider_flags_compare_after_persisted_name_conversion(self):
+        model, speed = "cursor-model-fast", "fast"
+        self.write_fleet("agent", model, "high", speed)
+        task = "docs/missions/fixture/tasks/T-001.md"
+        common = ["--model", model, "--effort", "high", "--speed", speed, "--feature", "F001"]
+        result = self.invoke(["bash", "scripts/spawn-worker.sh", "cursor", task, "--provider", "agent", *common])
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        spec, _, _, invoked = self.linked(
+            role="worker", provider="agent", model=model, effort="high", speed=speed,
+            work_unit="T-001", feature="F001",
+        )
+        self.assertEqual(spec["provider"], "agent")
+        self.assertEqual(invoked["argv"], self.expected_argv("agent", model, "high", speed, spec["prompt"]))
+        self.clean_runs()
+
+        result = self.invoke(["bash", "scripts/spawn-worker.sh", "cursor", task, "--provider", "codex", *common])
+        self.assertEqual(result.returncode, 2, result.stderr + result.stdout)
+        self.assertIn("disagree", result.stderr)
+        tasks = self.root / ".tasks"
+        self.assertFalse(list(tasks.glob("specs/*.json")) if tasks.exists() else [])
+        self.assertFalse(list(tasks.glob("logs/*.log")) if tasks.exists() else [])
+        self.assertFalse(list(tasks.glob("receipts/*.json")) if tasks.exists() else [])
+        self.assertFalse(list(tasks.glob("locks/*.lock")) if (tasks / "locks").exists() else [])
+        self.clean_runs()
+
+        result = self.invoke(["bash", "scripts/spawn-worker.sh", "cursor", task, "--provider", "grok", *common])
+        self.assertEqual(result.returncode, 2, result.stderr + result.stdout)
+        self.assertIn("ERROR: registry:", result.stderr)
+        tasks = self.root / ".tasks"
+        self.assertFalse(list(tasks.glob("specs/*.json")) if tasks.exists() else [])
+        self.assertFalse(list(tasks.glob("logs/*.log")) if tasks.exists() else [])
+        self.assertFalse(list(tasks.glob("receipts/*.json")) if tasks.exists() else [])
+        self.assertFalse(list(tasks.glob("locks/*.lock")) if (tasks / "locks").exists() else [])
+
+    def test_unknown_provider_stops_before_persisting_run_artifacts(self):
+        result = self.invoke([
+            "bash", "scripts/spawn-worker.sh", "docs/missions/fixture/tasks/T-001.md",
+            "--provider", "grok",
+        ])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ERROR:", result.stderr)
+        tasks = self.root / ".tasks"
+        self.assertFalse(list(tasks.glob("specs/*.json")) if tasks.exists() else [])
+        self.assertFalse(list(tasks.glob("logs/*.log")) if tasks.exists() else [])
+        self.assertFalse(list(tasks.glob("receipts/*.json")) if tasks.exists() else [])
 
     def test_historical_contract_one_evidence_survives_contract_two_and_mutation_is_mounted(self):
         """A v2 receipt remains auditable by the real mission entry point after v3 exists."""
@@ -298,7 +602,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         launched = self.invoke([
             sys.executable, "scripts/execution_runner.py", "--spec", details["path"], "--spec-sha256", details["sha256"],
             "--log", f".tasks/logs/{run_id}.log", "--timeout", "0", "--task", "docs/missions/fixture/tasks/T-001.md", "--tier", "economy",
-        ], env={"PROVIDER_ACTION": "dirty"})
+        ], env={"PROVIDER_ACTION": "commit"})
         self.assertEqual(launched.returncode, 0, launched.stderr + launched.stdout)
         receipt_path = self.root / ".tasks/receipts" / f"{run_id}.json"
         receipt = json.loads(receipt_path.read_text())
@@ -525,7 +829,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         (self.mission / "features.json").write_text(json.dumps(features, indent=2) + "\n")
         self.git("add", "docs/missions/fixture/features.json")
         self.git("commit", "-qm", "reopen fixture feature")
-        changed = self.invoke(worker_args, env={"PROVIDER_ACTION": "dirty"})
+        changed = self.invoke(worker_args, env={"PROVIDER_ACTION": "commit"})
         self.assertEqual(changed.returncode, 0, changed.stderr + changed.stdout)
         run_id = next(path.stem for path in (self.root / ".tasks/receipts").glob("*.json")
                       if json.loads(path.read_text())["role"] == "worker" and json.loads(path.read_text())["workspace_changed"])
@@ -565,6 +869,24 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                 result = self.invoke(verify)
                 self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
                 restore()
+
+    def test_real_uncommitted_worker_run_is_refused_by_worktree_verifier(self):
+        self.write_fleet("codex", "model", "medium", "unknown", include_brain=True)
+        brain = self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"])
+        self.assertEqual(brain.returncode, 0, brain.stderr + brain.stdout)
+        worker = self.invoke(
+            ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+             "--model", "model", "--feature", "F001"],
+            env={"PROVIDER_ACTION": "dirty"},
+        )
+        self.assertEqual(worker.returncode, 0, worker.stderr + worker.stdout)
+        run_id = next(path.stem for path in (self.root / ".tasks/receipts").glob("*.json")
+                      if json.loads(path.read_text())["role"] == "worker"
+                      and json.loads(path.read_text())["workspace_changed"])
+        verified = self.invoke(["bash", "scripts/verify-mission.sh", "--run-id", run_id, "docs/missions/fixture"])
+        self.assertNotEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        self.assertIn("worktree verification needs a clean receipt git_after", verified.stderr + verified.stdout)
+        self.assertFalse((self.mission / "verification" / f"{run_id}.json").exists())
 
     @staticmethod
     def _rewrite_receipt(path, receipt, **changes):
@@ -767,7 +1089,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         first = subprocess.Popen(base, cwd=self.root, env=launch_env, text=True,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         invoked = self.root / ".tasks/invoked.json"
-        deadline = time.time() + 5
+        deadline = time.time() + 60
         while not invoked.exists() and time.time() < deadline:
             time.sleep(0.02)
         self.assertTrue(invoked.exists(), "first provider did not start")
@@ -779,7 +1101,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertEqual(invoked.read_bytes(), first_invocation)
         self.assertEqual(list((self.root / ".tasks/specs").glob("*.json")), specs_before)
         release.touch()
-        stdout, stderr = first.communicate(timeout=5)
+        stdout, stderr = first.communicate(timeout=60)
         self.assertEqual(first.returncode, 0, stderr + stdout)
         self.assert_no_lock()
 
@@ -790,7 +1112,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         launch_env["PROVIDER_CHILD_PID_PATH"] = str(child_pid_path)
         interrupted = subprocess.Popen(base, cwd=self.root, env=launch_env, text=True,
                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        deadline = time.time() + 5
+        deadline = time.time() + 60
         while (not invoked.exists() or not child_pid_path.exists()) and time.time() < deadline:
             time.sleep(0.02)
         self.assertTrue(invoked.exists(), "interrupted provider did not start")
@@ -798,7 +1120,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         provider_pid = json.loads(invoked.read_text())["pid"]
         child_pid = int(child_pid_path.read_text())
         interrupted.terminate()
-        interrupted.communicate(timeout=5)
+        interrupted.communicate(timeout=60)
         self.assertNotEqual(interrupted.returncode, 0)
         interrupted_receipts = list((self.root / ".tasks/receipts").glob("*.json"))
         self.assertEqual(len(interrupted_receipts), 1)
@@ -816,7 +1138,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         original_worker = worker.read_text()
         worker_gate = '''POLICY_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-worker \\
   --root "$ROOT" --workspace "$WORKSPACE" --mission "$MISSION" --fleet "$FLEET" \\
-  --task "$TASK_ABS" --feature "$FEATURE" --work-unit "$BASE")" || exit $?
+  --task "$TASK_ABS" --feature "$FEATURE" --work-unit "$BASE" --provider "$WORKER")" || exit $?
 '''
         self.assertIn(worker_gate, original_worker)
         worker.write_text(original_worker.replace(worker_gate, "POLICY_JSON='{\"write_scope\":[\"allowed.txt\"]}'\n", 1))
@@ -874,12 +1196,1101 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         spec, _, _, invoked = self.linked(role="worker", provider="codex", model="frozen", effort="medium", speed="unknown", work_unit="T-002", feature="F002")
         self.assertEqual(invoked["argv"], self.expected_argv("codex", "frozen", "medium", "unknown", spec["prompt"]))
 
+    def write_allow_list_task(self, task_id, patterns):
+        lines = [
+            "---",
+            f"task_id: {task_id}",
+            "feature: F001",
+            "---",
+            "# Task",
+            "",
+            "## Files you MAY touch",
+        ]
+        for pattern in patterns:
+            lines.append(f"- `{pattern}`")
+        lines.extend(["", "## Verification commands", "", '- `["true"]`', ""])
+        path = self.task.parent / f"{task_id}.md"
+        path.write_text("\n".join(lines))
+        self.commit_fixture(f"task {task_id}")
+        return f"docs/missions/fixture/tasks/{task_id}.md"
+
+    def fixture_registry_codex_agents_write_denied(self):
+        self.fixture_registry_write_denied("codex", [".agents/"])
+
+    def fixture_registry_write_denied(self, provider, prefixes):
+        registry_path = self.root / "harness-registry.json"
+        data = json.loads(registry_path.read_text())
+        data["providers"][provider]["sandbox_limits"]["write_denied_prefixes"] = prefixes
+        registry_path.write_text(json.dumps(data, indent=2) + "\n")
+        self.commit_fixture("fixture codex .agents/ write_denied_prefixes")
+
+    def assert_prelaunch_refused(self, result, *, provider, prefix, pattern):
+        self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn(
+            f"ERROR: seat limit: {provider} cannot write {prefix} (allow-list: {pattern}); "
+            "route this task to another seat",
+            result.stderr,
+        )
+        self.assert_no_run_artifacts()
+        self.clean_runs()
+
+    def test_v2_worker_records_exactly_one_drift_event_for_changed_inventory(self):
+        self.set_status("in-progress")
+        self.write_v2_fleet_and_inventory("gpt-5.6-luna")
+        base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--feature", "F001", "--effort", "medium", "--speed", "unknown"]
+        first = self.invoke(base)
+        self.assertEqual(first.returncode, 0, first.stderr + first.stdout)
+        self.write_v2_fleet_and_inventory("gpt-5.7-luna")
+        second = self.invoke(base)
+        self.assertEqual(second.returncode, 0, second.stderr + second.stdout)
+        drift_path = self.root / ".tasks/drift/fixture.jsonl"
+        events = [json.loads(line) for line in drift_path.read_text().splitlines()]
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["from"]["model"], "gpt-5.6-luna")
+        self.assertEqual(events[0]["to"]["model"], "gpt-5.7-luna")
+
+        folded = self.invoke([sys.executable, "scripts/ledger.py", "fold", "docs/missions/fixture"])
+        self.assertEqual(folded.returncode, 0, folded.stderr + folded.stdout)
+        self.assertEqual(folded.stdout.strip(), "folded rows=2 drift=1")
+        again = self.invoke([sys.executable, "scripts/ledger.py", "fold", "docs/missions/fixture"])
+        self.assertEqual(again.returncode, 0, again.stderr + again.stdout)
+        self.assertEqual(again.stdout.strip(), "folded rows=0 drift=0")
+        self.git("add", "docs/missions")
+        self.git("commit", "-qm", "fold drift fixture")
+
+        third = self.invoke(base)
+        self.assertEqual(third.returncode, 0, third.stderr + third.stdout)
+        self.assertEqual(len(drift_path.read_text().splitlines()), 1)
+
+    def test_v2_brain_never_resolves_to_agy_opus(self):
+        """Native-only (F013): a legacy brain seat with an agy door never resolves to a Claude model on agy."""
+        self.set_status("in-progress")
+        agy_models = ["gemini-3.8-flash-low", "claude-opus-5-5-low", "claude-opus-5-5-medium", "claude-opus-5-5-high",
+                      "claude-sonnet-5-5-high", "gemini-4-argon-high"]
+        brain = ["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"]
+        drift_path = self.root / ".tasks/drift/fixture.jsonl"
+        # A healthy native Claude door resolves normally and writes no drift event.
+        self.write_v2_brain_fleet_and_inventory(claude_ok=True, agy_models=agy_models)
+        stays = self.invoke(brain)
+        self.assertEqual(stays.returncode, 0, stays.stderr + stays.stdout)
+        self.linked(role="brain", provider="claude", model="opus", effort="high", speed="unknown",
+                    work_unit="review", feature=None)
+        self.assertFalse(drift_path.exists())
+        self.drop_run_artifacts()
+
+        # A foreign agy model cannot satisfy the legacy Opus seat when Claude is down.
+        self.drop_run_artifacts()
+        self.write_v2_brain_fleet_and_inventory(claude_ok=False, agy_models=["claude-opus-5-5-high"])
+        refused = self.invoke(brain)
+        self.assertNotEqual(refused.returncode, 0, refused.stderr + refused.stdout)
+        self.assertIn("ERROR: fleet seat resolved as unavailable", refused.stderr)
+        self.assertFalse((self.root / ".tasks/invoked.json").exists())
+        for dirname in ("specs", "logs", "receipts", "locks"):
+            path = self.root / ".tasks" / dirname
+            self.assertFalse(list(path.glob("*")) if path.exists() else [], dirname)
+        self.assertFalse(drift_path.exists())
+
+    def test_v2_worker_fails_before_artifacts_when_drift_directory_is_unwritable(self):
+        self.set_status("in-progress")
+        self.write_v2_fleet_and_inventory("gpt-5.6-luna")
+        base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--feature", "F001", "--effort", "medium", "--speed", "unknown"]
+        initial = self.invoke(base)
+        self.assertEqual(initial.returncode, 0, initial.stderr + initial.stdout)
+        self.write_v2_fleet_and_inventory("gpt-5.7-luna")
+        for dirname in ("locks", "specs", "logs", "receipts"):
+            shutil.rmtree(self.root / ".tasks" / dirname, ignore_errors=True)
+        drift_dir = self.root / ".tasks/drift"
+        drift_dir.mkdir(parents=True)
+        drift_dir.chmod(0o500)
+        rejected = self.invoke(base)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("ERROR: drift event could not be written", rejected.stderr)
+        tasks = self.root / ".tasks"
+        for dirname in ("locks", "specs", "logs", "receipts"):
+            self.assertFalse(list((tasks / dirname).glob("*")) if (tasks / dirname).exists() else [])
+        drift_dir.chmod(0o700)
+        self.clean_runs()
+
+    def test_v2_worker_refuses_model_effort_and_speed_flags_that_differ_from_the_seat(self):
+        self.set_status("in-progress")
+        base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--feature", "F001"]
+        mismatches = (
+            (["--model", "gpt-5.7-luna", "--effort", "medium", "--speed", "unknown"], "ERROR: fleet model assertion failed"),
+            (["--model", "gpt-5.6-luna", "--effort", "high", "--speed", "unknown"], "ERROR: fleet effort assertion failed"),
+            (["--model", "gpt-5.6-luna", "--effort", "medium", "--speed", "fast"], "ERROR: fleet speed assertion failed"),
+        )
+        for flags, message in mismatches:
+            with self.subTest(flags=flags):
+                # clean_runs() removes .tasks, which holds the inventory, so each case rebuilds the fixture.
+                self.write_v2_fleet_and_inventory("gpt-5.6-luna")
+                result = self.invoke(base + flags)
+                self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+                self.assertIn(message, result.stderr)
+                self.assert_no_run_artifacts()
+                self.clean_runs()
+
+    def test_v2_worker_refuses_a_seat_whose_family_has_no_available_model(self):
+        self.set_status("in-progress")
+        # codex observes only a sol model, so the seat's luna family is absent and must not be guessed.
+        self.write_v2_fleet_and_inventory("gpt-5.6-sol")
+        base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--feature", "F001", "--effort", "medium", "--speed", "unknown"]
+        result = self.invoke(base)
+        self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("ERROR: fleet seat resolved as unavailable", result.stderr)
+        self.assert_no_run_artifacts()
+        self.assertFalse((self.root / ".tasks/drift/fixture.jsonl").exists())
+        self.clean_runs()
+
+    def assert_no_run_artifacts(self):
+        tasks = self.root / ".tasks"
+        self.assertFalse((tasks / "invoked.json").exists())
+        self.assertFalse(list((tasks / "specs").glob("*.json")) if (tasks / "specs").is_dir() else [])
+        self.assertFalse(list((tasks / "logs").glob("*.log")) if (tasks / "logs").is_dir() else [])
+        self.assertFalse(list((tasks / "receipts").glob("*.json")) if (tasks / "receipts").is_dir() else [])
+        self.assertFalse(list((tasks / "locks").glob("*.lock")) if (tasks / "locks").is_dir() else [])
+
+    def test_worker_refuses_allow_lists_that_hit_provider_write_limits(self):
+        self.fixture_registry_codex_agents_write_denied()
+        self.write_fleet("codex", "test", "medium", "unknown")
+        opts = ["--model", "test", "--feature", "F001", "--effort", "medium"]
+        refused = [".agents/skills/x/SKILL.md", "**", ".agents/**", ".agents/*",
+                   "*/skills/x/SKILL.md", "**/SKILL.md", "?agents/x.md", ".age*/x.md",
+                   ".*/skills/**"]
+        for index, pattern in enumerate(refused):
+            with self.subTest(refused_pattern=pattern):
+                task = self.write_allow_list_task(f"T-refuse-{index}", [pattern])
+                result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", task, *opts])
+                self.assert_prelaunch_refused(result, provider="codex", prefix=".agents/", pattern=pattern)
+
+        for index, pattern in enumerate(["docs/x.md", "docs/**", ".agentsx/y.md", ".agents"]):
+            with self.subTest(passing_pattern=pattern):
+                task = self.write_allow_list_task(f"T-pass-{index}", [pattern])
+                result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", task, *opts])
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                spec, _, _, _ = self.linked(role="worker", provider="codex", model="test", effort="medium",
+                                            speed="unknown", work_unit=f"T-pass-{index}", feature="F001")
+                if pattern == "docs/x.md":
+                    self.assertEqual(spec["write_scope"], ["docs/x.md"])
+                self.clean_runs()
+
+        for index, pattern in enumerate(["./docs/x.md", "./.agents/skills/x/SKILL.md"]):
+            for provider in ("codex", "claude"):
+                with self.subTest(dot_pattern=pattern, provider=provider):
+                    task = self.write_allow_list_task(f"T-dot-{index}-{provider}", [pattern])
+                    self.write_fleet(provider, "test" if provider == "codex" else "haiku", "medium", "unknown",
+                                     seat_name=f"{provider}.economy")
+                    result = self.invoke(["bash", "scripts/spawn-worker.sh", provider, task,
+                                          "--model", "test" if provider == "codex" else "haiku",
+                                          "--feature", "F001", "--effort", "medium"])
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("write_scope entries must not contain empty, dot, or parent segments", result.stderr)
+                    self.assert_no_run_artifacts()
+                    self.clean_runs()
+
+        self.fixture_registry_write_denied("codex", ["./.agents/"])
+        task = self.write_allow_list_task("T-prefix-dot", [".agents/skills/x/SKILL.md"])
+        result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", task, *opts])
+        self.assert_prelaunch_refused(result, provider="codex", prefix="./.agents/", pattern=".agents/skills/x/SKILL.md")
+
+        self.fixture_registry_write_denied("codex", ["./"])
+        task = self.write_allow_list_task("T-prefix-empty", ["docs/x.md"])
+        result = self.invoke(["bash", "scripts/spawn-worker.sh", "codex", task, *opts])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("normalizes to empty and would refuse every task", result.stderr)
+        self.assert_no_run_artifacts()
+        self.clean_runs()
+
+        self.fixture_registry_write_denied("codex", [])
+        self.write_fleet("claude", "haiku", "medium", "unknown", seat_name="claude.economy")
+        agents_task = self.write_allow_list_task("T-claude", [".agents/skills/x/SKILL.md"])
+        result = self.invoke(["bash", "scripts/spawn-worker.sh", "claude", agents_task,
+                             "--model", "haiku", "--feature", "F001", "--effort", "medium"])
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.clean_runs()
+
+        self.fixture_registry_write_denied("cursor", [".agents/"])
+        self.write_fleet("agent", "cursor-test", "medium", "fast", tier="economy", seat_name="cursor.economy")
+        cursor_task = self.write_allow_list_task("T-cursor-limit", [".agents/skills/x/SKILL.md"])
+        result = self.invoke(["bash", "scripts/spawn-worker.sh", "cursor", cursor_task,
+                             "--model", "cursor-test", "--feature", "F001", "--effort", "medium", "--speed", "fast"])
+        self.assert_prelaunch_refused(result, provider="cursor", prefix=".agents/", pattern=".agents/skills/x/SKILL.md")
+
+    def install_fixture_emitting_provider(self, provider, fixture_name):
+        binary = "cursor-agent" if provider == "agent" else provider
+        fixture = OBSERVE_FIXTURES / fixture_name
+        path = self.bin / binary
+        path.write_text(
+            f"""#!/usr/bin/env python3
+import json, os, pathlib, sys
+specs = list(pathlib.Path('.tasks/specs').glob('*.json'))
+pathlib.Path('.tasks/invoked.json').write_text(json.dumps({{
+    'provider': pathlib.Path(sys.argv[0]).name,
+    'argv': sys.argv[1:],
+    'spec_existed': bool(specs),
+    'lock_existed': pathlib.Path(os.environ.get('PURRFECT_DISPATCH_LOCK_PATH', '')).is_dir(),
+    'python_dont_write_bytecode': os.environ.get('PYTHONDONTWRITEBYTECODE'),
+}}))
+sys.stdout.buffer.write(pathlib.Path({json.dumps(str(fixture))}).read_bytes())
+sys.stdout.buffer.flush()
+raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
+"""
+        )
+        path.chmod(0o755)
+
+    def test_receipt_observation_matches_cli_fixture_output(self):
+        cases = [
+            ("codex", "codex.jsonl", "codex-model", "medium", "unknown"),
+            ("claude", "claude.json", "claude-model", "medium", "unknown"),
+            ("agent", "cursor.jsonl", "composer-2.5", "medium", "standard"),
+            ("agent", "cursor-no-init-model.jsonl", "composer-2.5", "medium", "standard"),
+        ]
+        for provider, fixture_name, model, effort, speed in cases:
+            with self.subTest(provider=provider, fixture=fixture_name):
+                self.install_fixture_emitting_provider(provider, fixture_name)
+                self.write_fleet(provider, model, effort, speed)
+                result = self.invoke([
+                    "bash", "scripts/spawn-worker.sh", provider, "docs/missions/fixture/tasks/T-001.md",
+                    "--model", model, "--effort", effort, "--speed", speed, "--feature", "F001",
+                ])
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                observe_name = "cursor" if provider == "agent" else provider
+                expected = observe(observe_name, (OBSERVE_FIXTURES / fixture_name).read_bytes())
+                receipt = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())
+                self.assertEqual(receipt["observation"], expected)
+                if fixture_name == "cursor.jsonl":
+                    self.assertEqual(receipt["observation"]["observed_model"]["value"], "composer-2.5")
+                    self.assertNotEqual(receipt["model"], "Composer 2.5")
+                if fixture_name == "codex.jsonl":
+                    self.assertEqual(receipt["observation"]["observed_model"]["source"], "unknown")
+                self.clean_runs()
+
+    def test_stall_watchdog_stops_silent_providers_for_worker_and_brain(self):
+        self.write_fleet("codex", "stall-model", "medium", "unknown", include_brain=True)
+        self.set_status("in-progress")
+        worker = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                  "--model", "stall-model", "--feature", "F001"]
+        brain = ["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"]
+        silent = {"PROVIDER_WAIT_FOR": str(self.parent / "never")}
+        cases = [
+            ("worker silent since launch", worker, {**silent, "SPAWN_WORKER_STALL_SECS": "0.3",
+                                                     "SPAWN_WORKER_TIMEOUT_SECS": "5"},
+             "STALL: no provider output for 0.3 s since launch; run stopped"),
+            ("worker silent after one line", worker, {**silent, "PROVIDER_PRINT": "hello",
+                                                       "SPAWN_WORKER_IDLE_SECS": "0.3",
+                                                       "SPAWN_WORKER_TIMEOUT_SECS": "5"},
+             "STALL: no provider output for 0.3 s after its last output; run stopped"),
+            ("silent brain", brain, {**silent, "SPAWN_BRAIN_STALL_SECS": "0.3",
+                                     "SPAWN_BRAIN_TIMEOUT_SECS": "5"},
+             "STALL: no provider output for 0.3 s since launch; run stopped"),
+        ]
+        for label, command, env, line in cases:
+            with self.subTest(case=label):
+                result = self.invoke(command, env=env)
+                self.assertEqual(result.returncode, 123, result.stderr + result.stdout)
+                receipt_path = next((self.root / ".tasks/receipts").glob("*.json"))
+                receipt = json.loads(receipt_path.read_text())
+                self.assertEqual(receipt["outcome"], "stalled")
+                valid = self.invoke([sys.executable, "scripts/execution_receipt.py", "validate",
+                                     "--receipt", str(receipt_path)])
+                self.assertEqual(valid.returncode, 0, valid.stderr)
+                self.assertIn(line + "\n", self.log_text(receipt["run_id"]))
+                row = json.loads((self.root / ".tasks/ledger" / f"{receipt['run_id']}.json").read_text())
+                self.assertEqual(row["outcome"], "stalled")
+                self.clean_runs()
+        with self.subTest(case="ticking worker completes"):
+            result = self.invoke(worker, env={"PROVIDER_TICKS": "25", "SPAWN_WORKER_STALL_SECS": "30",
+                                              "SPAWN_WORKER_IDLE_SECS": "1",
+                                              "SPAWN_WORKER_TIMEOUT_SECS": "60"})
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            receipt = self.latest_receipt()
+            self.assertEqual(receipt["outcome"], "completed")
+            self.assertEqual(self.log_text(receipt["run_id"]).count("tick\n"), 25)
+
+    def test_zero_turn_output_turns_a_completed_run_into_a_failure(self):
+        cases = [
+            ("claude", "claude-zero-turns.json"),
+            ("codex", "codex-no-turn.jsonl"),
+            ("agent", "cursor-zero-tokens.jsonl"),
+        ]
+        for provider, fixture_name in cases:
+            with self.subTest(provider=provider):
+                self.install_fixture_emitting_provider(provider, fixture_name)
+                speed = "standard" if provider == "agent" else "unknown"
+                self.write_fleet(provider, "zero-model", "medium", speed)
+                result = self.invoke([
+                    "bash", "scripts/spawn-worker.sh", provider, "docs/missions/fixture/tasks/T-001.md",
+                    "--model", "zero-model", "--effort", "medium", "--speed", speed, "--feature", "F001",
+                ])
+                self.assertEqual(result.returncode, 122, result.stderr + result.stdout)
+                receipt = self.latest_receipt()
+                self.assertEqual(receipt["outcome"], "failed")
+                self.assertIn("NO-TURN: provider output shows 0 turns; completed run recorded as failed\n",
+                              self.log_text(receipt["run_id"]))
+                self.clean_runs()
+
+    def test_runner_and_wrappers_refuse_negative_and_non_finite_timing_values(self):
+        for flag in ("--timeout", "--stall-seconds", "--idle-seconds"):
+            for bad in ("nan", "inf", "-inf"):
+                with self.subTest(flag=flag, bad=bad):
+                    p = self.invoke([
+                        sys.executable, "scripts/execution_runner.py",
+                        "--spec", "s", "--spec-sha256", "h", "--log", "l",
+                        f"{flag}={bad}",
+                    ])
+                    self.assertEqual(p.returncode, 2, p.stderr)
+                    self.assertIn("ERROR: timeout, stall and idle seconds must be finite numbers", p.stderr)
+
+        negative_cases = [
+            ("--timeout", "ERROR: timeout cannot be negative"),
+            ("--stall-seconds", "ERROR: stall and idle seconds cannot be negative"),
+            ("--idle-seconds", "ERROR: stall and idle seconds cannot be negative"),
+        ]
+        for flag, msg in negative_cases:
+            with self.subTest(flag=flag):
+                p = self.invoke([
+                    sys.executable, "scripts/execution_runner.py",
+                    "--spec", "s", "--spec-sha256", "h", "--log", "l",
+                    flag, "-1",
+                ])
+                self.assertEqual(p.returncode, 2, p.stderr)
+                self.assertIn(msg, p.stderr)
+
+        self.write_fleet("codex", "fixture-model", "medium", "unknown", include_brain=True)
+        self.set_status("in-progress")
+        worker_cmd = [
+            "bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+            "--model", "fixture-model", "--feature", "F001",
+        ]
+        brain_cmd = ["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"]
+
+        for cmd, prefix in ((worker_cmd, "SPAWN_WORKER"), (brain_cmd, "SPAWN_BRAIN")):
+            for suffix in ("TIMEOUT_SECS", "STALL_SECS", "IDLE_SECS"):
+                name = f"{prefix}_{suffix}"
+                for bad in ("-1", "nan", "inf", "abc", "1.", ".5"):
+                    with self.subTest(var=name, bad=bad):
+                        p = self.invoke(cmd, env={name: bad})
+                        self.assertEqual(p.returncode, 2, p.stderr + p.stdout)
+                        self.assertIn(f"ERROR: {name} must be a non-negative number", p.stderr)
+                        self.assert_no_run_artifacts()
+                        self.clean_runs()
+
+        for val in ("0", "30.25"):
+            with self.subTest(valid_timeout=val):
+                p = self.invoke(worker_cmd, env={"SPAWN_WORKER_TIMEOUT_SECS": val})
+                self.assertEqual(p.returncode, 0, p.stderr + p.stdout)
+                self.clean_runs()
+
+    def test_non_completed_runs_with_zero_turn_output_are_not_reclassified_as_no_turn(self):
+        fixture = OBSERVE_FIXTURES / "claude-zero-turns.json"
+        path = self.bin / "claude"
+        path.write_text(
+            f"""#!/usr/bin/env python3
+import json, os, pathlib, sys, time
+specs = list(pathlib.Path('.tasks/specs').glob('*.json'))
+pathlib.Path('.tasks/invoked.json').write_text(json.dumps({{
+    'provider': pathlib.Path(sys.argv[0]).name,
+    'argv': sys.argv[1:],
+    'spec_existed': bool(specs),
+    'lock_existed': pathlib.Path(os.environ.get('PURRFECT_DISPATCH_LOCK_PATH', '')).is_dir(),
+    'python_dont_write_bytecode': os.environ.get('PYTHONDONTWRITEBYTECODE'),
+}}))
+sys.stdout.buffer.write(pathlib.Path({json.dumps(str(fixture))}).read_bytes())
+sys.stdout.buffer.flush()
+wait_for = os.environ.get('PROVIDER_WAIT_FOR')
+if wait_for:
+    while not pathlib.Path(wait_for).exists():
+        time.sleep(0.02)
+raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
+"""
+        )
+        path.chmod(0o755)
+
+        self.write_fleet("claude", "claude-model", "medium", "unknown")
+        self.set_status("in-progress")
+        worker_cmd = [
+            "bash", "scripts/spawn-worker.sh", "claude", "docs/missions/fixture/tasks/T-001.md",
+            "--model", "claude-model", "--effort", "medium", "--speed", "unknown", "--feature", "F001",
+        ]
+
+        # 1. failed
+        result = self.invoke(worker_cmd, env={"PROVIDER_EXIT": "7"})
+        self.assertEqual(result.returncode, 7, result.stderr + result.stdout)
+        receipt = self.latest_receipt()
+        self.assertEqual(receipt["outcome"], "failed")
+        self.assertEqual(receipt["exit_code"], 7)
+        self.assertNotIn("NO-TURN:", self.log_text(receipt["run_id"]))
+        self.clean_runs()
+
+        # 2. stalled
+        never = str(self.parent / "never")
+        result = self.invoke(worker_cmd, env={
+            "PROVIDER_WAIT_FOR": never,
+            "SPAWN_WORKER_IDLE_SECS": "0.3",
+            "SPAWN_WORKER_TIMEOUT_SECS": "5",
+        })
+        self.assertEqual(result.returncode, 123, result.stderr + result.stdout)
+        receipt = self.latest_receipt()
+        self.assertEqual(receipt["outcome"], "stalled")
+        self.assertEqual(receipt["exit_code"], 123)
+        self.assertNotIn("NO-TURN:", self.log_text(receipt["run_id"]))
+        self.clean_runs()
+
+        # 3. timed out
+        result = self.invoke(worker_cmd, env={
+            "PROVIDER_WAIT_FOR": never,
+            "SPAWN_WORKER_TIMEOUT_SECS": "0.2",
+            "SPAWN_WORKER_IDLE_SECS": "0",
+            "SPAWN_WORKER_STALL_SECS": "0",
+        })
+        self.assertEqual(result.returncode, 124, result.stderr + result.stdout)
+        receipt = self.latest_receipt()
+        self.assertEqual(receipt["outcome"], "timed_out")
+        self.assertEqual(receipt["exit_code"], 124)
+        self.assertNotIn("NO-TURN:", self.log_text(receipt["run_id"]))
+        self.clean_runs()
+
+    def test_outcome_enums_match_across_runner_receipt_ledger_and_schemas(self):
+        import execution_receipt
+        import ledger
+
+        expected_outcomes = ("completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed")
+        receipt_schema = json.loads((ROOT / "schemas/execution-receipt.schema.json").read_text(encoding="utf-8"))
+        receipt_enum = receipt_schema["$defs"]["receiptBody"]["properties"]["outcome"]["enum"]
+        ledger_schema = json.loads((ROOT / "schemas/ledger-row.schema.json").read_text(encoding="utf-8"))
+        ledger_enum = ledger_schema["properties"]["outcome"]["enum"]
+
+        self.assertEqual(tuple(ledger.OUTCOMES), expected_outcomes)
+        self.assertEqual(tuple(receipt_enum), expected_outcomes)
+        self.assertEqual(tuple(ledger_enum), expected_outcomes)
+
+        runner_code = (ROOT / "scripts/execution_runner.py").read_text(encoding="utf-8")
+        runner_outcomes = set(re.findall(r'"(completed|failed|timed_out|stalled|interrupted|launch_failed)"', runner_code))
+        self.assertEqual(execution_receipt.OUTCOMES, set(ledger.OUTCOMES))
+        self.assertEqual(runner_outcomes, set(ledger.OUTCOMES))
+
+    def test_failed_run_still_writes_receipt_observation(self):
+        self.install_fixture_emitting_provider("codex", "codex.jsonl")
+        self.write_fleet("codex", "codex-model", "medium", "unknown")
+        result = self.invoke([
+            "bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+            "--model", "codex-model", "--feature", "F001",
+        ], env={"PROVIDER_EXIT": "7"})
+        self.assertEqual(result.returncode, 7, result.stderr + result.stdout)
+        receipt = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())
+        self.assertEqual(receipt["outcome"], "failed")
+        self.assertEqual(receipt["observation"], observe("codex", (OBSERVE_FIXTURES / "codex.jsonl").read_bytes()))
+
+    def test_closed_stdin_finishes_eof_reading_provider(self):
+        (self.bin / "codex").write_text("#!/usr/bin/env bash\nwhile IFS= read -r _; do :; done\nexit 0\n")
+        (self.bin / "codex").chmod(0o755)
+        self.write_fleet("codex", "stdin-model", "medium", "unknown")
+        result = self.invoke([
+            "bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+            "--model", "stdin-model", "--feature", "F001",
+        ], env={"SPAWN_WORKER_TIMEOUT_SECS": "30"})
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertNotEqual(result.returncode, 124, result.stderr + result.stdout)
+
+    def assert_ledger_row_hygiene(self, run_id):
+        ledger_path = self.root / ".tasks/ledger" / f"{run_id}.json"
+        self.assertTrue(ledger_path.is_file(), f"missing ledger row for {run_id}")
+        valid = self.invoke([sys.executable, "scripts/ledger.py", "validate", str(ledger_path)])
+        self.assertEqual(valid.returncode, 0, valid.stderr + valid.stdout)
+        self.assertEqual(self.git("status", "--porcelain").stdout, "")
+        for rel in (f".tasks/logs/{run_id}.log", f".tasks/ledger/{run_id}.json"):
+            ignored = self.invoke(["bash", "-c", f"git check-ignore -q {rel}"])
+            self.assertEqual(ignored.returncode, 0, rel)
+        dry = self.invoke(["bash", "-c", "git add -A --dry-run"])
+        self.assertEqual(dry.returncode, 0, dry.stderr)
+        self.assertNotIn(".tasks/", dry.stdout)
+
+    def ledger_worker_base(self):
+        return ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                "--model", "ledger-model", "--feature", "F001"]
+
+    def latest_receipt(self):
+        return json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())
+
+    def log_text(self, run_id):
+        return (self.root / ".tasks/logs" / f"{run_id}.log").read_text()
+
+    def assert_terminal_run_hygiene(self, result, *, expected_exit):
+        self.assertEqual(result.returncode, expected_exit, result.stderr + result.stdout)
+        self.assertIn("receipt=", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def mutate_runner_once(self, old, new):
+        runner = self.root / "scripts/execution_runner.py"
+        original = runner.read_text()
+        mutant = original.replace(old, new, 1)
+        self.assertNotEqual(mutant, original, f"mutation pattern not found: {old[:40]!r}")
+        runner.write_text(mutant)
+        self.commit_fixture("ledger runner mutation")
+        return original
+
+    def restore_runner(self, original):
+        (self.root / "scripts/execution_runner.py").write_text(original)
+        self.commit_fixture("restore ledger runner")
+
+    def commit_codex_hostile_pool_registry(self, pool_value):
+        registry_path = self.root / "harness-registry.json"
+        registry = json.loads(registry_path.read_text())
+        registry["doors"]["codex"]["pool"] = pool_value
+        registry_path.write_text(json.dumps(registry))
+        self.commit_fixture("hostile committed registry")
+
+    def prove_runner_mutation_fails(self, old, new=None, check=None):
+        if check is None and callable(new):
+            replacements = old
+            check = new
+        else:
+            replacements = [(old, new)]
+        runner = self.root / "scripts/execution_runner.py"
+        original = runner.read_text()
+        mutant = original
+        for pattern, replacement in replacements:
+            mutant = mutant.replace(pattern, replacement, 1)
+            self.assertNotEqual(mutant, original, f"mutation pattern not found: {pattern[:40]!r}")
+        runner.write_text(mutant)
+        self.commit_fixture("ledger runner mutation")
+        try:
+            with self.assertRaises(AssertionError):
+                check()
+        finally:
+            self.restore_runner(original)
+
+    def run_id_from_output(self, result):
+        combined = result.stdout + result.stderr
+        match = re.search(r"run_id=([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})", combined)
+        self.assertIsNotNone(match, combined)
+        return match.group(1)
+
+    def assert_ledger_warn_without_row(self, result, run_id, *, hostile=None):
+        self.assert_terminal_run_hygiene(result, expected_exit=0)
+        log = self.log_text(run_id)
+        self.assertIn("WARN: ledger row not written:", log)
+        self.assertFalse((self.root / ".tasks/ledger" / f"{run_id}.json").is_file())
+        combined = result.stdout + result.stderr + log
+        if hostile is not None:
+            self.assertNotIn(hostile, combined)
+
+    def test_ledger_readonly_directory_warns_without_changing_outcome(self):
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        ledger_dir = self.root / ".tasks" / "ledger"
+        ledger_dir.mkdir(parents=True)
+        os.chmod(ledger_dir, 0o555)
+        result = self.invoke(self.ledger_worker_base())
+        run_id = self.latest_receipt()["run_id"]
+        self.assert_ledger_warn_without_row(result, run_id)
+
+        def check():
+            self.clean_runs()
+            ledger_dir = self.root / ".tasks" / "ledger"
+            ledger_dir.mkdir(parents=True)
+            os.chmod(ledger_dir, 0o555)
+            retry = self.invoke(self.ledger_worker_base())
+            self.assert_ledger_warn_without_row(retry, self.latest_receipt()["run_id"])
+
+        self.prove_runner_mutation_fails(
+            "    except OSError:\n        warn_ledger(log, \"ledger: write failed\")\n"
+            "    except Exception:\n        warn_ledger(log, \"ledger: row build failed\")\n",
+            "    except OSError:\n        raise\n",
+            check,
+        )
+        self.clean_runs()
+
+    def test_ledger_validator_refusal_warns_without_leaking_value(self):
+        hostile = "/" + "tmp" + "/" + "h" + "ostile-pool"
+        self.commit_codex_hostile_pool_registry(hostile)
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        result = self.invoke(self.ledger_worker_base())
+        run_id = self.latest_receipt()["run_id"]
+        self.assert_ledger_warn_without_row(result, run_id, hostile=hostile)
+        self.assertIn("pool: privacy", self.log_text(run_id))
+
+        def check():
+            self.clean_runs()
+            self.commit_codex_hostile_pool_registry(hostile)
+            retry = self.invoke(self.ledger_worker_base())
+            self.assert_ledger_warn_without_row(retry, self.latest_receipt()["run_id"], hostile=hostile)
+
+        self.prove_runner_mutation_fails("        validate_row(row, door_names=frozenset(base_registry_doors(spec[\"repo\"], spec[\"base_commit\"])))\n", "", check)
+        self.clean_runs()
+
+    def test_ledger_registry_edited_during_run_does_not_change_row(self):
+        hostile = "/" + "tmp" + "/worker-pool-secret"
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        starting_commit = self.git("rev-parse", "HEAD").stdout.strip()
+        for edit in ("pool", "malformed", "commit"):
+            self.clean_runs()
+            self.git("reset", "--hard", starting_commit)
+            self.install_fixture_emitting_provider("codex", "codex.jsonl")
+            provider = self.bin / "codex"
+            source = provider.read_text()
+            if edit == "pool":
+                inject = ("registry = json.loads(pathlib.Path('harness-registry.json').read_text())\n"
+                          f"registry['doors']['codex']['pool'] = {json.dumps(hostile)}\n"
+                          "pathlib.Path('harness-registry.json').write_text(json.dumps(registry))\n")
+            elif edit == "malformed":
+                inject = "pathlib.Path('harness-registry.json').write_text('[1, 2, 3]\\n')\n"
+            else:
+                inject = ("registry = json.loads(pathlib.Path('harness-registry.json').read_text())\n"
+                          f"registry['doors']['codex']['pool'] = {json.dumps(hostile)}\n"
+                          "pathlib.Path('harness-registry.json').write_text(json.dumps(registry))\n"
+                          "subprocess.run(['git', 'add', 'harness-registry.json'], check=True)\n"
+                          "subprocess.run(['git', 'commit', '-qm', 'provider registry edit'], check=True)\n")
+            source = source.replace("sys.stdout.buffer.write", "import subprocess\n" + inject + "sys.stdout.buffer.write", 1)
+            provider.write_text(source)
+            result = self.invoke(self.ledger_worker_base())
+            run_id = self.latest_receipt()["run_id"]
+            self.assertIn("receipt=", result.stdout)
+            self.assertNotIn("Traceback", result.stderr)
+            log = self.log_text(run_id)
+            self.assertNotIn("WARN", log)
+            row_path = self.root / ".tasks/ledger" / f"{run_id}.json"
+            self.assertTrue(row_path.is_file(), edit)
+            row = json.loads(row_path.read_text())
+            self.assertEqual((row["door"], row["pool"], row["billing_class"]), ("codex", "openai", "included"))
+            self.assertNotIn(hostile, json.dumps(row) + log)
+        self.clean_runs()
+
+        self.git("reset", "--hard", starting_commit)
+
+        def malformed_worktree_check():
+            self.clean_runs()
+            self.install_fixture_emitting_provider("codex", "codex.jsonl")
+            provider = self.bin / "codex"
+            source = provider.read_text().replace(
+                "sys.stdout.buffer.write",
+                "pathlib.Path('harness-registry.json').write_text('[1, 2, 3]\\n')\nsys.stdout.buffer.write", 1,
+            )
+            provider.write_text(source)
+            result = self.invoke(self.ledger_worker_base())
+            self.assertIn("receipt=", result.stdout, result.stderr + result.stdout)
+            run_id = self.latest_receipt()["run_id"]
+            self.assertIn("receipt=", result.stdout)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertNotIn("WARN", self.log_text(run_id))
+            row_path = self.root / ".tasks/ledger" / f"{run_id}.json"
+            self.assertTrue(row_path.is_file())
+            row = json.loads(row_path.read_text())
+            self.assertEqual((row["door"], row["pool"], row["billing_class"]), ("codex", "openai", "included"))
+
+        self.prove_runner_mutation_fails(
+            '    doors = base_registry_doors(spec["repo"], spec["base_commit"])\n',
+            '    doors = json.loads((Path(spec["repo"]) / "harness-registry.json").read_text()).get("doors", {})\n',
+            malformed_worktree_check,
+        )
+        self.prove_runner_mutation_fails(
+            '        validate_row(row, door_names=frozenset(base_registry_doors(spec["repo"], spec["base_commit"])))\n',
+            '        validate_row(row)\n',
+            malformed_worktree_check,
+        )
+        self.clean_runs()
+
+    def test_ledger_registry_missing_at_base_gives_unknown_door(self):
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        with (self.root / ".gitignore").open("a") as handle:
+            handle.write("\nharness-registry.json\n")
+        self.invoke(["git", "rm", "--cached", "harness-registry.json"])
+        self.commit_fixture("untrack registry")
+        result = self.invoke(self.ledger_worker_base())
+        run_id = self.latest_receipt()["run_id"]
+        self.assert_terminal_run_hygiene(result, expected_exit=0)
+        self.assertNotIn("WARN", self.log_text(run_id))
+        row = json.loads((self.root / ".tasks/ledger" / f"{run_id}.json").read_text())
+        self.assertEqual((row["door"], row["pool"], row["billing_class"]), ("unknown", "unknown", "unknown"))
+
+        def check():
+            self.clean_runs()
+            self.invoke(["git", "rm", "--cached", "harness-registry.json"])
+            broken = self.invoke(self.ledger_worker_base())
+            run_id = self.latest_receipt()["run_id"]
+            self.assert_terminal_run_hygiene(broken, expected_exit=0)
+            row_path = self.root / ".tasks/ledger" / f"{run_id}.json"
+            self.assertTrue(row_path.is_file(), "expected a ledger row when the base registry is absent")
+            self.assertEqual(json.loads(row_path.read_text())["door"], "unknown")
+
+        self.prove_runner_mutation_fails(
+            "    if result.returncode != 0:\n        return {}\n",
+            "    if result.returncode != 0:\n        raise OSError()\n",
+            check,
+        )
+        self.clean_runs()
+
+    def test_ledger_unwritable_path_warns_without_changing_outcome(self):
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        tasks = self.root / ".tasks"
+        tasks.mkdir(parents=True, exist_ok=True)
+        (tasks / "ledger").write_text("not a directory\n")
+        result = self.invoke(self.ledger_worker_base())
+        run_id = self.latest_receipt()["run_id"]
+        self.assert_ledger_warn_without_row(result, run_id)
+
+        def check():
+            self.clean_runs()
+            tasks = self.root / ".tasks"
+            tasks.mkdir(parents=True, exist_ok=True)
+            (tasks / "ledger").write_text("not a directory\n")
+            retry = self.invoke(self.ledger_worker_base())
+            self.assert_ledger_warn_without_row(retry, self.latest_receipt()["run_id"])
+
+        self.prove_runner_mutation_fails(
+            "    except Exception:\n        warn_ledger(log, \"ledger: row build failed\")\n",
+            "",
+            check,
+        )
+        self.clean_runs()
+
+    def test_ledger_row_observed_model_matches_receipt_not_spec(self):
+        self.install_fixture_emitting_provider("agent", "cursor.jsonl")
+        spec_model = "spec-only-model-name"
+        self.write_fleet("agent", spec_model, "medium", "standard")
+        result = self.invoke([
+            "bash", "scripts/spawn-worker.sh", "agent", "docs/missions/fixture/tasks/T-001.md",
+            "--model", spec_model, "--effort", "medium", "--speed", "standard", "--feature", "F001",
+        ])
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        receipt = self.latest_receipt()
+        row = json.loads((self.root / ".tasks/ledger" / f"{receipt['run_id']}.json").read_text())
+        self.assertEqual(row["observed_model"], receipt["observation"]["observed_model"])
+        self.assertNotEqual(spec_model, receipt["observation"]["observed_model"]["value"])
+
+        def check():
+            self.clean_runs()
+            self.install_fixture_emitting_provider("agent", "cursor.jsonl")
+            self.write_fleet("agent", spec_model, "medium", "standard")
+            self.invoke([
+                "bash", "scripts/spawn-worker.sh", "agent", "docs/missions/fixture/tasks/T-001.md",
+                "--model", spec_model, "--effort", "medium", "--speed", "standard", "--feature", "F001",
+            ])
+            doc = self.latest_receipt()
+            row = json.loads((self.root / ".tasks/ledger" / f"{doc['run_id']}.json").read_text())
+            self.assertEqual(row["observed_model"], doc["observation"]["observed_model"])
+
+        self.prove_runner_mutation_fails(
+            '"observed_model": observed_model_flag,',
+            '"observed_model": {"value": spec["model"], "source": observed_model_flag["source"]},',
+            check,
+        )
+        self.clean_runs()
+
+    def test_ledger_row_diff_file_count_matches_receipt(self):
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        result = self.invoke(self.ledger_worker_base(), env={"PROVIDER_ACTION": "commit"})
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        receipt = self.latest_receipt()
+        row = json.loads((self.root / ".tasks/ledger" / f"{receipt['run_id']}.json").read_text())
+        self.assertEqual(row["diff_size"]["files"]["value"], len(receipt["changed_paths"]))
+
+        def check():
+            self.clean_runs()
+            self.write_fleet("codex", "ledger-model", "medium", "unknown")
+            self.invoke(self.ledger_worker_base(), env={"PROVIDER_ACTION": "commit"})
+            doc = self.latest_receipt()
+            row = json.loads((self.root / ".tasks/ledger" / f"{doc['run_id']}.json").read_text())
+            self.assertEqual(row["diff_size"]["files"]["value"], len(doc["changed_paths"]))
+
+        self.prove_runner_mutation_fails(
+            '"files": observed_number(len(receipt["changed_paths"])),',
+            '"files": observed_number(0),',
+            check,
+        )
+        self.clean_runs()
+
+    def test_ledger_row_token_counts_not_swapped(self):
+        self.install_fixture_emitting_provider("codex", "codex.jsonl")
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        result = self.invoke(self.ledger_worker_base())
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        receipt = self.latest_receipt()
+        usage = receipt["observation"]["usage"]
+        row = json.loads((self.root / ".tasks/ledger" / f"{receipt['run_id']}.json").read_text())
+        self.assertEqual(row["tokens_input"]["value"], usage["input"]["value"])
+        self.assertEqual(row["tokens_output"]["value"], usage["output"]["value"])
+        self.assertNotEqual(usage["input"]["value"], usage["output"]["value"])
+
+        def check():
+            self.clean_runs()
+            self.install_fixture_emitting_provider("codex", "codex.jsonl")
+            self.write_fleet("codex", "ledger-model", "medium", "unknown")
+            self.invoke(self.ledger_worker_base())
+            doc = self.latest_receipt()
+            usage = doc["observation"]["usage"]
+            row = json.loads((self.root / ".tasks/ledger" / f"{doc['run_id']}.json").read_text())
+            self.assertEqual(row["tokens_input"]["value"], usage["input"]["value"])
+            self.assertEqual(row["tokens_output"]["value"], usage["output"]["value"])
+
+        self.prove_runner_mutation_fails(
+            '"value": usage["input"]["value"],',
+            '"value": usage["output"]["value"],',
+            check,
+        )
+        self.clean_runs()
+
+    def test_ledger_second_write_same_run_id_does_not_replace_row(self):
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        result = self.invoke(self.ledger_worker_base())
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        receipt = self.latest_receipt()
+        row_path = self.root / ".tasks/ledger" / f"{receipt['run_id']}.json"
+        first_bytes = row_path.read_bytes()
+        retry = self.invoke([
+            sys.executable, "-c",
+            "import json, pathlib, sys; sys.path.insert(0, 'scripts'); "
+            "from execution_runner import write_ledger_row; "
+            f"spec = json.loads(pathlib.Path('.tasks/specs/{receipt['run_id']}.json').read_text()); "
+            f"receipt = json.loads(pathlib.Path('.tasks/receipts/{receipt['run_id']}.json').read_text()); "
+            "receipt['feature'] = 'F002'; "
+            f"write_ledger_row(spec, receipt, tier='economy', log=pathlib.Path('.tasks/logs/{receipt['run_id']}.log'))",
+        ])
+        self.assertEqual(retry.returncode, 0, retry.stderr + retry.stdout)
+        self.assertEqual(row_path.read_bytes(), first_bytes)
+
+        def check():
+            self.clean_runs()
+            self.write_fleet("codex", "ledger-model", "medium", "unknown")
+            self.invoke(self.ledger_worker_base())
+            doc = self.latest_receipt()
+            path = self.root / ".tasks/ledger" / f"{doc['run_id']}.json"
+            run_id = doc["run_id"]
+            retry = self.invoke([
+                sys.executable, "-c",
+                "import json, pathlib, sys; sys.path.insert(0, 'scripts'); "
+                "from execution_runner import write_ledger_row; "
+                f"spec = json.loads(pathlib.Path('.tasks/specs/{run_id}.json').read_text()); "
+                f"receipt = json.loads(pathlib.Path('.tasks/receipts/{run_id}.json').read_text()); "
+                "receipt['feature'] = 'F002'; "
+                f"write_ledger_row(spec, receipt, tier='economy', log=pathlib.Path('.tasks/logs/{run_id}.log'))",
+            ])
+            self.assertEqual(retry.returncode, 0, retry.stderr + retry.stdout)
+            row = json.loads(path.read_text())
+            self.assertEqual(row["feature"], "F001")
+
+        check()
+        self.prove_runner_mutation_fails(
+            "        try:\n            os.link(temp, path)\n        except FileExistsError as exc:\n"
+            "            raise OSError(f\"ledger row already exists for run_id {path.stem}\") from exc\n",
+            "        os.replace(temp, path)\n",
+            check,
+        )
+        self.clean_runs()
+
+    def install_codex_ledger_editing_provider(self, source):
+        self.install_fixture_emitting_provider("codex", "codex.jsonl")
+        path = self.bin / "codex"
+        inject = f"pathlib.Path('scripts/ledger.py').write_text({source!r})\n"
+        path.write_text(path.read_text().replace("raise SystemExit", inject + "raise SystemExit", 1))
+
+    def restore_ledger_module(self):
+        shutil.copy2(ROOT / "scripts/ledger.py", self.root / "scripts/ledger.py")
+        self.commit_fixture("restore ledger module")
+
+    def run_with_broken_ledger_module(self, source):
+        (self.root / "scripts/ledger.py").write_text(source)
+        self.commit_fixture("broken ledger module")
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        result = self.invoke(self.ledger_worker_base())
+        self.assert_terminal_run_hygiene(result, expected_exit=0)
+        run_id = self.latest_receipt()["run_id"]
+        self.assert_ledger_warn_without_row(result, run_id)
+        self.assertIn("ledger: module unavailable", self.log_text(run_id))
+        self.restore_ledger_module()
+
+    def test_ledger_module_edited_during_run_is_not_executed(self):
+        breakages = {"syntax": "def broken(:\n", "runtime": "raise RuntimeError('ledger import boom')\n"}
+        for label, source in breakages.items():
+            with self.subTest(breakage=label):
+                self.clean_runs()
+                self.install_codex_ledger_editing_provider(source)
+                self.write_fleet("codex", "ledger-model", "medium", "unknown")
+                result = self.invoke(self.ledger_worker_base())
+                self.assert_terminal_run_hygiene(result, expected_exit=0)
+                run_id = self.latest_receipt()["run_id"]
+                self.assertNotIn("WARN", self.log_text(run_id))
+                row = json.loads((self.root / ".tasks/ledger" / f"{run_id}.json").read_text())
+                self.assertEqual(row["run_id"], run_id)
+                self.restore_ledger_module()
+        self.clean_runs()
+
+    def test_ledger_module_broken_before_run_skips_only_the_ledger_step(self):
+        breakages = {"syntax": "def broken(:\n", "runtime": "raise RuntimeError('ledger import boom')\n"}
+        for label, source in breakages.items():
+            with self.subTest(breakage=label):
+                self.clean_runs()
+                self.run_with_broken_ledger_module(source)
+        self.clean_runs()
+        # Restoring `except ImportError` alone lets a SyntaxError escape the runner's start-up import.
+        self.prove_runner_mutation_fails(
+            "except Exception:\n    LedgerError = None\n",
+            "except ImportError:\n    LedgerError = None\n",
+            lambda: self.run_with_broken_ledger_module("def broken(:\n"),
+        )
+        self.clean_runs()
+
+    def test_ledger_generic_failure_warn_never_prints_exception_text(self):
+        secret = "ledger-" + "secret-" + "probe"
+        faulty = (ROOT / "scripts/ledger.py").read_text() + f"\n\ndef validate_row(row, door_names=None):\n    raise RuntimeError({secret!r})\n"
+
+        def check():
+            self.clean_runs()
+            (self.root / "scripts/ledger.py").write_text(faulty)
+            self.commit_fixture("faulty ledger validator")
+            self.write_fleet("codex", "ledger-model", "medium", "unknown")
+            result = self.invoke(self.ledger_worker_base())
+            self.assert_terminal_run_hygiene(result, expected_exit=0)
+            run_id = self.latest_receipt()["run_id"]
+            log = self.log_text(run_id)
+            self.assertIn("WARN: ledger row not written: ledger: row build failed", log)
+            self.assertNotIn(secret, result.stdout + result.stderr + log)
+            self.assertFalse((self.root / ".tasks/ledger" / f"{run_id}.json").is_file())
+            self.restore_ledger_module()
+
+        check()
+        self.prove_runner_mutation_fails(
+            "    except Exception:\n        warn_ledger(log, \"ledger: row build failed\")\n",
+            "    except Exception as exc:\n        warn_ledger(log, f\"ledger: row build failed: {exc!r}\")\n",
+            check,
+        )
+        self.clean_runs()
+
+    def test_runner_writes_one_valid_ledger_row_per_outcome(self):
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        base = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                "--model", "ledger-model", "--feature", "F001"]
+        ok = self.invoke(base)
+        self.assertEqual(ok.returncode, 0, ok.stderr + ok.stdout)
+        completed_id = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())["run_id"]
+        self.assert_ledger_row_hygiene(completed_id)
+        self.clean_runs()
+
+        fail = self.invoke(base, env={"PROVIDER_EXIT": "7"})
+        self.assertEqual(fail.returncode, 7, fail.stderr + fail.stdout)
+        failed_id = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())["run_id"]
+        failed_row = json.loads((self.root / ".tasks/ledger" / f"{failed_id}.json").read_text())
+        self.assertEqual(failed_row["outcome"], "failed")
+        self.assert_ledger_row_hygiene(failed_id)
+        self.clean_runs()
+
+        timeout = self.invoke(base, env={"PROVIDER_WAIT_FOR": str(self.parent / "never"),
+                                         "SPAWN_WORKER_TIMEOUT_SECS": "0.15"})
+        self.assertEqual(timeout.returncode, 124, timeout.stderr + timeout.stdout)
+        timed_id = self.latest_receipt()["run_id"]
+        timed_row = json.loads((self.root / ".tasks/ledger" / f"{timed_id}.json").read_text())
+        self.assertEqual(timed_row["outcome"], "timed_out")
+        self.assert_ledger_row_hygiene(timed_id)
+        self.clean_runs()
+
+        codex = self.bin / "codex"
+        stub = codex.read_bytes()
+        codex.unlink()
+        launch = self.invoke(base, env={"PATH": "/usr/bin:/bin"})
+        self.assertEqual(launch.returncode, 127, launch.stderr + launch.stdout)
+        codex.write_bytes(stub)
+        codex.chmod(0o755)
+        launch_id = self.latest_receipt()["run_id"]
+        launch_row = json.loads((self.root / ".tasks/ledger" / f"{launch_id}.json").read_text())
+        self.assertEqual(launch_row["outcome"], "launch_failed")
+        self.assert_ledger_row_hygiene(launch_id)
+
+        def check():
+            self.clean_runs()
+            self.write_fleet("codex", "ledger-model", "medium", "unknown")
+            fail = self.invoke(base, env={"PROVIDER_EXIT": "7"})
+            self.assertEqual(fail.returncode, 7, fail.stderr + fail.stdout)
+            failed_id = self.latest_receipt()["run_id"]
+            self.assert_ledger_row_hygiene(failed_id)
+
+        self.prove_runner_mutation_fails(
+            "    try:\n        row = build_ledger_row(spec, receipt, tier=tier, self_reported_model=self_reported_model)",
+            "    if receipt.get('outcome') != 'completed':\n        return\n    try:\n        row = build_ledger_row(spec, receipt, tier=tier, self_reported_model=self_reported_model)",
+            check,
+        )
+        self.clean_runs()
+
+    def test_verification_command_short_label_passes_ledger_privacy(self):
+        long_argv = [
+            "bash", "-c",
+            "! grep -nE '(ghp_|github_pat_|AKIA|xox[abpr]-|-----BEGIN)[A-Za-z0-9_-]{4,}' tests/test-ledger.py",
+        ]
+        task_path = self.task.parent / "T-ledger-label.md"
+        task_path.write_text(
+            "---\n"
+            "task_id: T-ledger-label\n"
+            "feature: F001\n"
+            "---\n"
+            "# Task\n\n"
+            "## Files you MAY touch\n"
+            "- `allowed.txt`\n\n"
+            "## Verification commands\n\n"
+            f"- `{json.dumps(long_argv)}`\n"
+        )
+        self.commit_fixture("ledger label task")
+        sys.path.insert(0, str(self.root / "scripts"))
+        from execution_runner import check_command_label  # noqa: E402
+        label = check_command_label(long_argv, 0, [long_argv])
+        self.assertLess(len(label), 80)
+        self.assertNotIn("grep", label)
+        self.assertEqual(label, "bash:1")
+        second = ["bash", "-c", "true"]
+        label_two = check_command_label(second, 1, [long_argv, second])
+        self.assertEqual(label_two, "bash:2")
+
+        def check():
+            probe = self.invoke([
+                sys.executable, "-c",
+                "import json, sys; sys.path.insert(0, 'scripts'); "
+                "from execution_runner import check_command_label; "
+                f"cmds = {json.dumps([long_argv, second])}; "
+                "print(check_command_label(cmds[1], 1, cmds))",
+            ])
+            self.assertEqual(probe.returncode, 0, probe.stderr)
+            self.assertEqual(probe.stdout.strip(), "bash:2")
+
+        self.prove_runner_mutation_fails('return f"{base}:{occurrence}"', "return base", check)
+        good = json.loads((ROOT / "tests/fixtures/ledger/good-completed.json").read_text())
+        good["checks"] = [{"name": label, "exit_code": 0}]
+        probe = self.parent / "ledger-label-probe.json"
+        probe.write_text(json.dumps(good, indent=2) + "\n")
+        valid = self.invoke([sys.executable, "scripts/ledger.py", "validate", str(probe)])
+        self.assertEqual(valid.returncode, 0, valid.stderr + valid.stdout)
+
+    def test_ledger_fold_lands_in_acceptance_commit_exactly_once(self):
+        self.set_status("in-progress")
+        self.write_fleet("codex", "ledger-model", "medium", "unknown")
+        first = self.invoke(self.ledger_worker_base(), env={"PROVIDER_ACTION": "commit"})
+        self.assertEqual(first.returncode, 0, first.stderr + first.stdout)
+        run_id = self.latest_receipt()["run_id"]
+        self.assert_ledger_row_hygiene(run_id)
+        self.assertEqual(self.git("status", "--porcelain").stdout.strip(), "")
+        preflight = self.invoke([
+            sys.executable, "-c",
+            "import sys; from pathlib import Path; sys.path.insert(0, 'scripts'); "
+            "from dispatch_policy import clean_workspace; clean_workspace(Path('.').resolve()); print('ok')",
+        ])
+        self.assertEqual(preflight.returncode, 0, preflight.stderr + preflight.stdout)
+
+        verified = self.invoke(["bash", "scripts/verify-mission.sh", "--run-id", run_id, "docs/missions/fixture"])
+        self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+
+        folded = self.invoke([sys.executable, "scripts/ledger.py", "fold", "docs/missions/fixture"])
+        self.assertEqual(folded.returncode, 0, folded.stderr + folded.stdout)
+        self.assertIn("folded rows=1", folded.stdout)
+        self.git("add", "docs/missions")
+        self.git("commit", "-qm", "acceptance")
+
+        again = self.invoke([sys.executable, "scripts/ledger.py", "fold", "docs/missions/fixture"])
+        self.assertEqual(again.returncode, 0, again.stderr + again.stdout)
+        self.assertEqual(again.stdout.strip(), "folded rows=0 drift=0")
+        self.assertEqual(self.git("status", "--porcelain").stdout.strip(), "")
+
     def test_all_worker_provider_tier_mappings_use_frozen_values(self):
         for provider in PROVIDERS:
             for tier in ("economy", "premium"):
                 with self.subTest(provider=provider, tier=tier):
-                    model = f"{provider}-{tier}-frozen"
                     speed = "fast" if provider == "agent" else "unknown"
+                    model = (f"{provider}-{tier}-frozen-fast" if provider == "agent" else
+                             f"{provider}-{tier}-frozen-high" if provider == "agy" else f"{provider}-{tier}-frozen")
                     self.write_fleet(provider, model, "high", speed, tier=tier)
                     result = self.invoke(["bash", "scripts/spawn-worker.sh", provider, "docs/missions/fixture/tasks/T-002.md",
                                           "--tier", tier, "--model", model, "--effort", "high", "--speed", speed, "--feature", "F002"])

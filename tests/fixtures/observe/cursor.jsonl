@@ -1,0 +1,7 @@
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"/workspace","session_id":"00000000-0000-0000-0000-000000000000","model":"Composer 2.5","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Reply with OK only."}]},"session_id":"00000000-0000-0000-0000-000000000000"}
+{"type":"thinking","subtype":"delta","text":"Preparing to reply with","session_id":"00000000-0000-0000-0000-000000000000","timestamp_ms":1792037062498}
+{"type":"thinking","subtype":"delta","text":" \"OK\" only.","session_id":"00000000-0000-0000-0000-000000000000","timestamp_ms":1792037062501}
+{"type":"thinking","subtype":"completed","session_id":"00000000-0000-0000-0000-000000000000","timestamp_ms":1792037062502}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"OK"}]},"session_id":"00000000-0000-0000-0000-000000000000"}
+{"type":"result","subtype":"success","duration_ms":2317,"duration_api_ms":2317,"is_error":false,"result":"OK","session_id":"00000000-0000-0000-0000-000000000000","request_id":"00000000-0000-0000-0000-000000000000","usage":{"inputTokens":8961,"outputTokens":23,"cacheReadTokens":3878,"cacheWriteTokens":0}}

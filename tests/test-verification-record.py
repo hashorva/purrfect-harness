@@ -6,8 +6,12 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
+import signal
 import subprocess
 import sys
+import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,13 +28,132 @@ class VerificationRecordIntegration(unittest.TestCase):
         self.fixture.write_fleet("codex", "model", "medium", "unknown", include_brain=True)
         brain = self.fixture.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"])
         self.assertEqual(brain.returncode, 0, brain.stderr + brain.stdout)
-        worker = self.fixture.invoke(["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--model", "model", "--feature", "F001"], env={"PROVIDER_ACTION": "dirty"})
+        worker = self.fixture.invoke(["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md", "--model", "model", "--feature", "F001"], env={"PROVIDER_ACTION": "commit"})
         self.assertEqual(worker.returncode, 0, worker.stderr + worker.stdout)
         self.run_id = next(path.stem for path in (self.fixture.root / ".tasks/receipts").glob("*.json") if json.loads(path.read_text())["role"] == "worker")
         self.mission = "docs/missions/fixture"
 
     def call(self, *args, env=None):
         return self.fixture.invoke(list(args), env=env)
+
+    def make_run_with_check(self, argv, extra_env=None):
+        self.fixture.task.write_text(
+            "---\ntask_id: T-001\nfeature: F001\n---\n# Task\n\n"
+            "## Files you MAY touch\n- `allowed.txt`\n\n## Verification commands\n"
+            f"\n- `{json.dumps(argv)}`\n")
+        self.fixture.commit_fixture("verification command fixture")
+        worker_env = {"PROVIDER_ACTION": "commit"}
+        if extra_env:
+            worker_env.update(extra_env)
+        worker = self.call("bash", "scripts/spawn-worker.sh", "codex",
+                           "docs/missions/fixture/tasks/T-001.md", "--model", "model",
+                           "--feature", "F001", env=worker_env)
+        self.assertEqual(worker.returncode, 0, worker.stderr + worker.stdout)
+        return max((path for path in (self.fixture.root / ".tasks/receipts").glob("*.json")
+                    if json.loads(path.read_text())["role"] == "worker"),
+                   key=lambda path: path.stat().st_mtime_ns).stem
+
+    def test_verification_uses_receipt_commit_when_live_tree_is_later_and_dirty(self):
+        run_id = self.make_run_with_check(["true"])
+        receipt = json.loads((self.fixture.root / ".tasks/receipts" / f"{run_id}.json").read_text())
+        (self.fixture.root / "later.txt").write_text("committed later state\n")
+        self.fixture.commit_fixture("later live commit")
+        (self.fixture.root / "untracked-later.txt").write_text("live-only state\n")
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", run_id, self.mission)
+        self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        record = json.loads((self.fixture.mission / "verification" / f"{run_id}.json").read_text())
+        self.assertEqual(record["result"], "pass")
+        live_head = subprocess.run(["git", "-C", str(self.fixture.root), "rev-parse", "HEAD"],
+                                   check=True, capture_output=True, text=True).stdout.strip()
+        self.assertEqual(record["verification_git_before"]["head"], receipt["git_after"]["head"])
+        self.assertNotEqual(record["verification_git_before"]["head"], live_head)
+
+    def test_check_changing_worktree_fails_and_live_tree_stays_clean_of_check_artifacts(self):
+        run_id = self.make_run_with_check(["bash", "-c", "touch check-stray.txt"])
+        before_worktrees = self.call("git", "worktree", "list", "--porcelain")
+        self.assertEqual(before_worktrees.returncode, 0)
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", run_id, self.mission)
+        self.assertNotEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        record = json.loads((self.fixture.mission / "verification" / f"{run_id}.json").read_text())
+        self.assertEqual(record["result"], "fail")
+        self.assertFalse((self.fixture.root / "check-stray.txt").exists())
+        self.assertFalse((self.fixture.root / "scripts/__pycache__").exists())
+        self.assertFalse((self.fixture.root / "tests/__pycache__").exists())
+        status = self.call("git", "status", "--porcelain", "--untracked-files=all")
+        self.assertEqual(status.returncode, 0, status.stderr)
+        self.assertEqual(status.stdout.splitlines(),
+                         [f"?? docs/missions/fixture/verification/{run_id}.json"])
+        listed = self.call("git", "worktree", "list", "--porcelain")
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        self.assertEqual(sum(line.startswith("worktree ") for line in listed.stdout.splitlines()), 1)
+
+    def test_dirty_receipt_git_after_is_refused(self):
+        receipt_path = self.fixture.root / ".tasks/receipts" / f"{self.run_id}.json"
+        receipt = json.loads(receipt_path.read_text())
+        receipt["git_after"]["status_entry_count"] = 1
+        # The provider committed allowed.txt, so retaining it as the recorded dirty
+        # path keeps changed_paths and scope internally consistent.
+        receipt["git_after"]["dirty_paths"] = ["allowed.txt"]
+        receipt_path.chmod(0o600)
+        receipt_path.write_text(json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n")
+        denied = self.call("bash", "scripts/verify-mission.sh", "--run-id", self.run_id, self.mission)
+        self.assertNotEqual(denied.returncode, 0, denied.stderr + denied.stdout)
+        self.assertIn("worktree verification needs a clean receipt git_after", denied.stderr + denied.stdout)
+        self.assertFalse((self.fixture.mission / "verification" / f"{self.run_id}.json").exists())
+
+    def test_post_checkout_hook_dirtied_worktree_is_refused_before_checks(self):
+        hook = self.fixture.root / ".git/hooks/post-checkout"
+        hook.parent.mkdir(parents=True, exist_ok=True)
+        hook.write_text("#!/bin/sh\nprintf stray > hook-stray.txt\n")
+        hook.chmod(0o755)
+        denied = self.call("bash", "scripts/verify-mission.sh", "--run-id", self.run_id, self.mission)
+        self.assertNotEqual(denied.returncode, 0, denied.stderr + denied.stdout)
+        self.assertIn("verification worktree snapshot does not equal receipt git_after before checks",
+                      denied.stderr + denied.stdout)
+        self.assertFalse((self.fixture.mission / "verification" / f"{self.run_id}.json").exists())
+        listed = self.call("git", "worktree", "list", "--porcelain")
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        self.assertEqual(sum(line.startswith("worktree ") for line in listed.stdout.splitlines()), 1)
+        self.assertFalse((self.fixture.root / "hook-stray.txt").exists())
+
+    def test_sigterm_during_verify_leaves_no_worktree_or_temp_dir(self):
+        with tempfile.TemporaryDirectory(prefix="verification-sigterm-") as temp_dir:
+            marker = Path(temp_dir) / "verify-started.marker"
+            run_id = self.make_run_with_check(
+                ["bash", "-c", 'touch "$MARKER"; exec sleep 60'],
+                extra_env={"MARKER": str(marker)},
+            )
+            proc = subprocess.Popen(
+                [sys.executable, "scripts/verification_record.py", "verify", "--run-id", run_id, self.mission],
+                cwd=self.fixture.root,
+                env={**os.environ, "TMPDIR": temp_dir, "PYTHONDONTWRITEBYTECODE": "1", "MARKER": str(marker)},
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline:
+                if marker.is_file():
+                    break
+                if proc.poll() is not None:
+                    break
+                time.sleep(0.05)
+            self.assertTrue(marker.is_file(), "verifier never reached the sleeping check")
+            proc.send_signal(signal.SIGTERM)
+            stdout, stderr = proc.communicate(timeout=30)
+            self.assertEqual(proc.returncode, 143, (stdout + stderr).decode("utf-8", "replace"))
+            self.assertFalse((self.fixture.mission / "verification" / f"{run_id}.json").exists())
+            listed = self.call("git", "worktree", "list", "--porcelain")
+            self.assertEqual(listed.returncode, 0, listed.stderr)
+            self.assertEqual(sum(line.startswith("worktree ") for line in listed.stdout.splitlines()), 1)
+            self.assertEqual(list(Path(temp_dir).glob("purrfect-verify-*")), [])
+
+    def test_live_root_environment_points_outside_check_worktree(self):
+        run_id = self.make_run_with_check(["bash", "-c", "test -n \"$PURRFECT_LIVE_ROOT\" && test \"$PURRFECT_LIVE_ROOT\" != \"$(pwd -P)\" && test -d \"$PURRFECT_LIVE_ROOT/.git\""])
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", run_id, self.mission)
+        self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        record = json.loads((self.fixture.mission / "verification" / f"{run_id}.json").read_text())
+        self.assertEqual(record["result"], "pass")
 
     def test_real_run_verification_is_immutable_and_acceptance_is_separate(self):
         before_features = (self.fixture.mission / "features.json").read_bytes()
@@ -43,7 +166,11 @@ class VerificationRecordIntegration(unittest.TestCase):
         self.assertNotIn("accepted_by", doc)
         self.assertEqual(oct(record.stat().st_mode & 0o777), "0o400")
         duplicate = self.call("bash", "scripts/verify-mission.sh", "--run-id", self.run_id, self.mission)
-        self.assertNotEqual(duplicate.returncode, 0)
+        self.assertEqual(duplicate.returncode, 0, duplicate.stderr + duplicate.stdout)
+        second_record = self.fixture.mission / "verification" / f"{self.run_id}.2.json"
+        self.assertTrue(second_record.is_file())
+        self.assertEqual(record.read_bytes(), raw)
+        second_hash = hashlib.sha256(second_record.read_bytes()).hexdigest()
         good_hash = hashlib.sha256(raw).hexdigest()
         bad_hash = self.call("bash", "scripts/accept-feature.sh", "--run-id", self.run_id, "--verification-sha256", "0" * 64, "--accepted-by", "reviewer", self.mission)
         self.assertNotEqual(bad_hash.returncode, 0)
@@ -57,21 +184,48 @@ class VerificationRecordIntegration(unittest.TestCase):
         lock.rmdir()
         features_path = self.fixture.mission / "features.json"
         features_path.chmod(0o640)
-        accepted = self.call("bash", "scripts/accept-feature.sh", "--run-id", self.run_id, "--verification-sha256", good_hash, "--accepted-by", "reviewer", self.mission, env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
+        accepted = self.call("bash", "scripts/accept-feature.sh", "--run-id", self.run_id, "--verification-sha256", second_hash, "--accepted-by", "reviewer", self.mission, env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
         self.assertEqual(accepted.returncode, 0, accepted.stderr + accepted.stdout + repr(list((self.fixture.root / ".tasks/locks").glob("*"))))
         self.assertEqual(features_path.stat().st_mode & 0o777, 0o640)
         feature = json.loads(features_path.read_text())["features"][0]
         self.assertEqual(feature["accepted_run_id"], self.run_id)
-        self.assertEqual(feature["accepted_verification_sha256"], good_hash)
+        self.assertEqual(feature["accepted_verification_sha256"], second_hash)
         audited = self.call("bash", "scripts/verify-mission.sh", "--require-workers", self.mission)
         self.assertEqual(audited.returncode, 0, audited.stderr + audited.stdout)
 
-    def test_unrelated_git_visible_change_fails_real_snapshot_guard_without_record(self):
-        (self.fixture.root / "unrelated.txt").write_text("must invalidate verification\n")
-        denied = self.call("bash", "scripts/verify-mission.sh", "--run-id", self.run_id, self.mission)
+    def test_failed_record_hash_cannot_be_accepted(self):
+        run_id = self.make_run_with_check(["false"])
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", run_id, self.mission)
+        self.assertNotEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        record = self.fixture.mission / "verification" / f"{run_id}.json"
+        failed_hash = hashlib.sha256(record.read_bytes()).hexdigest()
+        denied = self.call("bash", "scripts/accept-feature.sh", "--run-id", run_id,
+                           "--verification-sha256", failed_hash, "--accepted-by", "reviewer", self.mission,
+                           env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
         self.assertNotEqual(denied.returncode, 0, denied.stderr + denied.stdout)
-        self.assertIn("Git snapshot", denied.stderr + denied.stdout)
-        self.assertFalse((self.fixture.mission / "verification" / f"{self.run_id}.json").exists())
+
+    def test_audit_rejects_gap_in_accepted_run_record_numbers(self):
+        run_id = self.make_run_with_check(["true"])
+        for expected in (0, 0):
+            verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", run_id, self.mission)
+            self.assertEqual(verified.returncode, expected, verified.stderr + verified.stdout)
+        second = self.fixture.mission / "verification" / f"{run_id}.2.json"
+        second_hash = hashlib.sha256(second.read_bytes()).hexdigest()
+        accepted = self.call("bash", "scripts/accept-feature.sh", "--run-id", run_id,
+                             "--verification-sha256", second_hash, "--accepted-by", "reviewer", self.mission,
+                             env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
+        self.assertEqual(accepted.returncode, 0, accepted.stderr + accepted.stdout)
+        second.rename(self.fixture.mission / "verification" / f"{run_id}.3.json")
+        audited = self.call("bash", "scripts/verify-mission.sh", "--require-workers", self.mission)
+        self.assertNotEqual(audited.returncode, 0, audited.stderr + audited.stdout)
+        self.assertIn("not contiguous", audited.stderr + audited.stdout)
+
+    def test_unrelated_live_git_change_does_not_invalidate_receipt_worktree(self):
+        (self.fixture.root / "unrelated.txt").write_text("must invalidate verification\n")
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", self.run_id, self.mission)
+        self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        record = json.loads((self.fixture.mission / "verification" / f"{self.run_id}.json").read_text())
+        self.assertEqual(record["result"], "pass")
 
     def test_rehashed_cross_feature_record_fails_real_acceptance_and_audit(self):
         """The supplied hash asserts bytes; it cannot authorize a re-bound identity."""
@@ -104,7 +258,7 @@ class VerificationRecordIntegration(unittest.TestCase):
         task.write_text("---\ntask_id: T-002\nfeature: F002\n---\n# Task\n\n## Files you MAY touch\n- `allowed.txt`\n\n## Verification commands\n- [\"git\",\"status\"]\n")
         self.fixture.commit_fixture("malformed verification command fixture")
         worker = self.call("bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-002.md",
-                           "--model", "model", "--feature", "F002", env={"PROVIDER_ACTION": "dirty"})
+                           "--model", "model", "--feature", "F002", env={"PROVIDER_ACTION": "commit"})
         self.assertEqual(worker.returncode, 0, worker.stderr + worker.stdout)
         run_id = next(path.stem for path in (self.fixture.root / ".tasks/receipts").glob("*.json")
                       if json.loads(path.read_text())["feature"] == "F002")
@@ -117,7 +271,7 @@ class VerificationRecordIntegration(unittest.TestCase):
         task.write_text("---\ntask_id: T-002\nfeature: F002\n---\n# Task\n\n## Files you MAY touch\n- `allowed.txt`\n\n## Verification commands\n\n- `[\"definitely-not-a-command\"]`\n")
         self.fixture.commit_fixture("launch failure verification command fixture")
         worker = self.call("bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-002.md",
-                           "--model", "model", "--feature", "F002", env={"PROVIDER_ACTION": "dirty"})
+                           "--model", "model", "--feature", "F002", env={"PROVIDER_ACTION": "commit"})
         self.assertEqual(worker.returncode, 0, worker.stderr + worker.stdout)
         run_id = next(path.stem for path in (self.fixture.root / ".tasks/receipts").glob("*.json")
                       if json.loads(path.read_text())["feature"] == "F002")
@@ -126,6 +280,59 @@ class VerificationRecordIntegration(unittest.TestCase):
         record = json.loads((self.fixture.mission / "verification" / f"{run_id}.json").read_text())
         self.assertEqual(record["result"], "fail")
         self.assertEqual(record["commands"][0]["exit_code"], 127)
+
+    def assert_skip_fails(self, argv, kind, reason):
+        """A zero-exit check that reports skipped work fails, and its output is never recorded."""
+        run_id = self.make_run_with_check(argv)
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", run_id, self.mission)
+        self.assertNotEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        record_path = self.fixture.mission / "verification" / f"{run_id}.json"
+        record = json.loads(record_path.read_text())
+        self.assertEqual(record["result"], "fail")
+        self.assertEqual(record["commands"][0]["exit_code"], 0)
+        self.assertEqual(record["commands"][0]["skip_detected"], kind)
+        self.assertIn("VERIFY SKIP: command 1 ", verified.stderr)
+        self.assertIn(reason, verified.stderr)
+        self.assertNotIn("CANARY-ab", verified.stdout + verified.stderr + record_path.read_text())
+
+    def test_unittest_skip_fails_the_record(self):
+        self.assert_skip_fails(
+            ["python3", "-c", "import unittest\nclass T(unittest.TestCase):\n    def test_a(self): self.skipTest('CANARY-' + 'ab')\nunittest.main()"],
+            "unittest", "unittest summary reports skipped tests")
+
+    def test_pytest_skip_summary_fails_the_record(self):
+        self.assert_skip_fails(
+            ["python3", "-c", "print('CANARY-' + 'ab'); print('==== 2 passed, 1 skipped in 0.01s ====')"],
+            "pytest", "pytest summary reports skipped tests")
+
+    def test_tap_skip_directive_fails_the_record(self):
+        self.assert_skip_fails(
+            ["python3", "-c", "print('ok 2 - x # skip'); print('CANARY-' + 'ab')"],
+            "tap", "TAP line carries a skip directive")
+
+    def test_stdout_skip_marker_fails_the_record(self):
+        self.assert_skip_fails(
+            ["python3", "-c", "print('SKIP schema/code agreement: ' + 'CANARY-' + 'ab')"],
+            "marker", "output line starts with SKIP")
+
+    def test_stderr_skip_marker_fails_the_record(self):
+        self.assert_skip_fails(
+            ["python3", "-c", "import sys; print('SKIPPED [1] ' + 'CANARY-' + 'ab', file=sys.stderr)"],
+            "marker", "output line starts with SKIP")
+
+    def test_near_miss_skip_text_passes_on_both_streams(self):
+        near = ["  installed=1  identical-skipped=3  conflicts=0", "  ok   : fold skips other missions", "OK",
+                "OK (expected failures=1)", "OK (skipped=0)", "test_fold_skips_other_missions ... ok",
+                " SKIP indented", "SKIPS", "skip: lower case", "===== 3 passed in 0.12s =====",
+                "ok 1 - skip handling works", '{"skipped": {"brain": "not launched"}}']
+        run_id = self.make_run_with_check(
+            ["python3", "-c", "import sys\nfor line in sys.argv[1:]:\n    print(line)\n    print(line, file=sys.stderr)", *near])
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", run_id, self.mission)
+        self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        record = json.loads((self.fixture.mission / "verification" / f"{run_id}.json").read_text())
+        self.assertEqual(record["result"], "pass")
+        self.assertNotIn("skip_detected", record["commands"][0])
+        self.assertNotIn("VERIFY SKIP", verified.stderr)
 
     def test_revalidation_rejects_every_bound_identity_state_and_hash(self):
         """Canonical rehashing cannot turn any weaker record value into authority."""
@@ -156,10 +363,11 @@ class VerificationRecordIntegration(unittest.TestCase):
             elif label == "argv": doc["commands"][0]["argv"] = ["false"]
             elif label == "outcome": doc["commands"][0]["exit_code"] = 1
             elif label == "timestamp": doc["commands"][0]["finished_at"] = "2000-01-01T00:00:00Z"
+            elif label == "skip": doc["commands"][0]["skip_detected"] = "marker"
             else: raise AssertionError(label)
 
         labels = ("mission", "feature", "work_unit", "attempt", "spec_hash", "receipt_hash", "task_hash",
-                  "task_commit", "receipt_snapshot", "before_snapshot", "after_snapshot", "argv", "outcome", "timestamp")
+                  "task_commit", "receipt_snapshot", "before_snapshot", "after_snapshot", "argv", "outcome", "timestamp", "skip")
         for label in labels:
             with self.subTest(label=label):
                 record_path.chmod(0o600)
@@ -198,6 +406,12 @@ class VerificationRecordIntegration(unittest.TestCase):
         self.assertEqual(set(schema["required"]), policy.RECORD_FIELDS)
         self.assertEqual(schema["properties"]["commands"]["minItems"], 1)
         self.assertEqual(schema["$defs"]["gitState"]["additionalProperties"], False)
+        command_schema = schema["properties"]["commands"]["items"]
+        self.assertNotIn("skip_detected", command_schema["required"])
+        self.assertEqual(command_schema["properties"]["skip_detected"]["enum"], list(policy.SKIP_REASONS))
+        with_skip = json.loads(json.dumps(valid))
+        with_skip["commands"][0]["skip_detected"] = "unittest"
+        self.assertEqual(policy.validate_record(with_skip), with_skip)
         task_pattern = schema["$defs"]["taskLink"]["properties"]["path"]["pattern"]
         receipt_pattern = schema["$defs"]["receiptLink"]["allOf"][1]["properties"]["path"]["pattern"]
         self.assertTrue(re.fullmatch(task_pattern, valid["task"]["path"]))
@@ -213,6 +427,10 @@ class VerificationRecordIntegration(unittest.TestCase):
             ("noncanonical receipt UUID", lambda d: d["execution_receipt"].update(path=".tasks/receipts/not-a-uuid.json")),
             ("negative snapshot count", lambda d: d["receipt_git_after"].update(status_entry_count=-1)),
             ("undeclared property", lambda d: d.update(extra=None)),
+            ("undeclared command property", lambda d: d["commands"][0].update(extra=None)),
+            ("unknown skip kind", lambda d: d["commands"][0].update(skip_detected="other")),
+            ("empty skip kind", lambda d: d["commands"][0].update(skip_detected="")),
+            ("list skip kind", lambda d: d["commands"][0].update(skip_detected=["marker"])),
         )
         for name, change in weakest:
             with self.subTest(name=name):
@@ -279,10 +497,21 @@ class VerificationRecordIntegration(unittest.TestCase):
                            "--verification-sha256", "0" * 64, "--accepted-by", "reviewer", self.mission,
                            env={"PURRFECT_DISPATCH_LOCK_PATH": ""})
         self.assertNotEqual(denied.returncode, 0, denied.stderr + denied.stdout)
+        self.assertIn("verification hash must identify exactly one record", denied.stderr)
 
     def test_required_guard_mutations_break_the_real_focused_entry_and_restore(self):
         """Every named authority guard is mounted: removing it breaks a real test entry."""
-        policy = ROOT / "scripts/verification_record.py"
+        # The focused test below loads its policy from its own repository root.
+        # Give it a private copy so guard mutations can never affect this checkout.
+        with tempfile.TemporaryDirectory(prefix="verification-guard-mutation-") as temp_dir:
+            temp_root = Path(temp_dir)
+            for directory in ("scripts", "tests", "schemas", "docs/missions/templates"):
+                shutil.copytree(ROOT / directory, temp_root / directory)
+            shutil.copy2(ROOT / "harness-registry.json", temp_root / "harness-registry.json")
+            self._assert_guard_mutations_break_focused_entries(temp_root)
+
+    def _assert_guard_mutations_break_focused_entries(self, temp_root):
+        policy = temp_root / "scripts/verification_record.py"
         original = policy.read_text()
         mutations = (
             ("task-at-base", 'if not line.startswith("- `") or not line.endswith("`") or line.count("`") != 2:\n            fail("verification command must be one Markdown JSON code span bullet")\n        try: argv = json.loads(line[3:-1])',
@@ -294,12 +523,19 @@ class VerificationRecordIntegration(unittest.TestCase):
             ("identity-rebind", 'for key, value in expected.items():', 'for key, value in ():', "test_revalidation_rejects_every_bound_identity_state_and_hash"),
             ("snapshot-rebind", 'if record["verification_git_before"] != receipt["git_after"] or record["verification_git_after"] != receipt["git_after"]:',
              'if False:', "test_revalidation_rejects_every_bound_identity_state_and_hash"),
-            ("snapshot-pre-post", 'if before != receipt["git_after"]: fail("current Git snapshot does not equal receipt git_after before checks")\n',
-             'if False:\n', "test_unrelated_git_visible_change_fails_real_snapshot_guard_without_record"),
+            ("snapshot-pre-post", 'if before != receipt["git_after"]:\n            fail("verification worktree snapshot does not equal receipt git_after before checks")',
+             'if False:\n            pass', "test_check_changing_worktree_fails_and_live_tree_stays_clean_of_check_artifacts"),
+            ("snapshot-pre", 'if before != receipt["git_after"]:\n            fail("verification worktree snapshot does not equal receipt git_after before checks")',
+             'if False:\n            pass', "test_post_checkout_hook_dirtied_worktree_is_refused_before_checks"),
+            ("dirty-receipt-refusal", 'if receipt["git_after"]["status_entry_count"] != 0 or receipt["git_after"]["dirty_paths"]:',
+             'if False:', "test_dirty_receipt_git_after_is_refused"),
+            ("worktree-cwd", "cwd=worktree", "cwd=root", "test_check_changing_worktree_fails_and_live_tree_stays_clean_of_check_artifacts"),
+            ("sigterm-cleanup", "prev_sigterm = signal.signal(signal.SIGTERM, on_sigterm)",
+             "prev_sigterm = None", "test_sigterm_during_verify_leaves_no_worktree_or_temp_dir"),
             ("lock", 'if os.environ.get("PURRFECT_DISPATCH_LOCK_PATH") or (lock_dir.is_dir() and list(lock_dir.glob("*.lock"))):',
              'if False:', "test_real_run_verification_is_immutable_and_acceptance_is_separate"),
-            ("acceptance-hash", 'if digest(raw) != expected_hash or record["result"] != "pass":',
-             'if record["result"] != "pass":', "test_wrong_acceptance_hash_is_rejected_at_the_real_entry_point"),
+            ("acceptance-hash", 'if len(matches_for_hash) != 1:',
+             'if len(matches_for_hash) != 0:', "test_wrong_acceptance_hash_is_rejected_at_the_real_entry_point"),
         )
         selected = os.environ.get("GUARD_MUTATION_LABEL")
         for label, old, new, target in mutations:
@@ -316,13 +552,17 @@ class VerificationRecordIntegration(unittest.TestCase):
                     self.assertIn(old, source)
                     self.assertIn('if after != receipt["git_after"]: passed = False', source)
                     source = source.replace(old, new, 1).replace('if after != receipt["git_after"]: passed = False', 'if False: passed = False', 1)
+                elif label == "snapshot-pre":
+                    self.assertIn(old, source)
+                    source = source.replace(old, new, 1)
                 else:
                     self.assertIn(old, source)
                     source = source.replace(old, new, 1)
                 policy.write_text(source)
                 try:
                     result = subprocess.run([sys.executable, "tests/test-verification-record.py",
-                                             f"VerificationRecordIntegration.{target}"], cwd=ROOT,
+                                             f"VerificationRecordIntegration.{target}"], cwd=temp_root,
+                                            # Run from the temporary copy containing the mutated guard.
                                             env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
                                             text=True, capture_output=True)
                     output = result.stdout + result.stderr
@@ -330,6 +570,8 @@ class VerificationRecordIntegration(unittest.TestCase):
                     self.assertIn("AssertionError", output, label + ": mutation failed before its test assertion\n" + output)
                     self.assertNotIn("NameError", output, label + ": mutation produced a construction error\n" + output)
                     self.assertNotIn("SyntaxError", output, label + ": mutation produced a syntax error\n" + output)
+                    self.assertNotIn("IndentationError", output, label + ": mutation produced an indentation error\n" + output)
+                    self.assertNotIn("TabError", output, label + ": mutation produced a tab error\n" + output)
                     self.assertNotIn("\nERROR", output, label + ": mutation produced a test setup error\n" + output)
                 finally:
                     policy.write_text(original)
@@ -368,7 +610,7 @@ class ShippedWorkerTemplateIntegration(unittest.TestCase):
         result = self.fixture.invoke([
             "bash", "scripts/spawn-worker.sh", "codex",
             f"{self.mission}/tasks/T-001.md", "--tier", "economy", "--feature", "F001",
-        ], env={"PROVIDER_ACTION": "dirty"})
+        ], env={"PROVIDER_ACTION": "commit"})
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         receipt = next((self.fixture.root / ".tasks/receipts").glob("*.json"))
         return receipt.stem

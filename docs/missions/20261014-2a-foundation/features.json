@@ -1,0 +1,313 @@
+{
+  "mission": "2A Foundation",
+  "rules": "Workers never edit this file. Only the orchestrator accepts a non-bootstrap feature using accept-feature.sh after a matching passing VerificationRecord exists, recording accepted_run_id, accepted_verification_sha256, accepted_at, and accepted_by with passes:true. Editing or removing approved descriptions/steps is unacceptable. Keep bootstrap on every feature: false (default) requires verified worker execution and separate acceptance; true exempts work no worker will ever run, such as mission scaffolding or orchestrator decisions. Set it when authoring; never add it after GATE 0 to excuse missing evidence.",
+  "features": [
+    {
+      "id": "F001",
+      "category": "functional",
+      "priority": 1,
+      "bootstrap": false,
+      "description": "Provider, door and pool registry as manifest-owned data (harness-registry.json), replacing PROVIDERS, CAPABILITIES and SEAT_SPECS. FALLBACKS is copied into the registry unchanged for parity and deleted in F004. Per provider: probe command, list parser, identity check (--version), effort and fast encoding (flag or model name), discovery directory. Per door: billing class, pool, no-ZDR flag, priority. Naming rule: the provider name is `cursor` (binary `cursor-agent`); `agent` stays only as a legacy name so v3 evidence still validates. Also scripts/fleet-doctor.sh: for each provider it resolves every PATH hit to its real binary, checks identity with --version, and checks login with a tiny probe. ERROR only for two different binaries with one name, wrong identity, or logged out. Duplicate PATH entries and symlinks are WARN. mission-init and dispatch run the doctor instead of ad-hoc `which -a` checks.",
+      "steps": [
+        "harness-registry.json is valid JSON and is listed in harness-manifest.json ownership",
+        "A parity test shows the registry yields the same providers, capabilities, seat specs and fallbacks as the old constants; after the switch `grep -nE '^(PROVIDERS|CAPABILITIES|SEAT_SPECS) *= *[({]' scripts/*.py` exits 1 (names may remain as loaded values; literal definitions may not; FALLBACKS stays until F004)",
+        "The test fails when any provider lacks probe, list parser, identity check, effort/fast encoding or discovery directory, or any door lacks billing class, pool, no-ZDR flag or priority",
+        "Provider `cursor` has binary `cursor-agent`; `agent` appears only as a legacy name; v3 evidence that names `agent` still validates",
+        "fleet-doctor.sh exits 0 on this Mac with no ERROR line (local-only check: a task verification command, never part of tests/run-tests.sh or CI); the WARN rules for duplicate PATH entries and symlinks are proven by the step 6 fixtures, not on the real machine",
+        "fleet-doctor.sh fixtures exit non-zero with ERROR for: two different binaries sharing a name, a wrong --version identity, a logged-out probe",
+        "`grep -l fleet-doctor.sh .agents/skills/mission-init/SKILL.md .agents/skills/dispatch-worker/SKILL.md` lists both files, and `grep -nE 'which -a|command -v agent' .agents/skills/mission-init/SKILL.md .agents/skills/dispatch-worker/SKILL.md` exits 1",
+        "shellcheck scripts/*.sh tests/*.sh and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": true,
+      "accepted_run_id": "f1824d4b-2683-4410-974c-383c5f13012e",
+      "accepted_verification_sha256": "b308b13426612cc65837d7f9f564ba1dbfd0e65eeb9e881d0620d4f0f31a7ab5",
+      "accepted_at": "2026-10-14T21:01:09.150747Z",
+      "accepted_by": "Front Desk (claude-sonnet-5-5), owner-approved by Zamir"
+    },
+    {
+      "id": "F003",
+      "category": "functional",
+      "priority": 3,
+      "bootstrap": false,
+      "description": "Observed model, usage and fast state in receipts, from each CLI's JSON output. Unknown stays `unknown`.",
+      "steps": [
+        "A receipt schema test requires observed_model, usage (input, output, cache, reasoning) and fast_state, each with a source flag observed|estimated|unknown",
+        "Fixture outputs for claude, codex, cursor-agent and agy fill the fields; a CLI that reports nothing gives `unknown`; the cursor-agent fixture (usage and session_id, no model) gives observed_model `unknown` unless the stream-json init event reports the model",
+        "An old receipt without the new fields still validates",
+        "No code path writes a guessed value as `observed`",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": true,
+      "accepted_run_id": "86a9c529-95d9-42b3-9e23-b24c18fec0ff",
+      "accepted_verification_sha256": "a85b3ac10ab890e4bd00dff542e052d632c4618700a010a209e436e239837fe8",
+      "accepted_at": "2026-10-15T17:52:13.198639Z",
+      "accepted_by": "Front Desk (claude-sonnet-5-5), owner-approved by Zamir (2026-10-16)"
+    },
+    {
+      "id": "F004",
+      "category": "functional",
+      "priority": 4,
+      "bootstrap": false,
+      "description": "Fleet v2: policy seats, per-spawn resolution recorded in the spec, drift events, door priority, fast and credits opt-in. Cursor effort through the model name. Resolves the unproven `model[effort=…,fast=…]` format. Needs Gate 0 decision 2 (frozen-fleet amendment).",
+      "steps": [
+        "A fleet v2 seat names a family and a policy; a v1 fleet.json still validates",
+        "Each spawn records the resolved model in the spec and the observed model in the receipt",
+        "A fixture with a model change between two runs writes exactly one drift event to the drift log; a test shows the spawn exits non-zero if the drift event cannot be written",
+        "Door priority picks the first included, healthy door; a credits or api door is skipped unless the mission approves it",
+        "A `-fast` model is never chosen unless the mission enables fast",
+        "Cursor effort is encoded in the model name from the registry; a test lists the encoding for each",
+        "The unproven `model[effort=…,fast=…]` format is either proven by a recorded probe or removed; no unproven format ships",
+        "The FALLBACKS constant is deleted from scripts/fleet_state.py (`grep -nE '^FALLBACKS *= *[({]' scripts/*.py` exits 1); an unavailable family stays `unavailable`, never a guessed model",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": true,
+      "accepted_run_id": "35ecb39a-5c22-4108-acef-41f7fc694ad6",
+      "accepted_verification_sha256": "64e8240bde0c6b62f682024a2c4f7ac56b8e433abdbc9d73d23dcd6d68d16268",
+      "accepted_at": "2026-10-16T10:10:43.996044Z",
+      "accepted_by": "Front Desk (claude-sonnet-5-5), owner-approved by Zamir (2026-10-16)"
+    },
+    {
+      "id": "F005",
+      "category": "functional",
+      "priority": 5,
+      "bootstrap": false,
+      "description": "Ledger v1: schema, writer in the runner, privacy rule, derived-view helper.",
+      "steps": [
+        "A schema file defines every row field named in proposal section 8, with a source flag on every number",
+        "The runner writes one valid row per run, including failed runs, to `.tasks/ledger/<run_id>.json` (gitignored); a test shows this write never dirties the Git tree",
+        "A test fails if a row contains transcript text, prompt text or a secret-like string",
+        "The derived-view helper prints first-try rate and tokens per accepted feature from fixture rows; it stores nothing",
+        ".tasks/logs/ is gitignored and a test shows no log file is staged",
+        "A fold command appends the rows from `.tasks/ledger/` to docs/missions/ledger.jsonl exactly once per run id (a second run of the command adds nothing); an integration test shows the runner write keeps the next launch's clean-tree check and verify-mission.sh snapshot check passing, and the fold lands in the orchestrator's acceptance commit",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": true,
+      "accepted_run_id": "fdf5dd38-1433-45eb-972b-823493f9e671",
+      "accepted_verification_sha256": "9aaa357b990a6f1bdb56bd07506de1164b99d8f0c87409175544ebe0d3667fd2",
+      "accepted_at": "2026-10-15T23:00:05.832609Z",
+      "accepted_by": "Front Desk (claude-sonnet-5-5), owner-approved by Zamir (2026-10-16)"
+    },
+    {
+      "id": "F006",
+      "category": "functional",
+      "priority": 6,
+      "bootstrap": false,
+      "description": "Structured verdicts: JSON schemas for the Architect's task plan and review, validated for any provider (`--json-schema` where the CLI has it).",
+      "steps": [
+        "A task-plan schema and a review schema exist and are valid JSON Schema",
+        "A validator script exits 0 on a good fixture and non-zero on each bad fixture (missing field, wrong type, empty steps)",
+        "The registry records per provider whether the CLI supports --json-schema; where it does not, the validator checks the output after the run",
+        "mission-init and the review action name the schemas",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": true,
+      "accepted_run_id": "db01ac53-00de-4d30-9230-05894b952ebe",
+      "accepted_verification_sha256": "d652eeeadeb8f0b0adf7596f944300ecf85b49e3b994356ade4a06b4257ba46b",
+      "accepted_at": "2026-10-15T17:52:26.292009Z",
+      "accepted_by": "Front Desk (claude-sonnet-5-5), owner-approved by Zamir (2026-10-16)"
+    },
+    {
+      "id": "F007",
+      "category": "functional",
+      "priority": 7,
+      "bootstrap": false,
+      "description": "Real smoke on the Mac: one small mission through 3 doors and 4 runs: `claude`, `codex` and `cursor-agent` (Composer and Grok), with ledger rows and reconstructable evidence.",
+      "steps": [
+        "A smoke mission exists with one tiny task per run: claude, codex, cursor-agent with Composer, and cursor-agent with Grok",
+        "Four receipts exist under .tasks/receipts/, one per run; each has a non-unknown observed model, except cursor-agent runs may stay `unknown` when the CLI does not report the model",
+        "Four ledger rows exist, one per receipt, and each validates against the ledger schema",
+        "bash scripts/verify-mission.sh exits 0 for the smoke mission",
+        "A reconstruct command prints, per smoke run id, its spec, receipt, VerificationRecord and ledger row, and exits non-zero if any of the four is missing; the human reads that output at Gate 2"
+      ],
+      "passes": true,
+      "accepted_run_id": "a9635139-68a5-4daa-be5f-9ce997649320",
+      "accepted_verification_sha256": "2846c0e260ebe6617470f018492acbf9b5958858cf3a0a9a30a4bebd97666f2c",
+      "accepted_at": "2026-10-18T06:07:58.356309Z",
+      "accepted_by": "Zamir (owner approval 2026-10-18; front desk executed)"
+    },
+    {
+      "id": "F008",
+      "category": "functional",
+      "priority": 8,
+      "bootstrap": false,
+      "description": "Mission hygiene (owner amendment 2026-10-16; T-043 to T-045 ran under the F004 label): workers do not write PROGRESS.md and the orchestrator records each run from its receipt; the verifier fails a check that exits 0 but reports skipped tests; the ledger privacy rule allows only a safe character set for harness-generated text; door IDs are permanent; every seat has a probe and a stall watchdog; Claude workers start without MCP servers.",
+      "steps": [
+        "`grep -rnF 'Append a PROGRESS.md entry' scripts tests docs/missions/templates` exits 1, and AGENTS.md, docs/templates/AGENTS.md.template, the mcp-hygiene skill and docs/missions/ORCHESTRATION.md say that workers do not write PROGRESS.md (an oracle command checks each file)",
+        "A verification command that exits 0 but prints a skip summary is recorded `fail` with the command number and reason, and the record never stores output text (a test shows it)",
+        "The ledger accepts harness-generated text fields only if they match letters, digits, space and `._:-/` within a maximum length; a test lists accepted and refused values including the owner's near-miss list",
+        "Door IDs in docs/missions/ledger.jsonl rows all exist in harness-registry.json (deprecated doors keep `deprecated: true`); a test fails if a door used by a committed row is missing",
+        "`scripts/probe-seat.sh <seat>` runs the seat's exact harness command with 'Reply with OK only.' in a fresh folder with stdin closed and a 2-minute cap, records MCP server names only, saves its evidence under .tasks/probes/, and classifies ok, no-turn, mcp-init-wait, permission-wait, input-wait, auth, limit or unknown (a fixture test for each class)",
+        "Every adapter stops a run with no new event or output for 90 seconds and classifies it as a stall; a result with 0 turns is a failure whatever its status says (fixture tests)",
+        "Claude worker and brain runs start with --strict-mcp-config unless the task names a server (argv test)",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": true,
+      "accepted_run_id": "407d8afb-6877-47ed-8de4-522984487257",
+      "accepted_verification_sha256": "55d738960f5de07f27481734d76f834dfb11d3f69cf7b47355d62923e29cc4e0",
+      "accepted_at": "2026-10-17T20:32:01.523756Z",
+      "accepted_by": "Zamir (owner approval 2026-10-17; front desk executed)"
+    },
+    {
+      "id": "F009",
+      "category": "functional",
+      "priority": 9,
+      "bootstrap": false,
+      "description": "agy lane (owner amendment 2026-10-16, agy 1.4.0): the Antigravity hang was an editor-installed MCP server that never finished starting (google-antigravity/antigravity-cli#1087), not folder trust. With the MCP servers removed, agy answers in seconds. This feature brings agy back as a worker, Architect and review lane: adapter, admission probe, registry seats, brain move, and reviewer calibration.",
+      "steps": [
+        "evidence/agy-mcp-hang.md records the symptom, the issue number, the fix and the measurements, and the probe checks the MCP list every time",
+        "The agy adapter closes stdin, uses stream-json, encodes effort only in the model name (no --effort), takes the observed model from the init event and usage from the result, and treats num_turns 0 or an empty response as a failure (fixture tests with a recorded real stream)",
+        "probe-seat.sh agy.economy passes 3 times in a fresh folder and 3 times in the repo with an empty MCP list; each probe leaves its evidence under .tasks/probes/",
+        "The registry and fleet carry agy.economy = gemini-3.8-flash and agy.premium = gemini-4-argon (its own weekly-only pool), never a fast model; both changes are logged as drift events",
+        "The chair seat can resolve to agy claude-opus-5-5-high and the move is logged as a drift event (T-026 verified and reviewed)",
+        "A seeded-defect calibration records for each reviewer (grok-4.7-high, Argon) whether it caught three planted blocking bugs in routing-data.jsonl; a reviewer that missed any is marked not for guard review",
+        "The fleet inventory finds a new model family from vendor and tier without a code change (a test with an unknown family name)",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": true,
+      "accepted_run_id": "44b5362c-50ce-46d5-b75b-6b7317a3665a",
+      "accepted_verification_sha256": "af5d75547f6244989f43253420ed425797d5acb6c380b058c0ea9776897e3729",
+      "accepted_at": "2026-10-17T20:42:49.775818Z",
+      "accepted_by": "Zamir (owner approval 2026-10-17; front desk executed)"
+    },
+    {
+      "id": "F010",
+      "category": "functional",
+      "priority": 9,
+      "bootstrap": false,
+      "description": "Capability unlock (owner decision 2026-10-17): remove capability limits from every adapter so each model has its full native toolset; Claude headless-safe permission mode and deny-list; Codex network and web search on with cua_repl/node_repl off per run; capability inventory by --help flag list. Personal-account MCP connectors stay off.",
+      "steps": [
+        "Claude workers and brain run without the --allowedTools restriction (full native toolset, headless-safe permission mode, deny-list for destructive commands, --strict-mcp-config kept)",
+        "Codex keeps the workspace-write sandbox with network and web search on, and cua_repl/node_repl are off through per-run overrides (tested)",
+        "cursor-agent and agy adapters carry no capability limits; probe compares each CLI's --help flag list with the last recorded list and reports new flags",
+        "probe-seat.sh re-run for every seat after the change",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": true,
+      "accepted_run_id": "3db4dbcd-c948-42c1-89c5-8b56fe7f214d",
+      "accepted_verification_sha256": "bd52c773f0d561e93bb61399601d9bc5238eebaab4dcbe8d1e44d47901b96ded",
+      "accepted_at": "2026-10-18T06:18:25.316009Z",
+      "accepted_by": "Zamir (owner approval 2026-10-18; front desk executed)"
+    },
+    {
+      "id": "F011",
+      "category": "functional",
+      "priority": 11,
+      "bootstrap": false,
+      "description": "drive-cli hardening (Opus review 2026-10-17): unknown-prompt rule must stop with exit 3 after an answered trust prompt and for numbered/menu approval prompts; no wrong answer is ever sent.",
+      "steps": [
+        "After one answered trust prompt, any later prompt-like pane that is not an exact trust prompt stops with exit 3 (tests)",
+        "Numbered and menu approval prompts are unknown prompts (tests, including real tmux)",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": true,
+      "accepted_run_id": "25db6a5c-b056-432d-8031-d7ada06cafb9",
+      "accepted_verification_sha256": "a98437bd41a595c573da22a515f41c361dc1288e99a7d2b9e693ec36e2f3a46a",
+      "accepted_at": "2026-10-18T06:28:34.256324Z",
+      "accepted_by": "Zamir (owner approval 2026-10-18; front desk executed)"
+    },
+    {
+      "id": "F012",
+      "category": "functional",
+      "priority": 12,
+      "bootstrap": false,
+      "description": "Release 3.1.0 candidate (owner-approved 2026-10-17): version bump in manifest, README and CHANGELOG with the new capabilities and consumer migration notes; release checks from docs/RELEASING.md.",
+      "steps": [
+        "harness-manifest.json, README frontmatter and the top CHANGELOG entry say 3.1.0 / v3.1.0 together and the CHANGELOG lists the new capabilities and migration notes",
+        "shellcheck, JSON validation, bash tests/run-tests.sh and install-harness.sh --dev --validate-release exit 0"
+      ],
+      "passes": true,
+      "accepted_run_id": "6d7b8b32-e4ea-4f8f-9515-cd74954b649e",
+      "accepted_verification_sha256": "a3fe0bdaef7ec1774bd615c29973f3704d057fbd005392b1e2b9867b589ee777",
+      "accepted_at": "2026-10-18T06:52:45.136539Z",
+      "accepted_by": "Zamir (owner approval 2026-10-18; front desk executed)"
+    },
+    {
+      "id": "F013",
+      "category": "functional",
+      "priority": 13,
+      "bootstrap": false,
+      "description": "Native-only fleet, effort by role, goal-style launcher prompts, explorer subagents, subagent usage in receipts, flaky-test fix, residual-risk follow-up and PROGRESS.md role fixes (owner decisions 2026-10-18).",
+      "steps": [
+        "Registry, doors and fleet carry no third-party model inside another vendor quota (agy Opus/Sonnet/GPT-OSS removed) and MODEL_ROUTING.md has no third-party escalation wording",
+        "Launcher prompts give goal, resources, budget and acceptance checks; the brain prompt no longer says to append PROGRESS.md; explorer subagent definitions exist",
+        "Receipts record subagent calls and their tokens",
+        "The suite has no test that passes only on rerun (stress check under load 5/5)",
+        "Scope check treats compiled-module shadowing and listed persistence paths as violations",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": true,
+      "accepted_run_id": "bb7cc506-59c2-4776-86b8-28bede7bbd79",
+      "accepted_verification_sha256": "dc882c9dfdb995054ef36c435bfa061a9bf69d5a401f388b856d67572473bef5",
+      "accepted_at": "2026-10-18T06:42:26.101354Z",
+      "accepted_by": "Zamir (owner approval 2026-10-18; front desk executed)"
+    },
+    {
+      "id": "F014",
+      "category": "functional",
+      "priority": 14,
+      "bootstrap": false,
+      "description": "Legacy receipts stay valid under the protected-path guard (regression found at Gate 2 verification, 2026-10-18).",
+      "steps": [
+        "Receipts of runs created before the protected-path guard validate exactly as before; guard-bearing runs keep the strict baseline rule",
+        "verify-mission.sh --require-workers exits 0 for the 2A mission",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": true,
+      "accepted_run_id": "a7946812-2199-4386-b13f-a7e784dcb503",
+      "accepted_verification_sha256": "e3bac313e61d91e929bbfe260fa2fc9d68470e024a02e2489a694436e334a79e",
+      "accepted_at": "2026-10-18T07:58:20.563494Z",
+      "accepted_by": "Zamir (owner approval 2026-10-18; front desk executed)"
+    },
+    {
+      "id": "F015",
+      "category": "functional",
+      "priority": 15,
+      "bootstrap": false,
+      "description": "Release 3.1.0 fixes found by the Opus release review: install payload gaps, drive-cli residuals in the CHANGELOG, RELEASING.md currency.",
+      "steps": [
+        "Every new script, schema and capability folder shipped by 3.1.0 is in install_payload_paths and update_paths",
+        "CHANGELOG lists the drive-cli residuals; docs/RELEASING.md names 3.1.0 and no hard-coded Phase 1 tag message",
+        "shellcheck, bash tests/run-tests.sh, install-harness.sh --dev --validate-release and git diff --check exit 0"
+      ],
+      "passes": true,
+      "accepted_run_id": "7278cec5-211d-4771-bb35-7a0d07c779bc",
+      "accepted_verification_sha256": "015aae3ea5e28fe35409fbae668d1ec014bfa3bd3edcbf79d3c901f64d24c5b8",
+      "accepted_at": "2026-10-18T08:26:29.929477Z",
+      "accepted_by": "Zamir (owner approval 2026-10-18; front desk executed)"
+    },
+    {
+      "id": "F016",
+      "category": "functional",
+      "priority": 16,
+      "bootstrap": false,
+      "description": "CI parity: the suite passes on clean Linux and macOS runners and failing checks print their reason.",
+      "steps": [
+        "A failing check in tests/run-tests.sh prints the tail of its output",
+        "Every check passes on the GitHub Actions ubuntu and macos runners",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": true,
+      "accepted_run_id": "54fad46c-d8e0-43ba-92e9-69a7f15b64b4",
+      "accepted_verification_sha256": "f6477238bb7bacfdb8fefadad0e6fe3a38f6f5e646cdbd9a05b2ebda880ffd5c",
+      "accepted_at": "2026-10-18T11:20:37.798696Z",
+      "accepted_by": "Zamir (owner approval 2026-10-18; front desk executed; CI green on ubuntu+macos run 39121928761)"
+    },
+    {
+      "id": "F017",
+      "category": "functional",
+      "priority": 17,
+      "bootstrap": false,
+      "description": "Two flaky tests found by CI on a docs-only commit (git auto-maintenance lock in the reconstruct fixture; drive-cli stall timing): made deterministic.",
+      "steps": [
+        "The reconstruct fixture repos disable git auto-maintenance and the snapshot tolerates vanishing .git temp files only",
+        "The drive-cli stall test synchronises on a ready file, not on sleeps",
+        "shellcheck and bash tests/run-tests.sh exit 0, CI green on ubuntu and macos twice in a row"
+      ],
+      "passes": true,
+      "accepted_run_id": "02e9c769-5c85-4204-9d8e-9933f8c3f819",
+      "accepted_verification_sha256": "c682aeb87c30baac76590b5bed1857027c9326e20d6956b001d6edab0ba02f39",
+      "accepted_at": "2026-10-18T12:21:55.338246Z",
+      "accepted_by": "Zamir (owner approval 2026-10-18; front desk executed; CI green twice on ed9da02)"
+    }
+  ]
+}

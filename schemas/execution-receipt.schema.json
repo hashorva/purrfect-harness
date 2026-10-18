@@ -1,9 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Purrfect Harness ExecutionReceipt",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["schema_version", "run_id", "mission", "feature", "work_unit", "attempt", "role", "provider", "model", "repo", "task", "tier", "started_at", "finished_at", "outcome", "exit_code", "log_path", "execution_spec_path", "execution_spec_sha256", "requested_configuration", "resolved_configuration", "observed_configuration", "git_before", "git_after", "commits", "changed_paths", "workspace_changed", "scope"],
   "$defs": {
     "nonempty": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$" },
     "commit": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
@@ -58,52 +55,156 @@
         "effort": { "$ref": "#/$defs/nonempty" },
         "speed": { "$ref": "#/$defs/nonempty" }
       }
-    }
-  },
-  "properties": {
-    "schema_version": { "const": 1 },
-    "run_id": { "type": "string", "format": "uuid", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
-    "mission": { "$ref": "#/$defs/nonempty" },
-    "feature": { "type": ["string", "null"] },
-    "work_unit": { "$ref": "#/$defs/nonempty" },
-    "attempt": { "type": "integer", "minimum": 1 },
-    "role": { "enum": ["brain", "worker"] },
-    "provider": { "enum": ["codex", "claude", "agent", "agy"] },
-    "model": { "$ref": "#/$defs/nonempty" },
-    "repo": { "type": "string", "pattern": "^/" },
-    "task": { "type": ["string", "null"] },
-    "tier": { "type": ["string", "null"] },
-    "started_at": { "type": "string", "format": "date-time" },
-    "finished_at": { "type": "string", "format": "date-time" },
-    "outcome": { "enum": ["completed", "failed", "timed_out", "interrupted", "launch_failed"] },
-    "exit_code": { "type": "integer", "minimum": 0, "maximum": 255 },
-    "log_path": { "type": "string", "pattern": "^\\.tasks/logs/[0-9a-f-]+\\.log$" },
-    "execution_spec_path": { "$ref": "#/$defs/nonempty" },
-    "execution_spec_sha256": { "$ref": "#/$defs/sha256" },
-    "requested_configuration": { "$ref": "#/$defs/requestedConfig" },
-    "resolved_configuration": { "$ref": "#/$defs/resolvedConfig" },
-    "observed_configuration": { "$ref": "#/$defs/observedConfig" },
-    "git_before": { "$ref": "#/$defs/gitState" },
-    "git_after": { "$ref": "#/$defs/gitState" },
-    "commits": { "type": "array", "items": { "$ref": "#/$defs/commit" } },
-    "changed_paths": { "$ref": "#/$defs/paths" },
-    "workspace_changed": { "type": "boolean" },
-    "scope": {
+    },
+    "sourcedText": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["result", "allowed", "violations", "guarantee"],
+      "required": ["value", "source"],
       "properties": {
-        "result": { "enum": ["pass", "fail"] },
-        "allowed": { "$ref": "#/$defs/paths" },
-        "violations": { "$ref": "#/$defs/paths" },
-        "guarantee": { "const": "Git-visible changes in the declared workspace only" }
+        "source": { "enum": ["observed", "estimated", "unknown"] },
+        "value": { "type": ["string", "null"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "source": { "const": "unknown" } }, "required": ["source"] },
+          "then": { "properties": { "value": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "source": { "enum": ["observed", "estimated"] } }, "required": ["source"] },
+          "then": { "properties": { "value": { "type": "string", "minLength": 1 } } }
+        }
+      ]
+    },
+    "sourcedCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "source"],
+      "properties": {
+        "source": { "enum": ["observed", "estimated", "unknown"] },
+        "value": { "type": ["integer", "null"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "source": { "const": "unknown" } }, "required": ["source"] },
+          "then": { "properties": { "value": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "source": { "enum": ["observed", "estimated"] } }, "required": ["source"] },
+          "then": { "properties": { "value": { "type": "integer", "minimum": 0 } } }
+        }
+      ]
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observed_model", "usage", "fast_state"],
+      "properties": {
+        "observed_model": { "$ref": "#/$defs/sourcedText" },
+        "fast_state": { "$ref": "#/$defs/sourcedText" },
+        "usage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["input", "output", "cache", "reasoning"],
+          "properties": {
+            "input": { "$ref": "#/$defs/sourcedCount" },
+            "output": { "$ref": "#/$defs/sourcedCount" },
+            "cache": { "$ref": "#/$defs/sourcedCount" },
+            "reasoning": { "$ref": "#/$defs/sourcedCount" }
+          }
+        },
+        "subagents": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["calls", "tokens"],
+          "properties": {
+            "calls": {"$ref": "#/$defs/sourcedCount"},
+            "tokens": {"$ref": "#/$defs/sourcedCount"}
+          }
+        }
       }
+    },
+    "receiptBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "run_id", "mission", "feature", "work_unit", "attempt", "role", "provider", "model", "repo",
+        "task", "tier", "started_at", "finished_at", "outcome", "exit_code", "log_path", "execution_spec_path",
+        "execution_spec_sha256", "requested_configuration", "resolved_configuration", "observed_configuration",
+        "git_before", "git_after", "commits", "changed_paths", "workspace_changed", "scope"
+      ],
+      "properties": {
+        "schema_version": { "enum": [1, 2] },
+        "observation": { "$ref": "#/$defs/observation" },
+        "run_id": { "type": "string", "format": "uuid", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+        "mission": { "$ref": "#/$defs/nonempty" },
+        "feature": { "type": ["string", "null"] },
+        "work_unit": { "$ref": "#/$defs/nonempty" },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "role": { "enum": ["brain", "worker"] },
+        "provider": { "enum": ["codex", "claude", "agent", "agy"] },
+        "model": { "$ref": "#/$defs/nonempty" },
+        "repo": { "type": "string", "pattern": "^/" },
+        "task": { "type": ["string", "null"] },
+        "tier": { "type": ["string", "null"] },
+        "started_at": { "type": "string", "format": "date-time" },
+        "finished_at": { "type": "string", "format": "date-time" },
+        "outcome": { "enum": ["completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed"] },
+        "exit_code": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "log_path": { "type": "string", "pattern": "^\\.tasks/logs/[0-9a-f-]+\\.log$" },
+        "execution_spec_path": { "$ref": "#/$defs/nonempty" },
+        "execution_spec_sha256": { "$ref": "#/$defs/sha256" },
+        "requested_configuration": { "$ref": "#/$defs/requestedConfig" },
+        "resolved_configuration": { "$ref": "#/$defs/resolvedConfig" },
+        "observed_configuration": { "$ref": "#/$defs/observedConfig" },
+        "git_before": { "$ref": "#/$defs/gitState" },
+        "git_after": { "$ref": "#/$defs/gitState" },
+        "commits": { "type": "array", "items": { "$ref": "#/$defs/commit" } },
+        "changed_paths": { "$ref": "#/$defs/paths" },
+        "workspace_changed": { "type": "boolean" },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["result", "allowed", "violations", "guarantee"],
+          "properties": {
+            "result": { "enum": ["pass", "fail"] },
+            "allowed": { "$ref": "#/$defs/paths" },
+            "violations": { "$ref": "#/$defs/paths" },
+            "guarantee": { "const": "Git-visible changes in the declared workspace only" }
+          }
+        }
+      },
+      "allOf": [
+        { "if": { "properties": { "role": { "const": "worker" } }, "required": ["role"] }, "then": { "properties": { "feature": { "type": "string", "minLength": 1 }, "task": { "$ref": "#/$defs/nonempty" }, "tier": { "enum": ["economy", "premium"] } } } },
+        { "if": { "properties": { "role": { "const": "brain" } }, "required": ["role"] }, "then": { "properties": { "feature": { "type": "null" }, "task": { "type": "null" }, "tier": { "type": "null" } } } },
+        { "if": { "properties": { "outcome": { "const": "completed" } }, "required": ["outcome"] }, "then": { "properties": { "exit_code": { "const": 0 } } }, "else": { "properties": { "exit_code": { "minimum": 1 } } } },
+        { "if": { "properties": { "scope": { "properties": { "result": { "const": "pass" } }, "required": ["result"] } }, "required": ["scope"] }, "then": { "properties": { "scope": { "properties": { "violations": { "maxItems": 0 } } } } } }
+      ]
     }
   },
-  "allOf": [
-    { "if": { "properties": { "role": { "const": "worker" } }, "required": ["role"] }, "then": { "properties": { "feature": { "type": "string", "minLength": 1 }, "task": { "$ref": "#/$defs/nonempty" }, "tier": { "enum": ["economy", "premium"] } } } },
-    { "if": { "properties": { "role": { "const": "brain" } }, "required": ["role"] }, "then": { "properties": { "feature": { "type": "null" }, "task": { "type": "null" }, "tier": { "type": "null" } } } },
-    { "if": { "properties": { "outcome": { "const": "completed" } }, "required": ["outcome"] }, "then": { "properties": { "exit_code": { "const": 0 } } }, "else": { "properties": { "exit_code": { "minimum": 1 } } } },
-    { "if": { "properties": { "scope": { "properties": { "result": { "const": "pass" } }, "required": ["result"] } }, "required": ["scope"] }, "then": { "properties": { "scope": { "properties": { "violations": { "maxItems": 0 } } } } } }
+  "oneOf": [
+    {
+      "allOf": [
+        { "$ref": "#/$defs/receiptBody" },
+        {
+          "type": "object",
+          "properties": { "schema_version": { "const": 1 } },
+          "required": ["schema_version"],
+          "not": { "required": ["observation"] }
+        }
+      ]
+    },
+    {
+      "allOf": [
+        { "$ref": "#/$defs/receiptBody" },
+        {
+          "type": "object",
+          "properties": {
+            "schema_version": { "const": 2 },
+            "observation": { "$ref": "#/$defs/observation" }
+          },
+          "required": ["schema_version", "observation"]
+        }
+      ]
+    }
   ]
 }

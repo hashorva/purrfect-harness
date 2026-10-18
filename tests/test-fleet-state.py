@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Mounted regressions for the public frozen-fleet policy entry points."""
-import hashlib, json, os, shutil, stat, subprocess, sys, tempfile
+import hashlib, json, os, shutil, stat, subprocess, sys, tempfile, unittest
+try:
+    import jsonschema
+except ImportError:
+    sys.exit("FAIL: jsonschema required for this test (test-only dependency: python3 -m pip install jsonschema)")
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
+FLEET_STATE=Path(os.environ.get('FLEET_STATE', ROOT/'scripts/fleet_state.py'))
 def run(*args, env=None, ok=True):
     p=subprocess.run(args,text=True,capture_output=True,env=env)
     if ok != (p.returncode == 0): raise AssertionError(f"{args}: {p.returncode}: {p.stderr}")
@@ -16,6 +21,15 @@ def conditional_rules(schema):
     return {(json.dumps(rule['if'],sort_keys=True),json.dumps(rule['then'],sort_keys=True)) for rule in schema['$defs']['seat']['allOf']}
 def require_schema_policy():
     inventory=json.loads((ROOT/'schemas/fleet-inventory.schema.json').read_text())
+    family_pattern=r"^(?!sk-|ghp_|github_pat_|xox|AKIA)(?!.*[A-Za-z0-9]{20})[a-z][a-z0-9._-]*(?![\s\S])"
+    assert inventory['$defs']['family']=={'type':'string','pattern':family_pattern}
+    family_validator=jsonschema.Draft202012Validator(inventory['$defs']['family'])
+    assert family_validator.is_valid('argon') and family_validator.is_valid('composer')
+    for bad in ('argon\n','sk-ant-api03-abcdefghijklmnopqrstuvwxyz','ghp_abcdefghijklmnopqrstuvwxyz0123456789','github_pat_shortkey','xoxb-short','AKIAIOSFODNN7EXAMPLE','a'*20,'sk-ant'):
+      assert not family_validator.is_valid(bad), bad
+    for provider_def in ('agyPremium','claudePremium','codexPremium','cursorPremium'):
+      rule=inventory['$defs'][provider_def]['allOf'][1]['properties']
+      assert 'family' not in rule
     mission=json.loads((ROOT/'schemas/mission-fleet.schema.json').read_text())
     for schema, unavailable, effort in ((inventory,True,False),(mission,False,True)):
       rules=conditional_rules(schema)
@@ -37,6 +51,85 @@ def require_schema_policy():
       if unavailable: required.append(({'source':{'const':'unavailable'}},{'health':{'const':'unknown'},'model':{'const':'unavailable'}}))
       for condition, properties in required:
         assert (json.dumps({'properties':condition},sort_keys=True),json.dumps({'properties':properties},sort_keys=True)) in rules
+def require_frozen_family_and_schema():
+    require_schema_policy()
+    sys.path.insert(0,str(ROOT/'scripts'))
+    import copy
+    import harness_registry as H
+    import fleet_state as F
+    now='2026-10-17T00:00:00Z'
+    prov={
+      'claude':{'probed_at':now,'capabilities':F.CAPABILITIES['claude'],'status':'success','path':'/bin/claude','aliases':['opus','sonnet','haiku','fable'],'observed_models':[]},
+      'codex':{'probed_at':now,'capabilities':F.CAPABILITIES['codex'],'status':'unavailable','error':'none'},
+      'agent':{'probed_at':now,'capabilities':F.CAPABILITIES['agent'],'status':'unavailable','error':'none'},
+      'agy':{'probed_at':now,'capabilities':F.CAPABILITIES['agy'],'status':'success','path':'/bin/agy','aliases':[],'observed_models':['gemini-3.8-flash-high','gemini-4-argon-high','gemini-5-nova-high']},
+    }
+    inv={'schema_version':1,'probed_at':now,'providers':prov,'last_good':{'claude':prov['claude'],'agy':prov['agy']},'seats':F.make_seats(prov,{'claude':prov['claude'],'agy':prov['agy']})}
+    reg=H.load_registry()
+    fleet={
+      'schema_version':2,'mission':{'path':'docs/missions/x'},'inventory':{'sha256':'0'*64,'probed_at':now},
+      'approval':{'status':'approved','approved_by':'t','approved_at':now},
+      'policy':{'billing_classes':['included'],'fast':False,'no_zdr':'forbid'},
+      'seats':{
+        'claude.premium':{'family':'opus','effort':'high','doors':['claude'],'speed':'unknown','approved_resolution':{'provider':'claude','model':'opus','effort':'high','speed':'unknown'}},
+        'agy.premium':{'family':'flash','effort':'high','doors':['agy'],'speed':'unknown','approved_resolution':{'provider':'agy','model':'gemini-3.8-flash-high','effort':'high','speed':'unknown'}},
+      },
+    }
+    assert F.resolve_v2(fleet,'claude.premium',reg,inv)['model']=='opus'
+    assert F.resolve_v2(fleet,'agy.premium',reg,inv)['model']=='gemini-3.8-flash-high'
+    reg2=copy.deepcopy(reg); reg2['seat_specs']['agy.premium']=['agy','nova','argon']
+    fleet2=copy.deepcopy(fleet); fleet2['seats']['agy.premium']['family']='argon'
+    assert F.resolve_v2(fleet2,'agy.premium',reg2,inv)['model']=='gemini-5-nova-high'
+    with tempfile.TemporaryDirectory() as tmp:
+      d=Path(tmp); inv_path=d/'inventory.json'; write(inv_path,inv)
+      mission=d/'docs/missions/x'; mission.mkdir(parents=True)
+      bindings=d/'bindings.json'
+      write(bindings,{
+        'claude.premium':{'family':'opus','effort':'high','doors':['claude'],'speed':'unknown'},
+        'agy.premium':{'family':'flash','effort':'high','doors':['agy'],'speed':'unknown'},
+      })
+      policy=d/'policy.json'
+      write(policy,{'billing_classes':['included'],'fast':False,'no_zdr':'forbid'})
+      frozen=run('python3',str(FLEET_STATE),'freeze-v2','--mission-dir',str(mission),'--inventory',str(inv_path),'--bindings',str(bindings),'--policy',str(policy),'--approved-by','test','--approved-at',now)
+      frozen_doc=json.loads(frozen.stdout)
+      assert frozen_doc['seats']['claude.premium']['approved_resolution']['model']=='opus'
+      assert frozen_doc['seats']['agy.premium']['approved_resolution']['model']=='gemini-3.8-flash-high'
+class FleetStateTests(unittest.TestCase):
+  def test_resolve_v2_frozen_family_wins_and_schema_pattern_is_ecma262(self):
+    require_frozen_family_and_schema()
+  def test_doors_are_native_only(self):
+    sys.path.insert(0,str(ROOT/'scripts'))
+    import harness_registry as H
+    import fleet_state as F
+    reg=H.load_registry(); now='2026-10-18T00:00:00Z'; providers={}
+    for key in F.PROVIDERS:
+      base={'probed_at':now,'capabilities':F.CAPABILITIES[key]}
+      if key=='claude': providers[key]={**base,'status':'success','path':'/bin/claude','aliases':['opus','sonnet','haiku'],'observed_models':[]}
+      elif key=='agy': providers[key]={**base,'status':'success','path':'/bin/agy','aliases':[],'observed_models':['claude-opus-5-5-high','gemini-4-argon-high']}
+      else: providers[key]={**base,'status':'unavailable','error':'none'}
+    inv={'schema_version':1,'probed_at':now,'providers':providers,'last_good':{},'seats':F.make_seats(providers,{})}
+    seat={'family':'opus','effort':'high','speed':'unknown','doors':['agy','claude'],'approved_resolution':{'provider':'agy','model':'claude-opus-5-5-high','effort':'high','speed':'unknown'}}
+    fleet={'schema_version':2,'mission':{'path':'docs/missions/x'},'inventory':{'sha256':'0'*64,'probed_at':now},'approval':{'status':'approved','approved_by':'t','approved_at':now},'policy':{'billing_classes':['included'],'fast':False,'no_zdr':'forbid'},'seats':{'brain':seat}}
+    self.assertEqual((F.resolve_v2(fleet,'brain',reg,inv)['provider'],F.resolve_v2(fleet,'brain',reg,inv)['door'],F.resolve_v2(fleet,'brain',reg,inv)['model']),('claude','claude','opus'))
+    providers['claude']={'probed_at':now,'capabilities':F.CAPABILITIES['claude'],'status':'failure','path':'/bin/claude','error':'down'}; inv['seats']=F.make_seats(providers,{})
+    self.assertEqual(F.resolve_v2(fleet,'brain',reg,inv)['source'],'unavailable')
+    for door,family in (('agy','opus'),('agy','sonnet'),('agy','gpt-oss'),('agy-argon','opus'),('codex','opus'),('cursor-grok','opus')):
+      self.assertFalse(F.native_door(reg,door,family),(door,family))
+    for door,family in (('claude','opus'),('claude','sonnet'),('claude','haiku'),('codex','sol'),('codex','terra'),('codex','luna'),('agy','flash'),('agy-argon','argon'),('cursor-grok','grok'),('cursor-composer','composer')):
+      self.assertTrue(F.native_door(reg,door,family),(door,family))
+    with tempfile.TemporaryDirectory() as tmp:
+      d=Path(tmp); mission=d/'mission'; mission.mkdir(); inv_path=d/'inventory.json'; write(inv_path,inv)
+      bindings=d/'bindings.json'; policy=d/'policy.json'; write(policy,{'billing_classes':['included'],'fast':False,'no_zdr':'forbid'})
+      command=('python3',str(FLEET_STATE),'freeze-v2','--mission-dir',str(mission),'--inventory',str(inv_path),'--bindings',str(bindings),'--policy',str(policy),'--approved-by','test','--approved-at',now)
+      write(bindings,{'brain':{'family':'opus','effort':'high','doors':['agy','claude'],'speed':'unknown'}})
+      refused=run(*command,ok=False)
+      self.assertIn("door 'agy' is not native to family 'opus'",refused.stderr)
+      self.assertFalse((mission/'fleet.json').exists())
+      providers['claude']={'probed_at':now,'capabilities':F.CAPABILITIES['claude'],'status':'success','path':'/bin/claude','aliases':['opus','sonnet','haiku'],'observed_models':[]}
+      inv['seats']=F.make_seats(providers,{})
+      write(inv_path,inv)
+      write(bindings,{'brain':{'family':'opus','effort':'high','doors':['claude'],'speed':'unknown'},'brain_argon':{'family':'argon','effort':'high','doors':['agy-argon'],'speed':'unknown'}})
+      run(*command)
 def main():
   with tempfile.TemporaryDirectory() as tmp:
     d=Path(tmp); bin=d/'bin'; bin.mkdir(); home=d/'home'; (home/'.codex').mkdir(parents=True)
@@ -79,22 +172,87 @@ def main():
     clis=d/'clis'; clis.mkdir()
     stub(clis,'agent',"printf '%s\\n' 'Available models:' '  * grok-4.7 (default)' '  - grok-4.7-build-fast'")
     stub(clis,'cursor-agent',"[ \"$1\" = models ] || exit 2\nprintf '%s\\n' 'Available models' '' 'auto - Auto (default)' 'composer-2.5 - Composer 2.5' 'composer-2.5-fast - Composer 2.5 Fast' 'grok-4.7-xhigh - Grok 4.7  Extra High' 'grok-4.7-xhigh-fast - Grok 4.7  Extra High Fast' 'cursor-grok-4.5-high - Grok 4.5'")
-    stub(clis,'agy',"[ \"$1\" = models ] || exit 2\nprintf '%s\\n' 'gemini-3.8-flash-high     Gemini 3.8 Flash (High)' 'gemini-3.8-flash-low      Gemini 3.8 Flash (Low)' 'claude-opus-5-5-high      Claude Opus 5.5 (High)'")
+    stub(clis,'agy',"[ \"$1\" = models ] || exit 2\nprintf '%s\\n' 'gemini-3.8-flash-high     Gemini 3.8 Flash (High)' 'gemini-3.8-flash-low      Gemini 3.8 Flash (Low)' 'claude-opus-5-5-high      Claude Opus 5.5 (High)' 'gemini-4-argon-low        Gemini 4 Argon (Low)' 'gemini-4-argon-high       Gemini 4 Argon (High)'")
     cli_env={**env,'PATH':str(clis)+os.pathsep+env['PATH']}; real=d/'real-clis.json'
     run('/bin/bash',str(public),'--json','--out',str(real),env=cli_env); doc=json.loads(real.read_text())
     assert doc['providers']['agent']['status']=='success' and doc['providers']['agent']['path'].endswith('/cursor-agent')
     assert doc['seats']['cursor.economy']['model']=='composer-2.5' and doc['seats']['cursor.premium']['model']=='grok-4.7-xhigh'
     assert doc['seats']['agy.economy']['model']=='gemini-3.8-flash-high' and doc['seats']['agy.economy']['source']=='observed'
-    assert doc['seats']['agy.premium']['source']=='unavailable', 'no Gemini Pro listed: never guess one'
+    assert doc['seats']['agy.premium']['model']=='gemini-4-argon-high' and doc['seats']['agy.premium']['family']=='argon' and doc['seats']['agy.premium']['source']=='observed'
+    # T-053: ranked families, unlisted models, registry-only family discovery.
+    sys.path.insert(0,str(ROOT/'scripts'))
+    import copy
+    import harness_registry as H
+    import fleet_state as F
+    agy_nova_stub="[ \"$1\" = models ] || exit 2\nprintf '%s\\n' 'gemini-3.8-flash-high     Gemini 3.8 Flash (High)' 'gemini-4-argon-high       Gemini 4 Argon (High)' 'gemini-5-nova-high        Gemini 5 Nova (High)'"
+    stub(clis,'agy',agy_nova_stub)
+    nova_inv=d/'nova-inventory.json'
+    human=run('/bin/bash',str(public),'--out',str(nova_inv),env=cli_env)
+    nova_doc=json.loads(nova_inv.read_text())
+    assert nova_doc['seats']['agy.premium']['model']=='gemini-4-argon-high'
+    assert nova_doc['seats']['agy.premium']['family']=='argon'
+    assert 'gemini-5-nova-high' in nova_doc['seats']['agy.premium']['unlisted']
+    assert 'note: agy.premium unlisted: gemini-5-nova-high' in human.stdout
+    run('/bin/bash',str(public),'--json','--out',str(nova_inv),env=cli_env)
+    nova_mission=d/'docs/missions/t053'; nova_mission.mkdir(parents=True)
+    bindings=d/'t053-bindings.json'
+    write(bindings,{'agy.premium':{'family':'argon','effort':'high','speed':'unknown','doors':['agy']}})
+    policy=d/'t053-policy.json'
+    write(policy,{'billing_classes':['included'],'fast':False,'no_zdr':'forbid'})
+    frozen=run('python3',str(FLEET_STATE),'freeze-v2','--mission-dir',str(nova_mission),'--inventory',str(nova_inv),'--bindings',str(bindings),'--policy',str(policy),'--approved-by','test','--approved-at','2026-10-17T00:00:00Z')
+    frozen_doc=json.loads(frozen.stdout)
+    assert frozen_doc['seats']['agy.premium']['approved_resolution']['model']=='gemini-4-argon-high'
+    reg_path=d/'harness-registry.json'
+    reg=copy.deepcopy(H.load_registry())
+    reg['seat_specs']['agy.premium']=['agy','nova','argon']
+    write(reg_path,reg)
+    reg_env={**cli_env,'HARNESS_REGISTRY':str(reg_path)}
+    nova2_inv=d/'nova2-inventory.json'
+    run('/bin/bash',str(public),'--json','--out',str(nova2_inv),env=reg_env)
+    nova2_doc=json.loads(nova2_inv.read_text())
+    assert nova2_doc['seats']['agy.premium']['model']=='gemini-5-nova-high'
+    assert nova2_doc['seats']['agy.premium']['family']=='nova'
+    assert 'gemini-5-nova-high' not in nova2_doc['seats']['agy.premium']['unlisted']
+    drift_log=d/'.tasks/drift/t053.jsonl'
+    if drift_log.exists(): drift_log.unlink()
+    resolved=run('python3',str(FLEET_STATE),'resolve','--fleet',str(nova_mission/'fleet.json'),'--seat','agy.premium','--inventory',str(nova2_inv),'--root',str(d),'--mission-path',str(nova_mission),env=reg_env)
+    assert json.loads(resolved.stdout)['model']=='gemini-5-nova-high'
+    events=[json.loads(line) for line in drift_log.read_text().splitlines()]
+    assert events[-1]['from']['model']=='gemini-4-argon-high' and events[-1]['to']['model']=='gemini-5-nova-high'
+    bad_unlisted=copy.deepcopy(nova_doc)
+    bad_unlisted['seats']['agy.premium']['unlisted']='bad'
+    reject(('python3',str(FLEET_STATE),'validate-inventory'),d/'bad-unlisted-type.json',bad_unlisted)
+    bad_unlisted2=copy.deepcopy(nova_doc)
+    bad_unlisted2['seats']['agy.premium']['unlisted']=['']
+    reject(('python3',str(FLEET_STATE),'validate-inventory'),d/'bad-unlisted-empty.json',bad_unlisted2)
+    dup=copy.deepcopy(reg); dup['seat_specs']['agy.premium']=['agy','argon','argon']
+    try: H.validate_registry(dup)
+    except H.RegistryError: pass
+    else: raise AssertionError('duplicate families accepted')
+    unsafe=copy.deepcopy(reg); unsafe['seat_specs']['agy.premium']=['agy','Nova!']
+    try: H.validate_registry(unsafe)
+    except H.RegistryError: pass
+    else: raise AssertionError('unsafe family accepted')
+    assert F.choose(['gemini-4-argonx-high'],'argon') is None
+    assert F.choose(['not-gemini-4-argon-high'],'argon') is None
+    assert F.choose(['not-gemini-4-argon-high','gemini-4-argon-high'],'argon')=='gemini-4-argon-high'
+    assert F.choose(['gemini-4-argon-high-fast'],'argon') is None
+    assert F.choose(['gemini-4-argon-high-fast','gemini-4-argon-high'],'argon')=='gemini-4-argon-high'
+    assert F.choose(['gpt-terra-10-high'],'terra')=='gpt-terra-10-high'
+    assert F.choose(['not-gpt-terra-1'],'terra') is None
+    assert F.unlisted_models(['not-gemini-4-argon-high','gemini-4-argon-high','gemini-4-argon-high-fast'],['argon'])==['not-gemini-4-argon-high']
     write(home/'.codex/models_cache.json',{'models':['gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna']})
     # A bad cache is a current failure and retains the old record byte-for-byte semantically.
     (home/'.codex/models_cache.json').write_text('{bad')
     run('/bin/bash',str(public),'--json','--out',str(inv),env=env); second=json.loads(inv.read_text())
     assert second['providers']['codex']['status']=='failure' and second['last_good']['codex']==old
     assert second['seats']['codex.premium']['source']=='last_good' and second['seats']['codex.premium']['health']=='degraded'
-    # First-run failure only permits degraded fallback; no empty model can validate.
-    fresh=d/'fresh.json'; run('/bin/bash',str(public),'--json','--out',str(fresh),env=env); f=json.loads(fresh.read_text()); assert f['seats']['codex.premium']['source']=='fallback'
-    bad=json.loads(fresh.read_text()); bad['seats']['codex.premium']['model']=''; reject(('python3',str(ROOT/'scripts/fleet_state.py'),'validate-inventory'),d/'bad.json',bad)
+    # First-run failure must not guess a model; no empty model can validate.
+    fresh=d/'fresh.json'; run('/bin/bash',str(public),'--json','--out',str(fresh),env=env); f=json.loads(fresh.read_text())
+    assert f['seats']['codex.premium']['source']=='unavailable' and f['seats']['codex.premium']['model']=='unavailable'
+    historical=json.loads(fresh.read_text()); historical['seats']['codex.premium'].update(model='gpt-5.6-terra',health='degraded',source='fallback')
+    write(d/'historical-fallback-inventory.json',historical); run('python3',str(FLEET_STATE),'validate-inventory',str(d/'historical-fallback-inventory.json'))
+    bad=json.loads(fresh.read_text()); bad['seats']['codex.premium']['model']=''; reject(('python3',str(FLEET_STATE),'validate-inventory'),d/'bad.json',bad)
     # Exact nested inventory shape and provenance: this reproduces the formerly accepted forgery.
     for label, mutate in (
       ('partial-provider',lambda x:x['providers'].pop('codex')),
@@ -107,33 +265,54 @@ def main():
       ('seat-provider',lambda x:x['seats']['codex.premium'].__setitem__('provider','agent')),
       ('seat-capabilities',lambda x:x['seats']['codex.premium'].__setitem__('capabilities',{'efforts':['bogus'],'speeds':['wild']})),
       ('forged-healthy-source',lambda x:(x['seats']['codex.premium'].__setitem__('health','healthy'),x['seats']['codex.premium'].__setitem__('source','observed'))),
-      ('healthy-fallback',lambda x:x['seats']['codex.premium'].__setitem__('health','healthy')),
+      ('healthy-fallback',lambda x:(x['seats']['codex.premium'].update(model='gpt-5.6-terra',health='healthy',source='fallback'))),
       ('alias-non-claude',lambda x:(x['seats']['codex.premium'].__setitem__('source','alias'),x['seats']['codex.premium'].__setitem__('health','healthy'))),
       ('observed-claude',lambda x:(x['seats']['brain'].__setitem__('source','observed'),x['seats']['brain'].__setitem__('health','healthy'))),
     ):
       candidate=json.loads(json.dumps(second if label in {'partial-last-good','unknown-last-good'} else json.loads(fresh.read_text())))
-      mutate(candidate); reject(('python3',str(ROOT/'scripts/fleet_state.py'),'validate-inventory'),d/(label+'.json'),candidate)
+      mutate(candidate)
+      write(d/(label+'.json'),candidate)
+      rejected=run('python3',str(FLEET_STATE),'validate-inventory',str(d/(label+'.json')),ok=False)
+      if label=='healthy-fallback': assert rejected.stderr.strip()=='ERROR: inventory.seats.codex.premium invalid fallback source', rejected.stderr
+    for label, base in (('fallback-retained-guard',second),('fallback-current-unavailable-guard',json.loads(fresh.read_text()))):
+      candidate=json.loads(json.dumps(base)); candidate['seats']['codex.premium'].update(model='gpt-5.6-terra',health='degraded',source='fallback')
+      if label=='fallback-current-unavailable-guard':
+        provider=candidate['providers']['codex']; caps=provider['capabilities']; provider.clear(); provider.update(probed_at=candidate['probed_at'],capabilities=caps,status='unavailable',error='not on PATH')
+      path=d/(label+'.json'); write(path,candidate)
+      rejected=run('python3',str(FLEET_STATE),'validate-inventory',str(path),ok=False)
+      assert rejected.stderr.strip()=='ERROR: inventory.seats.codex.premium invalid fallback source', rejected.stderr
     corrupt=b'{not json'; inv.chmod(0o644); inv.write_bytes(corrupt); run('/bin/bash',str(public),'--out',str(inv),env=env,ok=False); assert inv.read_bytes()==corrupt
+    fallback_bindings=d/'fallback-bindings.json'; write(fallback_bindings,{'worker':{'inventory_seat':'codex.premium','effort':'medium','speed':'unknown'}})
+    # Historical fallback inventories remain readable, but v1 freeze refuses every fallback model.
+    for label, model in (('forged', 'gpt-forged-terra-99'), ('real-looking', 'gpt-5.6-terra')):
+      fallback=json.loads(fresh.read_text()); fallback['seats']['codex.premium'].update(model=model,health='degraded',source='fallback')
+      fallback_inv=d/(label+'-fallback-inventory.json'); write(fallback_inv,fallback)
+      run('python3',str(FLEET_STATE),'validate-inventory',str(fallback_inv))
+      fallback_mission=d/(label+'-fallback-mission'); fallback_mission.mkdir()
+      fallback_fleet=fallback_mission/'fleet.json'
+      result=run('python3',str(FLEET_STATE),'freeze','--mission-dir',str(fallback_mission),'--inventory',str(fallback_inv),'--bindings',str(fallback_bindings),'--approved-by','human','--approved-at','2026-08-21T00:00:00Z',ok=False)
+      assert result.stderr.strip()=='ERROR: binding worker uses seat codex.premium with source fallback; fallback bindings are no longer allowed', result.stderr
+      assert not fallback_fleet.exists(), fallback_fleet
     # Restore trusted inventory and freeze exact bytes into a canonical no-clobber snapshot.
     write(inv,second); bindings=d/'bindings.json'; write(bindings,{'worker':{'inventory_seat':'codex.premium','effort':'medium','speed':'unknown'}})
     mission=d/'docs/missions/x'; mission.mkdir(parents=True); fleet=mission/'fleet.json'
-    run('python3',str(ROOT/'scripts/fleet_state.py'),'freeze','--mission-dir',str(mission),'--inventory',str(inv),'--bindings',str(bindings),'--approved-by','human','--approved-at','2026-08-21T00:00:00Z')
+    run('python3',str(FLEET_STATE),'freeze','--mission-dir',str(mission),'--inventory',str(inv),'--bindings',str(bindings),'--approved-by','human','--approved-at','2026-08-21T00:00:00Z')
     frozen=fleet.read_bytes(); data=json.loads(frozen); assert data['inventory']['sha256']==hashlib.sha256(inv.read_bytes()).hexdigest() and stat.S_IMODE(fleet.stat().st_mode)==0o444
-    run('python3',str(ROOT/'scripts/fleet_state.py'),'freeze','--mission-dir',str(mission),'--inventory',str(inv),'--bindings',str(bindings),'--approved-by','human','--approved-at','2026-08-21T00:00:00Z',ok=False); assert fleet.read_bytes()==frozen
+    run('python3',str(FLEET_STATE),'freeze','--mission-dir',str(mission),'--inventory',str(inv),'--bindings',str(bindings),'--approved-by','human','--approved-at','2026-08-21T00:00:00Z',ok=False); assert fleet.read_bytes()==frozen
     # Resolution reads only fleet: remove inventory and assert all equality/capability failure paths.
-    inv.unlink(); good=run('python3',str(ROOT/'scripts/fleet_state.py'),'resolve','--fleet',str(fleet),'--seat','worker'); assert json.loads(good.stdout)['model']=='gpt-5.6-terra'
-    for flag,value in (('--provider','agent'),('--model','wrong'),('--effort','high'),('--speed','fast')): run('python3',str(ROOT/'scripts/fleet_state.py'),'resolve','--fleet',str(fleet),'--seat','worker',flag,value,ok=False)
-    run('python3',str(ROOT/'scripts/fleet_state.py'),'resolve','--fleet',str(fleet),'--seat','missing',ok=False)
-    run('python3',str(ROOT/'scripts/fleet_state.py'),'resolve','--fleet',str(d/'missing-fleet.json'),'--seat','worker',ok=False)
-    fleet.chmod(0o644); fleet.write_bytes(frozen+b' '); run('python3',str(ROOT/'scripts/fleet_state.py'),'validate-fleet',str(fleet),ok=False); fleet.write_bytes(frozen); fleet.chmod(0o444)
-    unapproved=json.loads(frozen); unapproved['approval']['status']='draft'; write(d/'unapproved.json',unapproved); run('python3',str(ROOT/'scripts/fleet_state.py'),'validate-fleet',str(d/'unapproved.json'),ok=False)
-    unsupported=json.loads(frozen); unsupported['seats']['worker']['effort']='bogus'; write(d/'unsupported.json',unsupported); run('python3',str(ROOT/'scripts/fleet_state.py'),'validate-fleet',str(d/'unsupported.json'),ok=False)
+    inv.unlink(); good=run('python3',str(FLEET_STATE),'resolve','--fleet',str(fleet),'--seat','worker'); assert json.loads(good.stdout)['model']=='gpt-5.6-terra'
+    for flag,value in (('--provider','agent'),('--model','wrong'),('--effort','high'),('--speed','fast')): run('python3',str(FLEET_STATE),'resolve','--fleet',str(fleet),'--seat','worker',flag,value,ok=False)
+    run('python3',str(FLEET_STATE),'resolve','--fleet',str(fleet),'--seat','missing',ok=False)
+    run('python3',str(FLEET_STATE),'resolve','--fleet',str(d/'missing-fleet.json'),'--seat','worker',ok=False)
+    fleet.chmod(0o644); fleet.write_bytes(frozen+b' '); run('python3',str(FLEET_STATE),'validate-fleet',str(fleet),ok=False); fleet.write_bytes(frozen); fleet.chmod(0o444)
+    unapproved=json.loads(frozen); unapproved['approval']['status']='draft'; write(d/'unapproved.json',unapproved); run('python3',str(FLEET_STATE),'validate-fleet',str(d/'unapproved.json'),ok=False)
+    unsupported=json.loads(frozen); unsupported['seats']['worker']['effort']='bogus'; write(d/'unsupported.json',unsupported); run('python3',str(FLEET_STATE),'validate-fleet',str(d/'unsupported.json'),ok=False)
     # Degraded Claude provenance is valid for retained and fallback bindings.
     for source in ('last_good','fallback'):
       claude_degraded=json.loads(frozen)
       claude_degraded['seats']['worker'].update(provider='claude',model='sonnet',family='sonnet',speed='unknown',health='degraded',source=source,capabilities={'efforts':['low','medium','high','xhigh','max'],'speeds':['unknown']})
       write(d/(source+'-claude.json'),claude_degraded)
-      run('python3',str(ROOT/'scripts/fleet_state.py'),'validate-fleet',str(d/(source+'-claude.json')))
+      run('python3',str(FLEET_STATE),'validate-fleet',str(d/(source+'-claude.json')))
     for label, mutate in (
       ('invalid-hash',lambda x:x['inventory'].__setitem__('sha256','bad')),
       ('fleet-extra',lambda x:x.__setitem__('junk',True)),
@@ -151,7 +330,8 @@ def main():
       ('fleet-last-good-healthy',lambda x:x['seats']['worker'].update(source='last_good',health='healthy')),
       ('fleet-alias-degraded',lambda x:x['seats']['worker'].update(source='alias',health='degraded')),
     ):
-      candidate=json.loads(frozen); mutate(candidate); reject(('python3',str(ROOT/'scripts/fleet_state.py'),'validate-fleet'),d/(label+'.json'),candidate)
+      candidate=json.loads(frozen); mutate(candidate); reject(('python3',str(FLEET_STATE),'validate-fleet'),d/(label+'.json'),candidate)
     require_schema_policy()
+    require_frozen_family_and_schema()
   print('fleet policy tests passed')
-if __name__=='__main__': main()
+if __name__=='__main__': unittest.main() if len(sys.argv)>1 else main()

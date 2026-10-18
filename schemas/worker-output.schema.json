@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Worker output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["self_reported_model", "summary", "checks"],
+  "properties": {
+    "self_reported_model": {
+      "type": "object",
+      "required": ["value", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}(?![\\s\\S])"},
+        "source": {"enum": ["self_reported"]}
+      }
+    },
+    "summary": {"type": "string", "minLength": 1, "pattern": "^[^\\r\\n\\x00-\\x1f\\x7f]*[^\\s\\x00-\\x1f\\x7f][^\\r\\n\\x00-\\x1f\\x7f]*(?![\\s\\S])"},
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "exit_code"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string", "minLength": 1, "pattern": "^[^\\r\\n\\x00-\\x1f\\x7f]*[^\\s\\x00-\\x1f\\x7f][^\\r\\n\\x00-\\x1f\\x7f]*(?![\\s\\S])"},
+          "exit_code": {"type": "integer"}
+        }
+      }
+    }
+  }
+}

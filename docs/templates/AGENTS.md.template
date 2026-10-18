@@ -103,8 +103,7 @@ When active, these rules apply on top of everything above:
   Acceptance records the run UUID, VerificationRecord hash, time, and identity.
   Editing or removing descriptions/steps is a failed task. `GOAL.md` is narrative; if they disagree,
   `features.json` wins.
-- **Session end (clean state):** checks green, committed with a descriptive message, one
-  entry appended to mission `PROGRESS.md`. A human gate requires a recorded Human GATE
+- **Session end (clean state):** checks green, committed with a descriptive message, and the run recorded in mission `PROGRESS.md` by the orchestrator from its receipt (workers do not write it). A human gate requires a recorded Human GATE
   verdict and status update; chat approval alone is not the record.
 - **WORKER_TASK files are binding.** If you received one, it is your entire scope; its
   file allow/deny lists override any broader interpretation of the goal. Respect its

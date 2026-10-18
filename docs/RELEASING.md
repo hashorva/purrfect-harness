@@ -1,15 +1,17 @@
 ---
 title: Releasing purrfect-harness
-updated: 2026-10-14
+updated: 2026-10-18
 ---
 
 <!-- markdownlint-disable MD025 -->
 
 # Releasing (tag-driven)
 
-The current release is `3.0.0`: Phase 1 (Execution Truth) plus the 2.3.2 fixes.
-Before it, `2.3.1` and `2.3.2` were untagged development baselines; they were
-never published. Choose each new version with the rules below.
+The current release is `3.1.0`: Phase 2A Foundation (fleet v2, provider
+contracts 7–9, ledger v2, seat probes and the native-only fleet), after `3.0.0`
+(Phase 1, Execution Truth). Before `3.0.0`, `2.3.1` and `2.3.2` were untagged
+development baselines; they were never published. Choose each new version with
+the rules below.
 
 Versioning is SemVer, interpreted for a harness:
 
@@ -62,7 +64,7 @@ authorization, replace `X.Y.Z` below with the chosen version:
 
 ```bash
 RELEASE_VERSION=X.Y.Z
-git tag -a "v$RELEASE_VERSION" -m "v$RELEASE_VERSION — Phase 1 execution truth"
+git tag -a "v$RELEASE_VERSION" -m "v$RELEASE_VERSION"
 bash scripts/install-harness.sh --validate-release
 git push origin main
 git push origin "v$RELEASE_VERSION"

@@ -96,7 +96,7 @@ with `bash scripts/active-mission.sh`.
 │    - Baseline check: the task's project-appropriate checks
 │    - Read the skills the task file names
 │    - Implement ONLY the task. Test end-to-end; report evidence to the orchestrator.
-│    - Commit scoped implementation and PROGRESS.md; leave a clean tree.
+│    - Commit the scoped implementation; leave a clean tree. Do not write PROGRESS.md: the Front Desk records the run from its receipt.
 │
 ├─ 4. REVIEW (orchestrator)
 │    - Read the diff (git diff or PR), PROGRESS.md entry, and verify claims
@@ -136,30 +136,43 @@ state, commits, changed paths, scope, and terminal outcome. The scope guarantee
 is limited to Git-visible changes in the declared workspace; it is not general
 filesystem containment. Unknown provider observations remain `unknown`.
 
-After effect review, before any further Git-visible change:
+After effect review (later commits do not affect it; checks run at the
+receipt's commit):
 
 ```bash
 bash scripts/verify-mission.sh --run-id "$RUN_ID" "$MISSION"
 ```
 
 The verifier reads JSON argv bullets from the task at the receipt's base commit,
-requires the current snapshot to equal the receipt's after snapshot before and
-after checks, and atomically creates an immutable VerificationRecord. It does not
-change feature acceptance. Only the orchestrator then runs:
+requires a clean receipt `git_after`, then checks out that commit in a temporary
+detached worktree and requires its snapshot to match before and after checks. A
+check that needs machine-local state (for example `.tasks/`) reads it through
+`$PURRFECT_LIVE_ROOT`. The verifier atomically creates an immutable
+VerificationRecord in the live mission; a run may be verified again, each
+verification adds a numbered immutable record, and failed records remain as
+history. Acceptance cites the hash of the specific passing record.
+Only the orchestrator then runs:
 
 ```bash
 VERIFICATION_SHA256=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' \
   "$MISSION/verification/$RUN_ID.json")
 bash scripts/accept-feature.sh --run-id "$RUN_ID" \
   --verification-sha256 "$VERIFICATION_SHA256" --accepted-by "orchestrator identity" "$MISSION"
+python3 scripts/ledger.py fold "$MISSION"
 bash scripts/verify-mission.sh --require-workers "$MISSION"
 ```
+
+The committed `docs/missions/ledger.jsonl` and mission `drift.jsonl` store
+validated rows only. A ledger row holds execution summaries only: no transcripts,
+prompts, secrets, or absolute paths. Per-run JSON remains under `.tasks/ledger/`
+until fold lands in the acceptance commit.
 
 Acceptance records `accepted_run_id`, `accepted_verification_sha256`, `accepted_at`,
 and `accepted_by`. A failed, no-op, unrelated, legacy, or null-evidence run cannot
 stand in for this chain. Retain old artifacts without manufacturing acceptance.
-If review or later commits moved the snapshot, dispatch a bounded qualification
-task for the pending feature and verify its new run; do not rewrite old evidence.
+If the receipt's `git_after` is dirty (the worker did not commit), the verifier
+refuses it; dispatch a bounded qualification task for the pending feature and
+verify its new run; do not rewrite old evidence.
 
 ## Human GATE registration (binding)
 

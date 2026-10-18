@@ -1,0 +1,6 @@
+{"type":"system","subtype":"init","model":"claude-opus-5-5"}
+{"type":"assistant","parent_tool_use_id":null,"message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Task","input":{"subagent_type":"explorer"}},{"type":"tool_use","id":"t2","name":"Agent","input":{}},{"type":"tool_use","id":"t9","name":"Read","input":{}}]}}
+{"type":"assistant","parent_tool_use_id":"t1","message":{"id":"m2","content":[{"type":"tool_use","id":"t3","name":"Task","input":{}}]}}
+{"type":"user","parent_tool_use_id":null,"message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]},"tool_use_result":{"totalTokens":1200}}
+{"type":"user","parent_tool_use_id":null,"message":{"content":[{"type":"tool_result","tool_use_id":"t2"}]},"tool_use_result":{"totalTokens":34}}
+{"type":"result","usage":{"input_tokens":5,"output_tokens":7},"modelUsage":{"claude-opus-5-5":{}}}

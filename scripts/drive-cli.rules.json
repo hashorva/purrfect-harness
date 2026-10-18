@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "danger_words": ["push", "pull", "fetch", "clone", "curl", "wget", "install", "delete", "remove", "rm", "force", "reset", "rebase", "credit", "payment", "billing", "purchase"],
+  "never_rules": [
+    {
+      "id": "write_outside_workspace",
+      "decision": "stop",
+      "exit_code": 3,
+      "description": "Refuse file writes, edits, creations, or deletions outside workspace or to sensitive paths",
+      "patterns": [
+        "(?i)\\b(?:allow\\s+)?(?:write|writ(?:e|ing)|edit(?:ing)?|modif(?:y|ying)|creat(?:e|ing)|delet(?:e|ing)|sav(?:e|ing)|touch|overwrite)\\b.*?(?:/etc/|\\.\\./|~/|~[a-zA-Z0-9_]|/var/|/usr/|/opt/|/home/|/Users/|outside (?:of )?(?:the )?(?:workspace|repo|project)|external (?:directory|folder|path))",
+        "(?i)\\b(?:write|writ(?:e|ing)|edit(?:ing)?|modif(?:y|ying)|creat(?:e|ing)|delet(?:e|ing)|sav(?:e|ing)|touch|overwrite)\\s+(?:to\\s+)?(?:/etc/|\\.\\./|~/|external\\b)",
+        "(?i)\\boutside (?:of )?(?:the )?(?:workspace|repo|repository|project)\\b"
+      ]
+    },
+    {
+      "id": "delete_ignored_files",
+      "decision": "stop",
+      "exit_code": 3,
+      "description": "Refuse git clean or deletion of ignored/untracked files",
+      "patterns": [
+        "(?i)\\bgit\\s+clean\\b",
+        "(?i)\\b(?:delete|deleting|remove|removing|clean(?:ing)?|purge|purging)\\b.*?\\b(?:ignored|untracked)\\s+(?:files?|directories|folders?)\\b",
+        "(?i)\\b(?:ignored|untracked)\\s+(?:files?|directories|folders?)\\b.*?\\b(?:delete|remove|clean|purge)\\b"
+      ]
+    },
+    {
+      "id": "git_history_changes",
+      "decision": "stop",
+      "exit_code": 3,
+      "description": "Refuse git history rewrites, rebases, amends, hard resets, and force pushes",
+      "patterns": [
+        "(?i)\\bgit\\s+reset\\s+--hard\\b",
+        "(?i)\\bgit\\s+rebase\\b",
+        "(?i)\\bgit\\s+commit\\s+--amend\\b",
+        "(?i)\\bgit\\s+push\\b.*?(?:--force|-f\\b)",
+        "(?i)\\bgit\\s+filter-branch\\b",
+        "(?i)\\b(?:rewrite|rewriting|modify|modifying)\\b.*?\\b(?:git\\s+)?history\\b",
+        "(?i)\\bhistory\\s+rewrite\\b"
+      ]
+    },
+    {
+      "id": "push_network_install",
+      "decision": "stop",
+      "exit_code": 3,
+      "description": "Refuse network push, downloads, package installs, and deploy actions",
+      "patterns": [
+        "(?i)\\bgit\\s+push\\b",
+        "(?i)\\b(?:curl|wget)\\b",
+        "(?i)\\b(?:npm|pnpm|yarn|pip|pip3|brew|cargo|gem|composer|poetry|bun)\\s+(?:install|add|update)\\b",
+        "(?i)\\b(?:network|fetch|deploy|download)\\b.*?(?:prompt|access|request|\\?)",
+        "(?i)\\b(?:deploy(?:ment)?|publish)\\b",
+        "(?i)\\b(?:install|download|fetch)\\b.*?\\b(?:package|dependency|dependencies|network|internet)\\b"
+      ]
+    },
+    {
+      "id": "credits_payment",
+      "decision": "stop",
+      "exit_code": 3,
+      "description": "Refuse billing, purchases, payments, subscriptions, or credit charges",
+      "patterns": [
+        "(?i)\\b(?:purchase|buy|charge|pay|payment|billing)\\b",
+        "(?i)\\b(?:api\\s+)?credits?\\b",
+        "(?i)\\bupgrade(?:\\s+(?:your\\s+)?plan)?\\b",
+        "(?i)\\bspend(?:ing)?\\s+limit\\b",
+        "(?i)\\b(?:invoice|subscription)\\b"
+      ]
+    }
+  ],
+  "allowed_rules": [
+    {
+      "id": "folder_trust",
+      "decision": "answer",
+      "answer": "y\n",
+      "description": "Allow folder trust prompts only for the exact current workspace",
+      "patterns": [
+        "(?i)\\b(?:do you )?trust (?:the )?(?:authors of (?:the )?)?files in (?:this )?folder\\b",
+        "(?i)\\b(?:do you )?trust (?:this )?(?:folder|directory|workspace)\\b"
+      ]
+    }
+  ],
+  "prompt_patterns": [
+    "Do you trust the files in this folder?\n{workspace}\n[y/n]",
+    "Do you trust the files in this folder? {workspace} [y/n]",
+    "Do you trust this folder {workspace} [y/n]"
+  ]
+}

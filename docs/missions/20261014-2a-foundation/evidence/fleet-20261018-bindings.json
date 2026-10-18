@@ -1,0 +1,13 @@
+{
+  "brain":          {"family":"opus",     "effort":"high",   "doors":["claude"],          "speed":"unknown"},
+  "brain_argon":    {"family":"argon",    "effort":"high",   "doors":["agy-argon"],       "speed":"unknown"},
+  "brain_codex":    {"family":"sol",      "effort":"high",   "doors":["codex"],           "speed":"unknown"},
+  "claude.premium": {"family":"opus",     "effort":"medium", "doors":["claude"],          "speed":"unknown"},
+  "claude.economy": {"family":"haiku",    "effort":"medium", "doors":["claude"],          "speed":"unknown"},
+  "codex.premium":  {"family":"sol",      "effort":"medium", "doors":["codex"],           "speed":"unknown"},
+  "codex.economy":  {"family":"luna",     "effort":"medium", "doors":["codex"],           "speed":"unknown"},
+  "cursor.premium": {"family":"grok",     "effort":"medium", "doors":["cursor-grok"],     "speed":"standard"},
+  "cursor.economy": {"family":"composer", "effort":"medium", "doors":["cursor-composer"], "speed":"standard"},
+  "agy.premium":    {"family":"argon",    "effort":"medium", "doors":["agy-argon"],       "speed":"unknown"},
+  "agy.economy":    {"family":"flash",    "effort":"medium", "doors":["agy"],             "speed":"unknown"}
+}

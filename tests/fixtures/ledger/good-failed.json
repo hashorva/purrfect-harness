@@ -1,0 +1,53 @@
+{
+  "schema_version": 2,
+  "mission": "20261014-2a-foundation",
+  "feature": "F004",
+  "task": "T-026",
+  "run_id": "b7d2a9e4-1c6f-4e3a-8d5b-0a9f3c2e7d61",
+  "parent_run": "5f0c1e2a-7b3d-4c8e-9a1f-2d6b8e4c7a10",
+  "group_id": null,
+  "attempt": 2,
+  "repair_round": 1,
+  "cli": "agy",
+  "cli_version": {"value": null, "source": "unknown"},
+  "door": "agy",
+  "tier": "economy",
+  "pool": "agy",
+  "billing_class": "subscription",
+  "requested_model": {"value": "gemini-3-pro", "source": "estimated"},
+  "resolved_model": {"value": null, "source": "unknown"},
+  "observed_model": {"value": null, "source": "unknown"},
+  "self_reported_model": {
+    "value": null,
+    "source": "unknown"
+  },
+  "effort": {"value": null, "source": "unknown"},
+  "fast_state": {"value": null, "source": "unknown"},
+  "task_class_tags": ["agy-seat"],
+  "allow_list_size": {"value": 3, "source": "observed"},
+  "task_text_tokens": {"value": 920, "source": "estimated"},
+  "ste_flag": true,
+  "active_lesson_ids": ["L-004"],
+  "experiment_id": "exp-seat-smoke-01",
+  "wall_time_s": {"value": 600.0, "source": "observed"},
+  "turns": {"value": 0, "source": "observed"},
+  "tool_calls": {"value": 0, "source": "observed"},
+  "tokens_input": {"value": null, "source": "unknown"},
+  "tokens_output": {"value": null, "source": "unknown"},
+  "tokens_cache": {"value": null, "source": "unknown"},
+  "tokens_reasoning": {"value": null, "source": "unknown"},
+  "cost": {"value": 0.0, "source": "estimated", "currency": "USD"},
+  "quota_share": {"value": null, "source": "unknown"},
+  "checks": [
+    {"name": "test-fleet-state.py", "exit_code": 1}
+  ],
+  "diff_size": {
+    "files": {"value": 0, "source": "observed"},
+    "lines": {"value": 0, "source": "observed"}
+  },
+  "scope_result": "not_checked",
+  "anti_gaming_flags": ["gaming-check-skipped"],
+  "failure_class": "launch_timeout",
+  "escalation_reason": "agy hang on first call",
+  "outcome": "timed_out"
+}

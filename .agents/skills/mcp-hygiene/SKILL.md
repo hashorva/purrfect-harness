@@ -20,7 +20,7 @@ fix is behavioral: **keep knowledge on disk, not in the window.**
    for capabilities with no CLI equivalent.
 2. **Query once, persist immediately.** The moment an MCP result matters beyond the
    current thought, write the distilled version to a file:
-   - schema verification → append to the task's PROGRESS.md entry or a `notes/` scratch file
+   - schema verification → append to your final report or a `notes/` scratch file
    - fetched reference data → a file in the repo (with provenance)
    Then work from the file, not from re-querying.
 3. **Batch your questions.** Before calling, list everything you need from that server
@@ -29,8 +29,8 @@ fix is behavioral: **keep knowledge on disk, not in the window.**
    forbidden unless the task file explicitly authorizes that exact write. Schema changes
    NEVER go through MCP (see `supabase-migration` skill).
 5. **Verify-then-drop.** MCP's proper role in this harness: verify a state ("did the
-   migration land?", "does the endpoint return 200?"), record the boolean + one line of
-   evidence in PROGRESS.md, move on. Don't keep raw result payloads around.
+   migration land?", "does the endpoint return 200?"), report the boolean + one line of
+   evidence in your final message, move on. Don't keep raw result payloads around.
 6. **Don't load servers you won't use.** If your task file doesn't name an MCP server,
    don't connect one. If your tool loads all servers by default, ignore the ones not
    named in the task.
@@ -38,6 +38,5 @@ fix is behavioral: **keep knowledge on disk, not in the window.**
 ## Self-check when a session feels sluggish
 
 - Am I re-querying something I already learned? → It should be in a file. Put it there.
-- Is a huge tool result sitting mid-history? → Summarize its 2-line conclusion into
-  PROGRESS.md; if the tool supports clearing/compacting tool results, do it — and treat
+- Is a huge tool result sitting mid-history? → Summarize its 2-line conclusion into your final report or a `notes/` file; if the tool supports clearing/compacting tool results, do it — and treat
   the need as a signal the task should have been split.

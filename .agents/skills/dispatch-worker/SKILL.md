@@ -42,6 +42,7 @@ provider launch. There is no cross-repository dispatch or parallel scheduling.
   contains consecutive Markdown code-span bullets, each a non-empty JSON argv.
 - The tree is clean, the task baseline passes, the target CLI is available, and
   no worker or verifier is concurrently changing this workspace.
+- Run `bash scripts/fleet-doctor.sh` before dispatch; any `ERROR` blocks dispatch.
 
 The wrapper validates authorization before persisting a spec or launching the
 provider. Its exclusive workspace lock lasts through terminal receipt creation.
@@ -57,9 +58,11 @@ bash scripts/spawn-worker.sh codex "$MISSION/tasks/T-XXX.md" \
   --tier economy --feature F00X --attempt 1 --effort medium --speed unknown
 ```
 
-For Cursor, use the approved `agent` tier and its explicit `standard` or `fast`
-speed. The adapter calls the `cursor-agent` binary, because Grok Build also
-installs a bare `agent`. Check the frozen seat before adapting the example.
+For Cursor, the provider is `cursor` (binary `cursor-agent`), so
+`spawn-worker.sh cursor ...` is the normal form, with the approved `standard` or
+`fast` speed. `agent` is a legacy name: frozen v1 fleets and v3 specs record it,
+and the launcher converts `cursor` to it. Do not dispatch as bare `agent`, because
+Grok Build also installs a bare `agent`. Check the frozen seat before adapting the example.
 
 The launcher prints `run_id` and the log path. Keep that UUID; never select a
 receipt by timestamp, task name, or “latest success.” One run writes:
@@ -82,6 +85,29 @@ Use the exact receipt, scoped Git diff/commits, PROGRESS entry, and a short log
 tail. Do not stream full transcripts into review context. Apply the project's
 code-reviewer procedure and guard-verification for guards or safety tests.
 
+### Brain `review` action (structured verdict)
+
+`spawn-brain.sh … review` judges worker effects by diff and log; when the brain
+records a structured review verdict as JSON, that document must validate against
+`schemas/review-verdict.schema.json`. Check a saved verdict file:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_verdict.py \
+  schemas/review-verdict.schema.json /path/to/verdict.json
+```
+
+When the verdict JSON is taken from a provider transcript saved to a file, read
+each provider's `structured_output.json_schema_flag` in `harness-registry.json`.
+If the flag is set, validate the saved file with the command above. If the
+provider has no structured-output flag (for example cursor), use `--after-run`:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_verdict.py --after-run \
+  <provider> schemas/review-verdict.schema.json /path/to/output.txt
+```
+
+On success the script prints `mode=flag` or `mode=after-run`.
+
 Receipt fields include `outcome`, `exit_code`, `git_before`, `git_after`,
 `commits`, `changed_paths`, `workspace_changed`, and `scope`. Check that:
 
@@ -90,22 +116,22 @@ Receipt fields include `outcome`, `exit_code`, `git_before`, `git_after`,
   `scope.result` is `pass`.
 - Changed paths and commits demonstrate the requested work within the allow-list.
 - The log shows actual work, not a flag explanation, refusal, or unanswered question.
-- Required checks have final results, and the current Git snapshot still equals
-  the receipt's after snapshot.
+- Required checks have final results, and the receipt's `git_after` is clean (the
+  worker committed).
 
 New worker evidence cannot use null workspace-change values or legacy
 `worker-*.json` receipts as a warning-only substitute. Exit zero alone is not
 proof of implementation.
 
-If later review/progress commits changed the snapshot before run-specific
-verification, do not rewrite the old receipt. Create a bounded qualification
+If the receipt's `git_after` is dirty (the worker did not commit), do not rewrite
+the old receipt. Create a bounded qualification
 task for the same pending feature, commit its checks and allow-list, and run
 it from a clean base. Review and verify that new run; retain the implementation
 run as evidence of its own effects.
 
 ## 4. Verify, then accept separately
 
-Do this before making any further Git-visible change after the reviewed run:
+Do this after effect review; later commits do not affect it:
 
 ```bash
 RUN_ID="<UUID printed by the launcher>"
@@ -113,8 +139,10 @@ bash scripts/verify-mission.sh --run-id "$RUN_ID" "$MISSION"
 ```
 
 This executes the verification argv from the task at the receipt's base commit.
-It requires the current Git snapshot to equal the receipt's after snapshot before
-and after the checks. It creates one immutable record at
+It refuses a dirty receipt `git_after`, runs the checks in a temporary clean
+worktree at the receipt's commit, and requires that worktree's snapshot to equal
+the receipt's before and after the checks. A check that needs machine-local state
+reads it through `$PURRFECT_LIVE_ROOT`. It creates one immutable record at
 `$MISSION/verification/$RUN_ID.json`; it does not accept the feature.
 
 Only after a passing result and effect review may the orchestrator compute the
@@ -125,12 +153,15 @@ VERIFICATION_SHA256=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(
   "$MISSION/verification/$RUN_ID.json")
 bash scripts/accept-feature.sh --run-id "$RUN_ID" \
   --verification-sha256 "$VERIFICATION_SHA256" --accepted-by "orchestrator identity" "$MISSION"
+python3 scripts/ledger.py fold "$MISSION"
 bash scripts/verify-mission.sh --require-workers "$MISSION"
 ```
 
 Acceptance records `accepted_run_id`, `accepted_verification_sha256`,
 `accepted_at`, and `accepted_by` in features.json. No separate acceptance
-artifact is needed. Commit verification and acceptance with the progress record.
+artifact is needed. Each run's row stays gitignored under `.tasks/ledger/`
+until fold; commit verification, acceptance, `docs/missions/ledger.jsonl`, and
+`$MISSION/drift.jsonl` together with the progress record. A ledger row holds execution summaries only: no transcripts, prompts, secrets, or absolute paths.
 
 ## 5. Handle failures and gates
 
@@ -148,6 +179,22 @@ artifact is needed. Commit verification and acceptance with the progress record.
 
 Workers never accept features or change mission gates. Bootstrap exemptions must
 be declared at feature authoring; they do not convert worker code into exempt work.
+
+## Sandbox limits
+
+Per-provider write limits live in `harness-registry.json` (`sandbox_limits`);
+`dispatch_policy.py` refuses a worker task whose allow-list hits one before launch.
+Login-state visibility limits are not decidable from a task file alone; they remain
+routing rules in this table.
+
+| Limit | Rule |
+| --- | --- |
+| Codex workspace-write cannot see Claude or agy login state; login checks are verification-only. | Do not run login checks (for example `scripts/fleet-doctor.sh`) as worker checks; put them in the task's verification commands. |
+| Codex workspace-write can write under `.agents/` only when the task's allow-list names `.agents/…` paths: since contract 5 (T-013) the adapter then adds `--add-dir <repo>/.agents`. Broad patterns (`**`, `.agents`) do not enable it, so such a write still fails at run time. | Allow-list each skill edit by its `.agents/…` path (for example `.agents/skills/dispatch-worker/SKILL.md`) when the task goes to Codex. Write limits are data in `harness-registry.json` (`sandbox_limits`), which `dispatch_policy.py` enforces before launch. |
+
+Worker checks are focused and sandbox-safe commands only; the full suite and
+real-machine checks go in the task's verification commands. When a new limit is
+found, add a row here and in the template note.
 
 ## Never
 
