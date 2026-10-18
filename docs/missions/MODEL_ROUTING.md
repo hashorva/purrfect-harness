@@ -193,6 +193,8 @@ an explicit selection of another already-approved seat, never a silent dispatch
 rebind. External `--repo` execution is disabled in Phase 1.
 Every seat may be checked before dispatch with `bash scripts/probe-seat.sh <seat>`, runs under the runner's stall and zero-turn guards, and launches Claude with `--strict-mcp-config`; workers never write `PROGRESS.md`.
 
+Note (F010): Contract 9 runs every provider with its full native toolset (Claude bypassPermissions with CLAUDE_DISALLOWED_TOOLS and --strict-mcp-config, Codex workspace-write with network and live web search on and cua_repl/node_repl disabled per run, and CLI --help flag baselines tracked by probe-seat.sh).
+
 ## Pricing
 
 Consult current vendor pricing and the account's actual subscription when cost
