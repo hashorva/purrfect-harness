@@ -43,7 +43,7 @@ class WrapperIntegration(unittest.TestCase):
         self.root.mkdir()
         (self.root / "scripts").mkdir()
         for name in ("execution_spec.py", "execution_receipt.py", "execution_runner.py",
-                     "execute_provider.py", "observe_output.py", "model_id.py", "fleet_state.py", "dispatch_policy.py",
+                     "execute_provider.py", "observe_output.py", "model_id.py", "run_id.py", "fleet_state.py", "dispatch_policy.py",
                      "harness_registry.py", "ledger.py",
                      "spawn-worker.sh", "spawn-brain.sh", "verify-mission.sh", "verification_record.py",
                      "accept-feature.sh", "write-receipt.sh"):

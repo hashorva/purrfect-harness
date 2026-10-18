@@ -479,6 +479,7 @@ class LedgerMutations(unittest.TestCase):
             copy = scripts / "ledger.py"
             copy.write_text(mutant, encoding="utf-8")
             shutil.copy2(ROOT / "scripts/model_id.py", scripts / "model_id.py")
+            shutil.copy2(ROOT / "scripts/run_id.py", scripts / "run_id.py")
             shutil.copy2(ROOT / "harness-registry.json", Path(temp) / "harness-registry.json")
             row_path = Path(temp) / "row.json"
             row = json.loads(json.dumps(load(GOOD)))
@@ -565,6 +566,7 @@ class LedgerMutations(unittest.TestCase):
             copy = scripts / "ledger.py"
             copy.write_text(mutant, encoding="utf-8")
             shutil.copy2(ROOT / "scripts/model_id.py", scripts / "model_id.py")
+            shutil.copy2(ROOT / "scripts/run_id.py", scripts / "run_id.py")
             shutil.copy2(ROOT / "harness-registry.json", Path(temp) / "harness-registry.json")
             row = json.loads(json.dumps(load(GOOD)))
             row["failure_class"] = "build/tmp"
@@ -861,6 +863,7 @@ class LedgerDoorTests(unittest.TestCase):
                 ledger = scripts / "ledger.py"
                 shutil.copy2(LEDGER, ledger)
                 shutil.copy2(ROOT / "scripts/model_id.py", scripts / "model_id.py")
+                shutil.copy2(ROOT / "scripts/run_id.py", scripts / "run_id.py")
                 if content is not None:
                     (root / "harness-registry.json").write_text(content)
                 result = self.validate(ledger=ledger)
@@ -1125,6 +1128,7 @@ class LedgerFoldTests(unittest.TestCase):
         (self.root / "scripts").mkdir(parents=True, exist_ok=True)
         shutil.copy2(LEDGER, self.root / "scripts/ledger.py")
         shutil.copy2(ROOT / "scripts/model_id.py", self.root / "scripts/model_id.py")
+        shutil.copy2(ROOT / "scripts/run_id.py", self.root / "scripts/run_id.py")
         shutil.copy2(ROOT / "harness-registry.json", self.root / "harness-registry.json")
         self.mission_path = "docs/missions/fixture"
         mission = self.root / self.mission_path

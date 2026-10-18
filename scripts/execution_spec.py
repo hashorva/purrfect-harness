@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import uuid
+from run_id import validate_run_id
 
 
 FIELDS_V1 = frozenset(("schema_version", "run_id", "mission", "work_unit", "role", "feature",
@@ -102,13 +103,9 @@ def validate(spec):
                         (f"; missing={','.join(missing)}" if missing else "") +
                         (f"; extra={','.join(extra)}" if extra else ""))
     try:
-        parsed_uuid = uuid.UUID(spec["run_id"])
-    except (ValueError, AttributeError, TypeError) as exc:
-        raise SpecError("run_id must be a UUID") from exc
-    if (parsed_uuid.int == 0 or parsed_uuid.variant != uuid.RFC_4122 or
-            parsed_uuid.version not in range(1, 9) or
-            str(parsed_uuid) != spec["run_id"]):
-        raise SpecError("run_id must be a canonical UUID")
+        validate_run_id(spec["run_id"])
+    except ValueError as exc:
+        raise SpecError(str(exc)) from None
     for name in ("mission", "work_unit", "role", "provider", "model", "effort", "speed", "base_commit", "prompt"):
         _nonempty(spec, name)
     if spec["role"] not in ROLES:

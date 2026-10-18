@@ -28,6 +28,7 @@ CONFIGURED_SOURCES = ("observed", "configured", "estimated", "unknown")
 SELF_REPORTED_SOURCES = ("self_reported", "unknown")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from model_id import MODEL_ID_RE, valid_model_id
+from run_id import UUID_SHAPE, validate_run_id
 
 
 # Privacy rule, applied to every text value at every nesting level (lists included).
@@ -43,7 +44,6 @@ EMAIL = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]
 ABSOLUTE_PATH = re.compile(r"/Users/|/private/|/var/folders/|/home/|[A-Za-z]:\\", re.I)
 # The lookbehind lets relative build/tmp and src/etc labels pass while catching path roots.
 SENSITIVE_PATH = re.compile(r"/tmp/|/etc/|(?<![\w.-])/(?:tmp|etc)\b|~[\w.-]*/|\$\{?HOME", re.I)
-UUID_SHAPE = re.compile(r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
 # Hidden format characters, bidi controls, full-width @ and /, and line separators.
 # U+061C is the Arabic letter mark, a bidi control.
 HIDDEN_CHARS = re.compile("[\u061c\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff\uff20\uff0f\u2028\u2029]")
@@ -53,7 +53,6 @@ PROMPT_PREFIX = "Read docs/missions/"
 PROMPT_PREFIXES = re.compile(r"^\s*(?:Read \S*[/\\.]|You are |Follow AGENTS\.md)")
 OUTCOMES = ("completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed")
 SCOPE_RESULTS = ("pass", "fail", "not_checked")
-RUN_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 MAX_INPUT_BYTES = 1024 * 1024
 DRIFT_KEYS = ("at", "mission", "seat", "from", "to", "inventory_sha256")
 RESOLUTION_KEYS = ("provider", "model", "effort", "speed")
@@ -143,7 +142,9 @@ def check_text(path, value, nullable=False):
 def check_run_id(path, value, nullable=False):
     if value is None and nullable:
         return
-    if not isinstance(value, str) or not RUN_ID.match(value):
+    try:
+        validate_run_id(value)
+    except ValueError:
         fail(path, "must be a run id (UUID v1-8)" + (" or null" if nullable else ""))
 
 
@@ -466,7 +467,10 @@ def fold_mission(root, mission_path):
     pending_rows = []
     if ledger_dir.is_dir():
         for path in ledger_dir.glob("*.json"):
-            label = path.stem if UUID_SHAPE.fullmatch(path.stem) else "row"
+            try:
+                label = validate_run_id(path.stem)
+            except ValueError:
+                label = "row"
             try:
                 content = safe_read(path, label)
                 row = json.loads(content)

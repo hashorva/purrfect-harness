@@ -67,7 +67,7 @@ class ExecutionReceiptObservation(unittest.TestCase):
         (self.root / "scripts").mkdir()
         for name in (
             "execution_spec.py", "execution_receipt.py", "execution_runner.py",
-            "execute_provider.py", "observe_output.py", "model_id.py", "fleet_state.py", "dispatch_policy.py",
+            "execute_provider.py", "observe_output.py", "model_id.py", "run_id.py", "fleet_state.py", "dispatch_policy.py",
             "harness_registry.py", "spawn-worker.sh", "spawn-brain.sh",
         ):
             shutil.copy2(ROOT / "scripts" / name, self.root / "scripts" / name)
