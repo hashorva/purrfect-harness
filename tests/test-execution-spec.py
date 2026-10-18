@@ -183,7 +183,7 @@ class ExecutionSpecContract(unittest.TestCase):
     def test_versioned_exact_dry_run_contract_for_every_provider_and_role(self):
         contract_one = {
             "codex": lambda s: ["codex", "exec", "-C", str(self.repo), "-s", "workspace-write", "-m", "test-model",
-                                "-c", 'model_reasoning_effort="medium"', *CODEX_CONFIG_OVERRIDES, "exact prompt"],
+                                "-c", 'model_reasoning_effort="medium"', "exact prompt"],
             "claude": lambda s: ["claude", "-p", "exact prompt", "--model", "test-model", "--effort", "medium",
                                  "--allowedTools", "Read,Write,Edit,Bash"],
             "agy": lambda s: ["agy", "--dangerously-skip-permissions", "--print-timeout", "30m", "--model", "test-model", "--effort", "medium", "-p", "exact prompt"],
@@ -230,7 +230,7 @@ class ExecutionSpecContract(unittest.TestCase):
                 argv = json.loads(self.adapter(path, digest).stdout)["argv"]
                 self.assertEqual(argv, ["codex", "exec", "-C", str(self.repo), "-s", "workspace-write", *expected_dirs,
                                         "-m", "test-model", "-c", 'model_reasoning_effort="medium"',
-                                        *CODEX_CONFIG_OVERRIDES, "exact prompt"])
+                                        "exact prompt"])
 
     def test_codex_config_overrides_unlock_network_and_disable_repl_servers(self):
         expected_overrides = (
@@ -246,8 +246,13 @@ class ExecutionSpecContract(unittest.TestCase):
                 s_idx = argv.index("-s")
                 self.assertEqual(argv[s_idx + 1], "workspace-write")
                 self.assertEqual(argv[-1], "exact prompt")
-                overrides_slice = tuple(argv[-1 - len(expected_overrides):-1])
-                self.assertEqual(overrides_slice, expected_overrides)
+                if contract == 9:
+                    overrides_slice = tuple(argv[-1 - len(expected_overrides):-1])
+                    self.assertEqual(overrides_slice, expected_overrides)
+                else:
+                    self.assertEqual(argv[-2], 'model_reasoning_effort="medium"')
+                    for override in CODEX_CONFIG_OVERRIDES[1::2]:
+                        self.assertNotIn(override, argv)
 
         original = execute_provider.CODEX_CONFIG_OVERRIDES
         try:
@@ -285,6 +290,54 @@ class ExecutionSpecContract(unittest.TestCase):
         ):
             with self.subTest(negative=negative):
                 self.assertEqual(execute_provider.historical_argv_sha256s(negative), frozenset())
+
+    def test_codex_contracts_before_nine_keep_pre_t071_argv(self):
+        repo = str(self.repo)
+        # Literal argv copied from the 6ec695c^ reference adapter.
+        cases = [
+            (1, False, ['codex', 'exec', '-C', repo, '-s', 'workspace-write', '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', 'exact prompt']),
+            (1, True, ['codex', 'exec', '-C', repo, '-s', 'workspace-write', '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', 'exact prompt']),
+            (2, False, ['codex', 'exec', '-C', repo, '-s', 'workspace-write', '--add-dir', repo + "/.git", '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', 'exact prompt']),
+            (2, True, ['codex', 'exec', '-C', repo, '-s', 'workspace-write', '--add-dir', repo + "/.git", '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', 'exact prompt']),
+            (3, False, ['codex', 'exec', '-C', repo, '-s', 'workspace-write', '--add-dir', repo + "/.git", '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', 'exact prompt']),
+            (3, True, ['codex', 'exec', '-C', repo, '-s', 'workspace-write', '--add-dir', repo + "/.git", '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', 'exact prompt']),
+            (4, False, ['codex', 'exec', '-C', repo, '-s', 'workspace-write', '--add-dir', repo + "/.git", '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', 'exact prompt']),
+            (4, True, ['codex', 'exec', '-C', repo, '-s', 'workspace-write', '--add-dir', repo + "/.git", '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', 'exact prompt']),
+            (5, False, ['codex', 'exec', '-C', repo, '-s', 'workspace-write', '--add-dir', repo + "/.git", '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', 'exact prompt']),
+            (5, True, ['codex', 'exec', '-C', repo, '-s', 'workspace-write', '--add-dir', repo + "/.git", '--add-dir', repo + "/.agents", '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', 'exact prompt']),
+            (6, False, ['codex', 'exec', '--json', '-C', repo, '-s', 'workspace-write', '--add-dir', repo + "/.git", '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', 'exact prompt']),
+            (6, True, ['codex', 'exec', '--json', '-C', repo, '-s', 'workspace-write', '--add-dir', repo + "/.git", '--add-dir', repo + "/.agents", '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', 'exact prompt']),
+            (7, False, ['codex', 'exec', '--json', '-C', repo, '-s', 'workspace-write', '--add-dir', repo + "/.git", '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', 'exact prompt']),
+            (7, True, ['codex', 'exec', '--json', '-C', repo, '-s', 'workspace-write', '--add-dir', repo + "/.git", '--add-dir', repo + "/.agents", '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', 'exact prompt']),
+            (8, False, ['codex', 'exec', '--json', '-C', repo, '-s', 'workspace-write', '--add-dir', repo + "/.git", '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', 'exact prompt']),
+            (8, True, ['codex', 'exec', '--json', '-C', repo, '-s', 'workspace-write', '--add-dir', repo + "/.git", '--add-dir', repo + "/.agents", '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', 'exact prompt']),
+        ]
+        for contract, agents, expected in cases:
+            with self.subTest(contract=contract, agents=agents):
+                scope = [".agents/skills/x/SKILL.md"] if agents else ["allowed.txt"]
+                spec = (self.spec_v2(write_scope=scope) if contract == 1 else
+                        self.spec_v3(provider_contract_version=contract, write_scope=scope))
+                self.assertEqual(provider_contract(spec)[0], expected)
+        self.assertEqual(provider_contract(self.spec_v3(
+            provider_contract_version=9, write_scope=['allowed.txt']))[0],
+            ['codex', 'exec', '--json', '-C', repo, '-s', 'workspace-write', '--add-dir', repo + "/.git", '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', '-c', 'sandbox_workspace_write.network_access=true', '-c', 'web_search="live"', '-c', 'mcp_servers.cua_repl={command="true",enabled=false}', '-c', 'mcp_servers.node_repl={command="true",enabled=false}', 'exact prompt'])
+        self.assertEqual(provider_contract(self.spec_v3(
+            provider_contract_version=9, write_scope=['.agents/skills/x/SKILL.md']))[0],
+            ['codex', 'exec', '--json', '-C', repo, '-s', 'workspace-write', '--add-dir', repo + "/.git", '--add-dir', repo + "/.agents", '-m', 'test-model', '-c', 'model_reasoning_effort="medium"', '-c', 'sandbox_workspace_write.network_access=true', '-c', 'web_search="live"', '-c', 'mcp_servers.cua_repl={command="true",enabled=false}', '-c', 'mcp_servers.node_repl={command="true",enabled=false}', 'exact prompt'])
+        other_providers = [
+            ('claude', ['claude', '-p', 'exact prompt', '--output-format', 'stream-json', '--verbose', '--strict-mcp-config', '--model', 'test-model', '--effort', 'medium', '--allowedTools', 'Read,Write,Edit,Bash']),
+            ('agy', ['agy', '--dangerously-skip-permissions', '--print-timeout', '30m', '--model', 'test-model-medium', '--output-format', 'stream-json', '-p', 'exact prompt']),
+            ('agent', ['cursor-agent', '-p', '--force', '--trust', '--output-format', 'stream-json', '--workspace', repo, '--model', 'test-model', 'exact prompt']),
+        ]
+        for provider, expected in other_providers:
+            with self.subTest(provider=provider, contract=8):
+                changes = {"speed": "standard"} if provider == "agent" else {}
+                if provider == "agy":
+                    changes["model"] = "test-model-medium"
+                self.assertEqual(provider_contract(self.spec_v3(
+                    provider=provider, provider_contract_version=8, **changes))[0], expected)
+        self.assertTrue(execute_provider.CODEX_CONFIG_OVERRIDES_CONTRACT == 9 <=
+                        execution_spec.CURRENT_PROVIDER_CONTRACT)
 
     def test_cursor_contract_four_plain_models_and_prelaunch_rejections(self):
         cases = [
@@ -577,7 +630,7 @@ class ExecutionSpecContract(unittest.TestCase):
         cases = [
             ("codex", {}, ["codex", "exec", "--json", "-C", repo, "-s", "workspace-write", "--add-dir", git_dir,
                            "-m", "test-model", "-c", 'model_reasoning_effort="medium"',
-                           *CODEX_CONFIG_OVERRIDES, "exact prompt"]),
+                           "exact prompt"]),
             ("claude", {}, ["claude", "-p", "exact prompt", "--output-format", "json",
                             "--model", "test-model", "--effort", "medium", "--allowedTools", "Read,Write,Edit,Bash"]),
             ("agy", {}, ["agy", "--dangerously-skip-permissions", "--print-timeout", "30m", "--model", "test-model",

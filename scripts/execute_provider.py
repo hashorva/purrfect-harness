@@ -10,6 +10,8 @@ import sys
 
 from execution_spec import SpecError, load_persisted
 
+# T-071 extras apply from contract 9; contracts ≤ 8 keep their pre-T-071 argv.
+CODEX_CONFIG_OVERRIDES_CONTRACT = 9
 CODEX_CONFIG_OVERRIDES = (
     "-c", "sandbox_workspace_write.network_access=true",
     "-c", 'web_search="live"',
@@ -18,6 +20,7 @@ CODEX_CONFIG_OVERRIDES = (
 )
 
 # T-071 changed contract-9 codex argv without a bump; earlier receipts keep validating.
+# Contracts ≤ 8 need no historical form because their launch argv is the pre-T-071 argv.
 # Future argv changes must bump the contract.
 CODEX_PRE_T071_CONFIG_OVERRIDES = ()
 CODEX_PRE_T071_CONTRACTS = frozenset({9})
@@ -120,7 +123,8 @@ def provider_contract(spec, codex_overrides=None):
         codex_agents_dir = (["--add-dir", str(Path(repo) / ".agents")]
                             if contract_version >= 5 and writes_agents else [])
         if codex_overrides is None:
-            codex_overrides = CODEX_CONFIG_OVERRIDES
+            codex_overrides = (CODEX_CONFIG_OVERRIDES
+                               if contract_version >= CODEX_CONFIG_OVERRIDES_CONTRACT else ())
         argv = ["codex", "exec"]
         if contract_version >= 6:
             argv.append("--json")

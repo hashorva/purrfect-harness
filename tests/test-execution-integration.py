@@ -600,7 +600,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         receipt_path = self.root / ".tasks/receipts" / f"{run_id}.json"
         receipt = json.loads(receipt_path.read_text())
         self.assertEqual(receipt["resolved_configuration"]["argv_sha256"], hashlib.sha256(
-            (json.dumps(["codex", "exec", "-C", self.physical_root, "-s", "workspace-write", "-m", "legacy-model", "-c", 'model_reasoning_effort="medium"', *CODEX_CONFIG_OVERRIDES, self.prompt_worker()], separators=(",", ":")) + "\n").encode()
+            (json.dumps(["codex", "exec", "-C", self.physical_root, "-s", "workspace-write", "-m", "legacy-model", "-c", 'model_reasoning_effort="medium"', self.prompt_worker()], separators=(",", ":")) + "\n").encode()
         ).hexdigest())
         verified = self.invoke(["bash", "scripts/verify-mission.sh", "--run-id", run_id, "docs/missions/fixture"])
         self.assertEqual(verified.returncode, 0, verified.stderr + verified.stdout)
