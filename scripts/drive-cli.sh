@@ -117,9 +117,7 @@ trap cleanup EXIT
 write_command_json
 touch "$TRANSCRIPT_DIR/events.jsonl"
 
-tmux -L "$TMUX_SOCKET" -f /dev/null new-session -d -x 220 -s "$SESSION" -c "$WORKSPACE" -- "${CLI_ARGS[@]}"
-tmux -L "$TMUX_SOCKET" set-option -t "$SESSION" remain-on-exit on 2>/dev/null || \
-  tmux -L "$TMUX_SOCKET" set-option -t "$SESSION":0 remain-on-exit on
+tmux -L "$TMUX_SOCKET" -f /dev/null start-server \; set-option -g remain-on-exit on \; new-session -d -x 220 -s "$SESSION" -c "$WORKSPACE" -- "${CLI_ARGS[@]}"
 
 stop_session() {
   local exit_code="$1" reason="$2" rule_id="${3:-null}" pane_text="$4"

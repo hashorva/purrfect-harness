@@ -166,6 +166,40 @@ assert doc.get("reason") == "completed", doc
 assert doc.get("rule_id") is None, doc
 PY
 
+echo "== immediate exit 0 keeps the tmux server (20 runs)"
+cat >"$TMP/fake-instant-exit.sh" <<'FAKE'
+#!/bin/sh
+exit 0
+FAKE
+chmod +x "$TMP/fake-instant-exit.sh"
+i=0
+while [ "$i" -lt 20 ]; do
+  i=$((i + 1))
+  find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  set +e
+  combined="$(DRIVE_CLI_STALL_SECS=4 bash "$DRIVE_CLI" "$WS" -- "$TMP/fake-instant-exit.sh" 2>&1)"
+  status=$?
+  set -e
+  if [ "$status" -ne 0 ]; then
+    echo "FAIL: immediate exit run $i should exit 0, got $status" >&2
+    printf '%s\n' "$combined" >&2
+    exit 1
+  fi
+  if printf '%s' "$combined" | grep -Fq "no server running"; then
+    echo "FAIL: immediate exit run $i lost the tmux server" >&2
+    printf '%s\n' "$combined" >&2
+    exit 1
+  fi
+  result="$(find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -type d | head -n 1)/result.json"
+  python3 - "$result" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+assert doc.get("exit_code") == 0, doc
+assert doc.get("reason") == "completed", doc
+assert doc.get("rule_id") is None, doc
+PY
+done
+
 echo "== folder trust for exact workspace (answer y, exit 0)"
 cat >"$TMP/fake-trust-ok.sh" <<'FAKE'
 #!/usr/bin/env bash
