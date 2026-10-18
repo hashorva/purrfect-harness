@@ -1,5 +1,7 @@
+import contextlib
 import hashlib
 import importlib
+import io
 import json
 import os
 import shutil
@@ -8,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -126,6 +129,61 @@ class PlanningStatsTests(unittest.TestCase):
         self.assertLessEqual(len(lines), 40)
         bad = [n for n, t in enumerate(lines, 1) if L.EMAIL.search(t) or L.ABSOLUTE_PATH.search(t) or any(p.search(t) for p in L.SECRET_PATTERNS)]
         self.assertEqual(bad, [])
+
+    def _compare_rows(self):
+        sub = lambda c, t, s="observed": {"calls": c, "tokens": t, "source": s}
+        row = lambda ref, parent, agent, outcome="done": {"ref": ref, "parent_total": parent, "subagent": agent, "outcome": outcome}
+        before = [row(f"b{i}", 1_800_000 + i, sub(0, 0), "failed" if i < 2 else "done") for i in range(10)]
+        after = [row(f"a{i}", 900_000 + i, sub(2, 300_000), "failed" if i == 0 else "done") for i in range(10)]
+        return before, after, [row("r1", 300_000, sub(1, 50_000))], sub, row
+
+    def test_compare_passes_when_all_four_conditions_hold(self):
+        before, after, reviews, *_ = self._compare_rows()
+        self.assertEqual(P.compare_reports(before, after, reviews), [])
+
+    def test_compare_fixture_for_each_failing_condition_exits_one(self):
+        T, N, rid = "\t", "\n", "0b6f1c2e-9a4d-4c3b-8f2e-1d2c3b4a5f60"
+        before, after, reviews, sub, row = self._compare_rows()
+        edit = lambda rows, i, **change: [dict(r, **change) if i is None or j == i else r for j, r in enumerate(rows)]
+        cases = [(before, edit(after, None, parent_total=1_000_000), reviews, ["after median parent total 1000000 is not under 1000000"]), (before, edit(after, None, subagent=sub(2, 900_000)), reviews, ["after median parent-plus-subagent total 1800004 is not below before 1800004"]), (edit(before, 3, subagent=sub(None, None, "unknown")), after, reviews, ["before median parent-plus-subagent total is unknown"]), (before, edit(after, 0, subagent=sub(None, None, "unknown")), reviews, ["after median parent-plus-subagent total is unknown", "a0: subagent calls None source unknown; need at least 1 observed"]), (before, edit(after, 9, subagent=sub(0, 0)), reviews, ["a9: subagent calls 0 source observed; need at least 1 observed"]), (before, after, [row("r1", 300_000, sub(3, 10, "estimated"))], ["r1: subagent calls 3 source estimated; need at least 1 observed"]), (before, edit(edit(after, 1, outcome="failed"), 2, outcome="failed"), reviews, ["after done rate 7/10 is below before 8/10"])]
+        with tempfile.TemporaryDirectory() as temp:
+            bf, af = Path(temp) / "before.json", Path(temp) / "after.json"
+            bf.write_text(json.dumps({"name": "f001-before"}), encoding="utf-8")
+            doc = {"name": "f001-after", "review_runs": [rid]}
+            for b_rows, a_rows, r_rows, want in cases:
+                af.write_text(json.dumps(doc), encoding="utf-8")
+                out, err = io.StringIO(), io.StringIO()
+                with mock.patch.object(P, "batch_rows", lambda path, data: b_rows if str(path) == str(bf) else a_rows), mock.patch.object(P, "review_rows", lambda ids, d: r_rows), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                    code = P.main(["compare", str(bf), str(af), "l1.jsonl"])
+                self.assertEqual((code, out.getvalue(), err.getvalue()), (1, "".join(f"compare{T}fail{T}{m}{N}" for m in want), ""))
+
+    def test_compare_refuses_a_bad_after_batch_file(self):
+        rid = "0b6f1c2e-9a4d-4c3b-8f2e-1d2c3b4a5f60"
+        with tempfile.TemporaryDirectory() as temp:
+            bf, af = Path(temp) / "before.json", Path(temp) / "after.json"
+            bf.write_text(json.dumps({"name": "f001-before"}), encoding="utf-8")
+            for doc in ({"name": "f001-after"}, {"review_runs": [rid, rid]}, {"review_runs": ["not-a-run-id"]}, {"review_runs": "x"}, ["x"]):
+                af.write_text(json.dumps(doc), encoding="utf-8")
+                out, err = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                    code = P.main(["compare", str(bf), str(af), "l1.jsonl"])
+                self.assertEqual((code, out.getvalue(), err.getvalue().startswith("planning_stats: ")), (2, "", True), doc)
+
+    def test_review_rows_take_subagent_fields_from_the_ledger(self):
+        rid, O = "0b6f1c2e-9a4d-4c3b-8f2e-1d2c3b4a5f60", lambda v: {"value": v, "source": "observed"}
+        row = {"schema_version": 2, "run_id": rid, "tokens_input": O(100), "tokens_output": O(10), "tokens_cache": O(1000), "tokens_reasoning": O(0), "subagents": {"calls": O(2), "tokens": O(50000)}, "outcome": "completed", "failure_class": None}
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "ledger.jsonl"
+            path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+            self.assertEqual(P.review_rows([rid], [path]), [{"ref": rid, "subagent": {"calls": 2, "tokens": 50000, "source": "observed"}}])
+            dup = dict(row, tokens_input=O(200))
+            path.write_text(json.dumps(row) + "\n" + json.dumps(dup) + "\n", encoding="utf-8")
+            with self.assertRaises(P.PlanningStatsError) as ctx:
+                P.review_rows([rid], [path])
+            self.assertEqual(str(ctx.exception), f"review run {rid}: 2 rows")
+        with self.assertRaises(P.PlanningStatsError) as missing:
+            P.review_rows([rid], [FIXTURE])
+        self.assertEqual(str(missing.exception), f"review run {rid}: 0 rows")
 
 if __name__ == "__main__":
     unittest.main()
