@@ -228,3 +228,4 @@
 {"type":"architect-run","plan":"T-113","seat":"claude.brain-planning","model":"claude opus (high)","rung":"native: claude","input_tokens":76605,"output_tokens":17011,"cache_read_tokens":930947,"outcome":"done"}
 {"run_id":"b9c166b0-2b36-4175-ac4f-28522e06e4be","task":"T-113","category":"receipts","size":"M","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":1,"outcome":"verify-failed","failure_class":"task","duration_s":85,"tokens_or_cost":"unknown"}
 {"type":"architect-run","plan":"T-114","seat":"claude.brain-planning","model":"claude opus (high)","rung":"native: claude","input_tokens":64219,"output_tokens":32312,"cache_read_tokens":1937022,"outcome":"done"}
+{"run_id":"406b3f31-1fda-4e4f-af59-9fa6b663efd7","task":"T-114","category":"receipts","size":"M","seat":"brain_codex","model":"gpt-6.1-sol","effort":"medium","attempt":2,"outcome":"verify-failed","failure_class":"task","duration_s":156,"tokens_or_cost":"unknown"}
