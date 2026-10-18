@@ -48,7 +48,7 @@
       "category": "functional",
       "priority": 4,
       "bootstrap": false,
-      "description": "Fleet v2: policy seats, per-spawn resolution recorded in the spec, drift events, door priority, fast and credits opt-in. Cursor effort through the model name. Resolves the unproven `model[effort=\u2026,fast=\u2026]` format. Needs Gate 0 decision 2 (frozen-fleet amendment).",
+      "description": "Fleet v2: policy seats, per-spawn resolution recorded in the spec, drift events, door priority, fast and credits opt-in. Cursor effort through the model name. Resolves the unproven `model[effort=…,fast=…]` format. Needs Gate 0 decision 2 (frozen-fleet amendment).",
       "steps": [
         "A fleet v2 seat names a family and a policy; a v1 fleet.json still validates",
         "Each spawn records the resolved model in the spec and the observed model in the receipt",
@@ -56,7 +56,7 @@
         "Door priority picks the first included, healthy door; a credits or api door is skipped unless the mission approves it",
         "A `-fast` model is never chosen unless the mission enables fast",
         "Cursor effort is encoded in the model name from the registry; a test lists the encoding for each",
-        "The unproven `model[effort=\u2026,fast=\u2026]` format is either proven by a recorded probe or removed; no unproven format ships",
+        "The unproven `model[effort=…,fast=…]` format is either proven by a recorded probe or removed; no unproven format ships",
         "The FALLBACKS constant is deleted from scripts/fleet_state.py (`grep -nE '^FALLBACKS *= *[({]' scripts/*.py` exits 1); an unavailable family stays `unavailable`, never a guessed model",
         "shellcheck and bash tests/run-tests.sh exit 0"
       ],
@@ -119,7 +119,11 @@
         "bash scripts/verify-mission.sh exits 0 for the smoke mission",
         "A reconstruct command prints, per smoke run id, its spec, receipt, VerificationRecord and ledger row, and exits non-zero if any of the four is missing; the human reads that output at Gate 2"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "a9635139-68a5-4daa-be5f-9ce997649320",
+      "accepted_verification_sha256": "2846c0e260ebe6617470f018492acbf9b5958858cf3a0a9a30a4bebd97666f2c",
+      "accepted_at": "2026-10-18T06:07:58.356309Z",
+      "accepted_by": "Zamir (owner approval 2026-10-18; front desk executed)"
     },
     {
       "id": "F008",
