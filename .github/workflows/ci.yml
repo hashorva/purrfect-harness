@@ -19,6 +19,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # Pin ShellCheck so CI and local runs report the same codes.
       - name: Install ShellCheck (Linux)
@@ -63,6 +65,9 @@ jobs:
         run: |
           python3 -m pip install jsonschema || python3 -m pip install --break-system-packages jsonschema
           python3 -c "import jsonschema"
+
+      - name: Audit committed 2A evidence (old receipts must keep validating)
+        run: python3 tests/test-evidence-2a.py
 
       - name: End-to-end install/update test
         run: bash tests/run-tests.sh
