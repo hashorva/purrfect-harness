@@ -6,10 +6,16 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 ## Current status (2026-10-18)
 
-- **Mission:** 2B The Dark Factory, status: draft (GOAL.md), owner: Zamir. Waiting for GATE 0.
+- **Mission:** 2B The Dark Factory, status: in-progress (GOAL.md), owner: Zamir. Gate 0 passed 2026-10-18.
 - **Features:** F000–F012, all `passes: false`, all `bootstrap: false`; `run_order` F000, F001, F002, F004, F003, F005, F006, F007, F008–F012; each `priority` equals its `run_order` index.
 - **Fleet:** `fleet.json` frozen (schema_version 2, 13 seats, approved 2026-10-18T15:21:39Z by Zamir); a fresh inventory at 2026-10-18T15:48:51Z resolves every seat to its frozen binding (map below).
 - **Dispatch:** none. No worker has run for 2B.
+
+## 2026-10-18 — Human — GATE 0
+
+- **Verdict:** approved (owner, in chat 2026-10-18, with changes).
+- **Notes:** changes applied: F000 safety net first; F004 before F003; F001 acceptance measurable; fleet frozen from the proposal after a fresh probe (fleet-doctor no ERROR, fleet-inventory.sh, freeze-v2, validate-fleet ok, mid seats included); lessons promotion, T-010..T-016 planned. Brain Gate 0 receipt f97b795d; `verify-mission.sh` exit 0 before and after.
+- **Next:** in-progress. Run order F000, F001, F002, F004, F003, F005, F006, F007, F008..F012; stop at each gate.
 
 ## 2026-10-18 — Brain (claude / Opus, high) — GATE 0 package check
 
