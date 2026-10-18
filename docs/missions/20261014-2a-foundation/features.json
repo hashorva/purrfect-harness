@@ -182,7 +182,11 @@
         "probe-seat.sh re-run for every seat after the change",
         "shellcheck and bash tests/run-tests.sh exit 0"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "3db4dbcd-c948-42c1-89c5-8b56fe7f214d",
+      "accepted_verification_sha256": "bd52c773f0d561e93bb61399601d9bc5238eebaab4dcbe8d1e44d47901b96ded",
+      "accepted_at": "2026-10-18T06:18:25.316009Z",
+      "accepted_by": "Zamir (owner approval 2026-10-18; front desk executed)"
     },
     {
       "id": "F011",
