@@ -383,7 +383,7 @@ chmod +x "$STUBBIN/agy"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh agy docs/missions/20990101-fixture/tasks/T-001.md --tier premium --effort high --feature F001 ) >/dev/null 2>&1 || true
 check "agy receives the real prompt as the value of -p" \
-  sh -c "grep -q -- '-p Read ' '$STUB_OUT'"
+  sh -c "grep -qF -- '-p Goal: ' '$STUB_OUT'"
 check "agy -p is not fed the permissions flag" \
   sh -c "! grep -q -- '-p --dangerously-skip-permissions' '$STUB_OUT'"
 check "agy gets a print-timeout longer than the 5m default" \
@@ -401,7 +401,7 @@ chmod +x "$STUBBIN/claude"
 ( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
     bash scripts/spawn-worker.sh claude docs/missions/20990101-fixture/tasks/T-001.md --tier premium --effort xhigh --feature F001 ) >/dev/null 2>&1 || true
 check "claude receives the prompt immediately after -p" \
-  sh -c "grep -q -- '-p Read ' '$CLAUDE_OUT'"
+  sh -c "grep -qF -- '-p Goal: ' '$CLAUDE_OUT'"
 check "claude does not use --allowedTools" \
   sh -c "! grep -q -- '--allowedTools' '$CLAUDE_OUT'"
 check "claude uses strict mcp config" \
