@@ -235,3 +235,4 @@
 {"type":"architect-run","plan":"T-124","seat":"claude.brain-planning","model":"claude opus (high)","rung":"native: claude","input_tokens":73048,"output_tokens":27623,"cache_read_tokens":1499258,"outcome":"done"}
 {"run_id":"7278cec5-211d-4771-bb35-7a0d07c779bc","task":"T-124","category":"acceptance","size":"S","seat":"codex.economy","model":"gpt-6-luna","effort":"medium","attempt":1,"outcome":"done","failure_class":"none","duration_s":69,"tokens_or_cost":"unknown"}
 {"type":"review","task":"release 3.1.0 diff r2","reviewer":"claude opus (medium)","rung":"native: claude","verdict":"PASS","input_tokens":37830,"output_tokens":9893,"cache_read_tokens":784108}
+{"run_id":"4608aa11-0e6e-4c87-a146-71f174239bec","task":"T-125","category":"ci-diagnostics","size":"S","seat":"cursor.economy","model":"composer-2.5","effort":"medium","attempt":1,"outcome":"done","failure_class":"none","duration_s":27,"tokens_or_cost":"unknown"}
