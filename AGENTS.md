@@ -19,6 +19,8 @@ safe install/update tooling for other repositories. It is not a consuming produc
 - Run `shellcheck scripts/*.sh tests/*.sh`, JSON validation, and `bash tests/run-tests.sh`.
 - A normal install/update requires the manifest's release tag on `HEAD`. Use
   `--dev` (or `--allow-untagged`) only for explicit local development/smoke work.
+- Tests run in an isolated scratch tree; they never modify or depend on the live tree.
+- An adapter argv change requires a new provider contract version; the golden argv test enforces it.
 
 ## Mission rules
 
@@ -33,3 +35,5 @@ Before a feature is accepted or a mission gate/status is advanced, run
 `bash scripts/verify-mission.sh` for the mission. Only the orchestrator may accept a
 feature after that current verification; workers report evidence but have no
 feature-acceptance authority.
+
+Never write to the repository while a worker or brain run is in progress; never start a duplicate long-running check.

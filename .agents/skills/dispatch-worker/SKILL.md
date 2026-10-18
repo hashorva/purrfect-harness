@@ -43,6 +43,8 @@ provider launch. There is no cross-repository dispatch or parallel scheduling.
 - The tree is clean, the task baseline passes, the target CLI is available, and
   no worker or verifier is concurrently changing this workspace.
 - Run `bash scripts/fleet-doctor.sh` before dispatch; any `ERROR` blocks dispatch.
+- For a bug fix, reproduce the bug on the unfixed tree before dispatch, because a task whose oracle never failed on the base proves nothing.
+- Name the exact field for every value a task states (for example `receipt.scope.result`, not the result), because a worker that has to guess the field guesses wrong.
 
 The wrapper validates authorization before persisting a spec or launching the
 provider. Its exclusive workspace lock lasts through terminal receipt creation.
@@ -176,6 +178,7 @@ until fold; commit verification, acceptance, `docs/missions/ledger.jsonl`, and
   cannot manufacture a passing VerificationRecord for an older snapshot.
 - Before advancing a gate/status, run the current mission audit. Record the
   human verdict in PROGRESS.md and update status according to the approved gate.
+- A follow-up that would loosen a gate, guard or check goes to the planner as a proposal, never to a worker as a fix, because loosening a gate is a planning decision.
 
 Workers never accept features or change mission gates. Bootstrap exemptions must
 be declared at feature authoring; they do not convert worker code into exempt work.

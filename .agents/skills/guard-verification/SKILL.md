@@ -143,6 +143,17 @@ When a guard revalidates persisted or immutable historical evidence, run at leas
 historical artifact through the real audit entry point. A new isolated fixture does not prove that
 existing evidence remains valid under changed policy.
 
+## Proof rules from 2A
+
+Each rule says why it exists.
+
+- Test a refusal at the real entry point and assert the exact refused field path (for example `doors.agy.deprecated`), because a refusal of some other field also exits non-zero.
+- Pair each negative test with one targeted mutation of the guard expression that makes that test fail, because a red test without it may be red for an unrelated reason.
+- Record each mutation proof as `file:line:expression`, because a reviewer must be able to reapply the exact mutation.
+- An oracle fails on any compile or import error, because a check that cannot load the code under test has proved nothing.
+- When you add a broader rule, re-verify each narrower rule it overlaps with its own negative test, because the broader rule can refuse first and hide a narrower rule that stopped working.
+- State why each guard or check exists next to the rule, because a rule without a stated reason is the first one to be loosened.
+
 ## Self-verification checklist
 
 - [ ] Non-test callers exist and the real entry point is named
