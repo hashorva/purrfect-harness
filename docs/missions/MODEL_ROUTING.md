@@ -192,6 +192,7 @@ descriptive. None can override `fleet.json`. A fallback is a Gate 0 proposal or
 an explicit selection of another already-approved seat, never a silent dispatch
 rebind. External `--repo` execution is disabled in Phase 1.
 Every seat may be checked before dispatch with `bash scripts/probe-seat.sh <seat>`, runs under the runner's stall and zero-turn guards, and launches Claude with `--strict-mcp-config`; workers never write `PROGRESS.md`.
+Interactive CLIs driven by scripts/drive-cli.sh stop with exit 3 on any prompt after an answered trust prompt and on numbered or menu approval prompts; boxed menus and alternate-screen redraws are accepted residuals that end as an exit-4 stall, and no wrong answer is ever sent.
 
 Note (F010): Contract 9 runs every provider with its full native toolset (Claude bypassPermissions with CLAUDE_DISALLOWED_TOOLS and --strict-mcp-config, Codex workspace-write with network and live web search on and cua_repl/node_repl disabled per run, and CLI --help flag baselines tracked by probe-seat.sh).
 
