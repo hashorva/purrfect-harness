@@ -9,6 +9,7 @@ import argparse
 from datetime import datetime, timezone
 import fnmatch
 import hashlib
+import importlib.machinery
 import json
 import os
 from pathlib import Path
@@ -34,6 +35,9 @@ STDLIB_SHADOW_MODULES = frozenset(getattr(sys, "stdlib_module_names", ())) | {
     "pathlib", "re", "shutil", "signal", "stat", "subprocess", "sys", "tempfile",
     "time", "unittest",
 }
+COMPILED_SUFFIXES = tuple(sorted(
+    (set(importlib.machinery.all_suffixes()) - set(importlib.machinery.SOURCE_SUFFIXES))
+    | {".pyc", ".pyo", ".pyd", ".so", ".dylib"}))
 _PROTECTED_BASELINES = {}
 COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
 RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$")
@@ -97,12 +101,22 @@ def _is_gitignore_path(path):
 
 def _is_stdlib_shadow(path):
     parts = path.split("/")
-    if len(parts) < 2 or parts[0] not in {"scripts", "tests"}:
+    under = parts[0] in {"scripts", "tests"}
+    if under:
+        parts = parts[1:]
+    if not parts or not parts[0]:
         return False
     name = parts[-1]
-    if name.endswith(".py") and name[:-3] in STDLIB_SHADOW_MODULES:
+    if (under or len(parts) == 1) and any(
+            name.endswith(suffix) and name[:-len(suffix)] in STDLIB_SHADOW_MODULES
+            for suffix in importlib.machinery.all_suffixes()):
         return True
-    return len(parts) >= 3 and parts[1] in STDLIB_SHADOW_MODULES
+    return len(parts) > 1 and parts[0] in STDLIB_SHADOW_MODULES
+
+
+def _is_compiled_module(path):
+    parts = path.split("/")
+    return parts[0] != ".tasks" and ("__pycache__" in parts or parts[-1].endswith(COMPILED_SUFFIXES))
 
 
 def _base_root_gitignore_lines(repo, base_commit="HEAD"):
@@ -119,9 +133,10 @@ def _is_harness_ignored(path, ignore_lines):
     parts = clean_path.split("/")
     if parts[0] == ".tasks":
         return True
-    if _is_gitignore_path(clean_path) or _is_stdlib_shadow(clean_path):
+    if (_is_gitignore_path(clean_path) or _is_stdlib_shadow(clean_path)
+            or _is_compiled_module(clean_path)):
         return False
-    if "__pycache__" in parts or clean_path.endswith(".pyc") or parts[-1] == ".DS_Store":
+    if parts[-1] == ".DS_Store":
         return True
     for rule in ignore_lines:
         clean = rule.lstrip("/")
@@ -421,7 +436,7 @@ def glob_regex(pattern):
 
 
 def in_scope(path, allowed):
-    if _is_gitignore_path(path) or _is_stdlib_shadow(path):
+    if _is_gitignore_path(path) or _is_stdlib_shadow(path) or _is_compiled_module(path):
         return False
     return any(glob_regex(pattern).fullmatch(path) for pattern in allowed)
 

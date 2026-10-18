@@ -2,6 +2,7 @@
 """ExecutionReceipt v1 compatibility and v2 observation block validation (F003)."""
 import copy
 import hashlib
+import importlib.machinery
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import execution_receipt
+import execution_spec
 from execution_receipt import ReceiptError, canonical_bytes, load_receipt
 
 SCHEMA_PATH = ROOT / "schemas" / "execution-receipt.schema.json"
@@ -135,6 +137,62 @@ raise SystemExit(0)
 
     def tearDown(self):
         shutil.rmtree(self.parent)
+
+    def test_compiled_modules_and_root_stdlib_shadows_are_scope_violations(self):
+        tag = sys.implementation.cache_tag
+        bad = [
+            f"scripts/__pycache__/execution_spec.{tag}.pyc", f"tests/__pycache__/t.{tag}.pyc",
+            f"__pycache__/x.{tag}.pyc", "x.pyc", "scripts/fast.so", "tests/lib.dylib",
+            "docs/vendor/m.so", "scripts/m.pyd", "json/__init__.py",
+        ]
+        for suffix in importlib.machinery.all_suffixes():
+            bad.extend(("json" + suffix, "scripts/json" + suffix, "tests/os" + suffix))
+        for path in bad:
+            self.assertFalse(execution_receipt.in_scope(path, ["**"]), path)
+        for path in ("scripts/ok.py", "docs/json.py", "README.md"):
+            self.assertTrue(execution_receipt.in_scope(path, ["**"]), path)
+
+        (self.root / ".gitignore").write_text(
+            ".tasks/\nbin/\n__pycache__/\n*.pyc\n*.so\n*.dylib\n"
+        )
+        vendor = self.root / "vendor/m.so"
+        vendor.parent.mkdir()
+        vendor.write_bytes(b"tracked compiled module")
+        subprocess.run(["git", "-C", str(self.root), "add", "-f", ".gitignore", "vendor/m.so"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "compiled fixture"], check=True)
+        home = self.parent / "fake-home"
+        home.mkdir()
+        with mock.patch.dict(os.environ, {"HOME": str(home)}):
+            spec, spec_path, digest = execution_spec.construct(
+                role="worker", mission="docs/missions/fixture", feature="F001",
+                work_unit="T-112", attempt=1, provider="codex", model="model",
+                effort="medium", speed="unknown", repo=str(self.root.resolve()), prompt="fixture",
+                write_scope=["**"],
+            )
+            before = execution_receipt.capture_before(spec_path, digest)
+            planted = [
+                f"scripts/__pycache__/m.{tag}.pyc", "x.pyc", "tests/fast.so", "lib.dylib",
+                "json.py", "docs/vendor/m.so",
+            ]
+            for rel in planted + [f".tasks/smoke/__pycache__/a.{tag}.pyc"]:
+                path = self.root / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"planted")
+            vendor.write_bytes(b"changed tracked module")
+            log = self.root / ".tasks/logs" / f"{spec['run_id']}.log"
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_text("fixture log\n")
+            receipt = execution_receipt.build_receipt(
+                spec_path=spec_path, digest=digest, before=before,
+                started_at="2026-10-18T00:00:00Z", finished_at="2026-10-18T00:00:01Z",
+                outcome="completed", exit_code=0, log_path=str(log),
+                task="docs/missions/fixture/tasks/T-001.md", tier="economy",
+            )
+        self.assertEqual(receipt["scope"]["result"], "fail")
+        for rel in planted:
+            self.assertIn(rel, receipt["scope"]["violations"])
+            self.assertIn(rel, execution_receipt.dirty_paths(self.root, base_commit=spec["base_commit"]))
+        self.assertFalse(any(path.startswith(".tasks/") for path in receipt["changed_paths"]))
 
     def test_symlinked_claude_and_projects_roots_record_link_target_only(self):
         home = self.parent / "fake-home"
