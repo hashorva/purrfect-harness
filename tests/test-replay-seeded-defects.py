@@ -1,4 +1,4 @@
-import json, subprocess, sys, tempfile, unittest
+import json, os, subprocess, sys, tempfile, unittest
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -55,5 +55,56 @@ class ReplaySeededDefectsTests(unittest.TestCase):
         self.assertFalse(R.caught("claude", verdict().encode(), case))
         earlier = raw("claude", verdict()) + json.dumps({"type": "result", "result": "not final JSON"}).encode() + b"\n"
         self.assertFalse(R.caught("claude", earlier, case))
+    def _replay(self, temp, seats, miss, out_name, extra=()):
+        bin_dir = Path(temp) / "bin"
+        bin_dir.mkdir(exist_ok=True)
+        (bin_dir / "claude").write_text(_FAKE_CLAUDE, encoding="utf-8")
+        (bin_dir / "claude").chmod(0o755)
+        fleet_path = Path(temp) / "fleet.json"
+        fleet_path.write_text(json.dumps(_REPLAY_FLEET), encoding="utf-8")
+        log = Path(temp) / (out_name + ".log")
+        env = {**os.environ, "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"], "FAKE_LOG": str(log),
+               "FAKE_MISS": miss, "PYTHONDONTWRITEBYTECODE": "1"}
+        argv = [sys.executable, str(ROOT / "scripts/replay_seeded_defects.py"), "--fleet", str(fleet_path),
+                "--out", str(Path(temp) / out_name), "--timeout", "120", *extra]
+        argv += sum([["--seat", seat] for seat in seats], [])
+        result = subprocess.run(argv, capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL, cwd=ROOT)
+        calls = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
+        return result, result.stdout.splitlines(), calls
+    def test_replay_passes_when_every_required_case_is_caught(self):
+        T = "\t"
+        with tempfile.TemporaryDirectory() as temp:
+            r, out, calls = self._replay(temp, ["rev_grok", "rev.argon"], "", "pass")
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(out[-1], T.join(("result", "pass")))
+            for call in calls:
+                self.assertIn("## Budget", call["prompt"])
+                self.assertIn("400000 tokens", call["prompt"])
+                self.assertIn("explorer subagent", call["prompt"])
+            gonly = Path(temp) / "grok-only.jsonl"
+            gonly.write_text(json.dumps({"type": "seeded-calibration", "reviewer": "grok-4.7-high", "case": "A",
+                                         "task": "T-043", "commit": "53fb0f5", "caught": True}) + "\n")
+            r, out, _ = self._replay(temp, ["rev_grok"], "fake-grok:B", "gonly", ("--routing-data", str(gonly)))
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn(T.join(("rev_grok", "grok", "B", "no", "no")), out)
+    def test_replay_fails_on_a_required_miss_or_a_missing_family(self):
+        T = "\t"
+        with tempfile.TemporaryDirectory() as temp:
+            r, out, _ = self._replay(temp, ["rev_grok"], "fake-grok:B", "miss")
+            self.assertEqual(r.returncode, 1, out)
+            self.assertIn(T.join(("rev_grok", "grok", "B", "yes", "no")), out)
+            r, out, _ = self._replay(temp, ["rev.opus"], "", "opus")
+            self.assertEqual(r.returncode, 1, out)
+            self.assertIn(T.join(("missing", "argon")), out)
+            self.assertIn(T.join(("missing", "grok")), out)
+    def test_unknown_seat_exits_two_before_any_launch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            r, out, calls = self._replay(temp, ["nosuch"], "", "bad")
+            self.assertEqual((r.returncode, out, calls), (2, [], []))
+            self.assertTrue(r.stderr.startswith("replay_seeded_defects: "))
+_FAKE_CLAUDE = "#!/usr/bin/env python3\nimport json, os, sys\na = sys.argv\nprompt, model = a[a.index('-p') + 1], a[a.index('--model') + 1]\nwith open(os.environ['FAKE_LOG'], 'a') as h:\n    h.write(json.dumps({'model': model, 'prompt': prompt, 'cwd': os.getcwd()}) + chr(10))\ncases = {'T-043': ('A', 'scripts/verification_record.py:33 marker pattern lacks re.M'), 'T-042': ('B', 'scripts/execution_runner.py:75 git read lacks --no-replace-objects'), 'T-044': ('C', 'scripts/ledger.py:40 SENSITIVE_PATH lost the ~name/ alternative')}\ncid, text = [v for k, v in cases.items() if k in prompt][0]\nmiss = model + ':' + cid in os.environ.get('FAKE_MISS', '').split(',')\nv = 'PASS' if miss else 'FAIL'\nbody = {'run_ids': [], 'commits': [{'commit': 'HEAD', 'verdict': v, 'evidence': ['git show HEAD']}], 'findings': [] if miss else [{'id': 'F1', 'severity': 'blocking', 'text': text}], 'verdict': v}\nprint(json.dumps({'type': 'system'}))\nprint(json.dumps({'type': 'result', 'result': json.dumps(body)}))\n"
+_REPLAY_FLEET = {"seats": {n: {"provider": "claude", "model": m, "effort": "medium", "speed": "unknown", "family": f}
+                            for n, m, f in (("rev_grok", "fake-grok", "grok"), ("rev.argon", "fake-argon", "argon"),
+                                              ("rev.opus", "fake-opus", "opus"))}}
 if __name__ == "__main__":
     unittest.main()

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Replay the F001 step 7 seeded defect cases and judge reviewer answers."""
-import json, subprocess, sys
+import argparse, json, re, subprocess, sys, tempfile
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import observe_output
-import validate_verdict
+import brain_prompt, observe_output, probe_seat, validate_verdict
+from execute_provider import provider_contract
+from execution_spec import CURRENT_PROVIDER_CONTRACT
+SEAT_NAME = re.compile(r"[a-z]+(?:[._][a-z]+)?")
 class ReplayError(Exception):
     pass
 MISSION_2A = "docs/missions/20261014-2a-foundation"
@@ -76,3 +78,90 @@ def caught(provider, raw, case):
         and any(keyword in finding.get("text", "") for keyword in case["keywords"])
         for finding in verdict.get("findings", [])
     ))
+def seat_binding(fleet_path, name, inventory):
+    if not SEAT_NAME.fullmatch(name):
+        raise ReplayError(f"invalid seat name {name}")
+    try:
+        data = json.loads(Path(fleet_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise ReplayError(f"invalid fleet file: {exc}") from exc
+    seats = data.get("seats")
+    if not isinstance(seats, dict) or name not in seats:
+        raise ReplayError(f"unknown seat {name}")
+    seat, family = seats[name], seats[name].get("family")
+    if not isinstance(family, str) or not family:
+        raise ReplayError(f"seat {name} has no family")
+    if data.get("schema_version") == 2:
+        try:
+            provider, model, effort, speed = probe_seat._seat_v2(data, name, Path(inventory))
+        except ValueError as exc:
+            raise ReplayError(str(exc)) from exc
+    else:
+        provider = seat.get("provider")
+        if provider not in {"claude", "codex", "cursor", "agent", "agy"}:
+            raise ReplayError(f"unknown seat {name}")
+        provider, model, effort, speed = ("agent" if provider == "cursor" else provider,
+                                          seat.get("model"), seat.get("effort"), seat.get("speed"))
+    probe = {"provider": provider, "model": model, "effort": effort, "speed": speed, "repo": "/replay",
+             "prompt": "x", "write_scope": [], "provider_contract_version": CURRENT_PROVIDER_CONTRACT}
+    try:
+        provider_contract(probe)
+    except ValueError as exc:
+        raise ReplayError(str(exc)) from exc
+    return provider, model, effort, speed, family
+def review_prompt(case, provider):
+    task = case["task"]
+    tail = (f"HEAD is the worker commit for {task} ({MISSION_2A}/tasks/{task}.md). Review HEAD against HEAD~1 by its effects; do not edit files. End with one JSON object that matches schemas/review-verdict.schema.json; give each blocking finding as file:line with a failing input.")
+    return brain_prompt.render("review", MISSION_2A, provider) + "\n## Review request\n" + tail
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog="replay_seeded_defects.py")
+    parser.add_argument("--fleet", required=True)
+    parser.add_argument("--seat", action="append", required=True)
+    parser.add_argument("--out", required=True)
+    parser.add_argument("--source", default=None)
+    parser.add_argument("--routing-data", default=None)
+    parser.add_argument("--inventory", default=str(probe_seat.DEFAULT_INVENTORY))
+    parser.add_argument("--timeout", type=float, default=1800)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit:
+        return 2
+    if args.timeout <= 0:
+        print("replay_seeded_defects: timeout must be > 0", file=sys.stderr)
+        return 2
+    root = Path(__file__).resolve().parent.parent
+    source = Path(args.source) if args.source else root
+    routing = Path(args.routing_data) if args.routing_data else root / REQUIRED_2A
+    try:
+        req = required(routing)
+        bindings = [seat_binding(args.fleet, name, args.inventory) for name in args.seat]
+    except (ReplayError, ValueError) as exc:
+        print(f"replay_seeded_defects: {exc}", file=sys.stderr)
+        return 2
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tab = "\t".join
+    print(tab(("seat", "family", "case", "required", "caught")))
+    failed, seat_families = False, set()
+    for name, (provider, model, effort, speed, family) in zip(args.seat, bindings):
+        seat_families.add(family)
+        need = set(req.get(family, []))
+        for case in CASES:
+            with tempfile.TemporaryDirectory() as temp:
+                clone = plant(source, case, temp)
+                spec = {"provider": provider, "model": model, "effort": effort, "speed": speed, "repo": str(clone),
+                        "prompt": review_prompt(case, provider), "write_scope": [],
+                        "provider_contract_version": CURRENT_PROVIDER_CONTRACT}
+                stdout = probe_seat._run(provider_contract(spec)[0], clone, args.timeout)[1]
+            (out_dir / f"{name}-{case['id']}.out").write_text(stdout, encoding="utf-8")
+            reqd, got = case["id"] in need, caught(provider, stdout.encode(), case)
+            print(tab((name, family, case["id"], "yes" if reqd else "no", "yes" if got else "no")))
+            failed |= reqd and not got
+    for family in sorted(req):
+        if req[family] and family not in seat_families:
+            print(f"missing\t{family}")
+            failed = True
+    print(tab(("result", "pass" if not failed else "fail")))
+    return 1 if failed else 0
+if __name__ == "__main__":
+    sys.exit(main())
