@@ -18,6 +18,14 @@ check() { # check <description> <command...>
   if "$@" >/dev/null 2>&1; then echo "  ok   : $desc"
   else echo "  FAIL : $desc"; FAIL=1; fi
 }
+copy_harness_tree() { # copy_harness_tree <src> <dst>: never read the live .git/ or .tasks/ (concurrent writers)
+  local src="$1" dst="$2" entry
+  for entry in "$src"/* "$src"/.[!.]* "$src"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    case "${entry##*/}" in .git|.tasks) continue ;; esac
+    cp -R "$entry" "$dst/" || return 1
+  done
+}
 
 # Documentation is a public entry point for the harness protocol. Keep these checks
 # deliberately narrow: each catches a previously reproduced false operational claim.
@@ -125,7 +133,7 @@ PY"
 RELEASE_FIXTURE="$(mktemp -d)"
 UNTAGGED_FIXTURE="$(mktemp -d)"
 trap 'rm -rf "$RELEASE_FIXTURE" "$UNTAGGED_FIXTURE"' EXIT
-cp -R "$HARNESS/." "$RELEASE_FIXTURE"
+copy_harness_tree "$HARNESS" "$RELEASE_FIXTURE"
 rm -rf "$RELEASE_FIXTURE/.git"
 git -C "$RELEASE_FIXTURE" init -q
 # Background gc --auto races with cp -R of the fixture; keep the fixtures gc-free.

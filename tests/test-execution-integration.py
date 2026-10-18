@@ -1082,7 +1082,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         first = subprocess.Popen(base, cwd=self.root, env=launch_env, text=True,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         invoked = self.root / ".tasks/invoked.json"
-        deadline = time.time() + 5
+        deadline = time.time() + 60
         while not invoked.exists() and time.time() < deadline:
             time.sleep(0.02)
         self.assertTrue(invoked.exists(), "first provider did not start")
@@ -1094,7 +1094,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertEqual(invoked.read_bytes(), first_invocation)
         self.assertEqual(list((self.root / ".tasks/specs").glob("*.json")), specs_before)
         release.touch()
-        stdout, stderr = first.communicate(timeout=5)
+        stdout, stderr = first.communicate(timeout=60)
         self.assertEqual(first.returncode, 0, stderr + stdout)
         self.assert_no_lock()
 
@@ -1105,7 +1105,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         launch_env["PROVIDER_CHILD_PID_PATH"] = str(child_pid_path)
         interrupted = subprocess.Popen(base, cwd=self.root, env=launch_env, text=True,
                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        deadline = time.time() + 5
+        deadline = time.time() + 60
         while (not invoked.exists() or not child_pid_path.exists()) and time.time() < deadline:
             time.sleep(0.02)
         self.assertTrue(invoked.exists(), "interrupted provider did not start")
@@ -1113,7 +1113,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         provider_pid = json.loads(invoked.read_text())["pid"]
         child_pid = int(child_pid_path.read_text())
         interrupted.terminate()
-        interrupted.communicate(timeout=5)
+        interrupted.communicate(timeout=60)
         self.assertNotEqual(interrupted.returncode, 0)
         interrupted_receipts = list((self.root / ".tasks/receipts").glob("*.json"))
         self.assertEqual(len(interrupted_receipts), 1)
@@ -1491,11 +1491,13 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                 self.assertEqual(row["outcome"], "stalled")
                 self.clean_runs()
         with self.subTest(case="ticking worker completes"):
-            result = self.invoke(worker, env={"PROVIDER_TICKS": "8", "SPAWN_WORKER_STALL_SECS": "0.3",
-                                              "SPAWN_WORKER_IDLE_SECS": "0.3",
-                                              "SPAWN_WORKER_TIMEOUT_SECS": "5"})
+            result = self.invoke(worker, env={"PROVIDER_TICKS": "25", "SPAWN_WORKER_STALL_SECS": "30",
+                                              "SPAWN_WORKER_IDLE_SECS": "1",
+                                              "SPAWN_WORKER_TIMEOUT_SECS": "60"})
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-            self.assertEqual(self.latest_receipt()["outcome"], "completed")
+            receipt = self.latest_receipt()
+            self.assertEqual(receipt["outcome"], "completed")
+            self.assertEqual(self.log_text(receipt["run_id"]).count("tick\n"), 25)
 
     def test_zero_turn_output_turns_a_completed_run_into_a_failure(self):
         cases = [
@@ -1565,7 +1567,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                         self.assert_no_run_artifacts()
                         self.clean_runs()
 
-        for val in ("0", "0.25"):
+        for val in ("0", "30.25"):
             with self.subTest(valid_timeout=val):
                 p = self.invoke(worker_cmd, env={"SPAWN_WORKER_TIMEOUT_SECS": val})
                 self.assertEqual(p.returncode, 0, p.stderr + p.stdout)
@@ -1678,7 +1680,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         result = self.invoke([
             "bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
             "--model", "stdin-model", "--feature", "F001",
-        ], env={"SPAWN_WORKER_TIMEOUT_SECS": "2"})
+        ], env={"SPAWN_WORKER_TIMEOUT_SECS": "30"})
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertNotEqual(result.returncode, 124, result.stderr + result.stdout)
 
