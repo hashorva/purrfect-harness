@@ -1,0 +1,141 @@
+{
+  "doctor": "fleet-doctor.sh exit 0: claude, codex, cursor, agy identity and login OK",
+  "frozen_fleet_inventory": {
+    "probed_at": "2026-10-18T15:21:38Z",
+    "sha256": "30d9079bea2b9b254aa76fef5a1dc126101629e4f2dd2cb70b0c2b2e6b950e29"
+  },
+  "inventory_sha256": "b208fe3c82f884b8c175fb851cfa11d5858964ec5ce00c90e77d9850469750c1",
+  "probed_at": "2026-10-18T15:48:51Z",
+  "seats": {
+    "agy.economy": {
+      "door": "agy",
+      "effort": "medium",
+      "matches_frozen": true,
+      "model": "gemini-3.8-flash-medium",
+      "provider": "agy",
+      "seat": "agy.economy",
+      "source": "observed",
+      "speed": "unknown"
+    },
+    "agy.premium": {
+      "door": "agy-argon",
+      "effort": "medium",
+      "matches_frozen": true,
+      "model": "gemini-4-argon-medium",
+      "provider": "agy",
+      "seat": "agy.premium",
+      "source": "observed",
+      "speed": "unknown"
+    },
+    "brain": {
+      "door": "claude",
+      "effort": "high",
+      "matches_frozen": true,
+      "model": "opus",
+      "provider": "claude",
+      "seat": "brain",
+      "source": "alias",
+      "speed": "unknown"
+    },
+    "brain_argon": {
+      "door": "agy-argon",
+      "effort": "high",
+      "matches_frozen": true,
+      "model": "gemini-4-argon-high",
+      "provider": "agy",
+      "seat": "brain_argon",
+      "source": "observed",
+      "speed": "unknown"
+    },
+    "brain_codex": {
+      "door": "codex",
+      "effort": "high",
+      "matches_frozen": true,
+      "model": "gpt-6.1-sol",
+      "provider": "codex",
+      "seat": "brain_codex",
+      "source": "observed",
+      "speed": "unknown"
+    },
+    "claude.economy": {
+      "door": "claude",
+      "effort": "medium",
+      "matches_frozen": true,
+      "model": "haiku",
+      "provider": "claude",
+      "seat": "claude.economy",
+      "source": "alias",
+      "speed": "unknown"
+    },
+    "claude.mid": {
+      "door": "claude",
+      "effort": "medium",
+      "matches_frozen": true,
+      "model": "sonnet",
+      "provider": "claude",
+      "seat": "claude.mid",
+      "source": "alias",
+      "speed": "unknown"
+    },
+    "claude.premium": {
+      "door": "claude",
+      "effort": "medium",
+      "matches_frozen": true,
+      "model": "opus",
+      "provider": "claude",
+      "seat": "claude.premium",
+      "source": "alias",
+      "speed": "unknown"
+    },
+    "codex.economy": {
+      "door": "codex",
+      "effort": "medium",
+      "matches_frozen": true,
+      "model": "gpt-6-luna",
+      "provider": "codex",
+      "seat": "codex.economy",
+      "source": "observed",
+      "speed": "unknown"
+    },
+    "codex.mid": {
+      "door": "codex",
+      "effort": "medium",
+      "matches_frozen": true,
+      "model": "gpt-5.6-terra",
+      "provider": "codex",
+      "seat": "codex.mid",
+      "source": "observed",
+      "speed": "unknown"
+    },
+    "codex.premium": {
+      "door": "codex",
+      "effort": "medium",
+      "matches_frozen": true,
+      "model": "gpt-6.1-sol",
+      "provider": "codex",
+      "seat": "codex.premium",
+      "source": "observed",
+      "speed": "unknown"
+    },
+    "cursor.economy": {
+      "door": "cursor-composer",
+      "effort": "medium",
+      "matches_frozen": true,
+      "model": "composer-2.5",
+      "provider": "cursor",
+      "seat": "cursor.economy",
+      "source": "observed",
+      "speed": "standard"
+    },
+    "cursor.premium": {
+      "door": "cursor-grok",
+      "effort": "medium",
+      "matches_frozen": true,
+      "model": "grok-4.7-medium",
+      "provider": "cursor",
+      "seat": "cursor.premium",
+      "source": "observed",
+      "speed": "standard"
+    }
+  }
+}
