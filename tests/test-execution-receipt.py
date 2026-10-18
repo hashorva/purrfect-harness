@@ -43,11 +43,16 @@ def schema_drift(schema):
     observation = schema["$defs"]["observation"]
     if set(observation["required"]) != set(execution_receipt.OBSERVATION_FIELDS):
         drift.append("observation.required != OBSERVATION_FIELDS")
-    if set(observation["properties"]) != set(execution_receipt.OBSERVATION_FIELDS):
-        drift.append("observation.properties != OBSERVATION_FIELDS")
+    expected_observation = (execution_receipt.OBSERVATION_FIELDS
+                            + execution_receipt.OBSERVATION_OPTIONAL_FIELDS)
+    if set(observation["properties"]) != set(expected_observation):
+        drift.append("observation.properties != OBSERVATION_FIELDS + OBSERVATION_OPTIONAL_FIELDS")
     usage = observation["properties"]["usage"]
     if set(usage["properties"]) != set(execution_receipt.USAGE_FIELDS):
         drift.append("usage.properties != USAGE_FIELDS")
+    subagents = observation["properties"].get("subagents", {})
+    if set(subagents.get("properties", {})) != set(execution_receipt.SUBAGENT_FIELDS):
+        drift.append("subagents.properties != SUBAGENT_FIELDS")
     return drift
 
 
@@ -330,6 +335,32 @@ raise SystemExit(0)
         self.assertEqual(receipt["observation"], ALL_UNKNOWN)
         load_receipt(path)
 
+    def test_subagents_block_is_optional_and_validated(self):
+        path, receipt = self.spawn_receipt()
+        load_receipt(path)
+        receipt["observation"]["subagents"] = {
+            "calls": {"value": 2, "source": "observed"},
+            "tokens": {"value": 1234, "source": "observed"},
+        }
+        self.write_canonical(path, receipt)
+        load_receipt(path)
+        for label, subagents in (
+            ("missing tokens", {"calls": {"value": 2, "source": "observed"}}),
+            ("extra key", {"calls": {"value": 2, "source": "observed"},
+                           "tokens": {"value": 1, "source": "observed"}, "extra": 1}),
+            ("bool count", {"calls": {"value": True, "source": "observed"},
+                            "tokens": {"value": 1, "source": "observed"}}),
+            ("negative count", {"calls": {"value": 2, "source": "observed"},
+                                "tokens": {"value": -1, "source": "observed"}}),
+        ):
+            bad = copy.deepcopy(receipt)
+            bad["observation"]["subagents"] = subagents
+            self.write_canonical(path, bad)
+            with self.assertRaises(ReceiptError, msg=label):
+                load_receipt(path)
+        receipt["observation"].pop("subagents")
+        self.write_canonical(path, receipt)
+
     def test_observation_negatives_rejected(self):
         path, receipt = self.spawn_receipt()
         base_obs = copy.deepcopy(receipt["observation"])
@@ -376,6 +407,8 @@ raise SystemExit(0)
             ("FIELDS", execution_receipt.FIELDS | {"bogus"}),
             ("FIELDS_V1", execution_receipt.FIELDS_V1 - {"scope"}),
             ("OBSERVATION_FIELDS", tuple(execution_receipt.OBSERVATION_FIELDS) + ("extra",)),
+            ("OBSERVATION_OPTIONAL_FIELDS", tuple(execution_receipt.OBSERVATION_OPTIONAL_FIELDS) + ("extra",)),
+            ("SUBAGENT_FIELDS", tuple(execution_receipt.SUBAGENT_FIELDS) + ("extra",)),
             ("USAGE_FIELDS", tuple(execution_receipt.USAGE_FIELDS)[:-1]),
         ):
             with mock.patch.object(execution_receipt, name, mutated):

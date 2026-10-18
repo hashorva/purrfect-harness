@@ -296,7 +296,11 @@ def _codex_observed_model(stream):
 def claude(stream):
     results = [e for e in stream if e.get("type") == "result"]
     if not results:
-        return all_unknown()
+        observation = all_unknown()
+        subagents = _claude_subagents(stream)
+        if subagents is not None:
+            observation["subagents"] = subagents
+        return observation
     last = results[-1]
     model_usage = last.get("modelUsage")
     model = None
@@ -308,7 +312,47 @@ def claude(stream):
         "cache": field(dig(last, "usage", "cache_read_input_tokens"), count),
         "reasoning": field(dig(last, "usage", "output_tokens_details", "thinking_tokens"), count),
     }
-    return result(field(model, model_id), usage, field(last.get("fast_mode_state"), text))
+    observation = result(field(model, model_id), usage, field(last.get("fast_mode_state"), text))
+    subagents = _claude_subagents(stream)
+    if subagents is not None:
+        observation["subagents"] = subagents
+    return observation
+
+
+def _claude_subagents(stream):
+    """Count top-level Claude subagent calls and sum their reported token totals."""
+    call_ids = set()
+    for event in stream:
+        if (event.get("type") != "assistant"
+                or event.get("parent_tool_use_id") is not None):
+            continue
+        content = dig(event, "message", "content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if (isinstance(block, dict) and block.get("type") == "tool_use"
+                    and block.get("name") in {"Task", "Agent"}
+                    and isinstance(block.get("id"), str) and block["id"]):
+                call_ids.add(block["id"])
+    if not call_ids:
+        return None
+
+    totals = {call_id: [] for call_id in call_ids}
+    for event in stream:
+        if event.get("type") != "user" or event.get("parent_tool_use_id") is not None:
+            continue
+        content = dig(event, "message", "content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "tool_result":
+                call_id = block.get("tool_use_id")
+                if isinstance(call_id, str) and call_id in totals:
+                    totals[call_id].append(count(dig(event, "tool_use_result", "totalTokens")))
+
+    values = [items[0] for items in totals.values() if len(items) == 1]
+    tokens = observed(sum(values)) if len(values) == len(call_ids) and all(v is not None for v in values) else unknown()
+    return {"calls": observed(len(call_ids)), "tokens": tokens}
 
 
 def codex(stream):

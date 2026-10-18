@@ -139,6 +139,21 @@ class ObserveOutputTest(unittest.TestCase):
             with self.subTest(provider=provider, fixture=name):
                 self.assertEqual(observe(provider, read(name)), expected)
 
+    def test_claude_counts_top_level_subagent_calls_and_tokens(self):
+        raw = read("claude-subagent.jsonl")
+        expected = {
+            "calls": {"value": 2, "source": "observed"},
+            "tokens": {"value": 1234, "source": "observed"},
+        }
+        self.assertEqual(observe("claude", raw)["subagents"], expected)
+        events = [json.loads(line) for line in raw.decode().splitlines()]
+        events[4]["tool_use_result"].pop("totalTokens")
+        missing_tokens = "\n".join(json.dumps(event) for event in events).encode()
+        self.assertEqual(observe("claude", missing_tokens)["subagents"], {
+            "calls": {"value": 2, "source": "observed"},
+            "tokens": UNKNOWN,
+        })
+
     def test_observe_self_reported_never_accepts_observed_source(self):
         payload = {"self_reported_model": {"value": "gpt-5.6-luna", "source": "self_reported"}}
         for provider, event in (

@@ -40,6 +40,8 @@ RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$")
 SOURCES = {"observed", "estimated", "unknown"}
 USAGE_FIELDS = ("input", "output", "cache", "reasoning")
 OBSERVATION_FIELDS = ("observed_model", "usage", "fast_state")
+OBSERVATION_OPTIONAL_FIELDS = ("subagents",)
+SUBAGENT_FIELDS = ("calls", "tokens")
 FIELDS_V1 = {
     "schema_version", "run_id", "mission", "feature", "work_unit", "attempt", "role",
     "provider", "model", "repo", "task", "tier", "started_at", "finished_at",
@@ -499,7 +501,9 @@ def _log_path(spec, supplied):
 
 
 def validate_observation(observation):
-    if not isinstance(observation, dict) or set(observation) != set(OBSERVATION_FIELDS):
+    if (not isinstance(observation, dict)
+            or not set(OBSERVATION_FIELDS) <= set(observation)
+            or set(observation) - set(OBSERVATION_FIELDS + OBSERVATION_OPTIONAL_FIELDS)):
         fail("observation block has invalid fields")
     for name in ("observed_model", "fast_state"):
         _validate_sourced_scalar(f"observation.{name}", observation[name], "text")
@@ -508,6 +512,12 @@ def validate_observation(observation):
         fail("observation.usage has invalid fields")
     for name in USAGE_FIELDS:
         _validate_sourced_scalar(f"observation.usage.{name}", usage[name], "count")
+    if "subagents" in observation:
+        subagents = observation["subagents"]
+        if not isinstance(subagents, dict) or set(subagents) != set(SUBAGENT_FIELDS):
+            fail("observation.subagents has invalid fields")
+        for name in SUBAGENT_FIELDS:
+            _validate_sourced_scalar(f"observation.subagents.{name}", subagents[name], "count")
 
 
 def _validate_sourced_scalar(label, item, kind):

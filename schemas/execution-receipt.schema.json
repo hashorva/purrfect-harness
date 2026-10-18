@@ -111,6 +111,15 @@
             "cache": { "$ref": "#/$defs/sourcedCount" },
             "reasoning": { "$ref": "#/$defs/sourcedCount" }
           }
+        },
+        "subagents": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["calls", "tokens"],
+          "properties": {
+            "calls": {"$ref": "#/$defs/sourcedCount"},
+            "tokens": {"$ref": "#/$defs/sourcedCount"}
+          }
         }
       }
     },
