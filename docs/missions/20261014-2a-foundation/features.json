@@ -215,7 +215,11 @@
         "harness-manifest.json, README frontmatter and the top CHANGELOG entry say 3.1.0 / v3.1.0 together and the CHANGELOG lists the new capabilities and migration notes",
         "shellcheck, JSON validation, bash tests/run-tests.sh and install-harness.sh --dev --validate-release exit 0"
       ],
-      "passes": false
+      "passes": true,
+      "accepted_run_id": "6d7b8b32-e4ea-4f8f-9515-cd74954b649e",
+      "accepted_verification_sha256": "a3fe0bdaef7ec1774bd615c29973f3704d057fbd005392b1e2b9867b589ee777",
+      "accepted_at": "2026-10-18T06:52:45.136539Z",
+      "accepted_by": "Zamir (owner approval 2026-10-18; front desk executed)"
     },
     {
       "id": "F013",
