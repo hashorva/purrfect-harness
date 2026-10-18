@@ -142,6 +142,17 @@ def wall_time_seconds(started_at, finished_at):
     return max(0.0, (finished - started).total_seconds())
 
 
+def _ledger_subagents(observation):
+    unknown_flag = {"value": None, "source": "unknown"}
+    block = observation.get("subagents") or {}
+    calls = block.get("calls", unknown_flag)
+    tokens = block.get("tokens", unknown_flag)
+    return {
+        "calls": {"value": calls.get("value"), "source": calls.get("source", "unknown")},
+        "tokens": {"value": tokens.get("value"), "source": tokens.get("source", "unknown")},
+    }
+
+
 def build_ledger_row(spec, receipt, *, tier, self_reported_model=None):
     observation = receipt["observation"]
     usage = observation["usage"]
@@ -207,6 +218,7 @@ def build_ledger_row(spec, receipt, *, tier, self_reported_model=None):
             "value": usage["reasoning"]["value"],
             "source": usage["reasoning"]["source"],
         },
+        "subagents": _ledger_subagents(observation),
         "cost": {"value": None, "source": "unknown", "currency": "USD"},
         "quota_share": unknown_number(),
         "checks": [],

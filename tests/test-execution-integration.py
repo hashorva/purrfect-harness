@@ -380,6 +380,10 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                 "reasoning": {"value": None, "source": "unknown"},
             },
             "fast_state": {"value": None, "source": "unknown"},
+            "subagents": {
+                "calls": {"value": None, "source": "unknown"},
+                "tokens": {"value": None, "source": "unknown"},
+            },
         })
         self.assertEqual(receipt["outcome"], "completed")
         self.assertEqual(receipt["exit_code"], 0)
@@ -1462,6 +1466,27 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                     self.assertNotEqual(receipt["model"], "Composer 2.5")
                 if fixture_name == "codex.jsonl":
                     self.assertEqual(receipt["observation"]["observed_model"]["source"], "unknown")
+                self.clean_runs()
+
+    def test_brain_receipt_and_ledger_row_carry_subagents(self):
+        observed_two = {"calls": {"value": 2, "source": "observed"}, "tokens": {"value": 1234, "source": "observed"}}
+        observed_zero = {"calls": {"value": 0, "source": "observed"}, "tokens": {"value": 0, "source": "observed"}}
+        unknown_block = {"calls": {"value": None, "source": "unknown"}, "tokens": {"value": None, "source": "unknown"}}
+        cases = (
+            ("claude", "claude-subagent.jsonl", observed_two),
+            ("claude", "claude.json", observed_zero),
+            ("codex", "codex.jsonl", unknown_block),
+        )
+        for provider, fixture, expected in cases:
+            with self.subTest(provider=provider, fixture=fixture):
+                self.install_fixture_emitting_provider(provider, fixture)
+                self.write_fleet(provider, "fixture-model", "medium", "unknown", seat_name="brain")
+                result = self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"])
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                receipt = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())
+                self.assertEqual(receipt["observation"]["subagents"], expected)
+                ledger_path = self.root / ".tasks/ledger" / f"{receipt['run_id']}.json"
+                self.assertEqual(json.loads(ledger_path.read_text())["subagents"], expected)
                 self.clean_runs()
 
     def test_stall_watchdog_stops_silent_providers_for_worker_and_brain(self):

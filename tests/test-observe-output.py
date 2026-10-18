@@ -16,6 +16,8 @@ from observe_output import no_turn, observe, observe_self_reported, resolve_mode
 
 
 UNKNOWN = {"value": None, "source": "unknown"}
+SUBAGENTS_UNKNOWN = {"calls": UNKNOWN, "tokens": UNKNOWN}
+SUBAGENTS_ZERO = {"calls": {"value": 0, "source": "observed"}, "tokens": {"value": 0, "source": "observed"}}
 
 ALL_UNKNOWN = {
     "observed_model": {"value": None, "source": "unknown"},
@@ -26,6 +28,7 @@ ALL_UNKNOWN = {
         "reasoning": {"value": None, "source": "unknown"},
     },
     "fast_state": {"value": None, "source": "unknown"},
+    "subagents": SUBAGENTS_UNKNOWN,
 }
 
 CLAUDE = {
@@ -37,12 +40,14 @@ CLAUDE = {
         "reasoning": {"value": 29, "source": "observed"},
     },
     "fast_state": {"value": "off", "source": "observed"},
+    "subagents": SUBAGENTS_ZERO,
 }
 
 CLAUDE_TWO_MODELS = {
     "observed_model": {"value": None, "source": "unknown"},
     "usage": CLAUDE["usage"],
     "fast_state": {"value": "off", "source": "observed"},
+    "subagents": SUBAGENTS_ZERO,
 }
 
 CODEX = {
@@ -54,6 +59,7 @@ CODEX = {
         "reasoning": {"value": 0, "source": "observed"},
     },
     "fast_state": {"value": None, "source": "unknown"},
+    "subagents": SUBAGENTS_UNKNOWN,
 }
 
 CODEX_TWO_TURNS = {
@@ -65,6 +71,7 @@ CODEX_TWO_TURNS = {
         "reasoning": {"value": 0, "source": "observed"},
     },
     "fast_state": {"value": None, "source": "unknown"},
+    "subagents": SUBAGENTS_UNKNOWN,
 }
 
 CURSOR = {
@@ -76,12 +83,14 @@ CURSOR = {
         "reasoning": {"value": None, "source": "unknown"},
     },
     "fast_state": {"value": None, "source": "unknown"},
+    "subagents": SUBAGENTS_UNKNOWN,
 }
 
 CURSOR_NO_INIT_MODEL = {
     "observed_model": {"value": None, "source": "unknown"},
     "usage": CURSOR["usage"],
     "fast_state": {"value": None, "source": "unknown"},
+    "subagents": SUBAGENTS_UNKNOWN,
 }
 
 AGY = {
@@ -93,6 +102,7 @@ AGY = {
         "reasoning": {"value": 0, "source": "observed"},
     },
     "fast_state": {"value": None, "source": "unknown"},
+    "subagents": SUBAGENTS_UNKNOWN,
 }
 
 EXPECTED = {
@@ -138,6 +148,19 @@ class ObserveOutputTest(unittest.TestCase):
         for (provider, name), expected in EXPECTED.items():
             with self.subTest(provider=provider, fixture=name):
                 self.assertEqual(observe(provider, read(name)), expected)
+
+    def test_subagent_field_is_observed_zero_or_unknown(self):
+        observed_two = {"calls": {"value": 2, "source": "observed"}, "tokens": {"value": 1234, "source": "observed"}}
+        for name in ("claude.json", "claude-log.txt", "claude-two-models.json"):
+            with self.subTest(fixture=name):
+                self.assertEqual(observe("claude", read(name))["subagents"], SUBAGENTS_ZERO)
+        self.assertEqual(observe("claude", read("claude-subagent.jsonl"))["subagents"], observed_two)
+        for provider, name in (("codex", "codex.jsonl"), ("cursor", "cursor.jsonl"), ("agy", "agy.jsonl")):
+            with self.subTest(provider=provider, fixture=name):
+                self.assertEqual(observe(provider, read(name))["subagents"], SUBAGENTS_UNKNOWN)
+        for name in ("empty.txt", "garbage.txt", "wrong-types.jsonl"):
+            with self.subTest(fixture=name):
+                self.assertEqual(observe("claude", read(name))["subagents"], SUBAGENTS_UNKNOWN)
 
     def test_claude_counts_top_level_subagent_calls_and_tokens(self):
         raw = read("claude-subagent.jsonl")

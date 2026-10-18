@@ -191,6 +191,7 @@ def result(model, usage, fast_state):
         "observed_model": model,
         "usage": usage,
         "fast_state": fast_state,
+        "subagents": {"calls": unknown(), "tokens": unknown()},
     }
 
 
@@ -316,6 +317,8 @@ def claude(stream):
     subagents = _claude_subagents(stream)
     if subagents is not None:
         observation["subagents"] = subagents
+    elif usage["input"]["source"] == "observed" and usage["output"]["source"] == "observed":
+        observation["subagents"] = {"calls": observed(0), "tokens": observed(0)}
     return observation
 
 

@@ -32,6 +32,10 @@ ALL_UNKNOWN = {
         "reasoning": {"value": None, "source": "unknown"},
     },
     "fast_state": {"value": None, "source": "unknown"},
+    "subagents": {
+        "calls": {"value": None, "source": "unknown"},
+        "tokens": {"value": None, "source": "unknown"},
+    },
 }
 
 

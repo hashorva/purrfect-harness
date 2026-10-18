@@ -57,6 +57,7 @@ MAX_INPUT_BYTES = 1024 * 1024
 DRIFT_KEYS = ("at", "mission", "seat", "from", "to", "inventory_sha256")
 RESOLUTION_KEYS = ("provider", "model", "effort", "speed")
 TOKEN_FIELDS = ("tokens_input", "tokens_output", "tokens_cache", "tokens_reasoning")
+OPTIONAL_FIELDS = ("self_reported_model", "subagents")
 
 FIELDS = (
     "schema_version", "mission", "feature", "task", "run_id", "parent_run", "group_id",
@@ -66,13 +67,13 @@ FIELDS = (
     "task_class_tags", "allow_list_size", "task_text_tokens", "ste_flag", "active_lesson_ids",
     "experiment_id",
     "wall_time_s", "turns", "tool_calls", "tokens_input", "tokens_output", "tokens_cache",
-    "tokens_reasoning", "cost", "quota_share", "checks", "diff_size", "scope_result",
+    "tokens_reasoning", "subagents", "cost", "quota_share", "checks", "diff_size", "scope_result",
     "anti_gaming_flags", "failure_class", "escalation_reason", "outcome",
 )
 # The row's own id fields: the only text fields that may hold a UUID shape.
 ID_FIELDS = ("run_id", "parent_run", "group_id")
 # Key names the privacy walk may print. Any other key is shown as "<unknown key>".
-KNOWN_KEYS = frozenset(FIELDS) | {"value", "source", "currency", "name", "exit_code", "files", "lines"}
+KNOWN_KEYS = frozenset(FIELDS) | {"value", "source", "currency", "name", "exit_code", "files", "lines", "calls", "tokens"}
 
 
 class LedgerError(Exception):
@@ -217,6 +218,12 @@ def check_cost(path, value):
     check_text(sub(path, "currency"), value["currency"])
 
 
+def check_subagents(path, value):
+    check_object(path, value, ("calls", "tokens"))
+    for key in ("calls", "tokens"):
+        check_flag(sub(path, key), value[key], lambda p, v: check_count(p, v, 0))
+
+
 def check_checks(path, value):
     def check_item(item_path, item):
         check_object(item_path, item, ("name", "exit_code"))
@@ -296,6 +303,7 @@ CHECKS = {
     "tokens_output": number_flag,
     "tokens_cache": number_flag,
     "tokens_reasoning": number_flag,
+    "subagents": check_subagents,
     "cost": check_cost,
     "quota_share": number_flag,
     "checks": check_checks,
@@ -321,8 +329,8 @@ def registry_door_names(path=REGISTRY_PATH):
 def validate_row(row, door_names=None):
     """Raise LedgerError on the first contract violation, including an unknown registry door."""
     check_privacy("", row)
-    required = tuple(name for name in FIELDS if name != "self_reported_model")
-    check_object("", row, required, optional=("self_reported_model",))
+    required = tuple(name for name in FIELDS if name not in OPTIONAL_FIELDS)
+    check_object("", row, required, optional=OPTIONAL_FIELDS)
     for name in FIELDS:
         if name in row:
             CHECKS[name](name, row[name])

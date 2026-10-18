@@ -40,6 +40,15 @@
     "tokens_output": { "$ref": "#/$defs/numberFlag" },
     "tokens_cache": { "$ref": "#/$defs/numberFlag" },
     "tokens_reasoning": { "$ref": "#/$defs/numberFlag" },
+    "subagents": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["calls", "tokens"],
+      "properties": {
+        "calls": { "$ref": "#/$defs/numberFlag" },
+        "tokens": { "$ref": "#/$defs/numberFlag" }
+      }
+    },
     "cost": {
       "type": "object",
       "required": ["value", "source", "currency"],

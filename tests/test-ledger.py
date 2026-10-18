@@ -193,10 +193,11 @@ class LedgerContract(unittest.TestCase):
         properties = set(schema["properties"])
         self.assertIn("self_reported_model", properties)
         self.assertNotIn("self_reported_model", schema["required"])
-        self.assertEqual(set(schema["required"]), properties - {"self_reported_model"})
+        self.assertNotIn("subagents", schema["required"])
+        self.assertEqual(set(schema["required"]), properties - {"self_reported_model", "subagents"})
         self.assertEqual(properties, set(FIELDS))
         self.assertEqual(set(SECTION_8_FIELDS) - properties, set(), "section 8 field missing from schema")
-        self.assertEqual(properties - set(SECTION_8_FIELDS) - {"schema_version", "tier"}, set(), "unexpected schema field")
+        self.assertEqual(properties - set(SECTION_8_FIELDS) - {"schema_version", "tier", "subagents"}, set(), "unexpected schema field")
         self.assertEqual(schema["title"], "Purrfect Harness LedgerRow v2")
         self.assertEqual(schema["properties"]["schema_version"], {"const": 2})
         self.assertEqual(schema["properties"]["tier"]["enum"], ["economy", "premium", None])
@@ -300,8 +301,12 @@ class LedgerMutations(unittest.TestCase):
         path = Path(self.tmp.name) / "optional-self-reported-model.json"
         path.write_text(json.dumps(row), encoding="utf-8")
         self.assertEqual(run_cli("validate", str(path)).returncode, 0)
+        path = Path(self.tmp.name) / "optional-subagents.json"
+        path.write_text(json.dumps(self.base), encoding="utf-8")
+        self.assertNotIn("subagents", self.base)
+        self.assertEqual(run_cli("validate", str(path)).returncode, 0)
         for name in FIELDS:
-            if name == "self_reported_model":
+            if name in ("self_reported_model", "subagents"):
                 continue
             with self.subTest(field=name):
                 self.expect_invalid(self.mutated(lambda row, n=name: row.pop(n)), f"{name}: is required")
@@ -1039,6 +1044,45 @@ class LedgerBuilderTests(unittest.TestCase):
                 written = json.loads(path.read_text(encoding="utf-8"))
                 self.assertEqual(written["self_reported_model"], unknown)
                 L.validate_row(written)
+
+    def test_row_carries_subagents_from_the_receipt_observation(self):
+        unknown = {"value": None, "source": "unknown"}
+        observed = lambda value: {"value": value, "source": "observed"}
+        spec = {"repo": str(ROOT), "base_commit": "HEAD", "mission": "docs/missions/x", "work_unit": "T-1",
+                "run_id": str(uuid.uuid4()), "attempt": 1, "provider": "agy", "write_scope": ["file"]}
+        receipt = {"feature": "F008", "observation": {"observed_model": unknown, "fast_state": unknown,
+            "usage": {k: unknown for k in ("input", "output", "cache", "reasoning")}},
+            "started_at": "2026-10-15T00:00:00Z", "finished_at": "2026-10-15T00:00:01Z", "changed_paths": [],
+            "scope": {"result": "pass"}, "outcome": "completed",
+            "requested_configuration": {"model": "gemini-3.8-flash-low", "effort": "high"},
+            "resolved_configuration": {"model": "gemini-3.8-flash-low"}}
+        import ledger as L
+        row = execution_runner.build_ledger_row(spec, receipt, tier="premium")
+        self.assertEqual(row["subagents"], {"calls": unknown, "tokens": unknown})
+        L.validate_row(row)
+        receipt["observation"]["subagents"] = {"calls": observed(2), "tokens": observed(1234)}
+        row = execution_runner.build_ledger_row(spec, receipt, tier="premium")
+        self.assertEqual(row["subagents"], {"calls": observed(2), "tokens": observed(1234)})
+        L.validate_row(row)
+        receipt["observation"]["subagents"] = {"calls": observed(0), "tokens": observed(0)}
+        row = execution_runner.build_ledger_row(spec, receipt, tier="premium")
+        self.assertEqual(row["subagents"], {"calls": observed(0), "tokens": observed(0)})
+        L.validate_row(row)
+        for line in (ROOT / "docs/missions/ledger.jsonl").read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                L.validate_row(json.loads(line))
+        base = json.loads((ROOT / "docs/missions/ledger.jsonl").read_text(encoding="utf-8").splitlines()[0])
+        for bad in (
+            {"calls": observed(2)},
+            {"calls": observed(True), "tokens": observed(1)},
+            {"calls": observed(2), "tokens": observed(-1)},
+            {"calls": observed(2), "tokens": observed(1.5)},
+            {"calls": {"value": 2, "source": "unknown"}, "tokens": unknown},
+            {"calls": observed(2), "tokens": observed(1), "extra": 1},
+        ):
+            with self.subTest(bad=bad):
+                with self.assertRaises(L.LedgerError):
+                    L.validate_row(dict(base, subagents=bad))
 
     def test_agy_runs_book_the_door_of_their_model_family(self):
         cases = (
