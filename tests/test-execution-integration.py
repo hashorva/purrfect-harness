@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OBSERVE_FIXTURES = ROOT / "tests/fixtures/observe"
 PROVIDERS = ("codex", "claude", "agent", "agy")
 sys.path.insert(0, str(ROOT / "scripts"))
-from observe_output import observe  # noqa: E402
+from observe_output import observe, token_figures  # noqa: E402
 import fleet_state  # noqa: E402
 from execute_provider import CLAUDE_DISALLOWED_TOOLS, CODEX_CONFIG_OVERRIDES  # noqa: E402
 
@@ -386,6 +386,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                 "calls": {"value": None, "source": "unknown"},
                 "tokens": {"value": None, "source": "unknown"},
             },
+            "tokens": token_figures("cursor" if provider == "agent" else provider, b""),
         })
         self.assertEqual(receipt["outcome"], "completed")
         self.assertEqual(receipt["exit_code"], 0)
@@ -1547,7 +1548,9 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                 ])
                 self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
                 observe_name = "cursor" if provider == "agent" else provider
-                expected = observe(observe_name, (OBSERVE_FIXTURES / fixture_name).read_bytes())
+                raw = (OBSERVE_FIXTURES / fixture_name).read_bytes()
+                expected = observe(observe_name, raw)
+                expected["tokens"] = token_figures(observe_name, raw)
                 receipt = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())
                 self.assertEqual(receipt["observation"], expected)
                 if fixture_name == "cursor.jsonl":
@@ -1963,7 +1966,10 @@ print(json.dumps({'type': 'result', 'usage': {'input_tokens': total, 'output_tok
         self.assertEqual(result.returncode, 7, result.stderr + result.stdout)
         receipt = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())
         self.assertEqual(receipt["outcome"], "failed")
-        self.assertEqual(receipt["observation"], observe("codex", (OBSERVE_FIXTURES / "codex.jsonl").read_bytes()))
+        raw = (OBSERVE_FIXTURES / "codex.jsonl").read_bytes()
+        expected = observe("codex", raw)
+        expected["tokens"] = token_figures("codex", raw)
+        self.assertEqual(receipt["observation"], expected)
 
     def test_closed_stdin_finishes_eof_reading_provider(self):
         (self.bin / "codex").write_text("#!/usr/bin/env bash\nwhile IFS= read -r _; do :; done\nexit 0\n")

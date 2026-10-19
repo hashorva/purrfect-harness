@@ -274,7 +274,7 @@ def build_ledger_row(spec, receipt, *, tier, self_reported_model=None):
         row[field] = {"value": flag.get("value"), "source": flag.get("source", "unknown")}
     if "role_tag" in receipt:
         row["role_tag"] = receipt["role_tag"]
-    row["prompt_version"] = prompt_version(spec["repo"], spec["base_commit"], spec["role"])
+    row["prompt_version"] = prompt_version(spec["repo"], spec["base_commit"], spec.get("role"))
     return row
 
 
