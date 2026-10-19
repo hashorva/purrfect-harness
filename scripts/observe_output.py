@@ -423,6 +423,45 @@ def agy(stream):
 PARSERS = {"claude": claude, "codex": codex, "cursor": cursor, "agy": agy}
 
 
+def _stream_usage_total(usage, *keys):
+    if not isinstance(usage, dict):
+        return 0
+    parts = [count(usage.get(key)) for key in keys]
+    if any(part is None for part in parts):
+        return 0
+    return sum(parts)
+
+
+def stream_tokens(provider, event, seen):
+    """Tokens one parsed stream event adds (subagent messages and duplicate ids excluded)."""
+    if not isinstance(event, dict):
+        return 0
+    name = ALIASES.get(provider, provider) if isinstance(provider, str) else None
+    if name == "claude":
+        if event.get("type") == "assistant" and event.get("parent_tool_use_id") is None:
+            message_id = dig(event, "message", "id")
+            if isinstance(message_id, str) and message_id not in seen:
+                seen.add(message_id)
+                return _stream_usage_total(
+                    dig(event, "message", "usage"),
+                    "input_tokens", "output_tokens", "cache_read_input_tokens",
+                )
+        return 0
+    if name == "codex" and event.get("type") == "turn.completed":
+        return _stream_usage_total(
+            event.get("usage"), "input_tokens", "output_tokens", "cached_input_tokens",
+        )
+    if name == "cursor" and event.get("type") == "result":
+        return _stream_usage_total(
+            event.get("usage"), "inputTokens", "outputTokens", "cacheReadTokens",
+        )
+    if name == "agy" and event.get("event") == "result":
+        return _stream_usage_total(
+            dig(event, "result", "usage"), "input_tokens", "output_tokens", "cache_read_tokens",
+        )
+    return 0
+
+
 def observe(provider, raw):
     name = ALIASES.get(provider, provider) if isinstance(provider, str) else None
     if name not in PARSERS:

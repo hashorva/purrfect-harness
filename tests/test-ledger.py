@@ -194,10 +194,15 @@ class LedgerContract(unittest.TestCase):
         self.assertIn("self_reported_model", properties)
         self.assertNotIn("self_reported_model", schema["required"])
         self.assertNotIn("subagents", schema["required"])
-        self.assertEqual(set(schema["required"]), properties - {"self_reported_model", "subagents"})
+        self.assertNotIn("tokens_overrun", schema["required"])
+        self.assertEqual(set(schema["required"]), properties - {"self_reported_model", "subagents", "tokens_overrun"})
         self.assertEqual(properties, set(FIELDS))
         self.assertEqual(set(SECTION_8_FIELDS) - properties, set(), "section 8 field missing from schema")
-        self.assertEqual(properties - set(SECTION_8_FIELDS) - {"schema_version", "tier", "subagents"}, set(), "unexpected schema field")
+        self.assertEqual(
+            properties - set(SECTION_8_FIELDS) - {"schema_version", "tier", "subagents", "tokens_overrun"},
+            set(),
+            "unexpected schema field",
+        )
         self.assertEqual(schema["title"], "Purrfect Harness LedgerRow v2")
         self.assertEqual(schema["properties"]["schema_version"], {"const": 2})
         self.assertEqual(schema["properties"]["tier"]["enum"], ["economy", "premium", None])
@@ -306,7 +311,7 @@ class LedgerMutations(unittest.TestCase):
         self.assertNotIn("subagents", self.base)
         self.assertEqual(run_cli("validate", str(path)).returncode, 0)
         for name in FIELDS:
-            if name in ("self_reported_model", "subagents"):
+            if name in ("self_reported_model", "subagents", "tokens_overrun"):
                 continue
             with self.subTest(field=name):
                 self.expect_invalid(self.mutated(lambda row, n=name: row.pop(n)), f"{name}: is required")
@@ -409,7 +414,10 @@ class LedgerMutations(unittest.TestCase):
         self.expect_invalid(self.mutated(lambda row: row.__setitem__("schema_version", 1)), "schema_version: must be 2")
         self.expect_invalid(self.mutated(lambda row: row.__setitem__("attempt", 0)), "attempt: must be an integer >= 1")
         self.expect_invalid(self.mutated(lambda row: row.__setitem__("run_id", "not-a-run")), "run_id: must be a run id (UUID v1-8)")
-        self.expect_invalid(self.mutated(lambda row: row.__setitem__("outcome", "done")), "outcome: must be one of completed, failed, timed_out, stalled, interrupted, launch_failed")
+        self.expect_invalid(
+            self.mutated(lambda row: row.__setitem__("outcome", "done")),
+            "outcome: must be one of completed, failed, timed_out, stalled, interrupted, launch_failed, budget_exceeded",
+        )
         self.expect_invalid(self.mutated(lambda row: row.__setitem__("scope_result", "ok")), "scope_result: must be one of pass, fail, not_checked")
         self.expect_invalid(self.mutated(lambda row: row.__setitem__("ste_flag", "no")), "ste_flag: must be true or false")
 

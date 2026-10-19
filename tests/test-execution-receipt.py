@@ -43,8 +43,9 @@ def schema_drift(schema):
     """Return how the JSON Schema disagrees with execution_receipt.py's field lists (empty when they agree)."""
     drift = []
     body = schema["$defs"]["receiptBody"]
-    if set(body["properties"]) != execution_receipt.FIELDS:
-        drift.append("receiptBody.properties != FIELDS")
+    expected_props = execution_receipt.FIELDS | execution_receipt.RECEIPT_OPTIONAL_FIELDS
+    if set(body["properties"]) != expected_props:
+        drift.append("receiptBody.properties != FIELDS | RECEIPT_OPTIONAL_FIELDS")
     if len(body["required"]) != len(set(body["required"])) or set(body["required"]) != execution_receipt.FIELDS_V1:
         drift.append("receiptBody.required != FIELDS_V1")
     observation = schema["$defs"]["observation"]
@@ -460,6 +461,7 @@ raise SystemExit(0)
         legacy = dict(receipt)
         legacy["schema_version"] = 1
         legacy.pop("observation", None)
+        legacy.pop("token_budget", None)
         self.write_canonical(path, legacy)
         load_receipt(path)
 

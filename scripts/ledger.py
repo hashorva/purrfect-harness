@@ -53,13 +53,13 @@ HIDDEN_CHARS = re.compile("[\u061c\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\
 SAFE_TEXT = re.compile(r"[A-Za-z0-9 ._:/-]{0,200}")
 PROMPT_PREFIX = "Read docs/missions/"
 PROMPT_PREFIXES = re.compile(r"^\s*(?:Read \S*[/\\.]|You are |Follow AGENTS\.md)")
-OUTCOMES = ("completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed")
+OUTCOMES = ("completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed", "budget_exceeded")
 SCOPE_RESULTS = ("pass", "fail", "not_checked")
 MAX_INPUT_BYTES = 1024 * 1024
 DRIFT_KEYS = ("at", "mission", "seat", "from", "to", "inventory_sha256")
 RESOLUTION_KEYS = ("provider", "model", "effort", "speed")
 TOKEN_FIELDS = ("tokens_input", "tokens_output", "tokens_cache", "tokens_reasoning")
-OPTIONAL_FIELDS = ("self_reported_model", "subagents")
+OPTIONAL_FIELDS = ("self_reported_model", "subagents", "tokens_overrun")
 
 FIELDS = (
     "schema_version", "mission", "feature", "task", "run_id", "parent_run", "group_id",
@@ -69,7 +69,7 @@ FIELDS = (
     "task_class_tags", "allow_list_size", "task_text_tokens", "ste_flag", "active_lesson_ids",
     "experiment_id",
     "wall_time_s", "turns", "tool_calls", "tokens_input", "tokens_output", "tokens_cache",
-    "tokens_reasoning", "subagents", "cost", "quota_share", "checks", "diff_size", "scope_result",
+    "tokens_reasoning", "tokens_overrun", "subagents", "cost", "quota_share", "checks", "diff_size", "scope_result",
     "anti_gaming_flags", "failure_class", "escalation_reason", "outcome",
 )
 # The row's own id fields: the only text fields that may hold a UUID shape.
@@ -305,6 +305,7 @@ CHECKS = {
     "tokens_output": number_flag,
     "tokens_cache": number_flag,
     "tokens_reasoning": number_flag,
+    "tokens_overrun": number_flag,
     "subagents": check_subagents,
     "cost": check_cost,
     "quota_share": number_flag,

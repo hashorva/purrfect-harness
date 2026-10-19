@@ -40,6 +40,7 @@
     "tokens_output": { "$ref": "#/$defs/numberFlag" },
     "tokens_cache": { "$ref": "#/$defs/numberFlag" },
     "tokens_reasoning": { "$ref": "#/$defs/numberFlag" },
+    "tokens_overrun": { "$ref": "#/$defs/numberFlag" },
     "subagents": {
       "type": "object",
       "additionalProperties": false,
@@ -86,7 +87,7 @@
     "anti_gaming_flags": { "$ref": "#/$defs/textList" },
     "failure_class": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
     "escalation_reason": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
-    "outcome": { "enum": ["completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed"] }
+    "outcome": { "enum": ["completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed", "budget_exceeded"] }
   },
   "$defs": {
     "text": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$" },

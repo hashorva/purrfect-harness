@@ -21,7 +21,8 @@ from execution_spec import artifact_directory, SpecError, load_persisted, receip
 from observe_output import all_unknown
 
 
-OUTCOMES = {"completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed"}
+OUTCOMES = {"completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed", "budget_exceeded"}
+RECEIPT_OPTIONAL_FIELDS = frozenset({"token_budget"})
 CLAUDE_PROTECTED_FILES = ("settings.json", "settings.local.json", "CLAUDE.md", ".mcp.json")
 CLAUDE_PROTECTED_DIRS = ("commands", "agents", "hooks", "skills")
 HOME_PROTECTED_FILES = (
@@ -569,8 +570,22 @@ def _validate_sourced_scalar(label, item, kind):
         fail(f"{label} must be a non-negative integer")
 
 
+def validate_token_budget(block, outcome):
+    if not isinstance(block, dict) or set(block) != {"limit", "used", "overrun"}:
+        fail("token_budget is invalid")
+    limit, used, overrun = block["limit"], block["used"], block["overrun"]
+    for name, value in (("limit", limit), ("used", used), ("overrun", overrun)):
+        if isinstance(value, bool) or not isinstance(value, int):
+            fail("token_budget is invalid")
+    if limit < 1 or used < 0 or overrun < 0 or overrun != max(0, used - limit):
+        fail("token_budget is invalid")
+    if outcome == "budget_exceeded" and used <= 2 * limit:
+        fail("budget_exceeded outcome requires usage over twice the token budget")
+
+
 def build_receipt(*, spec_path, digest, before, started_at, finished_at, outcome,
-                  exit_code, log_path, task=None, tier=None, observation=None, protected_before=None):
+                  exit_code, log_path, task=None, tier=None, observation=None, protected_before=None,
+                  token_budget=None):
     spec, raw = load_persisted(spec_path)
     if spec_sha256(raw) != digest:
         fail("execution spec SHA-256 does not match exact persisted bytes")
@@ -633,6 +648,9 @@ def build_receipt(*, spec_path, digest, before, started_at, finished_at, outcome
         "scope": scope,
         "observation": observation,
     }
+    if token_budget is not None:
+        validate_token_budget(token_budget, outcome)
+        receipt["token_budget"] = token_budget
     validate_receipt(receipt, receipt_path=None)
     return receipt
 
@@ -655,8 +673,11 @@ def validate_receipt(receipt, receipt_path):
         if set(receipt) != FIELDS_V1:
             fail("receipt fields must exactly match ExecutionReceipt v1")
     elif version == 2:
-        if set(receipt) != FIELDS:
+        allowed = FIELDS | RECEIPT_OPTIONAL_FIELDS
+        if set(receipt) - allowed or FIELDS - set(receipt):
             fail("receipt fields must exactly match ExecutionReceipt v2")
+        if "token_budget" in receipt:
+            validate_token_budget(receipt["token_budget"], receipt["outcome"])
         validate_observation(receipt["observation"])
     else:
         fail("receipt schema_version must be 1 or 2")

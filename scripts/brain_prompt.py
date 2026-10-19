@@ -47,7 +47,8 @@ def render(action, mission, provider, log_rel=None, request=None):
         "and the repo skills in .agents/skills (mission-init, dispatch-worker). Tools: your CLI's native tools and "
         "web search. " + (SUBAGENTS if claude else NO_SUBAGENTS),
         "## Budget",
-        f"{BUDGETS[role]} tokens for this run (input + output + cache read, your own total).{log}",
+        f"{BUDGETS[role]} tokens for this run (input + output + cache read, your own total); "
+        f"the runner records an overrun in the receipt and stops the run past twice the budget.{log}",
         "## Permissions",
         PERMISSIONS[role],
         "## Acceptance checks",

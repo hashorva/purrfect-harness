@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Mounted real-wrapper contracts for immutable execution specs and receipts."""
+import copy
 import hashlib
 import json
 import os
@@ -334,7 +335,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
 
     @staticmethod
     def prompt_worker():
-        return ("Goal: docs/missions/fixture/tasks/T-001.md is done when its verification commands pass and one scoped commit leaves a clean tree; the Front Desk runs the full suite, you do not. Resources: your CLI's native tools, the repo skills in .agents/skills, web search, and the subagents your CLI offers (Claude Code: the explorer agent, .claude/agents/explorer.md, model haiku). Budget: the task's max_attempts and long-command rule; the runner stops a stalled or overlong run. Permissions: the task's allow-list; PROGRESS.md and features.json belong to the Front Desk. Acceptance checks: the task's verification commands. End with a short plain-text report: what you changed and the exit code of each check you ran.")
+        return ("Goal: docs/missions/fixture/tasks/T-001.md is done when its verification commands pass and one scoped commit leaves a clean tree; the Front Desk runs the full suite, you do not. Resources: your CLI's native tools, the repo skills in .agents/skills, web search, and the subagents your CLI offers (Claude Code: the explorer agent, .claude/agents/explorer.md, model haiku). Budget: the task's max_attempts and long-command rule, and a token budget by the task's front-matter size (small 150000, medium 400000, large 800000 tokens; medium when unset); the runner records an overrun in the receipt and stops a run past twice its token budget, a stalled run or an overlong one. Permissions: the task's allow-list; PROGRESS.md and features.json belong to the Front Desk. Acceptance checks: the task's verification commands. End with a short plain-text report: what you changed and the exit code of each check you ran.")
 
     def expected_argv(self, provider, model, effort, speed, prompt):
         repo = self.physical_root
@@ -1761,11 +1762,102 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertNotIn("NO-TURN:", self.log_text(receipt["run_id"]))
         self.clean_runs()
 
+    def test_token_budget_overrun_is_recorded_and_twice_the_budget_stops_the_run(self):
+        path = self.bin / "claude"
+        path.write_text(
+            """#!/usr/bin/env python3
+import json, os, sys, time
+fake_tokens = int(os.environ.get("FAKE_TOKENS", "0"))
+fake_messages = int(os.environ.get("FAKE_MESSAGES", "0"))
+for i in range(fake_messages):
+    event = {
+        "type": "assistant",
+        "parent_tool_use_id": None,
+        "message": {
+            "id": f"msg_{i}",
+            "usage": {"input_tokens": fake_tokens, "output_tokens": 0, "cache_read_input_tokens": 0},
+            "content": [],
+        },
+    }
+    line = json.dumps(event) + "\\n"
+    sys.stdout.write(line)
+    sys.stdout.write(line)
+    sys.stdout.write(json.dumps({
+        "type": "assistant",
+        "parent_tool_use_id": "toolu_sub",
+        "message": {"id": f"sub_{i}", "usage": event["message"]["usage"], "content": []},
+    }) + "\\n")
+    sys.stdout.flush()
+    time.sleep(0.3)
+if os.environ.get("FAKE_HANG"):
+    time.sleep(30)
+total = fake_tokens * fake_messages
+sys.stdout.write(json.dumps({
+    "type": "result",
+    "usage": {"input_tokens": total, "output_tokens": 0, "cache_read_input_tokens": 0},
+    "num_turns": fake_messages,
+}) + "\\n")
+sys.stdout.flush()
+raise SystemExit(0)
+"""
+        )
+        path.chmod(0o755)
+        self.write_fleet("claude", "budget-model", "medium", "unknown")
+        self.set_status("in-progress")
+        worker = [
+            "bash", "scripts/spawn-worker.sh", "claude", "docs/missions/fixture/tasks/T-001.md",
+            "--model", "budget-model", "--effort", "medium", "--speed", "unknown", "--feature", "F001",
+        ]
+        import execution_receipt
+
+        with self.subTest(case="overrun recorded"):
+            result = self.invoke(worker, env={"FAKE_TOKENS": "250000", "FAKE_MESSAGES": "2"})
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            receipt_path = next((self.root / ".tasks/receipts").glob("*.json"))
+            receipt = json.loads(receipt_path.read_text())
+            self.assertEqual(receipt["outcome"], "completed")
+            self.assertEqual(receipt["token_budget"], {"limit": 400000, "used": 500000, "overrun": 100000})
+            row = json.loads((self.root / ".tasks/ledger" / f"{receipt['run_id']}.json").read_text())
+            self.assertEqual(row["tokens_overrun"], {"value": 100000, "source": "observed"})
+            valid = self.invoke([sys.executable, "scripts/execution_receipt.py", "validate", "--receipt", str(receipt_path)])
+            self.assertEqual(valid.returncode, 0, valid.stderr)
+            bad = copy.deepcopy(receipt)
+            bad["token_budget"] = dict(bad["token_budget"], overrun=0)
+            with self.assertRaises(execution_receipt.ReceiptError):
+                execution_receipt.validate_receipt(bad, None)
+            self.clean_runs()
+
+        with self.subTest(case="twice budget stops run"):
+            result = self.invoke(worker, env={
+                "FAKE_TOKENS": "300000", "FAKE_MESSAGES": "3", "FAKE_HANG": "1",
+                "SPAWN_WORKER_TIMEOUT_SECS": "20",
+            })
+            self.assertEqual(result.returncode, 121, result.stderr + result.stdout)
+            receipt_path = next((self.root / ".tasks/receipts").glob("*.json"))
+            receipt = json.loads(receipt_path.read_text())
+            self.assertEqual(receipt["outcome"], "budget_exceeded")
+            self.assertEqual(receipt["exit_code"], 121)
+            self.assertEqual(receipt["token_budget"]["used"], 900000)
+            self.assertEqual(receipt["token_budget"]["overrun"], 500000)
+            self.assertIn(
+                "BUDGET: 900000 tokens exceed twice the token budget of 400000; run stopped\n",
+                self.log_text(receipt["run_id"]),
+            )
+            valid = self.invoke([sys.executable, "scripts/execution_receipt.py", "validate", "--receipt", str(receipt_path)])
+            self.assertEqual(valid.returncode, 0, valid.stderr)
+            row = json.loads((self.root / ".tasks/ledger" / f"{receipt['run_id']}.json").read_text())
+            self.assertEqual(row["outcome"], "budget_exceeded")
+            bad = copy.deepcopy(receipt)
+            bad["token_budget"] = {"limit": 400000, "used": 800000, "overrun": 400000}
+            with self.assertRaises(execution_receipt.ReceiptError):
+                execution_receipt.validate_receipt(bad, None)
+            self.clean_runs()
+
     def test_outcome_enums_match_across_runner_receipt_ledger_and_schemas(self):
         import execution_receipt
         import ledger
 
-        expected_outcomes = ("completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed")
+        expected_outcomes = ("completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed", "budget_exceeded")
         receipt_schema = json.loads((ROOT / "schemas/execution-receipt.schema.json").read_text(encoding="utf-8"))
         receipt_enum = receipt_schema["$defs"]["receiptBody"]["properties"]["outcome"]["enum"]
         ledger_schema = json.loads((ROOT / "schemas/ledger-row.schema.json").read_text(encoding="utf-8"))
@@ -1776,7 +1868,9 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertEqual(tuple(ledger_enum), expected_outcomes)
 
         runner_code = (ROOT / "scripts/execution_runner.py").read_text(encoding="utf-8")
-        runner_outcomes = set(re.findall(r'"(completed|failed|timed_out|stalled|interrupted|launch_failed)"', runner_code))
+        runner_outcomes = set(re.findall(
+            r'"(completed|failed|timed_out|stalled|interrupted|launch_failed|budget_exceeded)"', runner_code,
+        ))
         self.assertEqual(execution_receipt.OUTCOMES, set(ledger.OUTCOMES))
         self.assertEqual(runner_outcomes, set(ledger.OUTCOMES))
 

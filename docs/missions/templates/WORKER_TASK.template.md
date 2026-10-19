@@ -4,6 +4,7 @@ feature: {{F00X}}
 worker: {{WORKER}}
 invocation: {{INVOCATION}}
 max_attempts: 2
+size: medium
 ---
 
 # Task: {{OBJECTIVE}}

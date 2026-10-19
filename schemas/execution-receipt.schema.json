@@ -148,7 +148,17 @@
         "tier": { "type": ["string", "null"] },
         "started_at": { "type": "string", "format": "date-time" },
         "finished_at": { "type": "string", "format": "date-time" },
-        "outcome": { "enum": ["completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed"] },
+        "outcome": { "enum": ["completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed", "budget_exceeded"] },
+        "token_budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["limit", "used", "overrun"],
+          "properties": {
+            "limit": { "type": "integer", "minimum": 1 },
+            "used": { "type": "integer", "minimum": 0 },
+            "overrun": { "type": "integer", "minimum": 0 }
+          }
+        },
         "exit_code": { "type": "integer", "minimum": 0, "maximum": 255 },
         "log_path": { "type": "string", "pattern": "^\\.tasks/logs/[0-9a-f-]+\\.log$" },
         "execution_spec_path": { "$ref": "#/$defs/nonempty" },

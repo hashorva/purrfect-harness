@@ -13,7 +13,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests/fixtures/observe"
 sys.path.insert(0, str(ROOT / "scripts"))
-from observe_output import no_turn, observe, observe_self_reported, resolve_model_identity
+from observe_output import no_turn, observe, observe_self_reported, resolve_model_identity, stream_tokens
 
 
 UNKNOWN = {"value": None, "source": "unknown"}
@@ -839,6 +839,31 @@ class ObserveOutputTest(unittest.TestCase):
                 os.environ.pop("CODEX_SESSIONS_DIR", None)
             else:
                 os.environ["CODEX_SESSIONS_DIR"] = prev_sessions
+
+    def test_stream_tokens_counts_each_top_level_message_once(self):
+        u = {"input_tokens": 3, "output_tokens": 4, "cache_read_input_tokens": 3}
+        seen = set()
+        top = lambda mid: {
+            "type": "assistant", "parent_tool_use_id": None,
+            "message": {"id": mid, "usage": u, "content": []},
+        }
+        self.assertEqual(stream_tokens("claude", top("m1"), seen), 10)
+        self.assertEqual(stream_tokens("claude", top("m1"), seen), 0)
+        sub = {
+            "type": "assistant", "parent_tool_use_id": "toolu_1",
+            "message": {"id": "sub", "usage": u, "content": []},
+        }
+        self.assertEqual(stream_tokens("claude", sub, seen), 0)
+        self.assertEqual(stream_tokens("claude", {"type": "result", "usage": u}, seen), 0)
+        self.assertEqual(stream_tokens(
+            "codex", {"type": "turn.completed", "usage": {"input_tokens": 3, "output_tokens": 4, "cached_input_tokens": 3}}, seen,
+        ), 10)
+        self.assertEqual(stream_tokens(
+            "agent", {"type": "result", "usage": {"inputTokens": 3, "outputTokens": 4, "cacheReadTokens": 3}}, seen,
+        ), 10)
+        self.assertEqual(stream_tokens(
+            "agy", {"event": "result", "result": {"usage": {"input_tokens": 3, "output_tokens": 4, "cache_read_tokens": 3}}}, seen,
+        ), 10)
 
     def test_claude_model_id_validation(self):
         doc = json.loads(read("claude.json"))
