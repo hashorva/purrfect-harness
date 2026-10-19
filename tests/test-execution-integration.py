@@ -1662,9 +1662,9 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         with tempfile.TemporaryDirectory() as directory:
             events = Path(directory) / "events.jsonl"
             env = {k: v for k, v in os.environ.items() if not k.startswith("PURRFECT_")}
-        calls = [{}, {"PURRFECT_EVENTS": str(events)},
-                 {"PURRFECT_RUN_ID": "123e4567-e89b-12d3-a456-426614174000", "PURRFECT_EVENTS": str(events)}] * 1
-        calls.append({"PURRFECT_RUN_ID": "123e4567-e89b-12d3-a456-426614174000", "PURRFECT_EVENTS": str(events)})
+            calls = [{}, {"PURRFECT_EVENTS": str(events)},
+                     {"PURRFECT_RUN_ID": "123e4567-e89b-12d3-a456-426614174000", "PURRFECT_EVENTS": str(events)}] * 1
+            calls.append({"PURRFECT_RUN_ID": "123e4567-e89b-12d3-a456-426614174000", "PURRFECT_EVENTS": str(events)})
             for extra in calls:
                 result = subprocess.run(["bash", "-c", hook], input='{"hook_event_name":"SubagentStop","agent_type":"explorer"}',
                                         text=True, env={**env, **extra}, capture_output=True)
