@@ -16,7 +16,7 @@ from datetime import datetime
 from execute_provider import provider_contract
 from execution_receipt import (ReceiptError, all_unknown, canonical_bytes, capture_before, now,
                                write_receipt)
-from observe_output import no_turn, observe, observe_self_reported, resolve_model_identity, stream_tokens
+from observe_output import no_turn, observe, observe_self_reported, resolve_model_identity
 from execution_spec import artifact_directory, SpecError, load_persisted, spec_sha256
 
 # Imported before any provider runs, so a worker's later edit to scripts/ledger.py
@@ -33,8 +33,6 @@ except Exception:
 RECEIPT_FAILURE_EXIT = 125
 NO_TURN_EXIT = 122
 STALL_EXIT = 123
-WORKER_TOKEN_BUDGETS = {"small": 150000, "medium": 400000, "large": 800000}
-BRAIN_TOKEN_BUDGETS = {"review": 400000, "default": 1000000}
 
 
 def unknown_number():
@@ -89,30 +87,6 @@ def observed_number(value):
 
 def observed_text(value):
     return {"value": value, "source": "observed"}
-
-
-def token_budget(spec, task):
-    if spec["role"] == "brain":
-        unit = spec.get("work_unit")
-        return BRAIN_TOKEN_BUDGETS["review"] if unit == "review" else BRAIN_TOKEN_BUDGETS["default"]
-    limit = WORKER_TOKEN_BUDGETS["medium"]
-    if not isinstance(task, str) or not task:
-        return limit
-    path = Path(spec["repo"]) / task
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return limit
-    if not text.startswith("---"):
-        return limit
-    parts = text.split("---", 2)
-    if len(parts) < 3:
-        return limit
-    for line in parts[1].splitlines():
-        if line.startswith("size:"):
-            size = line.split(":", 1)[1].strip()
-            return WORKER_TOKEN_BUDGETS.get(size, limit)
-    return limit
 
 
 def ledger_cli_name(provider):
@@ -263,8 +237,6 @@ def build_ledger_row(spec, receipt, *, tier, self_reported_model=None):
             "source": usage["reasoning"]["source"],
         },
         "subagents": _ledger_subagents(observation),
-        **({"tokens_overrun": observed_number(receipt["token_budget"]["overrun"])}
-           if "token_budget" in receipt else {}),
         "cost": {"value": None, "source": "unknown", "currency": "USD"},
         "quota_share": unknown_number(),
         "checks": [],
@@ -422,11 +394,6 @@ def run(args):
         log_offset = log.stat().st_size
     except OSError:
         log_offset = 0
-    limit = token_budget(spec, args.task)
-    used = 0
-    seen_message_ids = set()
-    token_read_offset = log_offset
-    token_partial = b""
     observe_provider = "cursor" if spec["provider"] == "agent" else spec["provider"]
     try:
         try:
@@ -461,23 +428,6 @@ def run(args):
                         last_size = size
                         last_growth = time.monotonic()
                         seen_output = True
-                        try:
-                            with log.open("rb") as token_handle:
-                                token_handle.seek(token_read_offset)
-                                token_partial += token_handle.read(size - token_read_offset)
-                            token_read_offset = size
-                            while b"\n" in token_partial:
-                                line, token_partial = token_partial.split(b"\n", 1)
-                                if not line.strip():
-                                    continue
-                                try:
-                                    event = json.loads(line)
-                                except (json.JSONDecodeError, ValueError):
-                                    continue
-                                if isinstance(event, dict):
-                                    used += stream_tokens(observe_provider, event, seen_message_ids)
-                        except OSError:
-                            pass
                     stall_limit = args.idle_seconds if seen_output else args.stall_seconds
                     if stall_limit and time.monotonic() - last_growth >= stall_limit:
                         terminate_tree(process)
@@ -537,12 +487,6 @@ def run(args):
         except OSError:
             pass
         observation = all_unknown()
-    usage = observation.get("usage") or {}
-    fields = (usage.get("input"), usage.get("output"), usage.get("cache"))
-    if all(isinstance(item, dict) and item.get("source") == "observed" for item in fields):
-        observed_total = sum(item["value"] for item in fields)
-        used = max(used, observed_total)
-    token_budget_doc = {"limit": limit, "used": used, "overrun": max(0, used - limit)}
     receipt = write_receipt(
         spec_path=args.spec,
         digest=args.spec_sha256,
@@ -555,7 +499,6 @@ def run(args):
         task=args.task,
         tier=args.tier,
         observation=observation,
-        token_budget=token_budget_doc,
     )
     append_event(spec["repo"], log, {"event": "run_exit", **event, "exit_code": exit_code,
                  "outcome": outcome, "receipt": f".tasks/receipts/{receipt.name}"})

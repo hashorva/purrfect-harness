@@ -1820,7 +1820,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertNotIn("NO-TURN:", self.log_text(receipt["run_id"]))
         self.clean_runs()
 
-    def test_token_budget_overrun_is_recorded_and_twice_the_budget_stops_the_run(self):
+    def test_token_use_never_stops_a_run_and_new_receipts_carry_no_token_budget(self):
         path = self.bin / "claude"
         path.write_text(
             """#!/usr/bin/env python3
@@ -1847,8 +1847,6 @@ for i in range(fake_messages):
     }) + "\\n")
     sys.stdout.flush()
     time.sleep(0.3)
-if os.environ.get("FAKE_HANG"):
-    time.sleep(30)
 total = fake_tokens * fake_messages
 sys.stdout.write(json.dumps({
     "type": "result",
@@ -1868,48 +1866,28 @@ raise SystemExit(0)
         ]
         import execution_receipt
 
-        with self.subTest(case="overrun recorded"):
-            result = self.invoke(worker, env={"FAKE_TOKENS": "250000", "FAKE_MESSAGES": "2"})
-            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-            receipt_path = next((self.root / ".tasks/receipts").glob("*.json"))
-            receipt = json.loads(receipt_path.read_text())
-            self.assertEqual(receipt["outcome"], "completed")
-            self.assertEqual(receipt["token_budget"], {"limit": 400000, "used": 500000, "overrun": 100000})
-            row = json.loads((self.root / ".tasks/ledger" / f"{receipt['run_id']}.json").read_text())
-            self.assertEqual(row["tokens_overrun"], {"value": 100000, "source": "observed"})
-            valid = self.invoke([sys.executable, "scripts/execution_receipt.py", "validate", "--receipt", str(receipt_path)])
-            self.assertEqual(valid.returncode, 0, valid.stderr)
-            bad = copy.deepcopy(receipt)
-            bad["token_budget"] = dict(bad["token_budget"], overrun=0)
-            with self.assertRaises(execution_receipt.ReceiptError):
-                execution_receipt.validate_receipt(bad, None)
-            self.clean_runs()
-
-        with self.subTest(case="twice budget stops run"):
-            result = self.invoke(worker, env={
-                "FAKE_TOKENS": "300000", "FAKE_MESSAGES": "3", "FAKE_HANG": "1",
-                "SPAWN_WORKER_TIMEOUT_SECS": "20",
-            })
-            self.assertEqual(result.returncode, 121, result.stderr + result.stdout)
-            receipt_path = next((self.root / ".tasks/receipts").glob("*.json"))
-            receipt = json.loads(receipt_path.read_text())
-            self.assertEqual(receipt["outcome"], "budget_exceeded")
-            self.assertEqual(receipt["exit_code"], 121)
-            self.assertEqual(receipt["token_budget"]["used"], 900000)
-            self.assertEqual(receipt["token_budget"]["overrun"], 500000)
-            self.assertIn(
-                "BUDGET: 900000 tokens exceed twice the token budget of 400000; run stopped\n",
-                self.log_text(receipt["run_id"]),
+        result = self.invoke(worker, env={"FAKE_TOKENS": "300000", "FAKE_MESSAGES": "3"})
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        receipt_path = next((self.root / ".tasks/receipts").glob("*.json"))
+        receipt = json.loads(receipt_path.read_text())
+        self.assertEqual(receipt["outcome"], "completed")
+        self.assertEqual(receipt["exit_code"], 0)
+        self.assertNotIn("token_budget", receipt)
+        row = json.loads((self.root / ".tasks/ledger" / f"{receipt['run_id']}.json").read_text())
+        self.assertNotIn("tokens_overrun", row)
+        self.assertNotIn("BUDGET:", self.log_text(receipt["run_id"]))
+        old_receipt = copy.deepcopy(receipt)
+        old_receipt["outcome"] = "budget_exceeded"
+        old_receipt["exit_code"] = 121
+        old_receipt["token_budget"] = {"limit": 400000, "used": 900000, "overrun": 500000}
+        execution_receipt.validate_receipt(old_receipt, None)
+        with self.assertRaisesRegex(execution_receipt.ReceiptError, "budget_exceeded is no longer written"):
+            execution_receipt.build_receipt(
+                spec_path=receipt["execution_spec_path"], digest=receipt["execution_spec_sha256"],
+                before=receipt["git_before"], started_at=receipt["started_at"],
+                finished_at=receipt["finished_at"], outcome="budget_exceeded", exit_code=121,
+                log_path=receipt["log_path"],
             )
-            valid = self.invoke([sys.executable, "scripts/execution_receipt.py", "validate", "--receipt", str(receipt_path)])
-            self.assertEqual(valid.returncode, 0, valid.stderr)
-            row = json.loads((self.root / ".tasks/ledger" / f"{receipt['run_id']}.json").read_text())
-            self.assertEqual(row["outcome"], "budget_exceeded")
-            bad = copy.deepcopy(receipt)
-            bad["token_budget"] = {"limit": 400000, "used": 800000, "overrun": 400000}
-            with self.assertRaises(execution_receipt.ReceiptError):
-                execution_receipt.validate_receipt(bad, None)
-            self.clean_runs()
 
     def test_outcome_enums_match_across_runner_receipt_ledger_and_schemas(self):
         import execution_receipt
@@ -1927,10 +1905,10 @@ raise SystemExit(0)
 
         runner_code = (ROOT / "scripts/execution_runner.py").read_text(encoding="utf-8")
         runner_outcomes = set(re.findall(
-            r'"(completed|failed|timed_out|stalled|interrupted|launch_failed|budget_exceeded)"', runner_code,
+            r'"(completed|failed|timed_out|stalled|interrupted|launch_failed)"', runner_code,
         ))
         self.assertEqual(execution_receipt.OUTCOMES, set(ledger.OUTCOMES))
-        self.assertEqual(runner_outcomes, set(ledger.OUTCOMES))
+        self.assertEqual(runner_outcomes, set(ledger.OUTCOMES) - {"budget_exceeded"})
 
     def test_failed_run_still_writes_receipt_observation(self):
         self.install_fixture_emitting_provider("codex", "codex.jsonl")

@@ -584,8 +584,9 @@ def validate_token_budget(block, outcome):
 
 
 def build_receipt(*, spec_path, digest, before, started_at, finished_at, outcome,
-                  exit_code, log_path, task=None, tier=None, observation=None, protected_before=None,
-                  token_budget=None):
+                  exit_code, log_path, task=None, tier=None, observation=None, protected_before=None):
+    if outcome == "budget_exceeded":
+        fail("budget_exceeded is no longer written; it stays valid only in receipts written before 2026-10-19")
     spec, raw = load_persisted(spec_path)
     if spec_sha256(raw) != digest:
         fail("execution spec SHA-256 does not match exact persisted bytes")
@@ -648,9 +649,6 @@ def build_receipt(*, spec_path, digest, before, started_at, finished_at, outcome
         "scope": scope,
         "observation": observation,
     }
-    if token_budget is not None:
-        validate_token_budget(token_budget, outcome)
-        receipt["token_budget"] = token_budget
     validate_receipt(receipt, receipt_path=None)
     return receipt
 
