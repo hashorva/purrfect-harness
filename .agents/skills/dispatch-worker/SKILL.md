@@ -83,9 +83,10 @@ the snapshot does not make arbitrary execution-policy edits safe.
 
 ## 3. Review observed effects
 
-Use the exact receipt, scoped Git diff/commits, PROGRESS entry, and a short log
-tail. Do not stream full transcripts into review context. Apply the project's
-code-reviewer procedure and guard-verification for guards or safety tests.
+The review judges the run by its effects; the evidence is the exact receipt,
+the scoped Git diff and commits, and the PROGRESS entry. Available resources:
+the code-reviewer subagent, and the guard-verification skill for guards or
+safety tests.
 
 ### Brain `review` action (structured verdict)
 

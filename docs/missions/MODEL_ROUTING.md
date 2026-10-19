@@ -41,7 +41,7 @@ file are durable. Always show the map at GATE 0 so the human can swap binds.
 - The reviewer is on a different vendor than the worker where possible.
 - Opus medium reviews dispatch, verification, acceptance, safety and privacy code.
 
-Note (F013): Launcher prompts give goal, resources, budget and acceptance checks; Claude Code runs delegate wide reading to the Haiku explorer subagent, receipts record subagent calls and their tokens, and the scope check rejects compiled-module and stdlib shadowing.
+Note (F013): Launcher prompts give goal, resources, budget, permissions and acceptance checks and nothing about method; the Haiku explorer subagent is listed as an available resource and nothing forces delegation; receipts record subagent calls and their tokens, and the scope check rejects compiled-module and stdlib shadowing.
 
 Note (F000): F000 safety net accepted: golden argv, evidence audit, Python 3.12/3.14 CI, test discovery, shared run-id validation
 

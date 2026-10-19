@@ -11,7 +11,7 @@ B = importlib.import_module("brain_prompt")
 MISSIONS = ("mission-init", "planning", "gate0", "gate", "review")
 ROLES = {"mission-init": "planning", "planning": "planning", "gate0": "gate", "gate": "gate", "review": "review"}
 PROVIDERS = ("claude", "codex", "agent", "agy")
-HEADINGS = ("## Goal", "## Resources", "## Budget", "## Acceptance checks")
+HEADINGS = ("## Goal", "## Resources", "## Budget", "## Permissions", "## Acceptance checks")
 
 
 class BrainPromptTests(unittest.TestCase):
@@ -21,16 +21,16 @@ class BrainPromptTests(unittest.TestCase):
                 with self.subTest(action=action, provider=provider):
                     lines = B.render(action, "docs/missions/x", provider).splitlines()
                     self.assertEqual(lines[0], f"You are the mission BRAIN for docs/missions/x. Role: {ROLES[action]}.")
-                    self.assertEqual([lines.count(h) for h in HEADINGS], [1, 1, 1, 1])
+                    self.assertEqual([lines.count(h) for h in HEADINGS], [1, 1, 1, 1, 1])
                     self.assertEqual([lines.index(h) for h in HEADINGS], sorted(lines.index(h) for h in HEADINGS))
 
-    def test_budget_states_the_role_budget_and_delegation(self):
+    def test_budget_states_the_role_budget_without_method(self):
         for action, budget in (("planning", 1000000), ("gate", 1000000), ("review", 400000)):
             prompt = B.render(action, "m", "claude", "run.log")
-            section = prompt.split("## Budget\n", 1)[1].split("\n## Acceptance checks", 1)[0]
+            section = prompt.split("## Budget\n", 1)[1].split("\n## Permissions", 1)[0]
             self.assertIn(f"{budget} tokens", section)
             self.assertNotIn(str(1400000 - budget), section)
-            self.assertIn("delegating reading and searching", section)
+            self.assertNotIn("delegat", section)
             self.assertIn("Your log: run.log.", section)
         self.assertNotIn("Your log", B.render("review", "m", "claude"))
 
@@ -39,11 +39,18 @@ class BrainPromptTests(unittest.TestCase):
             prompt = B.render(action, "m", "claude")
             self.assertIn(".claude/agents/explorer.md", prompt)
             self.assertIn("model haiku", prompt)
-            self.assertIn("to the explorer subagent", prompt)
+            self.assertIn("Subagents available: the explorer subagent", prompt)
             for provider in ("codex", "agent", "agy"):
                 low = B.render(action, "m", provider).lower()
                 for word in ("explorer", "luna", "composer", "flash", "haiku", ".claude/agents", "code-reviewer"):
                     self.assertNotIn(word, low)
+
+    def test_permissions_state_the_role_limits(self):
+        for role in ("planning", "gate"):
+            section = B.render(role, "m", "claude").split("## Permissions\n", 1)[1].split("\n## Acceptance checks", 1)[0]
+            self.assertIn("Write only inside the mission folder", section)
+        review = B.render("review", "m", "claude").split("## Permissions\n", 1)[1].split("\n## Acceptance checks", 1)[0]
+        self.assertIn("Read-only", review)
 
     def test_cli_prints_the_prompt_and_refuses_unknown_names(self):
         env = dict(__import__("os").environ, PYTHONDONTWRITEBYTECODE="1")

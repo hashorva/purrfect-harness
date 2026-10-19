@@ -14,6 +14,16 @@ safe install/update tooling for other repositories. It is not a consuming produc
   placeholders in this harness repository's `AGENTS.md`.
 - Do not commit secrets or alter Git tags/remotes without explicit user direction.
 
+## Goal-style harness
+
+The harness defines goals, budgets, permissions and deterministic checks; the model decides its own method.
+
+A launcher prompt (brain, worker or review request) states the goal, resources
+(tools, subagents such as the explorer agent, skills and web search), token
+budget, permissions and acceptance checks, and says nothing about method. No
+step forces delegation to a subagent. `tests/test-goal-style.py` refuses the
+method phrases it lists in prompts, skills and `.claude/agents/`.
+
 ## Checks
 
 - Run `shellcheck scripts/*.sh tests/*.sh`, JSON validation, and `bash tests/run-tests.sh`.

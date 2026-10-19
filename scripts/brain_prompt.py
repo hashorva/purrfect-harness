@@ -10,6 +10,11 @@ from pathlib import Path
 
 ROLES = {"mission-init": "planning", "planning": "planning", "gate0": "gate", "gate": "gate", "review": "review"}
 BUDGETS = {"planning": 1000000, "gate": 1000000, "review": 400000}
+PERMISSIONS = {
+    "planning": "Write only inside the mission folder; never launch a worker, accept a feature or advance a gate.",
+    "gate": "Write only inside the mission folder; never launch a worker, accept a feature or approve the gate (the owner approves it).",
+    "review": "Read-only: do not edit, commit or launch anything.",
+}
 PROVIDERS = ("claude", "codex", "agent", "agy")
 GOALS = {
     "planning": ("The planning work this run was asked for is done. For mission-init: GOAL.md, features.json, "
@@ -21,21 +26,18 @@ GOALS = {
 }
 # Only Claude Code's committed --help capture (docs/missions/capabilities/claude.txt) shows subagents;
 # no committed capture shows one for codex, cursor-agent or agy, so their prompts name none.
-SUBAGENTS = ("Subagents: the explorer subagent (.claude/agents/explorer.md, model haiku) for wide reading and "
-             "searching, and the read-only code-reviewer (.claude/agents/code-reviewer.md).")
+SUBAGENTS = "Subagents available: the explorer subagent (.claude/agents/explorer.md, model haiku, read-only reading and searching) and the read-only code-reviewer (.claude/agents/code-reviewer.md)."
 NO_SUBAGENTS = "Subagents: none is named for this CLI, because no committed --help capture shows one."
 
 
 def render(action, mission, provider, log_rel=None, request=None):
-    """The brain prompt for one run: Goal, Resources, Budget and Acceptance checks."""
+    """The brain prompt for one run: Goal, Resources, Budget, Permissions and Acceptance checks."""
     if action not in ROLES:
         raise ValueError(f"unknown action {action!r}")
     if provider not in PROVIDERS:
         raise ValueError(f"unknown provider {provider!r}")
     role = ROLES[action]
     claude = provider == "claude"
-    delegate = ("to the explorer subagent" if claude else
-                "to a subagent only where your CLI offers one; otherwise read only the excerpts you need")
     log = f" Your log: {log_rel}." if log_rel else ""
     return "\n".join([
         f"You are the mission BRAIN for {mission}. Role: {role}.",
@@ -45,9 +47,9 @@ def render(action, mission, provider, log_rel=None, request=None):
         "and the repo skills in .agents/skills (mission-init, dispatch-worker). Tools: your CLI's native tools and "
         "web search. " + (SUBAGENTS if claude else NO_SUBAGENTS),
         "## Budget",
-        f"{BUDGETS[role]} tokens for this run (input + output + cache read, your own total). Stay within it by "
-        f"delegating reading and searching {delegate}, and make the decisions yourself. Run your checks before you "
-        f"finish and stop when the goal is met.{log}",
+        f"{BUDGETS[role]} tokens for this run (input + output + cache read, your own total).{log}",
+        "## Permissions",
+        PERMISSIONS[role],
         "## Acceptance checks",
         f"shellcheck scripts/*.sh tests/*.sh, bash tests/run-tests.sh, and bash scripts/verify-mission.sh {mission} "
         "(ruff and a type check join when the repo adds them). A worker run counts only when .tasks/receipts/ proves it.",

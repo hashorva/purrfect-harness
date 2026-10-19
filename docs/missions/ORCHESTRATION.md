@@ -88,6 +88,16 @@ Missions live under `docs/missions/<YYYYMMDD-slug>/`. Root `GOAL.md` /
 Exactly one mission may be `in-progress` or `awaiting-gate` at a time. Discover
 with `bash scripts/active-mission.sh`.
 
+## Goal-style prompts (binding)
+
+The harness defines goals, budgets, permissions and deterministic checks; the model decides its own method.
+
+`scripts/brain_prompt.py`, the worker prompt in `scripts/spawn-worker.sh` and
+review requests state the goal, resources (tools, subagents, skills and web
+search), token budget, permissions and acceptance checks, and say nothing about
+method. No step forces delegation to a subagent. Skills and agent definitions
+follow the same rule.
+
 ## The loop
 
 ```text

@@ -111,7 +111,7 @@ def seat_binding(fleet_path, name, inventory):
     return provider, model, effort, speed, family
 def review_prompt(case, provider):
     task = case["task"]
-    tail = (f"HEAD is the worker commit for {task} ({MISSION_2A}/tasks/{task}.md). Review HEAD against HEAD~1 by its effects; do not edit files. End with one JSON object that matches schemas/review-verdict.schema.json; give each blocking finding as file:line with a failing input.")
+    tail = (f"HEAD is the worker commit for {task} ({MISSION_2A}/tasks/{task}.md); the change under review is HEAD against HEAD~1. The verdict is one JSON object that matches schemas/review-verdict.schema.json, with each blocking finding given as file:line with a failing input.")
     return brain_prompt.render("review", MISSION_2A, provider) + "\n## Review request\n" + tail
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="replay_seeded_defects.py")
