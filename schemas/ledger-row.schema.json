@@ -40,6 +40,11 @@
     "tokens_output": { "$ref": "#/$defs/numberFlag" },
     "tokens_cache": { "$ref": "#/$defs/numberFlag" },
     "tokens_reasoning": { "$ref": "#/$defs/numberFlag" },
+    "tokens_total": { "$ref": "#/$defs/numberFlag" },
+    "tokens_without_cache": { "$ref": "#/$defs/numberFlag" },
+    "tokens_cache_write": { "$ref": "#/$defs/numberFlag" },
+    "role_tag": { "enum": ["plan", "review", "gate", "brain", "worker"] },
+    "prompt_version": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
     "tokens_overrun": { "$ref": "#/$defs/numberFlag" },
     "subagents": {
       "type": "object",

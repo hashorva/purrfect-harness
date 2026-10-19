@@ -38,7 +38,8 @@ SECTION_8_FIELDS = [
 # Literal list of every field that is a number and therefore needs a source flag.
 NUMBER_FIELDS = [
     "allow_list_size", "task_text_tokens", "wall_time_s", "turns", "tool_calls",
-    "tokens_input", "tokens_output", "tokens_cache", "tokens_reasoning", "quota_share",
+    "tokens_input", "tokens_output", "tokens_cache", "tokens_reasoning", "tokens_total",
+    "tokens_without_cache", "tokens_cache_write", "quota_share",
 ]
 TEXT_FLAG_FIELDS = ["cli_version", "requested_model", "resolved_model", "observed_model", "self_reported_model", "effort", "fast_state"]
 GOOD = FIXTURES / "good-completed.json"
@@ -186,6 +187,39 @@ def hostile_locations():
 
 
 class LedgerContract(unittest.TestCase):
+    def test_token_figures_role_tag_and_prompt_version_are_optional(self):
+        import ledger as L
+
+        row = load(GOOD)
+        L.validate_row(row)
+        fields = ("tokens_total", "tokens_without_cache", "tokens_cache_write", "role_tag", "prompt_version")
+        self.assertTrue(all(name in L.FIELDS and name in L.OPTIONAL_FIELDS for name in fields))
+
+        extended = copy.deepcopy(row)
+        extended.update(
+            tokens_total={"value": 1771684, "source": "observed"},
+            tokens_without_cache={"value": 87968, "source": "observed"},
+            tokens_cache_write={"value": None, "source": "unknown"},
+            role_tag="plan",
+            prompt_version="scripts/brain_prompt.py:0123456789ab",
+        )
+        L.validate_row(extended)
+        extended["prompt_version"] = None
+        L.validate_row(extended)
+
+        for name, value, expected in (
+            ("role_tag", "boss", "role_tag: must be one of plan, review, gate, brain, worker"),
+            ("prompt_version", "x" * 300, "prompt_version: privacy"),
+            ("prompt_version", "/Users/x", "prompt_version: privacy"),
+            ("tokens_total", 5, "tokens_total: must be an object"),
+        ):
+            with self.subTest(field=name, value=value):
+                invalid = copy.deepcopy(extended)
+                invalid[name] = value
+                with self.assertRaises(L.LedgerError) as caught:
+                    L.validate_row(invalid)
+                self.assertEqual(str(caught.exception), expected)
+
     def test_every_section_8_field_is_in_the_validator_and_schema(self):
         schema = load(SCHEMA)
         self.assertEqual(schema["$schema"], "https://json-schema.org/draft/2020-12/schema")
@@ -195,11 +229,14 @@ class LedgerContract(unittest.TestCase):
         self.assertNotIn("self_reported_model", schema["required"])
         self.assertNotIn("subagents", schema["required"])
         self.assertNotIn("tokens_overrun", schema["required"])
-        self.assertEqual(set(schema["required"]), properties - {"self_reported_model", "subagents", "tokens_overrun"})
+        optional = {"self_reported_model", "subagents", "tokens_overrun", "tokens_total",
+                    "tokens_without_cache", "tokens_cache_write", "role_tag", "prompt_version"}
+        self.assertEqual(set(schema["required"]), properties - optional)
         self.assertEqual(properties, set(FIELDS))
         self.assertEqual(set(SECTION_8_FIELDS) - properties, set(), "section 8 field missing from schema")
         self.assertEqual(
-            properties - set(SECTION_8_FIELDS) - {"schema_version", "tier", "subagents", "tokens_overrun"},
+            properties - set(SECTION_8_FIELDS) - {"schema_version", "tier", "subagents", "tokens_overrun"} -
+            {"tokens_total", "tokens_without_cache", "tokens_cache_write", "role_tag", "prompt_version"},
             set(),
             "unexpected schema field",
         )
@@ -311,7 +348,8 @@ class LedgerMutations(unittest.TestCase):
         self.assertNotIn("subagents", self.base)
         self.assertEqual(run_cli("validate", str(path)).returncode, 0)
         for name in FIELDS:
-            if name in ("self_reported_model", "subagents", "tokens_overrun"):
+            if name in ("self_reported_model", "subagents", "tokens_overrun", "tokens_total",
+                        "tokens_without_cache", "tokens_cache_write", "role_tag", "prompt_version"):
                 continue
             with self.subTest(field=name):
                 self.expect_invalid(self.mutated(lambda row, n=name: row.pop(n)), f"{name}: is required")
