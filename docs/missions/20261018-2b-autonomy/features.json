@@ -221,6 +221,23 @@
         "evidence/claude-unlock-residual-risk.md lists which residual risks are closed by the profile and which remain; shellcheck and bash tests/run-tests.sh exit 0"
       ],
       "passes": false
+    },
+    {
+      "id": "F013",
+      "category": "goal-style",
+      "priority": 0,
+      "bootstrap": false,
+      "description": "Goal-style harness and event-driven Front Desk (owner direction 2026-10-19, steps 0-4 and 6; step 5 phone skipped): computed subagent stats, runner-enforced token budgets, events.jsonl, mission-run.sh, usage report.",
+      "steps": [
+        "Step 0 audit table and manual marks committed",
+        "Receipts carry computed subagent_stats; ledger/routing rows computed; planning_stats ignores manual rows",
+        "Runner enforces token budgets (overrun recorded, 2x stops)",
+        "events.jsonl run start/exit events and gated SubagentStop hook",
+        "mission-run.sh loop driver with round limit",
+        "usage report script and measured Front Desk token drop",
+        "shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
     }
   ]
 }
