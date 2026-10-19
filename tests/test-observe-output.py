@@ -4,6 +4,7 @@ import inspect
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -18,6 +19,13 @@ from observe_output import no_turn, observe, observe_self_reported, resolve_mode
 UNKNOWN = {"value": None, "source": "unknown"}
 SUBAGENTS_UNKNOWN = {"calls": UNKNOWN, "tokens": UNKNOWN}
 SUBAGENTS_ZERO = {"calls": {"value": 0, "source": "observed"}, "tokens": {"value": 0, "source": "observed"}}
+JQ_SUBAGENTS = (
+    "([.[] | select(.type == \"assistant\" and .parent_tool_use_id == null) | .message.content[]? "
+    "| select(.type == \"tool_use\" and (.name == \"Task\" or .name == \"Agent\")) | .id] | unique) as $ids "
+    "| {calls: ($ids | length), tokens: ([.[] | select(.type == \"user\" and .parent_tool_use_id == null) "
+    "| . as $e | .message.content[]? | select(.type == \"tool_result\" and (.tool_use_id as $t | $ids | any(. == $t))) "
+    "| $e.tool_use_result.totalTokens] | add // 0)}"
+)
 
 ALL_UNKNOWN = {
     "observed_model": {"value": None, "source": "unknown"},
@@ -161,6 +169,18 @@ class ObserveOutputTest(unittest.TestCase):
         for name in ("empty.txt", "garbage.txt", "wrong-types.jsonl"):
             with self.subTest(fixture=name):
                 self.assertEqual(observe("claude", read(name))["subagents"], SUBAGENTS_UNKNOWN)
+
+    def test_subagents_match_a_jq_one_liner(self):
+        jq = shutil.which("jq")
+        self.assertIsNotNone(jq)
+        for name in ("claude-subagent.jsonl", "claude.json"):
+            raw = read(name)
+            proc = subprocess.run([jq, "-c", "-s", JQ_SUBAGENTS, str(FIXTURES / name)], capture_output=True, text=True, check=True)
+            jq_counts = json.loads(proc.stdout)
+            sub = observe("claude", raw)["subagents"]
+            self.assertEqual(sub["calls"]["source"], "observed")
+            self.assertEqual(sub["tokens"]["source"], "observed")
+            self.assertEqual(jq_counts, {"calls": sub["calls"]["value"], "tokens": sub["tokens"]["value"]})
 
     def test_claude_counts_top_level_subagent_calls_and_tokens(self):
         raw = read("claude-subagent.jsonl")

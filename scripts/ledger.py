@@ -11,6 +11,8 @@ Usage:
   ledger.py fold <mission>    (append new rows and drift events; exit 0 ok, 1 invalid, 2 usage)
   ledger.py view <ledger.jsonl> --features <features.json>
                               (derived view on stdout; writes nothing; exit 0 ok, 1 invalid, 2 usage)
+  ledger.py routing-row <ledger-row.json> <category> <size>
+                              (one computed routing-data line on stdout; exit 0 ok, 1 invalid row, 2 usage)
 """
 import hashlib
 import json
@@ -548,6 +550,85 @@ def fold_mission(root, mission_path):
     return len(pending_rows), len(pending_drift)
 
 
+def _routing_observed_number(field):
+    if isinstance(field, dict) and field.get("source") == "observed":
+        value = field.get("value")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        return value
+    return None
+
+
+def _routing_text_arg(label, value):
+    if not isinstance(value, str) or not value.strip() or "\n" in value or "\r" in value or HIDDEN_CHARS.search(value):
+        print(f"ERROR: ledger: {label}: must be non-empty one-line text", file=sys.stderr)
+        return False
+    return True
+
+
+def routing_row_from_ledger(row, category, size):
+    observed_model = row.get("observed_model")
+    if isinstance(observed_model, dict) and observed_model.get("source") == "observed":
+        model = observed_model.get("value")
+    else:
+        resolved = row.get("resolved_model")
+        model = resolved.get("value") if isinstance(resolved, dict) else None
+    effort_field = row.get("effort")
+    effort = effort_field.get("value") if isinstance(effort_field, dict) else None
+    wall = _routing_observed_number(row.get("wall_time_s"))
+    duration_s = round(wall) if wall is not None else None
+    input_tokens = _routing_observed_number(row.get("tokens_input"))
+    output_tokens = _routing_observed_number(row.get("tokens_output"))
+    cache_read_tokens = _routing_observed_number(row.get("tokens_cache"))
+    block = row.get("subagents") if isinstance(row.get("subagents"), dict) else {}
+    calls_f = block.get("calls") if isinstance(block.get("calls"), dict) else {}
+    tokens_f = block.get("tokens") if isinstance(block.get("tokens"), dict) else {}
+    if calls_f.get("source") == "observed" and tokens_f.get("source") == "observed":
+        subagents = {"calls": calls_f.get("value"), "tokens": tokens_f.get("value"), "source": "observed"}
+    else:
+        subagents = {"calls": None, "tokens": None, "source": "unknown"}
+    tier = row.get("tier")
+    seat = f"{row['cli']}.{tier}" if tier is not None else str(row["cli"])
+    return {
+        "run_id": row["run_id"],
+        "task": row["task"],
+        "category": category,
+        "size": size,
+        "seat": seat,
+        "door": row["door"],
+        "model": model,
+        "effort": effort,
+        "attempt": row["attempt"],
+        "outcome": row["outcome"],
+        "failure_class": row["failure_class"],
+        "duration_s": duration_s,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cache_read_tokens": cache_read_tokens,
+        "subagents": subagents,
+        "source": "computed",
+    }
+
+
+def cmd_routing_row(path, category, size):
+    if not _routing_text_arg("category", category) or not _routing_text_arg("size", size):
+        return 2
+    try:
+        with open(path, encoding="utf-8") as handle:
+            row = json.load(handle)
+    except (OSError, ValueError) as error:
+        print(f"ERROR: ledger: document: not readable as JSON: {error}", file=sys.stderr)
+        return 1
+    try:
+        validate_row(row)
+    except LedgerError as error:
+        print(f"ERROR: ledger: {error}", file=sys.stderr)
+        return 1
+    out = routing_row_from_ledger(row, category, size)
+    print(json.dumps(out, separators=(",", ":")))
+    return 0
+
+
 def cmd_validate(path):
     try:
         with open(path, encoding="utf-8") as handle:
@@ -675,7 +756,13 @@ def main(argv):
         return cmd_fold(argv[1])
     if len(argv) == 4 and argv[0] == "view" and argv[2] == "--features":
         return cmd_view(argv[1], argv[3])
-    print("usage: ledger.py validate <file> | fold <mission> | view <ledger.jsonl> --features <features.json>", file=sys.stderr)
+    if len(argv) == 4 and argv[0] == "routing-row":
+        return cmd_routing_row(argv[1], argv[2], argv[3])
+    print(
+        "usage: ledger.py validate <file> | fold <mission> | view <ledger.jsonl> --features <features.json>"
+        " | routing-row <ledger-row.json> <category> <size>",
+        file=sys.stderr,
+    )
     return 2
 
 

@@ -1598,6 +1598,54 @@ class LedgerViewTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
 
 
+class RoutingRowTests(unittest.TestCase):
+    def test_routing_row_is_computed_from_the_ledger_row(self):
+        row = load(GOOD)
+        row["subagents"] = {"calls": {"value": 2, "source": "observed"}, "tokens": {"value": 1234, "source": "observed"}}
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "row.json"
+            path.write_text(json.dumps(row), encoding="utf-8")
+            out = run_cli("routing-row", str(path), "metrics", "M")
+            self.assertEqual(out.returncode, 0, out.stderr)
+            want = {
+                "run_id": "5f0c1e2a-7b3d-4c8e-9a1f-2d6b8e4c7a10",
+                "task": "T-027",
+                "category": "metrics",
+                "size": "M",
+                "seat": "claude.economy",
+                "door": "claude",
+                "model": "claude-haiku-5-5",
+                "effort": "medium",
+                "attempt": 1,
+                "outcome": "completed",
+                "failure_class": None,
+                "duration_s": 413,
+                "input_tokens": 58210,
+                "output_tokens": 9342,
+                "cache_read_tokens": 401775,
+                "subagents": {"calls": 2, "tokens": 1234, "source": "observed"},
+                "source": "computed",
+            }
+            self.assertEqual(json.loads(out.stdout), want)
+            self.assertEqual(out.stdout, json.dumps(want, separators=(",", ":")) + "\n")
+            row2 = json.loads(json.dumps(row))
+            row2.pop("subagents", None)
+            row2["tokens_cache"] = {"value": None, "source": "unknown"}
+            path2 = Path(temp) / "row2.json"
+            path2.write_text(json.dumps(row2), encoding="utf-8")
+            out2 = run_cli("routing-row", str(path2), "metrics", "M")
+            self.assertEqual(out2.returncode, 0, out2.stderr)
+            got2 = json.loads(out2.stdout)
+            self.assertIsNone(got2["cache_read_tokens"])
+            self.assertEqual(got2["subagents"], {"calls": None, "tokens": None, "source": "unknown"})
+            bad = dict(row2, tokens_input=5)
+            path3 = Path(temp) / "bad.json"
+            path3.write_text(json.dumps(bad), encoding="utf-8")
+            bad_out = run_cli("routing-row", str(path3), "metrics", "M")
+            self.assertNotEqual(bad_out.returncode, 0)
+            self.assertEqual(bad_out.stdout, "")
+
+
 class LedgerTestsLeaveNoBytecode(unittest.TestCase):
     def test_no_bytecode_folder_in_the_tree(self):
         self.assertFalse((ROOT / "scripts/__pycache__").exists())

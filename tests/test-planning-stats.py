@@ -67,9 +67,26 @@ class PlanningStatsTests(unittest.TestCase):
             out = subprocess.run([sys.executable, str(ROOT / "scripts/planning_stats.py"), str(Path(temp) / "missing")], capture_output=True, text=True)
             self.assertEqual((out.returncode, out.stdout), (2, ""))
 
+    def test_manual_rows_and_legacy_subagent_stats_are_ignored(self):
+        rows = [{"type": "architect-run", "plan": f"p{i}", "seat": "s", "model": "m", "input_tokens": 100 * (i + 1), "output_tokens": 0, "cache_read_tokens": 0, "subagent_stats": {"spawned": 2}, "outcome": "done"} for i in range(10)]
+        rows.append({"type": "architect-run", "plan": "x", "seat": "s", "model": "m", "input_tokens": 999999, "output_tokens": 0, "cache_read_tokens": 0, "subagent_stats": {"spawned": 2}, "outcome": "done", "source": "manual"})
+        with tempfile.TemporaryDirectory() as temp:
+            data = Path(temp) / "d.jsonl"
+            data.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+            self.assertEqual(P.summarize(data)["all"], {"runs": 10, "median_total": 550})
+            batch_path = Path(temp) / "b.json"
+            batch_path.write_text(json.dumps({"name": "b", "run_ids": [f"plan:p{i}" for i in range(10)]}), encoding="utf-8")
+            self.assertEqual(P.batch_summary(batch_path, data), {"batch": "b", "runs": 10, "median_parent_total": 550, "median_parent_plus_subagent_total": None, "median_subagent_calls": None, "done": 10})
+            miss = Path(temp) / "x.json"
+            miss.write_text(json.dumps({"name": "x", "run_ids": [f"plan:p{i}" for i in range(9)] + ["plan:x"]}), encoding="utf-8")
+            with self.assertRaises(P.PlanningStatsError) as ctx:
+                P.batch_summary(miss, data)
+            self.assertIn("plan:x", str(ctx.exception))
+            self.assertIn("not found", str(ctx.exception))
+
     def test_batch_reports_medians_and_done_rate(self):
         data, batch, ten, *_ = _batch_fixture(self)
-        self.assertEqual(P.batch_summary(batch("before", ten), data), {"batch": "before", "runs": 10, "median_parent_total": 1560, "median_parent_plus_subagent_total": 1835, "median_subagent_calls": 1, "done": 9})
+        self.assertEqual(P.batch_summary(batch("before", ten), data), {"batch": "before", "runs": 10, "median_parent_total": 1560, "median_parent_plus_subagent_total": None, "median_subagent_calls": None, "done": 9})
 
     def test_batch_keeps_unknown_subagent_counts_unknown(self):
         data, batch, ten, *_ = _batch_fixture(self)
@@ -93,7 +110,7 @@ class PlanningStatsTests(unittest.TestCase):
     def test_batch_cli_prints_the_summary(self):
         data, batch, ten, cli, *_ = _batch_fixture(self)
         out = cli("batch", str(batch("before", ten)), str(data))
-        table = "batch\tbefore\nruns\t10\nmedian_parent_total\t1560\nmedian_parent_plus_subagent_total\t1835\nmedian_subagent_calls\t1\ndone_rate\t9/10\n"
+        table = "batch\tbefore\nruns\t10\nmedian_parent_total\t1560\nmedian_parent_plus_subagent_total\tunknown\nmedian_subagent_calls\tunknown\ndone_rate\t9/10\n"
         self.assertEqual((out.returncode, out.stdout, out.stderr), (0, table, ""))
 
     def test_frozen_2a_baseline(self):

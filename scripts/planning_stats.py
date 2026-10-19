@@ -12,6 +12,8 @@ Batch file: one JSON object, {"name": "<batch name>", "run_ids": ["<run id>", ..
 Data file: UTF-8 JSONL. Two kinds of row are runs; every other row is ignored:
   ledger row: schema_version 2 with run_id and tokens_input; its id is run_id.
   routing planning row: type architect-run; its id is run_id, else plan:<plan>.
+  Rows with source manual are skipped as if absent (summarize, batch, compare indexing).
+  Legacy architect-run subagent_stats is ignored; only ledger subagents fields count.
   Exact duplicate rows count once; two different rows with one id are refused.
 
 Output: six tab-separated lines: batch, runs, median_parent_total,
@@ -57,7 +59,7 @@ def _index_data_paths(data_paths):
                     row = json.loads(line)
                 except json.JSONDecodeError as exc:
                     raise PlanningStatsError(f"line {number}: not JSON") from exc
-                if not isinstance(row, dict) or (named := _named_id(row)) is None:
+                if not isinstance(row, dict) or row.get("source") == "manual" or (named := _named_id(row)) is None:
                     continue
                 identity = json.dumps(row, sort_keys=True)
                 if identity not in by_id[named]:
@@ -72,10 +74,7 @@ def _subagent_from_row(row, run_id):
         calls, tokens = _obs(calls_f), _obs(tokens_f)
         source = "observed" if calls_f.get("source") == "observed" and tokens_f.get("source") == "observed" else str(calls_f.get("source") or tokens_f.get("source") or "unknown")
         return {"calls": calls, "tokens": tokens, "source": source}
-    spawned = (row.get("subagent_stats") or {}).get("spawned") if isinstance(row.get("subagent_stats"), dict) else None
-    if isinstance(spawned, bool) or not isinstance(spawned, int) or spawned < 0:
-        return {"calls": None, "tokens": None, "source": "unknown"}
-    return {"calls": 0, "tokens": 0, "source": "observed"} if spawned == 0 else {"calls": spawned, "tokens": None, "source": "observed"}
+    return {"calls": None, "tokens": None, "source": "unknown"}
 def _batch_row_metrics(row, run_id):
     if row.get("schema_version") == 2 and "tokens_input" in row:
         parts = [_obs(row.get(k)) for k in ("tokens_input", "tokens_output", "tokens_cache")]
@@ -215,7 +214,7 @@ def summarize(path):
                 row = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise PlanningStatsError(f"line {number}: not JSON") from exc
-            if not isinstance(row, dict) or row.get("type") != "architect-run":
+            if not isinstance(row, dict) or row.get("type") != "architect-run" or row.get("source") == "manual":
                 continue
             identity = json.dumps(row, sort_keys=True)
             if identity in seen:
