@@ -267,10 +267,16 @@ def verify(root, mission, run_id):
             passed = passed and exit_code == 0 and not skipped
             if exit_code != 0 and not skipped:
                 # The record keeps only digests, so print the tail of the failing output here (stderr) for the human.
-                tail = (stdout + b"\n" + stderr).decode("utf-8", "replace").splitlines()[-40:]
+                lines = (stdout + b"\n" + stderr).decode("utf-8", "replace").splitlines()
+                marks = [i for i, line in enumerate(lines) if re.search(r"FAIL|Error|Traceback|Assertion|exit [1-9]", line)]
+                keep = set()
+                for i in marks:
+                    keep.update(range(max(0, i - 2), min(len(lines), i + 4)))
                 print(f"VERIFY FAIL DETAIL: command {len(outcomes)} exit {exit_code}: {json.dumps(argv)[:200]}", file=sys.stderr)
-                for line in tail:
-                    print(f"  | {line[:300]}", file=sys.stderr)
+                if not keep:
+                    keep = set(range(max(0, len(lines) - 40), len(lines)))
+                for i in sorted(keep):
+                    print(f"  | {lines[i][:300]}", file=sys.stderr)
         after = snapshot(worktree)
         if after != receipt["git_after"]: passed = False
     finally:
