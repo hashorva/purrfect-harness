@@ -265,6 +265,12 @@ def verify(root, mission, run_id):
                 print(f"VERIFY SKIP: command {len(outcomes) + 1} {json.dumps(argv)[:200]} reported skipped checks ({SKIP_REASONS[skipped]})", file=sys.stderr)
             outcomes.append(outcome)
             passed = passed and exit_code == 0 and not skipped
+            if exit_code != 0 and not skipped:
+                # The record keeps only digests, so print the tail of the failing output here (stderr) for the human.
+                tail = (stdout + b"\n" + stderr).decode("utf-8", "replace").splitlines()[-40:]
+                print(f"VERIFY FAIL DETAIL: command {len(outcomes)} exit {exit_code}: {json.dumps(argv)[:200]}", file=sys.stderr)
+                for line in tail:
+                    print(f"  | {line[:300]}", file=sys.stderr)
         after = snapshot(worktree)
         if after != receipt["git_after"]: passed = False
     finally:
