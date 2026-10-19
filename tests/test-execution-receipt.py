@@ -32,6 +32,8 @@ ALL_UNKNOWN = {
         "reasoning": {"value": None, "source": "unknown"},
     },
     "fast_state": {"value": None, "source": "unknown"},
+    "tokens": {name: {"value": None, "source": "unknown"}
+               for name in ("input", "output", "reasoning", "cache_read", "cache_write", "without_cache", "total")},
     "subagents": {
         "calls": {"value": None, "source": "unknown"},
         "tokens": {"value": None, "source": "unknown"},
