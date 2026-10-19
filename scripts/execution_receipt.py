@@ -22,7 +22,7 @@ from observe_output import all_unknown
 
 
 OUTCOMES = {"completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed", "budget_exceeded"}
-RECEIPT_OPTIONAL_FIELDS = frozenset({"token_budget"})
+RECEIPT_OPTIONAL_FIELDS = frozenset({"token_budget", "role_tag"})
 CLAUDE_PROTECTED_FILES = ("settings.json", "settings.local.json", "CLAUDE.md", ".mcp.json")
 CLAUDE_PROTECTED_DIRS = ("commands", "agents", "hooks", "skills")
 HOME_PROTECTED_FILES = (
@@ -47,7 +47,7 @@ RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$")
 SOURCES = {"observed", "estimated", "unknown"}
 USAGE_FIELDS = ("input", "output", "cache", "reasoning")
 OBSERVATION_FIELDS = ("observed_model", "usage", "fast_state")
-OBSERVATION_OPTIONAL_FIELDS = ("subagents",)
+OBSERVATION_OPTIONAL_FIELDS = ("subagents", "tokens")
 SUBAGENT_FIELDS = ("calls", "tokens")
 FIELDS_V1 = {
     "schema_version", "run_id", "mission", "feature", "work_unit", "attempt", "role",
@@ -70,6 +70,15 @@ def fail(message):
 
 def now():
     return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+def role_tag(role, work_unit):
+    if role == "worker":
+        return "worker"
+    if role == "brain":
+        return {"plan": "plan", "planning": "plan", "mission-init": "plan",
+                "review": "review", "gate": "gate", "gate0": "gate"}.get(work_unit, "brain")
+    fail("role is invalid")
 
 
 def canonical_bytes(value):
@@ -548,6 +557,13 @@ def validate_observation(observation):
             fail("observation.subagents has invalid fields")
         for name in SUBAGENT_FIELDS:
             _validate_sourced_scalar(f"observation.subagents.{name}", subagents[name], "count")
+    if "tokens" in observation:
+        tokens = observation["tokens"]
+        from observe_output import TOKEN_FIGURE_FIELDS
+        if not isinstance(tokens, dict) or set(tokens) != set(TOKEN_FIGURE_FIELDS):
+            fail("observation.tokens has invalid fields")
+        for name in TOKEN_FIGURE_FIELDS:
+            _validate_sourced_scalar(f"observation.tokens.{name}", tokens[name], "count")
 
 
 def _validate_sourced_scalar(label, item, kind):
@@ -626,6 +642,7 @@ def build_receipt(*, spec_path, digest, before, started_at, finished_at, outcome
         "work_unit": spec["work_unit"],
         "attempt": spec["attempt"],
         "role": spec["role"],
+        "role_tag": role_tag(spec["role"], spec["work_unit"]),
         "provider": spec["provider"],
         "model": spec["model"],
         "repo": spec["repo"],
@@ -676,6 +693,8 @@ def validate_receipt(receipt, receipt_path):
             fail("receipt fields must exactly match ExecutionReceipt v2")
         if "token_budget" in receipt:
             validate_token_budget(receipt["token_budget"], receipt["outcome"])
+        if "role_tag" in receipt and receipt["role_tag"] != role_tag(receipt["role"], receipt["work_unit"]):
+            fail("receipt role_tag does not match role and work_unit")
         validate_observation(receipt["observation"])
     else:
         fail("receipt schema_version must be 1 or 2")
