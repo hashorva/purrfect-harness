@@ -4,6 +4,12 @@ note: Append-only. Newest entry on top. One entry per worker session or human ga
 
 # Progress
 
+## 2026-10-19 — Human — GATE 1
+
+- **Verdict:** approved (owner, in chat 2026-10-19) with three CI jobs (ubuntu 3.12, ubuntu 3.14, macOS 3.14).
+- **Notes:** README must declare Python 3.12+ supported and fleet-doctor.sh must fail on an older python3 (task). New owner direction ahead of F001: goal-style harness, event-driven Front Desk, steps 0-4 and 6 (step 5, the phone, is skipped for now).
+- **Next:** in-progress.
+
 ## REPORT AT GATE 1 — SAFETY NET (2026-10-19) — stopped for your verdict
 **Gate 0:** passed 2026-10-18 (fleet frozen from the proposal after a fresh probe: fleet-doctor no ERROR, fleet-inventory.sh, freeze-v2, validate-fleet ok, all 13 seats incl. claude.mid and codex.mid; Gate 0 brain receipt f97b795d; entry below).
 **Runs by seat and class (2B routing-data.jsonl, 27 worker runs):** done: cursor.economy 14, codex.economy 7, agy.economy 1, brain 1. Not done: codex.economy failed (task) 3, cursor.economy verify-failed (task) 1. Failures were all task defects (oracles that read live growing files, a fixture list missing a new module, a fixture line tripping the ledger privacy pattern); each was fixed by a planner retry.
