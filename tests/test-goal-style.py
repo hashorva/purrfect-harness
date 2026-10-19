@@ -9,7 +9,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 B = importlib.import_module("brain_prompt")
 R = importlib.import_module("replay_seeded_defects")
 FORBIDDEN = ("delegat", "excerpts you need", "cheap subagent", "log tail", "stream full transcripts", "before you finish", "stay within it by")
-PRINCIPLE = "The harness defines goals, budgets, permissions and deterministic checks; the model decides its own method."
+PRINCIPLE = "The harness defines goals, permissions and deterministic checks; the model decides its own method."
 
 
 def method_hits(texts):
@@ -39,7 +39,7 @@ class GoalStyleTests(unittest.TestCase):
         for action in B.ROLES:
             text = B.render(action, "m", "claude")
             self.assertIn("\n## Permissions\n", text)
-            resources = text.split("## Resources", 1)[1].split("## Budget", 1)[0]
+            resources = text.split("## Resources", 1)[1].split("## Permissions", 1)[0]
             self.assertIn(".claude/agents/explorer.md", resources)
 
     def test_docs_state_principle(self):

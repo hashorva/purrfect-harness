@@ -231,7 +231,7 @@ export PURRFECT_DISPATCH_LOCK_PATH="$LOCK_PATH"
 mkdir -p "$ROOT/.tasks/logs" "$ROOT/.tasks/receipts"
 
 PROMPT_TASK="$TASK_REL"
-PROMPT="Goal: ${PROMPT_TASK} is done when its verification commands pass and one scoped commit leaves a clean tree; the Front Desk runs the full suite, you do not. Resources: your CLI's native tools, the repo skills in .agents/skills, web search, and the subagents your CLI offers (Claude Code: the explorer agent, .claude/agents/explorer.md, model haiku). Budget: the task's max_attempts and long-command rule, and a token budget by the task's front-matter size (small 150000, medium 400000, large 800000 tokens; medium when unset); the runner records an overrun in the receipt and stops a run past twice its token budget, a stalled run or an overlong one. Permissions: the task's allow-list; PROGRESS.md and features.json belong to the Front Desk. Acceptance checks: the task's verification commands. End with a short plain-text report: what you changed and the exit code of each check you ran."
+PROMPT="Goal: ${PROMPT_TASK} is done when its verification commands pass and one scoped commit leaves a clean tree; the Front Desk runs the full suite, you do not. Resources: your CLI's native tools, the repo skills in .agents/skills, web search, and the subagents your CLI offers (Claude Code: the explorer agent, .claude/agents/explorer.md, model haiku). Permissions: the task's allow-list, max_attempts and long-command rule; PROGRESS.md and features.json belong to the Front Desk. Acceptance checks: the task's verification commands. End with a short plain-text report: what you changed and the exit code of each check you ran."
 [ -z "$EXTRA" ] || PROMPT+=" $EXTRA"
 
 RUN_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"

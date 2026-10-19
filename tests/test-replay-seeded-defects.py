@@ -78,8 +78,7 @@ class ReplaySeededDefectsTests(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(out[-1], T.join(("result", "pass")))
             for call in calls:
-                self.assertIn("## Budget", call["prompt"])
-                self.assertIn("400000 tokens", call["prompt"])
+                self.assertNotIn("budget", call["prompt"].lower())
                 self.assertIn("explorer subagent", call["prompt"])
             gonly = Path(temp) / "grok-only.jsonl"
             gonly.write_text(json.dumps({"type": "seeded-calibration", "reviewer": "grok-4.7-high", "case": "A",

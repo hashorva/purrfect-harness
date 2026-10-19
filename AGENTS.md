@@ -16,13 +16,13 @@ safe install/update tooling for other repositories. It is not a consuming produc
 
 ## Goal-style harness
 
-The harness defines goals, budgets, permissions and deterministic checks; the model decides its own method.
+The harness defines goals, permissions and deterministic checks; the model decides its own method.
 
 A launcher prompt (brain, worker or review request) states the goal, resources
-(tools, subagents such as the explorer agent, skills and web search), token
-budget, permissions and acceptance checks, and says nothing about method. No
-step forces delegation to a subagent. `tests/test-goal-style.py` refuses the
-method phrases it lists in prompts, skills and `.claude/agents/`.
+(tools, subagents such as the explorer agent, skills and web search), permissions
+and acceptance checks, and says nothing about method or a token budget; runs have
+no token cap. No step forces delegation to a subagent. `tests/test-goal-style.py`
+refuses the method phrases it lists in prompts, skills and `.claude/agents/`.
 
 ## Checks
 

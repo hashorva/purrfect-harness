@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 
 ROLES = {"mission-init": "planning", "planning": "planning", "gate0": "gate", "gate": "gate", "review": "review"}
-BUDGETS = {"planning": 1000000, "gate": 1000000, "review": 400000}
 PERMISSIONS = {
     "planning": "Write only inside the mission folder; never launch a worker, accept a feature or advance a gate.",
     "gate": "Write only inside the mission folder; never launch a worker, accept a feature or approve the gate (the owner approves it).",
@@ -31,7 +30,7 @@ NO_SUBAGENTS = "Subagents: none is named for this CLI, because no committed --he
 
 
 def render(action, mission, provider, log_rel=None, request=None):
-    """The brain prompt for one run: Goal, Resources, Budget, Permissions and Acceptance checks."""
+    """The brain prompt for one run: Goal, Resources, Permissions and Acceptance checks."""
     if action not in ROLES:
         raise ValueError(f"unknown action {action!r}")
     if provider not in PROVIDERS:
@@ -45,10 +44,7 @@ def render(action, mission, provider, log_rel=None, request=None):
         "## Resources",
         "Context: AGENTS.md, docs/missions/ORCHESTRATION.md, docs/missions/MODEL_ROUTING.md, the mission folder, "
         "and the repo skills in .agents/skills (mission-init, dispatch-worker). Tools: your CLI's native tools and "
-        "web search. " + (SUBAGENTS if claude else NO_SUBAGENTS),
-        "## Budget",
-        f"{BUDGETS[role]} tokens for this run (input + output + cache read, your own total); "
-        f"the runner records an overrun in the receipt and stops the run past twice the budget.{log}",
+        "web search. " + (SUBAGENTS if claude else NO_SUBAGENTS) + log,
         "## Permissions",
         PERMISSIONS[role],
         "## Acceptance checks",
