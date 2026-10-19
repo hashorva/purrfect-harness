@@ -16,7 +16,7 @@ from datetime import datetime
 from execute_provider import provider_contract
 from execution_receipt import (ReceiptError, all_unknown, canonical_bytes, capture_before, now,
                                write_receipt)
-from observe_output import no_turn, observe, observe_self_reported, resolve_model_identity
+from observe_output import no_turn, observe, observe_self_reported, resolve_model_identity, token_figures
 from execution_spec import artifact_directory, SpecError, load_persisted, spec_sha256
 
 # Imported before any provider runs, so a worker's later edit to scripts/ledger.py
@@ -133,6 +133,23 @@ def base_registry_doors(repo, base_commit):
     return registry["doors"]
 
 
+def prompt_version(repo, base_commit, role):
+    path = {"brain": "scripts/brain_prompt.py", "worker": "scripts/spawn-worker.sh"}.get(role)
+    if path is None or not isinstance(base_commit, str) or not base_commit or base_commit.startswith("-"):
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "--no-replace-objects", "-C", str(repo), "rev-parse", f"{base_commit}:{path}"],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    blob = result.stdout.strip()
+    if result.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40,64}", blob):
+        return None
+    return f"{path}:{blob[:12]}"
+
+
 def registry_door_pool_and_billing(doors, provider, resolved_model):
     cli = ledger_cli_name(provider)
     if cli == "cursor":
@@ -189,7 +206,8 @@ def build_ledger_row(spec, receipt, *, tier, self_reported_model=None):
     door, pool, billing_class = registry_door_pool_and_billing(doors, spec["provider"], door_model)
     mission = Path(spec["mission"]).name
     feature = receipt["feature"] if receipt.get("feature") else "unknown"
-    return {
+    tokens = observation.get("tokens")
+    row = {
         "schema_version": 2,
         "mission": mission,
         "feature": feature,
@@ -250,6 +268,14 @@ def build_ledger_row(spec, receipt, *, tier, self_reported_model=None):
         "escalation_reason": None,
         "outcome": receipt["outcome"],
     }
+    for field, source in (("tokens_total", "total"), ("tokens_without_cache", "without_cache"),
+                          ("tokens_cache_write", "cache_write")):
+        flag = tokens.get(source, unknown_number()) if isinstance(tokens, dict) else unknown_number()
+        row[field] = {"value": flag.get("value"), "source": flag.get("source", "unknown")}
+    if "role_tag" in receipt:
+        row["role_tag"] = receipt["role_tag"]
+    row["prompt_version"] = prompt_version(spec["repo"], spec["base_commit"], spec["role"])
+    return row
 
 
 def _atomic_create_ledger(path, data):
@@ -471,6 +497,7 @@ def run(args):
             handle.seek(log_offset)
             raw_output = handle.read()
         observation = observe(observe_provider, raw_output)
+        observation["tokens"] = token_figures(observe_provider, raw_output)
         try:
             self_reported_model = observe_self_reported(observe_provider, raw_output)
         except Exception:

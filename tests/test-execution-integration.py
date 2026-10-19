@@ -1889,6 +1889,35 @@ raise SystemExit(0)
                 log_path=receipt["log_path"],
             )
 
+    def test_receipt_and_ledger_row_carry_token_figures_role_tag_and_prompt_version(self):
+        path = self.bin / "claude"
+        path.write_text(
+            """#!/usr/bin/env python3
+import json, os, sys
+total = int(os.environ.get('FAKE_TOKENS', '0'))
+print(json.dumps({'type': 'result', 'usage': {'input_tokens': total, 'output_tokens': 0,
+    'cache_read_input_tokens': 0, 'cache_creation_input_tokens': 0}, 'num_turns': 1}), flush=True)
+"""
+        )
+        path.chmod(0o755)
+        self.write_fleet("claude", "budget-model", "medium", "unknown")
+        self.set_status("in-progress")
+        worker = [
+            "bash", "scripts/spawn-worker.sh", "claude", "docs/missions/fixture/tasks/T-001.md",
+            "--model", "budget-model", "--effort", "medium", "--speed", "unknown", "--feature", "F001",
+        ]
+        result = self.invoke(worker, env={"FAKE_TOKENS": "3456"})
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        receipt_path = next((self.root / ".tasks/receipts").glob("*.json"))
+        receipt = json.loads(receipt_path.read_text())
+        self.assertEqual(receipt["observation"]["tokens"]["total"], {"value": 3456, "source": "observed"})
+        self.assertEqual(receipt["observation"]["tokens"]["without_cache"], {"value": 3456, "source": "observed"})
+        self.assertEqual(receipt["role_tag"], "worker")
+        row = json.loads((self.root / ".tasks/ledger" / f"{receipt['run_id']}.json").read_text())
+        self.assertEqual(row["tokens_total"], {"value": 3456, "source": "observed"})
+        self.assertEqual(row["role_tag"], "worker")
+        self.assertTrue(row["prompt_version"].startswith("scripts/spawn-worker.sh:"), row)
+
     def test_outcome_enums_match_across_runner_receipt_ledger_and_schemas(self):
         import execution_receipt
         import ledger
