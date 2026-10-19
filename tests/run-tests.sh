@@ -528,26 +528,20 @@ rm -f "$CODEX_EOF_MARK" "$CODEX_STUB_PID"
 mkfifo "$CODEX_FIFO"
 exec 9<>"$CODEX_FIFO"
 set +e
-( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
+( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=60 \
     bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/tasks/T-001.md \
       --tier economy --model "$CODEX_MODEL" --feature F001 ) <"$CODEX_FIFO" >/dev/null 2>&1 &
 CODEX_PID=$!
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  [ -f "$CODEX_EOF_MARK" ] && break
-  sleep 0.1
-done
+wait "$CODEX_PID"
+CODEX_WAIT_STATUS=$?
 if [ -f "$CODEX_EOF_MARK" ]; then
-  wait "$CODEX_PID"
-  CODEX_STDIN_EOF=$?
+  CODEX_STDIN_EOF=$CODEX_WAIT_STATUS
 else
   CODEX_STUB_PID_VALUE=""
   if [ -f "$CODEX_STUB_PID" ]; then
     CODEX_STUB_PID_VALUE="$(<"$CODEX_STUB_PID")"
   fi
   if [ -n "$CODEX_STUB_PID_VALUE" ]; then kill "$CODEX_STUB_PID_VALUE" 2>/dev/null || true; fi
-  kill "$CODEX_PID" 2>/dev/null || true
-  exec 9>&-
-  wait "$CODEX_PID" 2>/dev/null || true
   CODEX_STDIN_EOF=1
 fi
 set -e
