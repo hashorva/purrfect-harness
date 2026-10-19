@@ -1918,6 +1918,20 @@ print(json.dumps({'type': 'result', 'usage': {'input_tokens': total, 'output_tok
         self.assertEqual(row["role_tag"], "worker")
         self.assertTrue(row["prompt_version"].startswith("scripts/spawn-worker.sh:"), row)
 
+        def check_missing_role_tag():
+            self.clean_runs()
+            retry = self.invoke(worker, env={"FAKE_TOKENS": "3456"})
+            self.assertEqual(retry.returncode, 0, retry.stderr + retry.stdout)
+            retry_receipt = self.latest_receipt()
+            retry_row = json.loads((self.root / ".tasks/ledger" / f"{retry_receipt['run_id']}.json").read_text())
+            self.assertEqual(retry_row.get("role_tag"), "worker")
+
+        self.prove_runner_mutation_fails(
+            '    if "role_tag" in receipt:\n        row["role_tag"] = receipt["role_tag"]\n',
+            '    if "role_tag" in receipt:\n        pass\n',
+            check_missing_role_tag,
+        )
+
     def test_outcome_enums_match_across_runner_receipt_ledger_and_schemas(self):
         import execution_receipt
         import ledger
