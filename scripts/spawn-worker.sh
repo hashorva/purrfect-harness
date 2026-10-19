@@ -255,7 +255,7 @@ set +e
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execution_runner.py" \
   --spec "$SPEC_PATH" --spec-sha256 "$SPEC_SHA256" --log "$LOG" \
   --timeout "$SPAWN_WORKER_TIMEOUT_SECS" \
-  --stall-seconds "${SPAWN_WORKER_STALL_SECS:-90}" --idle-seconds "${SPAWN_WORKER_IDLE_SECS:-900}" --task "$TASK_REL" --tier "$TIER" &
+  --stall-seconds "${SPAWN_WORKER_STALL_SECS:-90}" --idle-seconds "${SPAWN_WORKER_IDLE_SECS:-900}" --task "$TASK_REL" --tier "$TIER" --seat "$FLEET_SEAT" &
 RUNNER_PID=$!
 wait "$RUNNER_PID"
 EC=$?

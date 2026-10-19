@@ -218,7 +218,7 @@ set +e
 (cd "$RUN_DIR" && PYTHONDONTWRITEBYTECODE=1 exec python3 "$ROOT/scripts/execution_runner.py" \
   --spec "$SPEC_PATH" --spec-sha256 "$SPEC_SHA256" --log "$LOG" \
   --timeout "$SPAWN_BRAIN_TIMEOUT_SECS" \
-  --stall-seconds "${SPAWN_BRAIN_STALL_SECS:-90}" --idle-seconds "${SPAWN_BRAIN_IDLE_SECS:-900}") &
+  --stall-seconds "${SPAWN_BRAIN_STALL_SECS:-90}" --idle-seconds "${SPAWN_BRAIN_IDLE_SECS:-900}" --seat "$SEAT") &
 RUNNER_PID=$!
 wait "$RUNNER_PID"
 EC=$?

@@ -42,6 +42,24 @@ def unknown_number():
     return {"value": None, "source": "unknown"}
 
 
+def append_event(repo, log, event):
+    """Append one event line; event logging must never affect run outcome."""
+    try:
+        path = artifact_directory(repo) / "events.jsonl"
+        line = (json.dumps({"at": now(), **event}, separators=(",", ":")) + "\n").encode("utf-8")
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+        try:
+            os.write(fd, line)
+        finally:
+            os.close(fd)
+    except (OSError, SpecError):
+        try:
+            with Path(log).open("a", encoding="utf-8") as handle:
+                handle.write("WARN: event not written\n")
+        except OSError:
+            pass
+
+
 def unknown_text():
     return {"value": None, "source": "unknown"}
 
@@ -381,6 +399,10 @@ def run(args):
 
     started_at = now()
     before = capture_before(args.spec, args.spec_sha256)
+    event = {"run_id": spec["run_id"], "role": spec["role"], "seat": args.seat,
+             "work_unit": spec["work_unit"]}
+    append_event(spec["repo"], log, {"event": "run_start", **event})
+    events_path = Path(spec["repo"]) / ".tasks" / "events.jsonl"
     process = None
     received_signal = None
 
@@ -415,7 +437,8 @@ def run(args):
                     stdin=subprocess.DEVNULL,
                     stdout=output,
                     stderr=subprocess.STDOUT,
-                    env={**os.environ, **env_overrides},
+                    env={**os.environ, **env_overrides, "PURRFECT_RUN_ID": spec["run_id"],
+                         "PURRFECT_EVENTS": str(events_path)},
                     start_new_session=True,
                 )
                 deadline = None if args.timeout == 0 else time.monotonic() + args.timeout
@@ -545,6 +568,8 @@ def run(args):
         observation=observation,
         token_budget=token_budget_doc,
     )
+    append_event(spec["repo"], log, {"event": "run_exit", **event, "exit_code": exit_code,
+                 "outcome": outcome, "receipt": f".tasks/receipts/{receipt.name}"})
     try:
         receipt_doc = json.loads(receipt.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -569,6 +594,7 @@ def main():
     parser.add_argument("--idle-seconds", type=float, default=900)
     parser.add_argument("--task")
     parser.add_argument("--tier")
+    parser.add_argument("--seat", default="unknown")
     args = parser.parse_args()
     if not all(math.isfinite(value) for value in (args.timeout, args.stall_seconds, args.idle_seconds)):
         print("ERROR: timeout, stall and idle seconds must be finite numbers", file=sys.stderr)

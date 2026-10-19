@@ -88,6 +88,7 @@ pathlib.Path('.tasks/invoked.json').write_text(json.dumps({
     'lock_existed': pathlib.Path(os.environ.get('PURRFECT_DISPATCH_LOCK_PATH', '')).is_dir(),
     'pid': os.getpid(),
     'python_dont_write_bytecode': os.environ.get('PYTHONDONTWRITEBYTECODE'),
+    'purrfect': [os.environ.get('PURRFECT_RUN_ID'), os.environ.get('PURRFECT_EVENTS')],
 }))
 child_path = os.environ.get('PROVIDER_CHILD_PID_PATH')
 if child_path:
@@ -1618,6 +1619,63 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             receipt = self.latest_receipt()
             self.assertEqual(receipt["outcome"], "completed")
             self.assertEqual(self.log_text(receipt["run_id"]).count("tick\n"), 25)
+
+    def test_run_events_pair_start_and_exit_and_skip_runs_without_receipt(self):
+        self.write_fleet("codex", "events-model", "medium", "unknown", include_brain=True)
+        self.set_status("in-progress")
+        worker = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                  "--model", "events-model", "--feature", "F001"]
+        self.assertEqual(self.invoke(worker).returncode, 0)
+        first = self.latest_receipt()
+        invoked = json.loads((self.root / ".tasks/invoked.json").read_text())
+        self.assertEqual(invoked["purrfect"], [first["run_id"], str((self.root / ".tasks/events.jsonl").resolve())])
+        self.assertEqual(self.invoke(worker, env={"PROVIDER_EXIT": "7"}).returncode, 7)
+        codex = self.bin / "codex"
+        stub = codex.read_bytes(); codex.unlink()
+        try:
+            self.assertEqual(self.invoke(worker, env={"PATH": "/usr/bin:/bin"}).returncode, 127)
+        finally:
+            codex.write_bytes(stub); codex.chmod(0o755)
+        self.assertEqual(self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"]).returncode, 0)
+        events_path = self.root / ".tasks/events.jsonl"
+        rows = [json.loads(line) for line in events_path.read_text().splitlines()]
+        self.assertEqual([r["event"] for r in rows], ["run_start", "run_exit"] * 4)
+        exits = rows[1::2]
+        self.assertEqual([(r["role"], r["seat"], r["exit_code"], r["outcome"]) for r in exits], [
+            ("worker", "codex.economy", 0, "completed"), ("worker", "codex.economy", 7, "failed"),
+            ("worker", "codex.economy", 127, "launch_failed"), ("brain", "brain", 0, "completed")])
+        for start, end in zip(rows[::2], exits):
+            self.assertEqual([start[k] for k in ("run_id", "role", "seat", "work_unit")],
+                             [end[k] for k in ("run_id", "role", "seat", "work_unit")])
+            self.assertLessEqual(start["at"], end["at"])
+            self.assertEqual(end["receipt"], f".tasks/receipts/{end['run_id']}.json")
+            self.assertTrue((self.root / end["receipt"]).is_file())
+        spec_path = self.root / ".tasks/specs" / f"{first['run_id']}.json"
+        spec_sha = hashlib.sha256(spec_path.read_bytes()).hexdigest()
+        result = self.invoke([sys.executable, "scripts/execution_runner.py", "--spec", str(spec_path),
+                              "--spec-sha256", "0" * 64, "--log", str(self.root / first["log_path"])])
+        self.assertEqual(result.returncode, 125)
+        self.assertEqual(len(events_path.read_text().splitlines()), 8)
+
+    def test_subagent_stop_hook_appends_only_inside_a_harness_run(self):
+        hook = json.loads((ROOT / ".claude/settings.json").read_text())["hooks"]["SubagentStop"][0]["hooks"][0]["command"]
+        with tempfile.TemporaryDirectory() as directory:
+            events = Path(directory) / "events.jsonl"
+            env = {k: v for k, v in os.environ.items() if not k.startswith("PURRFECT_")}
+        calls = [{}, {"PURRFECT_EVENTS": str(events)},
+                 {"PURRFECT_RUN_ID": "123e4567-e89b-12d3-a456-426614174000", "PURRFECT_EVENTS": str(events)}] * 1
+        calls.append({"PURRFECT_RUN_ID": "123e4567-e89b-12d3-a456-426614174000", "PURRFECT_EVENTS": str(events)})
+            for extra in calls:
+                result = subprocess.run(["bash", "-c", hook], input='{"hook_event_name":"SubagentStop","agent_type":"explorer"}',
+                                        text=True, env={**env, **extra}, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(events.exists(), bool(extra.get("PURRFECT_RUN_ID")))
+            rows = [json.loads(line) for line in events.read_text().splitlines()]
+            self.assertEqual(len(rows), 2)
+            for row in rows:
+                self.assertEqual({k: v for k, v in row.items() if k != "at"},
+                                 {"event": "subagent_stop", "run_id": "123e4567-e89b-12d3-a456-426614174000", "agent": "explorer"})
+                self.assertRegex(row["at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
 
     def test_zero_turn_output_turns_a_completed_run_into_a_failure(self):
         cases = [

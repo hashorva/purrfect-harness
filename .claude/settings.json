@@ -35,5 +35,17 @@
       "Read(**/.dev.vars)",
       "Read(**/secrets*)"
     ]
+  },
+  "hooks": {
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"${PURRFECT_RUN_ID:-}\" ] && [ -n \"${PURRFECT_EVENTS:-}\" ] || exit 0; jq -cn --arg run \"$PURRFECT_RUN_ID\" '{at: (now | todate), event: \"subagent_stop\", run_id: $run, agent: ((try input catch null) | .agent_type? // null)}' >> \"$PURRFECT_EVENTS\""
+          }
+        ]
+      }
+    ]
   }
 }
