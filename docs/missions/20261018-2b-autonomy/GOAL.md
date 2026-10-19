@@ -88,7 +88,7 @@ Item h is five features, so each one is accepted on its own evidence (Gate 0 dec
 - Workers run only their oracle and named tests. The full suite runs at verification and in CI, never inside a worker attempt.
 - Frozen oracle: verification commands are frozen at the task commit and cannot change for that run. A bad oracle needs a new task or a retry with a real change, never an edit of the frozen commands. The verifier checks a run against that run's own commit.
 - Rule 6: before a task is committed, the planner or the Front Desk runs its oracle in a scratch clone. The oracle must fail on the base and pass after the reference patch (kept outside the repo tree).
-- Planner runs write at most 3 task files, each with at most 150 changed lines. Planner output is plain task files in four-backtick fenced blocks or `=== FILE: <path> ===` blocks.
+- Planner runs write as many task files as the request needs; each task stays at most 150 changed lines and must not collide with another task in the same batch (no shared allow-list files). Planner output is plain task files in four-backtick fenced blocks or `=== FILE: <path> ===` blocks.
 - Flaky is failing. A test that passes only on rerun is a failure: never skip it, wrap it in a retry or loosen it; make it deterministic. Tests synchronise on files, events or fake clocks, never on sleeps.
 - CI runs ubuntu-latest and macos-latest, with Python 3.12 and 3.14 on each from F000 on, and installs tmux, jq and jsonschema. It must be green on every gate commit. From Gate 1 on, a green run also includes the golden-argv check and the 2A evidence audit.
 - Progress and status:

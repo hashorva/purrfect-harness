@@ -17,7 +17,7 @@ These numbers plan Gate 0. They are not readings. After the first measured batch
   The 8 "other" runs are: failed 4, baseline-stopped 2, no-change 1, seat-limit 1.
 - Worker runs per task: 1 / 0.70 ≈ 1.43, rounded up to **1.45**.
 - Review runs per task: about 80% of runs reach review, plus a re-review after each fix: **1.2**.
-- Planner runs per feature: at most 3 tasks per run, plus oracle repairs and splits: **ceil(1.3 × ceil(tasks / 3))**. There is also one brain run per gate: 6 gates (G1–G6).
+- Planner runs per feature: as many tasks per run as the request needs (no cap), plus oracle repairs and splits: **ceil(1.3 × runs)**. There is also one brain run per gate: 6 gates (G1–G6).
 - 2A worker mix (done runs): cursor 41%, codex 35%, claude 18%, agy 6%. About 10% of runs escalate to a premium or mid seat.
 - Until F012 is accepted, there are no Claude worker runs. The claude share moves to cursor and codex, which changes the totals by less than 1 pp per pool.
 - Review mix under the different-vendor rule: Sol 30%, Grok 25%, Argon 20%, Opus 25%. F000 is mostly guard code, so Opus takes about 10 of its 15 reviews.
