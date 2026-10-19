@@ -399,6 +399,9 @@ they are not copied wholesale into the consuming product.
 | `docs/missions/20260821-execution-truth/` | Completed Phase 1 mission, reviews, acceptance, and smoke archive |
 | `docs/RELEASING.md`, `docs/PUBLISHING.md`, `.github/workflows/` | Release/adoption procedure and CI/publication entry points |
 
+Python 3.12 or newer is supported (CI runs Ubuntu 3.12, Ubuntu 3.14 and macOS 3.14);
+`scripts/fleet-doctor.sh` exits 1 on an older `python3`.
+
 From the harness root:
 
 ```bash

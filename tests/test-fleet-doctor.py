@@ -64,6 +64,20 @@ class FleetDoctorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn("ERROR", result.stdout)
 
+    def test_old_python_is_error(self):
+        for version, found in (("3.11", "3.11"), ("garbage", "unknown")):
+            with self.subTest(version=version):
+                python = self.brew / "python3"
+                python.unlink()
+                python.write_text(f"#!/bin/sh\nprintf '%s\\n' {json.dumps(version)}\n")
+                python.chmod(0o755)
+                result = self.run_doctor(self.first)
+                message = f"ERROR python3: Python 3.12 or newer is required (found {found})"
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(message, result.stdout)
+                self.assertIn(message, result.stderr)
+                self.assertNotIn("ERROR claude:", result.stdout)
+
     def test_different_codex_binaries_are_error(self):
         self.write_cli(self.second, "codex", OUTPUTS["codex"])
         result = self.run_doctor(self.first, self.second)
