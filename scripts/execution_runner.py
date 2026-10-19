@@ -33,7 +33,6 @@ except Exception:
 RECEIPT_FAILURE_EXIT = 125
 NO_TURN_EXIT = 122
 STALL_EXIT = 123
-BUDGET_EXIT = 121
 WORKER_TOKEN_BUDGETS = {"small": 150000, "medium": 400000, "large": 800000}
 BRAIN_TOKEN_BUDGETS = {"review": 400000, "default": 1000000}
 
@@ -477,18 +476,8 @@ def run(args):
                                     continue
                                 if isinstance(event, dict):
                                     used += stream_tokens(observe_provider, event, seen_message_ids)
-                            if used > 2 * limit:
-                                terminate_tree(process)
-                                outcome = "budget_exceeded"
-                                exit_code = BUDGET_EXIT
-                                stall_note = (
-                                    f"BUDGET: {used} tokens exceed twice the token budget of {limit}; run stopped\n"
-                                )
-                                break
                         except OSError:
                             pass
-                    if outcome == "budget_exceeded":
-                        break
                     stall_limit = args.idle_seconds if seen_output else args.stall_seconds
                     if stall_limit and time.monotonic() - last_growth >= stall_limit:
                         terminate_tree(process)
