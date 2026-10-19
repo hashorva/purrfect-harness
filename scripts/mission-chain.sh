@@ -38,6 +38,10 @@ for spec in "$@"; do
     exit 1
   fi
   emit "\"event\":\"task_verified\",\"task\":\"$TASK\",\"run_id\":\"$RID\""
+  (cd "$ROOT" && git add -A "$MISSION" && git commit -qm "docs(mission): $TASK verified (run ${RID:0:8})" ) >> "$OUT.verify" 2>&1 || {
+    emit "\"event\":\"chain_stopped\",\"task\":\"$TASK\",\"reason\":\"commit of verification record failed\""
+    exit 1
+  }
 done
 emit "\"event\":\"chain_done\",\"tasks\":$#"
 echo "chain_done: $# tasks"
