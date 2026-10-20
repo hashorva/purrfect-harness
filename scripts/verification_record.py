@@ -112,6 +112,17 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def failure_report(index, argv, exit_code, stdout, stderr, lines=20):
+    """Human-readable tail of a failed verification command (stderr then stdout)."""
+    header = "VERIFY FAIL DETAIL: " + json.dumps({"command": index, "argv": argv, "exit_code": exit_code})
+    stderr_lines = stderr.decode("utf-8", "replace").splitlines()
+    stdout_lines = stdout.decode("utf-8", "replace").splitlines()
+    tail = (stderr_lines + stdout_lines)[-lines:]
+    if not tail:
+        return header
+    return header + "\n" + "\n".join(f"  | {line}" for line in tail)
+
+
 def canonical(value):
     return canonical_bytes(value)
 
@@ -287,17 +298,7 @@ def verify(root, mission, run_id):
             outcomes.append(outcome)
             passed = passed and exit_code == 0 and not skipped
             if exit_code != 0 and not skipped:
-                # The record keeps only digests, so print the tail of the failing output here (stderr) for the human.
-                lines = (stdout + b"\n" + stderr).decode("utf-8", "replace").splitlines()
-                marks = [i for i, line in enumerate(lines) if re.search(r"FAIL|Error|Traceback|Assertion|exit [1-9]", line)]
-                keep = set()
-                for i in marks:
-                    keep.update(range(max(0, i - 2), min(len(lines), i + 4)))
-                print(f"VERIFY FAIL DETAIL: command {len(outcomes)} exit {exit_code}: {json.dumps(argv)[:200]}", file=sys.stderr)
-                if not keep:
-                    keep = set(range(max(0, len(lines) - 40), len(lines)))
-                for i in sorted(keep):
-                    print(f"  | {lines[i][:300]}", file=sys.stderr)
+                sys.stderr.write(failure_report(len(outcomes), argv, exit_code, stdout, stderr) + "\n")
         after = snapshot(worktree)
         if after != receipt["git_after"]: passed = False
     finally:

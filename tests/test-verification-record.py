@@ -193,6 +193,18 @@ class VerificationRecordIntegration(unittest.TestCase):
         audited = self.call("bash", "scripts/verify-mission.sh", "--require-workers", self.mission)
         self.assertEqual(audited.returncode, 0, audited.stderr + audited.stdout)
 
+    def test_failed_command_prints_its_last_output_lines(self):
+        marker = "CANARY-failed-command-tail-marker"
+        run_id = self.make_run_with_check(
+            ["python3", "-c", f"import sys; print('{marker}', file=sys.stderr); sys.exit(3)"])
+        verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", run_id, self.mission)
+        self.assertNotEqual(verified.returncode, 0, verified.stderr + verified.stdout)
+        self.assertIn('VERIFY FAIL DETAIL: {"command": 1', verified.stderr)
+        self.assertIn(f"  | {marker}", verified.stderr)
+        record = json.loads((self.fixture.mission / "verification" / f"{run_id}.json").read_text())
+        self.assertEqual(record["result"], "fail")
+        self.assertEqual(record["commands"][0]["exit_code"], 3)
+
     def test_failed_record_hash_cannot_be_accepted(self):
         run_id = self.make_run_with_check(["false"])
         verified = self.call("bash", "scripts/verify-mission.sh", "--run-id", run_id, self.mission)
