@@ -255,6 +255,22 @@ def main(argv):
             return 1
         print(f"mode={mode}")
         return 0
+    if len(argv) == 3 and argv[1] == "--receipt":
+        try:
+            receipt = read_json(argv[2])
+            from observe_output import final_answer
+            raw = Path(receipt["log_path"]).read_bytes()
+            answer = final_answer(receipt["provider"], raw) or ""
+            value = extract_last_json_object(answer)
+            schema = read_json(REGISTRY_PATH.parent / "schemas/review-verdict.schema.json")
+            errors = validate(value, schema)
+            if errors:
+                raise SchemaError(errors[0])
+            print(value["verdict"])
+        except (OSError, ValueError, KeyError, TypeError, RecursionError, SchemaError) as exc:
+            report_schema_error(exc)
+            return 1
+        return 0
     if len(argv) != 3:
         print("usage: validate_verdict.py <schema> <json-file> | --check-schema <schema> | --after-run <provider> <schema> <output-file>", file=sys.stderr)
         return 2
