@@ -1,0 +1,1 @@
+{"type": "assistant", "sessionId": "desk1", "timestamp": "2026-10-19T10:00:00.000Z", "cwd": "/fixture/repo", "isSidechain": true, "message": {"id": "s1", "model": "claude-haiku", "usage": {"input_tokens": 1, "output_tokens": 1, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}, "content": [{"type": "text", "text": "x"}]}}
