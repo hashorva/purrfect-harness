@@ -11,6 +11,7 @@ import pathlib
 import subprocess
 import sys
 import re
+import git_safe
 
 SEMVER = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$")
 
@@ -96,9 +97,9 @@ def read_manifest(root, consumer):
 
 def released(root, tag, trigger_tag):
     try:
-        tags = subprocess.check_output(["git", "-C", str(root), "tag", "--points-at", "HEAD"], text=True).split()
-        tag_type = subprocess.check_output(["git", "-C", str(root), "cat-file", "-t", f"refs/tags/{tag}"], text=True).strip()
-        dirty = subprocess.check_output(["git", "-C", str(root), "status", "--porcelain"], text=True)
+        tags = subprocess.check_output(git_safe.argv("-C", str(root), "tag", "--points-at", "HEAD"), text=True).split()
+        tag_type = subprocess.check_output(git_safe.argv("-C", str(root), "cat-file", "-t", f"refs/tags/{tag}"), text=True).strip()
+        dirty = subprocess.check_output(git_safe.argv("-C", str(root), "status", "--porcelain"), text=True)
     except subprocess.CalledProcessError as exc:
         fail(f"could not inspect release state: {exc}")
     if trigger_tag is not None and trigger_tag != tag:

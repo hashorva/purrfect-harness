@@ -418,9 +418,19 @@ def drift_line_id(line):
     return hashlib.sha256(line.encode("utf-8")).hexdigest()
 
 
+def git_argv(*args):
+    """Same prefix as git_safe.argv. Fixtures copy this file without git_safe.py."""
+    try:
+        import git_safe
+    except ImportError:
+        binary = "git"
+        return [binary, "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-c", "core.hooksPath=/dev/null", *args]
+    return git_safe.argv(*args)
+
+
 def repo_root():
     result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
+        git_argv("rev-parse", "--show-toplevel"),
         capture_output=True,
         text=True,
         check=False,

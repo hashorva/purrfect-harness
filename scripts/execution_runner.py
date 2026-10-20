@@ -112,12 +112,22 @@ def configured_text(value):
     return {"value": value, "source": "configured"}
 
 
+def git_argv(*args):
+    """Same prefix as git_safe.argv. Fixtures copy this file without git_safe.py."""
+    try:
+        import git_safe
+    except ImportError:
+        binary = "git"
+        return [binary, "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-c", "core.hooksPath=/dev/null", *args]
+    return git_safe.argv(*args)
+
+
 def base_registry_doors(repo, base_commit):
     if not isinstance(base_commit, str) or not base_commit or base_commit.startswith("-"):
         return {}
     try:
         result = subprocess.run(
-            ["git", "--no-replace-objects", "-C", str(repo), "cat-file", "blob", f"{base_commit}:harness-registry.json"],
+            git_argv("--no-replace-objects", "-C", str(repo), "cat-file", "blob", f"{base_commit}:harness-registry.json"),
             stdin=subprocess.DEVNULL, capture_output=True, timeout=30, check=False,
         )
     except (OSError, subprocess.SubprocessError):
@@ -139,7 +149,7 @@ def prompt_version(repo, base_commit, role):
         return None
     try:
         result = subprocess.run(
-            ["git", "--no-replace-objects", "-C", str(repo), "rev-parse", f"{base_commit}:{path}"],
+            git_argv("--no-replace-objects", "-C", str(repo), "rev-parse", f"{base_commit}:{path}"),
             stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30, check=False,
         )
     except (OSError, subprocess.SubprocessError):

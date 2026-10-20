@@ -85,8 +85,18 @@ def canonical_bytes(value):
     return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode("utf-8")
 
 
+def git_argv(*args):
+    """Same prefix as git_safe.argv. Fixtures copy this file without git_safe.py."""
+    try:
+        import git_safe
+    except ImportError:
+        binary = "git"
+        return [binary, "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-c", "core.hooksPath=/dev/null", *args]
+    return git_safe.argv(*args)
+
+
 def git_bytes(repo, *args, check=True):
-    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, check=False)
+    result = subprocess.run(git_argv("-C", str(repo), *args), capture_output=True, check=False)
     if check and result.returncode != 0:
         fail(f"Git evidence command failed: {' '.join(args)}")
     return result
@@ -296,7 +306,7 @@ def protected_snapshot(repo):
                 path = Path(current) / name
                 _protected_file(snap, path, path.relative_to(repo).as_posix())
     config = subprocess.run(
-        ["git", "-C", str(repo), "config", "--includes", "--get-all", "core.excludesFile"],
+        git_argv("-C", str(repo), "config", "--includes", "--get-all", "core.excludesFile"),
         env={**os.environ, "HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config")},
         capture_output=True, check=False,
     )

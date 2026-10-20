@@ -2,6 +2,7 @@
 """Recorded golden argv fixtures never change: an argv change adds contract N+1 (T-018)."""
 import argparse, hashlib, json, os, re, subprocess, sys
 from pathlib import Path
+import git_safe
 FIXTURES, NAME, EDITABLE = "tests/fixtures/golden-argv", re.compile(r"([a-z]+)-v([1-9][0-9]*)\.json"), {"MANIFEST.json", "README.md"}
 def fixture_names(directory):
     return sorted(p.name for p in Path(directory).glob("*.json") if p.name != "MANIFEST.json")
@@ -30,7 +31,7 @@ def manifest_errors(directory):
             errors.append(f"{name}: contract field differs from its file name")
     return errors
 def git(*args):
-    return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout
+    return subprocess.run(git_safe.argv(*args), check=True, capture_output=True, text=True).stdout
 def history_errors(base):
     merge_base = git("merge-base", base, "HEAD").strip()
     recorded = [NAME.fullmatch(Path(p).name) for p in git("ls-tree", "--name-only", merge_base, "--", FIXTURES + "/").splitlines()]
@@ -51,7 +52,7 @@ def main():
     args = parser.parse_args()
     errors = manifest_errors(FIXTURES)
     base = args.base
-    if base is None and subprocess.run(["git", "rev-parse", "--verify", "--quiet", "origin/main^{commit}"], capture_output=True).returncode == 0:
+    if base is None and subprocess.run(git_safe.argv("rev-parse", "--verify", "--quiet", "origin/main^{commit}"), capture_output=True).returncode == 0:
         base = "origin/main"
     if base is None:
         if os.environ.get("CI") == "true":

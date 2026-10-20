@@ -52,6 +52,16 @@ def _nonempty(spec, name):
     return value
 
 
+def git_argv(*args):
+    """Same prefix as git_safe.argv. Fixtures copy this file without git_safe.py."""
+    try:
+        import git_safe
+    except ImportError:
+        binary = "git"
+        return [binary, "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-c", "core.hooksPath=/dev/null", *args]
+    return git_safe.argv(*args)
+
+
 def _repo(value):
     if (not isinstance(value, str) or not value or value.strip() != value or
             "\r" in value or "\n" in value):
@@ -60,7 +70,7 @@ def _repo(value):
     if not path.is_absolute() or not path.is_dir() or path != path.resolve():
         raise SpecError("repo must be an existing canonical absolute directory")
     try:
-        top = subprocess.check_output(["git", "-C", str(path), "rev-parse", "--show-toplevel"], text=True).strip()
+        top = subprocess.check_output(git_argv("-C", str(path), "rev-parse", "--show-toplevel"), text=True).strip()
     except subprocess.CalledProcessError as exc:
         raise SpecError("repo must be a Git worktree") from exc
     if Path(top).resolve() != path:
@@ -130,7 +140,7 @@ def validate(spec):
         raise SpecError("base_commit must be a full Git object ID")
     try:
         resolved = subprocess.check_output(
-            ["git", "-C", str(repo), "rev-parse", "--verify", f"{spec['base_commit']}^{{commit}}"], text=True
+            git_argv("-C", str(repo), "rev-parse", "--verify", f"{spec['base_commit']}^{{commit}}"), text=True
         ).strip()
     except subprocess.CalledProcessError as exc:
         raise SpecError("base_commit must name a commit in repo") from exc
@@ -225,7 +235,7 @@ def construct(*, role, mission, feature, work_unit, attempt, provider, model, ef
     """Build and persist a fresh execution authorization from resolved launch inputs."""
     try:
         base_commit = subprocess.check_output(
-            ["git", "-C", repo, "rev-parse", "HEAD"], text=True
+            git_argv("-C", repo, "rev-parse", "HEAD"), text=True
         ).strip().lower()
     except subprocess.CalledProcessError as exc:
         raise SpecError("cannot resolve current Git commit") from exc

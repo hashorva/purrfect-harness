@@ -26,13 +26,23 @@ def fail(message):
     raise PolicyError(message)
 
 
+def git_argv(*args):
+    """Same prefix as git_safe.argv. Fixtures copy this file without git_safe.py."""
+    try:
+        import git_safe
+    except ImportError:
+        binary = "git"
+        return [binary, "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-c", "core.hooksPath=/dev/null", *args]
+    return git_safe.argv(*args)
+
+
 def git_root(value):
     path = Path(value)
     if not path.is_absolute() or not path.is_dir() or path != path.resolve():
         fail("workspace must be an existing canonical absolute directory")
     try:
         top = subprocess.check_output(
-            ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+            git_argv("-C", str(path), "rev-parse", "--show-toplevel"),
             text=True,
             stderr=subprocess.DEVNULL,
         ).strip()
@@ -157,7 +167,7 @@ def worker_write_scope(task):
 
 def clean_workspace(root):
     result = subprocess.run(
-        ["git", "-C", str(root), "status", "--porcelain=v1", "--untracked-files=all"],
+        git_argv("-C", str(root), "status", "--porcelain=v1", "--untracked-files=all"),
         text=True,
         capture_output=True,
         check=False,
