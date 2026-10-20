@@ -203,6 +203,7 @@ Before presenting a gate for approval (and before `status: done`):
 
 ```bash
 bash scripts/verify-mission.sh   # must exit 0 — receipts required
+python3 scripts/ci_status.py --commit <sha>   # must exit 0 — never judge CI by eye
 ```
 
 When the human approves or rejects a gate (staging sign-off, merge permission,
