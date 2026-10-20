@@ -5,28 +5,17 @@ import hashlib
 import json
 from pathlib import Path
 import sys
-import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import execution_receipt
 import execution_spec
 import ledger
 import verification_record
+from run_id import validate_run_id
 
 
 def sha256(raw):
     return hashlib.sha256(raw).hexdigest()
-
-
-def canonical_run_id(run_id):
-    """Return run_id when it is a canonical lowercase UUID, else None."""
-    try:
-        parsed = uuid.UUID(run_id)
-    except (ValueError, AttributeError, TypeError):
-        return None
-    if str(parsed) != run_id:
-        return None
-    return run_id
 
 
 def mission_root(root, value):
@@ -153,7 +142,9 @@ def main(argv=None):
         print("ERROR: no runs selected", file=sys.stderr)
         return 2
     for run_id in run_ids:
-        if canonical_run_id(run_id) is None:
+        try:
+            validate_run_id(run_id)
+        except ValueError:
             print("ERROR: reconstruct: invalid run id", file=sys.stderr)
             return 2
     failures = []

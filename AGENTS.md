@@ -14,11 +14,23 @@ safe install/update tooling for other repositories. It is not a consuming produc
   placeholders in this harness repository's `AGENTS.md`.
 - Do not commit secrets or alter Git tags/remotes without explicit user direction.
 
+## Goal-style harness
+
+The harness defines goals, permissions and deterministic checks; the model decides its own method.
+
+A launcher prompt (brain, worker or review request) states the goal, resources
+(tools, subagents such as the explorer agent, skills and web search), permissions
+and acceptance checks, and says nothing about method or a token budget; runs have
+no token cap. No step forces delegation to a subagent. `tests/test-goal-style.py`
+refuses the method phrases it lists in prompts, skills and `.claude/agents/`.
+
 ## Checks
 
 - Run `shellcheck scripts/*.sh tests/*.sh`, JSON validation, and `bash tests/run-tests.sh`.
 - A normal install/update requires the manifest's release tag on `HEAD`. Use
   `--dev` (or `--allow-untagged`) only for explicit local development/smoke work.
+- Tests run in an isolated scratch tree; they never modify or depend on the live tree.
+- An adapter argv change requires a new provider contract version; the golden argv test enforces it.
 
 ## Mission rules
 
@@ -33,3 +45,5 @@ Before a feature is accepted or a mission gate/status is advanced, run
 `bash scripts/verify-mission.sh` for the mission. Only the orchestrator may accept a
 feature after that current verification; workers report evidence but have no
 feature-acceptance authority.
+
+Never write to the repository while a worker or brain run is in progress; never start a duplicate long-running check.

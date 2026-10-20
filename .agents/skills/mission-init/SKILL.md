@@ -37,6 +37,7 @@ Present the actual seat/provider/model/family/health/source map at Gate 0.
 Unavailable providers cannot be bound. Failed probes preserve per-provider
 last-good state as degraded; fallback guesses remain degraded, never observed.
 Inventory is a local proposal, not worker dispatch authority.
+Seat limits come from probes and are recorded in the registry; never rely on login checks inside a sandbox.
 
 ## 3. Create and fill the templates
 

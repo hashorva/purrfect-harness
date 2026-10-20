@@ -32,6 +32,12 @@ ALL_UNKNOWN = {
         "reasoning": {"value": None, "source": "unknown"},
     },
     "fast_state": {"value": None, "source": "unknown"},
+    "tokens": {name: {"value": None, "source": "unknown"}
+               for name in ("input", "output", "reasoning", "cache_read", "cache_write", "without_cache", "total")},
+    "subagents": {
+        "calls": {"value": None, "source": "unknown"},
+        "tokens": {"value": None, "source": "unknown"},
+    },
 }
 
 
@@ -39,8 +45,9 @@ def schema_drift(schema):
     """Return how the JSON Schema disagrees with execution_receipt.py's field lists (empty when they agree)."""
     drift = []
     body = schema["$defs"]["receiptBody"]
-    if set(body["properties"]) != execution_receipt.FIELDS:
-        drift.append("receiptBody.properties != FIELDS")
+    expected_props = execution_receipt.FIELDS | execution_receipt.RECEIPT_OPTIONAL_FIELDS
+    if set(body["properties"]) != expected_props:
+        drift.append("receiptBody.properties != FIELDS | RECEIPT_OPTIONAL_FIELDS")
     if len(body["required"]) != len(set(body["required"])) or set(body["required"]) != execution_receipt.FIELDS_V1:
         drift.append("receiptBody.required != FIELDS_V1")
     observation = schema["$defs"]["observation"]
@@ -67,8 +74,8 @@ class ExecutionReceiptObservation(unittest.TestCase):
         (self.root / "scripts").mkdir()
         for name in (
             "execution_spec.py", "execution_receipt.py", "execution_runner.py",
-            "execute_provider.py", "observe_output.py", "model_id.py", "fleet_state.py", "dispatch_policy.py",
-            "harness_registry.py", "spawn-worker.sh", "spawn-brain.sh",
+            "execute_provider.py", "observe_output.py", "model_id.py", "run_id.py", "fleet_state.py", "dispatch_policy.py",
+            "harness_registry.py", "spawn-worker.sh", "spawn-brain.sh", "brain_prompt.py",
         ):
             shutil.copy2(ROOT / "scripts" / name, self.root / "scripts" / name)
         shutil.copy2(ROOT / "harness-registry.json", self.root / "harness-registry.json")
@@ -456,6 +463,8 @@ raise SystemExit(0)
         legacy = dict(receipt)
         legacy["schema_version"] = 1
         legacy.pop("observation", None)
+        legacy.pop("token_budget", None)
+        legacy.pop("role_tag", None)
         self.write_canonical(path, legacy)
         load_receipt(path)
 
@@ -490,6 +499,51 @@ raise SystemExit(0)
                 load_receipt(path)
         receipt["observation"].pop("subagents")
         self.write_canonical(path, receipt)
+
+    def test_token_figures_and_role_tag_are_optional_and_checked(self):
+        path, receipt = self.spawn_receipt()
+        self.assertEqual(receipt["role_tag"], "worker")
+        from observe_output import TOKEN_FIGURE_FIELDS, unknown, observed
+
+        receipt["observation"]["tokens"] = {key: unknown() for key in TOKEN_FIGURE_FIELDS}
+        receipt["observation"]["tokens"]["total"] = observed(7)
+        self.write_canonical(path, receipt)
+        load_receipt(path)
+
+        for bad in (
+            {},
+            {**receipt["observation"]["tokens"], "extra": unknown()},
+            {**receipt["observation"]["tokens"], "total": observed(-1)},
+        ):
+            invalid = copy.deepcopy(receipt)
+            invalid["observation"]["tokens"] = bad
+            self.assert_rejected(path, invalid, "invalid token figures")
+
+        # Mutation proof: if the validator silently discards extra token keys,
+        # the regression assertion above must fail at load_receipt.
+        extra_key = copy.deepcopy(receipt)
+        extra_key["observation"]["tokens"]["extra"] = unknown()
+        original_validator = execution_receipt.validate_observation
+
+        def accepts_extra_tokens(observation):
+            if isinstance(observation, dict) and isinstance(observation.get("tokens"), dict):
+                observation = copy.deepcopy(observation)
+                observation["tokens"].pop("extra", None)
+            return original_validator(observation)
+
+        with mock.patch.object(execution_receipt, "validate_observation", accepts_extra_tokens):
+            with self.assertRaises(AssertionError):
+                self.assert_rejected(path, extra_key, "extra token figure")
+
+        legacy = copy.deepcopy(receipt)
+        legacy.pop("role_tag")
+        legacy["observation"].pop("tokens")
+        self.write_canonical(path, legacy)
+        load_receipt(path)
+
+        mismatch = copy.deepcopy(receipt)
+        mismatch["role_tag"] = "brain"
+        self.assert_rejected(path, mismatch, "role tag disagrees with role")
 
     def test_observation_negatives_rejected(self):
         path, receipt = self.spawn_receipt()
@@ -554,6 +608,7 @@ raise SystemExit(0)
         path, receipt = self.spawn_receipt()
         legacy = copy.deepcopy(receipt)
         legacy["schema_version"] = 1
+        legacy.pop("role_tag", None)
         self.assert_rejected(path, legacy, "v1 with observation")
 
     def test_true_usage_count_rejected(self):

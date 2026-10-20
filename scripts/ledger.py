@@ -11,6 +11,8 @@ Usage:
   ledger.py fold <mission>    (append new rows and drift events; exit 0 ok, 1 invalid, 2 usage)
   ledger.py view <ledger.jsonl> --features <features.json>
                               (derived view on stdout; writes nothing; exit 0 ok, 1 invalid, 2 usage)
+  ledger.py routing-row <ledger-row.json> <category> <size>
+                              (one computed routing-data line on stdout; exit 0 ok, 1 invalid row, 2 usage)
 """
 import hashlib
 import json
@@ -28,6 +30,7 @@ CONFIGURED_SOURCES = ("observed", "configured", "estimated", "unknown")
 SELF_REPORTED_SOURCES = ("self_reported", "unknown")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from model_id import MODEL_ID_RE, valid_model_id
+from run_id import UUID_SHAPE, validate_run_id
 
 
 # Privacy rule, applied to every text value at every nesting level (lists included).
@@ -43,7 +46,6 @@ EMAIL = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]
 ABSOLUTE_PATH = re.compile(r"/Users/|/private/|/var/folders/|/home/|[A-Za-z]:\\", re.I)
 # The lookbehind lets relative build/tmp and src/etc labels pass while catching path roots.
 SENSITIVE_PATH = re.compile(r"/tmp/|/etc/|(?<![\w.-])/(?:tmp|etc)\b|~[\w.-]*/|\$\{?HOME", re.I)
-UUID_SHAPE = re.compile(r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
 # Hidden format characters, bidi controls, full-width @ and /, and line separators.
 # U+061C is the Arabic letter mark, a bidi control.
 HIDDEN_CHARS = re.compile("[\u061c\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff\uff20\uff0f\u2028\u2029]")
@@ -51,13 +53,14 @@ HIDDEN_CHARS = re.compile("[\u061c\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\
 SAFE_TEXT = re.compile(r"[A-Za-z0-9 ._:/-]{0,200}")
 PROMPT_PREFIX = "Read docs/missions/"
 PROMPT_PREFIXES = re.compile(r"^\s*(?:Read \S*[/\\.]|You are |Follow AGENTS\.md)")
-OUTCOMES = ("completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed")
+OUTCOMES = ("completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed", "budget_exceeded")
 SCOPE_RESULTS = ("pass", "fail", "not_checked")
-RUN_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 MAX_INPUT_BYTES = 1024 * 1024
 DRIFT_KEYS = ("at", "mission", "seat", "from", "to", "inventory_sha256")
 RESOLUTION_KEYS = ("provider", "model", "effort", "speed")
 TOKEN_FIELDS = ("tokens_input", "tokens_output", "tokens_cache", "tokens_reasoning")
+OPTIONAL_FIELDS = ("self_reported_model", "subagents", "tokens_overrun", "tokens_total",
+                   "tokens_without_cache", "tokens_cache_write", "role_tag", "prompt_version")
 
 FIELDS = (
     "schema_version", "mission", "feature", "task", "run_id", "parent_run", "group_id",
@@ -67,13 +70,14 @@ FIELDS = (
     "task_class_tags", "allow_list_size", "task_text_tokens", "ste_flag", "active_lesson_ids",
     "experiment_id",
     "wall_time_s", "turns", "tool_calls", "tokens_input", "tokens_output", "tokens_cache",
-    "tokens_reasoning", "cost", "quota_share", "checks", "diff_size", "scope_result",
+    "tokens_reasoning", "tokens_total", "tokens_without_cache", "tokens_cache_write", "role_tag", "prompt_version",
+    "tokens_overrun", "subagents", "cost", "quota_share", "checks", "diff_size", "scope_result",
     "anti_gaming_flags", "failure_class", "escalation_reason", "outcome",
 )
 # The row's own id fields: the only text fields that may hold a UUID shape.
 ID_FIELDS = ("run_id", "parent_run", "group_id")
 # Key names the privacy walk may print. Any other key is shown as "<unknown key>".
-KNOWN_KEYS = frozenset(FIELDS) | {"value", "source", "currency", "name", "exit_code", "files", "lines"}
+KNOWN_KEYS = frozenset(FIELDS) | {"value", "source", "currency", "name", "exit_code", "files", "lines", "calls", "tokens"}
 
 
 class LedgerError(Exception):
@@ -143,7 +147,9 @@ def check_text(path, value, nullable=False):
 def check_run_id(path, value, nullable=False):
     if value is None and nullable:
         return
-    if not isinstance(value, str) or not RUN_ID.match(value):
+    try:
+        validate_run_id(value)
+    except ValueError:
         fail(path, "must be a run id (UUID v1-8)" + (" or null" if nullable else ""))
 
 
@@ -214,6 +220,12 @@ def configured_text_flag(path, value):
 def check_cost(path, value):
     check_flag(path, value, check_number, extra=("currency",))
     check_text(sub(path, "currency"), value["currency"])
+
+
+def check_subagents(path, value):
+    check_object(path, value, ("calls", "tokens"))
+    for key in ("calls", "tokens"):
+        check_flag(sub(path, key), value[key], lambda p, v: check_count(p, v, 0))
 
 
 def check_checks(path, value):
@@ -295,6 +307,13 @@ CHECKS = {
     "tokens_output": number_flag,
     "tokens_cache": number_flag,
     "tokens_reasoning": number_flag,
+    "tokens_total": number_flag,
+    "tokens_without_cache": number_flag,
+    "tokens_cache_write": number_flag,
+    "role_tag": check_enum(("plan", "review", "gate", "brain", "worker")),
+    "prompt_version": lambda path, value: check_text(path, value, nullable=True),
+    "tokens_overrun": number_flag,
+    "subagents": check_subagents,
     "cost": check_cost,
     "quota_share": number_flag,
     "checks": check_checks,
@@ -320,8 +339,8 @@ def registry_door_names(path=REGISTRY_PATH):
 def validate_row(row, door_names=None):
     """Raise LedgerError on the first contract violation, including an unknown registry door."""
     check_privacy("", row)
-    required = tuple(name for name in FIELDS if name != "self_reported_model")
-    check_object("", row, required, optional=("self_reported_model",))
+    required = tuple(name for name in FIELDS if name not in OPTIONAL_FIELDS)
+    check_object("", row, required, optional=OPTIONAL_FIELDS)
     for name in FIELDS:
         if name in row:
             CHECKS[name](name, row[name])
@@ -399,9 +418,19 @@ def drift_line_id(line):
     return hashlib.sha256(line.encode("utf-8")).hexdigest()
 
 
+def git_argv(*args):
+    """Same prefix as git_safe.argv. Fixtures copy this file without git_safe.py."""
+    try:
+        import git_safe
+    except ImportError:
+        binary = "git"
+        return [binary, "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-c", "core.hooksPath=/dev/null", *args]
+    return git_safe.argv(*args)
+
+
 def repo_root():
     result = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
+        git_argv("rev-parse", "--show-toplevel"),
         capture_output=True,
         text=True,
         check=False,
@@ -466,7 +495,10 @@ def fold_mission(root, mission_path):
     pending_rows = []
     if ledger_dir.is_dir():
         for path in ledger_dir.glob("*.json"):
-            label = path.stem if UUID_SHAPE.fullmatch(path.stem) else "row"
+            try:
+                label = validate_run_id(path.stem)
+            except ValueError:
+                label = "row"
             try:
                 content = safe_read(path, label)
                 row = json.loads(content)
@@ -534,6 +566,85 @@ def fold_mission(root, mission_path):
                 handle.write(line)
 
     return len(pending_rows), len(pending_drift)
+
+
+def _routing_observed_number(field):
+    if isinstance(field, dict) and field.get("source") == "observed":
+        value = field.get("value")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        return value
+    return None
+
+
+def _routing_text_arg(label, value):
+    if not isinstance(value, str) or not value.strip() or "\n" in value or "\r" in value or HIDDEN_CHARS.search(value):
+        print(f"ERROR: ledger: {label}: must be non-empty one-line text", file=sys.stderr)
+        return False
+    return True
+
+
+def routing_row_from_ledger(row, category, size):
+    observed_model = row.get("observed_model")
+    if isinstance(observed_model, dict) and observed_model.get("source") == "observed":
+        model = observed_model.get("value")
+    else:
+        resolved = row.get("resolved_model")
+        model = resolved.get("value") if isinstance(resolved, dict) else None
+    effort_field = row.get("effort")
+    effort = effort_field.get("value") if isinstance(effort_field, dict) else None
+    wall = _routing_observed_number(row.get("wall_time_s"))
+    duration_s = round(wall) if wall is not None else None
+    input_tokens = _routing_observed_number(row.get("tokens_input"))
+    output_tokens = _routing_observed_number(row.get("tokens_output"))
+    cache_read_tokens = _routing_observed_number(row.get("tokens_cache"))
+    block = row.get("subagents") if isinstance(row.get("subagents"), dict) else {}
+    calls_f = block.get("calls") if isinstance(block.get("calls"), dict) else {}
+    tokens_f = block.get("tokens") if isinstance(block.get("tokens"), dict) else {}
+    if calls_f.get("source") == "observed" and tokens_f.get("source") == "observed":
+        subagents = {"calls": calls_f.get("value"), "tokens": tokens_f.get("value"), "source": "observed"}
+    else:
+        subagents = {"calls": None, "tokens": None, "source": "unknown"}
+    tier = row.get("tier")
+    seat = f"{row['cli']}.{tier}" if tier is not None else str(row["cli"])
+    return {
+        "run_id": row["run_id"],
+        "task": row["task"],
+        "category": category,
+        "size": size,
+        "seat": seat,
+        "door": row["door"],
+        "model": model,
+        "effort": effort,
+        "attempt": row["attempt"],
+        "outcome": row["outcome"],
+        "failure_class": row["failure_class"],
+        "duration_s": duration_s,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cache_read_tokens": cache_read_tokens,
+        "subagents": subagents,
+        "source": "computed",
+    }
+
+
+def cmd_routing_row(path, category, size):
+    if not _routing_text_arg("category", category) or not _routing_text_arg("size", size):
+        return 2
+    try:
+        with open(path, encoding="utf-8") as handle:
+            row = json.load(handle)
+    except (OSError, ValueError) as error:
+        print(f"ERROR: ledger: document: not readable as JSON: {error}", file=sys.stderr)
+        return 1
+    try:
+        validate_row(row)
+    except LedgerError as error:
+        print(f"ERROR: ledger: {error}", file=sys.stderr)
+        return 1
+    out = routing_row_from_ledger(row, category, size)
+    print(json.dumps(out, separators=(",", ":")))
+    return 0
 
 
 def cmd_validate(path):
@@ -663,7 +774,13 @@ def main(argv):
         return cmd_fold(argv[1])
     if len(argv) == 4 and argv[0] == "view" and argv[2] == "--features":
         return cmd_view(argv[1], argv[3])
-    print("usage: ledger.py validate <file> | fold <mission> | view <ledger.jsonl> --features <features.json>", file=sys.stderr)
+    if len(argv) == 4 and argv[0] == "routing-row":
+        return cmd_routing_row(argv[1], argv[2], argv[3])
+    print(
+        "usage: ledger.py validate <file> | fold <mission> | view <ledger.jsonl> --features <features.json>"
+        " | routing-row <ledger-row.json> <category> <size>",
+        file=sys.stderr,
+    )
     return 2
 
 

@@ -38,7 +38,8 @@ SECTION_8_FIELDS = [
 # Literal list of every field that is a number and therefore needs a source flag.
 NUMBER_FIELDS = [
     "allow_list_size", "task_text_tokens", "wall_time_s", "turns", "tool_calls",
-    "tokens_input", "tokens_output", "tokens_cache", "tokens_reasoning", "quota_share",
+    "tokens_input", "tokens_output", "tokens_cache", "tokens_reasoning", "tokens_total",
+    "tokens_without_cache", "tokens_cache_write", "quota_share",
 ]
 TEXT_FLAG_FIELDS = ["cli_version", "requested_model", "resolved_model", "observed_model", "self_reported_model", "effort", "fast_state"]
 GOOD = FIXTURES / "good-completed.json"
@@ -186,6 +187,39 @@ def hostile_locations():
 
 
 class LedgerContract(unittest.TestCase):
+    def test_token_figures_role_tag_and_prompt_version_are_optional(self):
+        import ledger as L
+
+        row = load(GOOD)
+        L.validate_row(row)
+        fields = ("tokens_total", "tokens_without_cache", "tokens_cache_write", "role_tag", "prompt_version")
+        self.assertTrue(all(name in L.FIELDS and name in L.OPTIONAL_FIELDS for name in fields))
+
+        extended = copy.deepcopy(row)
+        extended.update(
+            tokens_total={"value": 1771684, "source": "observed"},
+            tokens_without_cache={"value": 87968, "source": "observed"},
+            tokens_cache_write={"value": None, "source": "unknown"},
+            role_tag="plan",
+            prompt_version="scripts/brain_prompt.py:0123456789ab",
+        )
+        L.validate_row(extended)
+        extended["prompt_version"] = None
+        L.validate_row(extended)
+
+        for name, value, expected in (
+            ("role_tag", "boss", "role_tag: must be one of plan, review, gate, brain, worker"),
+            ("prompt_version", "x" * 300, "prompt_version: privacy"),
+            ("prompt_version", "/Users/x", "prompt_version: privacy"),
+            ("tokens_total", 5, "tokens_total: must be an object"),
+        ):
+            with self.subTest(field=name, value=value):
+                invalid = copy.deepcopy(extended)
+                invalid[name] = value
+                with self.assertRaises(L.LedgerError) as caught:
+                    L.validate_row(invalid)
+                self.assertEqual(str(caught.exception), expected)
+
     def test_every_section_8_field_is_in_the_validator_and_schema(self):
         schema = load(SCHEMA)
         self.assertEqual(schema["$schema"], "https://json-schema.org/draft/2020-12/schema")
@@ -193,10 +227,19 @@ class LedgerContract(unittest.TestCase):
         properties = set(schema["properties"])
         self.assertIn("self_reported_model", properties)
         self.assertNotIn("self_reported_model", schema["required"])
-        self.assertEqual(set(schema["required"]), properties - {"self_reported_model"})
+        self.assertNotIn("subagents", schema["required"])
+        self.assertNotIn("tokens_overrun", schema["required"])
+        optional = {"self_reported_model", "subagents", "tokens_overrun", "tokens_total",
+                    "tokens_without_cache", "tokens_cache_write", "role_tag", "prompt_version"}
+        self.assertEqual(set(schema["required"]), properties - optional)
         self.assertEqual(properties, set(FIELDS))
         self.assertEqual(set(SECTION_8_FIELDS) - properties, set(), "section 8 field missing from schema")
-        self.assertEqual(properties - set(SECTION_8_FIELDS) - {"schema_version", "tier"}, set(), "unexpected schema field")
+        self.assertEqual(
+            properties - set(SECTION_8_FIELDS) - {"schema_version", "tier", "subagents", "tokens_overrun"} -
+            {"tokens_total", "tokens_without_cache", "tokens_cache_write", "role_tag", "prompt_version"},
+            set(),
+            "unexpected schema field",
+        )
         self.assertEqual(schema["title"], "Purrfect Harness LedgerRow v2")
         self.assertEqual(schema["properties"]["schema_version"], {"const": 2})
         self.assertEqual(schema["properties"]["tier"]["enum"], ["economy", "premium", None])
@@ -300,8 +343,13 @@ class LedgerMutations(unittest.TestCase):
         path = Path(self.tmp.name) / "optional-self-reported-model.json"
         path.write_text(json.dumps(row), encoding="utf-8")
         self.assertEqual(run_cli("validate", str(path)).returncode, 0)
+        path = Path(self.tmp.name) / "optional-subagents.json"
+        path.write_text(json.dumps(self.base), encoding="utf-8")
+        self.assertNotIn("subagents", self.base)
+        self.assertEqual(run_cli("validate", str(path)).returncode, 0)
         for name in FIELDS:
-            if name == "self_reported_model":
+            if name in ("self_reported_model", "subagents", "tokens_overrun", "tokens_total",
+                        "tokens_without_cache", "tokens_cache_write", "role_tag", "prompt_version"):
                 continue
             with self.subTest(field=name):
                 self.expect_invalid(self.mutated(lambda row, n=name: row.pop(n)), f"{name}: is required")
@@ -404,7 +452,10 @@ class LedgerMutations(unittest.TestCase):
         self.expect_invalid(self.mutated(lambda row: row.__setitem__("schema_version", 1)), "schema_version: must be 2")
         self.expect_invalid(self.mutated(lambda row: row.__setitem__("attempt", 0)), "attempt: must be an integer >= 1")
         self.expect_invalid(self.mutated(lambda row: row.__setitem__("run_id", "not-a-run")), "run_id: must be a run id (UUID v1-8)")
-        self.expect_invalid(self.mutated(lambda row: row.__setitem__("outcome", "done")), "outcome: must be one of completed, failed, timed_out, stalled, interrupted, launch_failed")
+        self.expect_invalid(
+            self.mutated(lambda row: row.__setitem__("outcome", "done")),
+            "outcome: must be one of completed, failed, timed_out, stalled, interrupted, launch_failed, budget_exceeded",
+        )
         self.expect_invalid(self.mutated(lambda row: row.__setitem__("scope_result", "ok")), "scope_result: must be one of pass, fail, not_checked")
         self.expect_invalid(self.mutated(lambda row: row.__setitem__("ste_flag", "no")), "ste_flag: must be true or false")
 
@@ -479,6 +530,7 @@ class LedgerMutations(unittest.TestCase):
             copy = scripts / "ledger.py"
             copy.write_text(mutant, encoding="utf-8")
             shutil.copy2(ROOT / "scripts/model_id.py", scripts / "model_id.py")
+            shutil.copy2(ROOT / "scripts/run_id.py", scripts / "run_id.py")
             shutil.copy2(ROOT / "harness-registry.json", Path(temp) / "harness-registry.json")
             row_path = Path(temp) / "row.json"
             row = json.loads(json.dumps(load(GOOD)))
@@ -565,6 +617,7 @@ class LedgerMutations(unittest.TestCase):
             copy = scripts / "ledger.py"
             copy.write_text(mutant, encoding="utf-8")
             shutil.copy2(ROOT / "scripts/model_id.py", scripts / "model_id.py")
+            shutil.copy2(ROOT / "scripts/run_id.py", scripts / "run_id.py")
             shutil.copy2(ROOT / "harness-registry.json", Path(temp) / "harness-registry.json")
             row = json.loads(json.dumps(load(GOOD)))
             row["failure_class"] = "build/tmp"
@@ -861,6 +914,7 @@ class LedgerDoorTests(unittest.TestCase):
                 ledger = scripts / "ledger.py"
                 shutil.copy2(LEDGER, ledger)
                 shutil.copy2(ROOT / "scripts/model_id.py", scripts / "model_id.py")
+                shutil.copy2(ROOT / "scripts/run_id.py", scripts / "run_id.py")
                 if content is not None:
                     (root / "harness-registry.json").write_text(content)
                 result = self.validate(ledger=ledger)
@@ -1037,6 +1091,45 @@ class LedgerBuilderTests(unittest.TestCase):
                 self.assertEqual(written["self_reported_model"], unknown)
                 L.validate_row(written)
 
+    def test_row_carries_subagents_from_the_receipt_observation(self):
+        unknown = {"value": None, "source": "unknown"}
+        observed = lambda value: {"value": value, "source": "observed"}
+        spec = {"repo": str(ROOT), "base_commit": "HEAD", "mission": "docs/missions/x", "work_unit": "T-1",
+                "run_id": str(uuid.uuid4()), "attempt": 1, "provider": "agy", "write_scope": ["file"]}
+        receipt = {"feature": "F008", "observation": {"observed_model": unknown, "fast_state": unknown,
+            "usage": {k: unknown for k in ("input", "output", "cache", "reasoning")}},
+            "started_at": "2026-10-15T00:00:00Z", "finished_at": "2026-10-15T00:00:01Z", "changed_paths": [],
+            "scope": {"result": "pass"}, "outcome": "completed",
+            "requested_configuration": {"model": "gemini-3.8-flash-low", "effort": "high"},
+            "resolved_configuration": {"model": "gemini-3.8-flash-low"}}
+        import ledger as L
+        row = execution_runner.build_ledger_row(spec, receipt, tier="premium")
+        self.assertEqual(row["subagents"], {"calls": unknown, "tokens": unknown})
+        L.validate_row(row)
+        receipt["observation"]["subagents"] = {"calls": observed(2), "tokens": observed(1234)}
+        row = execution_runner.build_ledger_row(spec, receipt, tier="premium")
+        self.assertEqual(row["subagents"], {"calls": observed(2), "tokens": observed(1234)})
+        L.validate_row(row)
+        receipt["observation"]["subagents"] = {"calls": observed(0), "tokens": observed(0)}
+        row = execution_runner.build_ledger_row(spec, receipt, tier="premium")
+        self.assertEqual(row["subagents"], {"calls": observed(0), "tokens": observed(0)})
+        L.validate_row(row)
+        for line in (ROOT / "docs/missions/ledger.jsonl").read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                L.validate_row(json.loads(line))
+        base = json.loads((ROOT / "docs/missions/ledger.jsonl").read_text(encoding="utf-8").splitlines()[0])
+        for bad in (
+            {"calls": observed(2)},
+            {"calls": observed(True), "tokens": observed(1)},
+            {"calls": observed(2), "tokens": observed(-1)},
+            {"calls": observed(2), "tokens": observed(1.5)},
+            {"calls": {"value": 2, "source": "unknown"}, "tokens": unknown},
+            {"calls": observed(2), "tokens": observed(1), "extra": 1},
+        ):
+            with self.subTest(bad=bad):
+                with self.assertRaises(L.LedgerError):
+                    L.validate_row(dict(base, subagents=bad))
+
     def test_agy_runs_book_the_door_of_their_model_family(self):
         cases = (
             ("gemini-4-argon-high", ("agy-argon", "agy-argon", "included")),
@@ -1125,6 +1218,7 @@ class LedgerFoldTests(unittest.TestCase):
         (self.root / "scripts").mkdir(parents=True, exist_ok=True)
         shutil.copy2(LEDGER, self.root / "scripts/ledger.py")
         shutil.copy2(ROOT / "scripts/model_id.py", self.root / "scripts/model_id.py")
+        shutil.copy2(ROOT / "scripts/run_id.py", self.root / "scripts/run_id.py")
         shutil.copy2(ROOT / "harness-registry.json", self.root / "harness-registry.json")
         self.mission_path = "docs/missions/fixture"
         mission = self.root / self.mission_path
@@ -1548,6 +1642,54 @@ class LedgerViewTests(unittest.TestCase):
         result = run_cli("view", str(self.ledger), cwd=self.parent)
         self.assertEqual(result.returncode, 2)
         self.assertEqual(result.stdout, "")
+
+
+class RoutingRowTests(unittest.TestCase):
+    def test_routing_row_is_computed_from_the_ledger_row(self):
+        row = load(GOOD)
+        row["subagents"] = {"calls": {"value": 2, "source": "observed"}, "tokens": {"value": 1234, "source": "observed"}}
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "row.json"
+            path.write_text(json.dumps(row), encoding="utf-8")
+            out = run_cli("routing-row", str(path), "metrics", "M")
+            self.assertEqual(out.returncode, 0, out.stderr)
+            want = {
+                "run_id": "5f0c1e2a-7b3d-4c8e-9a1f-2d6b8e4c7a10",
+                "task": "T-027",
+                "category": "metrics",
+                "size": "M",
+                "seat": "claude.economy",
+                "door": "claude",
+                "model": "claude-haiku-5-5",
+                "effort": "medium",
+                "attempt": 1,
+                "outcome": "completed",
+                "failure_class": None,
+                "duration_s": 413,
+                "input_tokens": 58210,
+                "output_tokens": 9342,
+                "cache_read_tokens": 401775,
+                "subagents": {"calls": 2, "tokens": 1234, "source": "observed"},
+                "source": "computed",
+            }
+            self.assertEqual(json.loads(out.stdout), want)
+            self.assertEqual(out.stdout, json.dumps(want, separators=(",", ":")) + "\n")
+            row2 = json.loads(json.dumps(row))
+            row2.pop("subagents", None)
+            row2["tokens_cache"] = {"value": None, "source": "unknown"}
+            path2 = Path(temp) / "row2.json"
+            path2.write_text(json.dumps(row2), encoding="utf-8")
+            out2 = run_cli("routing-row", str(path2), "metrics", "M")
+            self.assertEqual(out2.returncode, 0, out2.stderr)
+            got2 = json.loads(out2.stdout)
+            self.assertIsNone(got2["cache_read_tokens"])
+            self.assertEqual(got2["subagents"], {"calls": None, "tokens": None, "source": "unknown"})
+            bad = dict(row2, tokens_input=5)
+            path3 = Path(temp) / "bad.json"
+            path3.write_text(json.dumps(bad), encoding="utf-8")
+            bad_out = run_cli("routing-row", str(path3), "metrics", "M")
+            self.assertNotEqual(bad_out.returncode, 0)
+            self.assertEqual(bad_out.stdout, "")
 
 
 class LedgerTestsLeaveNoBytecode(unittest.TestCase):

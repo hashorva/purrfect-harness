@@ -43,6 +43,19 @@ Before acceptance, run verification for the exact run UUID; before advancing a
 gate/status, the current mission audit must exit 0. Doing all features inside one
 Cursor chat without spawns is a failed dispatch — PROGRESS prose is not proof.
 
+**Planning rule:** a planning run is `bash scripts/spawn-brain.sh <mission> plan --request <file>`
+(seat `brain` by default; `--seat brain_argon` when Claude has no quota). Keep the request file out
+of the tracked tree, for example under `.tasks/requests/`. The provider runs in a scratch clone of
+`HEAD` with its `origin` removed; the clone path is in the log and the clone is deleted afterwards.
+The receipt still checks the live tree, and a write to the live tree fails the run. The run writes
+the spec, log, receipt and ledger row like every other run and prints `run_id=<uuid>` last. Then
+`python3 scripts/plan_extract.py <run-id> docs/missions/<mission>/tasks` writes the task files; it
+refuses paths outside the mission folder and never overwrites a file. The orchestrator reviews the
+files, runs each oracle in a scratch clone and commits them. Fold the ledger
+(`python3 scripts/ledger.py fold <mission>`) before measuring plan runs with `planning_stats.py`.
+Ad-hoc planner scripts are retired: their runs leave no receipt and no ledger row, so they cannot be
+measured.
+
 ## Roles & dispatch table
 
 | Agent                                                                                                                                                   | Role                                                                                                                  | Send it                                        |
@@ -74,6 +87,16 @@ Missions live under `docs/missions/<YYYYMMDD-slug>/`. Root `GOAL.md` /
 
 Exactly one mission may be `in-progress` or `awaiting-gate` at a time. Discover
 with `bash scripts/active-mission.sh`.
+
+## Goal-style prompts (binding)
+
+The harness defines goals, permissions and deterministic checks; the model decides its own method.
+
+`scripts/brain_prompt.py`, the worker prompt in `scripts/spawn-worker.sh` and
+review requests state the goal, resources (tools, subagents, skills and web
+search), permissions and acceptance checks, and say nothing about method or a
+token budget; runs have no token cap. No step forces delegation to a subagent.
+Skills and agent definitions follow the same rule.
 
 ## The loop
 
@@ -180,6 +203,7 @@ Before presenting a gate for approval (and before `status: done`):
 
 ```bash
 bash scripts/verify-mission.sh   # must exit 0 — receipts required
+python3 scripts/ci_status.py --commit <sha>   # must exit 0 — never judge CI by eye
 ```
 
 When the human approves or rejects a gate (staging sign-off, merge permission,

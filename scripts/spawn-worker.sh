@@ -218,6 +218,7 @@ RESOLVE_ARGS=(python3 "$ROOT/scripts/fleet_state.py" resolve
 BINDING_JSON="$(PYTHONDONTWRITEBYTECODE=1 "${RESOLVE_ARGS[@]}")" || exit $?
 MODEL="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["model"])' <<<"$BINDING_JSON")"
 [ -n "$MODEL" ] || { echo "ERROR: frozen fleet returned an empty model" >&2; exit 1; }
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-role-effort --role worker --effort "$EFFORT" --fleet "$FLEET" --seat "$FLEET_SEAT"
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-capability \
   --provider "$WORKER" --effort "$EFFORT" --speed "$SPEED"
 
@@ -230,7 +231,7 @@ export PURRFECT_DISPATCH_LOCK_PATH="$LOCK_PATH"
 mkdir -p "$ROOT/.tasks/logs" "$ROOT/.tasks/receipts"
 
 PROMPT_TASK="$TASK_REL"
-PROMPT="Goal: ${PROMPT_TASK} is done when its verification commands pass and one scoped commit leaves a clean tree; the Front Desk runs the full suite, you do not. Scope: the task's allow-list; PROGRESS.md and features.json belong to the Front Desk. Budget: the task's max_attempts and long-command rule; the runner stops a stalled or overlong run. Resources: your CLI's native tools, the repo skills in .agents/skills, web search, and subagents where your CLI has them (Claude Code: explorer on Haiku; codex: Luna; cursor: Composer; agy: Flash). Delegate wide reading and searching to a cheap subagent, run the task's checks yourself before you finish, and stop when they pass. End with a short plain-text report: what you changed and the exit code of each check you ran."
+PROMPT="Goal: ${PROMPT_TASK} is done when its verification commands pass and one scoped commit leaves a clean tree; the Front Desk runs the full suite, you do not. Resources: your CLI's native tools, the repo skills in .agents/skills, web search, and the subagents your CLI offers (Claude Code: the explorer agent, .claude/agents/explorer.md, model haiku). Permissions: the task's allow-list, max_attempts and long-command rule; PROGRESS.md and features.json belong to the Front Desk. Acceptance checks: the task's verification commands. End with a short plain-text report: what you changed and the exit code of each check you ran."
 [ -z "$EXTRA" ] || PROMPT+=" $EXTRA"
 
 RUN_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
@@ -254,7 +255,7 @@ set +e
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execution_runner.py" \
   --spec "$SPEC_PATH" --spec-sha256 "$SPEC_SHA256" --log "$LOG" \
   --timeout "$SPAWN_WORKER_TIMEOUT_SECS" \
-  --stall-seconds "${SPAWN_WORKER_STALL_SECS:-90}" --idle-seconds "${SPAWN_WORKER_IDLE_SECS:-900}" --task "$TASK_REL" --tier "$TIER" &
+  --stall-seconds "${SPAWN_WORKER_STALL_SECS:-90}" --idle-seconds "${SPAWN_WORKER_IDLE_SECS:-900}" --task "$TASK_REL" --tier "$TIER" --seat "$FLEET_SEAT" &
 RUNNER_PID=$!
 wait "$RUNNER_PID"
 EC=$?

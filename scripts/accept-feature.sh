@@ -11,6 +11,7 @@ while [ $# -gt 0 ]; do
     *) [ -z "$MISSION" ] || { echo "ERROR: only one mission may be supplied" >&2; exit 2; }; MISSION="$1"; shift ;;
   esac
 done
+PYTHONDONTWRITEBYTECODE=1 python3 "$(pwd -P)/scripts/run_id.py" check "$RUN_ID" || exit 2
 [ -n "$RUN_ID" ] && [ -n "$SHA" ] && [ -n "$ACCEPTED_BY" ] || { echo "ERROR: run ID, verification hash, and accepted-by are required" >&2; exit 2; }
 ROOT="$(pwd -P)"; [ -n "$MISSION" ] || MISSION="$(bash "$ROOT/scripts/active-mission.sh")"
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/verification_record.py" accept --run-id "$RUN_ID" --verification-sha256 "$SHA" --accepted-by "$ACCEPTED_BY" "$MISSION"

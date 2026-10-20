@@ -40,6 +40,21 @@
     "tokens_output": { "$ref": "#/$defs/numberFlag" },
     "tokens_cache": { "$ref": "#/$defs/numberFlag" },
     "tokens_reasoning": { "$ref": "#/$defs/numberFlag" },
+    "tokens_total": { "$ref": "#/$defs/numberFlag" },
+    "tokens_without_cache": { "$ref": "#/$defs/numberFlag" },
+    "tokens_cache_write": { "$ref": "#/$defs/numberFlag" },
+    "role_tag": { "enum": ["plan", "review", "gate", "brain", "worker"] },
+    "prompt_version": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
+    "tokens_overrun": { "$ref": "#/$defs/numberFlag" },
+    "subagents": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["calls", "tokens"],
+      "properties": {
+        "calls": { "$ref": "#/$defs/numberFlag" },
+        "tokens": { "$ref": "#/$defs/numberFlag" }
+      }
+    },
     "cost": {
       "type": "object",
       "required": ["value", "source", "currency"],
@@ -77,7 +92,7 @@
     "anti_gaming_flags": { "$ref": "#/$defs/textList" },
     "failure_class": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
     "escalation_reason": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
-    "outcome": { "enum": ["completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed"] }
+    "outcome": { "enum": ["completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed", "budget_exceeded"] }
   },
   "$defs": {
     "text": { "type": "string", "pattern": "^\\S(?:[\\s\\S]*\\S)?$" },

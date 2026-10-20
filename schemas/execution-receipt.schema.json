@@ -120,6 +120,20 @@
             "calls": {"$ref": "#/$defs/sourcedCount"},
             "tokens": {"$ref": "#/$defs/sourcedCount"}
           }
+        },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["input", "output", "reasoning", "cache_read", "cache_write", "total", "without_cache"],
+          "properties": {
+            "input": { "$ref": "#/$defs/sourcedCount" },
+            "output": { "$ref": "#/$defs/sourcedCount" },
+            "reasoning": { "$ref": "#/$defs/sourcedCount" },
+            "cache_read": { "$ref": "#/$defs/sourcedCount" },
+            "cache_write": { "$ref": "#/$defs/sourcedCount" },
+            "total": { "$ref": "#/$defs/sourcedCount" },
+            "without_cache": { "$ref": "#/$defs/sourcedCount" }
+          }
         }
       }
     },
@@ -141,6 +155,7 @@
         "work_unit": { "$ref": "#/$defs/nonempty" },
         "attempt": { "type": "integer", "minimum": 1 },
         "role": { "enum": ["brain", "worker"] },
+        "role_tag": { "enum": ["plan", "review", "gate", "worker", "brain"] },
         "provider": { "enum": ["codex", "claude", "agent", "agy"] },
         "model": { "$ref": "#/$defs/nonempty" },
         "repo": { "type": "string", "pattern": "^/" },
@@ -148,7 +163,17 @@
         "tier": { "type": ["string", "null"] },
         "started_at": { "type": "string", "format": "date-time" },
         "finished_at": { "type": "string", "format": "date-time" },
-        "outcome": { "enum": ["completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed"] },
+        "outcome": { "enum": ["completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed", "budget_exceeded"] },
+        "token_budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["limit", "used", "overrun"],
+          "properties": {
+            "limit": { "type": "integer", "minimum": 1 },
+            "used": { "type": "integer", "minimum": 0 },
+            "overrun": { "type": "integer", "minimum": 0 }
+          }
+        },
         "exit_code": { "type": "integer", "minimum": 0, "maximum": 255 },
         "log_path": { "type": "string", "pattern": "^\\.tasks/logs/[0-9a-f-]+\\.log$" },
         "execution_spec_path": { "$ref": "#/$defs/nonempty" },

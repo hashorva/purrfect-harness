@@ -1,0 +1,1 @@
+["cursor-agent","-p","--force","--trust","--output-format","stream-json","--workspace","@PURRFECT_ROOT@","--model","composer-2.5","Read docs/missions/20261014-2a-foundation/tasks/T-042.md and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder."]

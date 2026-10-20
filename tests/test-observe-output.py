@@ -4,6 +4,7 @@ import inspect
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -12,10 +13,19 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests/fixtures/observe"
 sys.path.insert(0, str(ROOT / "scripts"))
-from observe_output import no_turn, observe, observe_self_reported, resolve_model_identity
+from observe_output import no_turn, observe, observe_self_reported, resolve_model_identity, stream_tokens
 
 
 UNKNOWN = {"value": None, "source": "unknown"}
+SUBAGENTS_UNKNOWN = {"calls": UNKNOWN, "tokens": UNKNOWN}
+SUBAGENTS_ZERO = {"calls": {"value": 0, "source": "observed"}, "tokens": {"value": 0, "source": "observed"}}
+JQ_SUBAGENTS = (
+    "([.[] | select(.type == \"assistant\" and .parent_tool_use_id == null) | .message.content[]? "
+    "| select(.type == \"tool_use\" and (.name == \"Task\" or .name == \"Agent\")) | .id] | unique) as $ids "
+    "| {calls: ($ids | length), tokens: ([.[] | select(.type == \"user\" and .parent_tool_use_id == null) "
+    "| . as $e | .message.content[]? | select(.type == \"tool_result\" and (.tool_use_id as $t | $ids | any(. == $t))) "
+    "| $e.tool_use_result.totalTokens] | add // 0)}"
+)
 
 ALL_UNKNOWN = {
     "observed_model": {"value": None, "source": "unknown"},
@@ -26,6 +36,7 @@ ALL_UNKNOWN = {
         "reasoning": {"value": None, "source": "unknown"},
     },
     "fast_state": {"value": None, "source": "unknown"},
+    "subagents": SUBAGENTS_UNKNOWN,
 }
 
 CLAUDE = {
@@ -37,12 +48,14 @@ CLAUDE = {
         "reasoning": {"value": 29, "source": "observed"},
     },
     "fast_state": {"value": "off", "source": "observed"},
+    "subagents": SUBAGENTS_ZERO,
 }
 
 CLAUDE_TWO_MODELS = {
     "observed_model": {"value": None, "source": "unknown"},
     "usage": CLAUDE["usage"],
     "fast_state": {"value": "off", "source": "observed"},
+    "subagents": SUBAGENTS_ZERO,
 }
 
 CODEX = {
@@ -54,6 +67,7 @@ CODEX = {
         "reasoning": {"value": 0, "source": "observed"},
     },
     "fast_state": {"value": None, "source": "unknown"},
+    "subagents": SUBAGENTS_UNKNOWN,
 }
 
 CODEX_TWO_TURNS = {
@@ -65,6 +79,7 @@ CODEX_TWO_TURNS = {
         "reasoning": {"value": 0, "source": "observed"},
     },
     "fast_state": {"value": None, "source": "unknown"},
+    "subagents": SUBAGENTS_UNKNOWN,
 }
 
 CURSOR = {
@@ -76,12 +91,14 @@ CURSOR = {
         "reasoning": {"value": None, "source": "unknown"},
     },
     "fast_state": {"value": None, "source": "unknown"},
+    "subagents": SUBAGENTS_UNKNOWN,
 }
 
 CURSOR_NO_INIT_MODEL = {
     "observed_model": {"value": None, "source": "unknown"},
     "usage": CURSOR["usage"],
     "fast_state": {"value": None, "source": "unknown"},
+    "subagents": SUBAGENTS_UNKNOWN,
 }
 
 AGY = {
@@ -93,6 +110,7 @@ AGY = {
         "reasoning": {"value": 0, "source": "observed"},
     },
     "fast_state": {"value": None, "source": "unknown"},
+    "subagents": SUBAGENTS_UNKNOWN,
 }
 
 EXPECTED = {
@@ -138,6 +156,31 @@ class ObserveOutputTest(unittest.TestCase):
         for (provider, name), expected in EXPECTED.items():
             with self.subTest(provider=provider, fixture=name):
                 self.assertEqual(observe(provider, read(name)), expected)
+
+    def test_subagent_field_is_observed_zero_or_unknown(self):
+        observed_two = {"calls": {"value": 2, "source": "observed"}, "tokens": {"value": 1234, "source": "observed"}}
+        for name in ("claude.json", "claude-log.txt", "claude-two-models.json"):
+            with self.subTest(fixture=name):
+                self.assertEqual(observe("claude", read(name))["subagents"], SUBAGENTS_ZERO)
+        self.assertEqual(observe("claude", read("claude-subagent.jsonl"))["subagents"], observed_two)
+        for provider, name in (("codex", "codex.jsonl"), ("cursor", "cursor.jsonl"), ("agy", "agy.jsonl")):
+            with self.subTest(provider=provider, fixture=name):
+                self.assertEqual(observe(provider, read(name))["subagents"], SUBAGENTS_UNKNOWN)
+        for name in ("empty.txt", "garbage.txt", "wrong-types.jsonl"):
+            with self.subTest(fixture=name):
+                self.assertEqual(observe("claude", read(name))["subagents"], SUBAGENTS_UNKNOWN)
+
+    def test_subagents_match_a_jq_one_liner(self):
+        jq = shutil.which("jq")
+        self.assertIsNotNone(jq)
+        for name in ("claude-subagent.jsonl", "claude.json"):
+            raw = read(name)
+            proc = subprocess.run([jq, "-c", "-s", JQ_SUBAGENTS, str(FIXTURES / name)], capture_output=True, text=True, check=True)
+            jq_counts = json.loads(proc.stdout)
+            sub = observe("claude", raw)["subagents"]
+            self.assertEqual(sub["calls"]["source"], "observed")
+            self.assertEqual(sub["tokens"]["source"], "observed")
+            self.assertEqual(jq_counts, {"calls": sub["calls"]["value"], "tokens": sub["tokens"]["value"]})
 
     def test_claude_counts_top_level_subagent_calls_and_tokens(self):
         raw = read("claude-subagent.jsonl")
@@ -796,6 +839,31 @@ class ObserveOutputTest(unittest.TestCase):
                 os.environ.pop("CODEX_SESSIONS_DIR", None)
             else:
                 os.environ["CODEX_SESSIONS_DIR"] = prev_sessions
+
+    def test_stream_tokens_counts_each_top_level_message_once(self):
+        u = {"input_tokens": 3, "output_tokens": 4, "cache_read_input_tokens": 3}
+        seen = set()
+        top = lambda mid: {
+            "type": "assistant", "parent_tool_use_id": None,
+            "message": {"id": mid, "usage": u, "content": []},
+        }
+        self.assertEqual(stream_tokens("claude", top("m1"), seen), 10)
+        self.assertEqual(stream_tokens("claude", top("m1"), seen), 0)
+        sub = {
+            "type": "assistant", "parent_tool_use_id": "toolu_1",
+            "message": {"id": "sub", "usage": u, "content": []},
+        }
+        self.assertEqual(stream_tokens("claude", sub, seen), 0)
+        self.assertEqual(stream_tokens("claude", {"type": "result", "usage": u}, seen), 0)
+        self.assertEqual(stream_tokens(
+            "codex", {"type": "turn.completed", "usage": {"input_tokens": 3, "output_tokens": 4, "cached_input_tokens": 3}}, seen,
+        ), 10)
+        self.assertEqual(stream_tokens(
+            "agent", {"type": "result", "usage": {"inputTokens": 3, "outputTokens": 4, "cacheReadTokens": 3}}, seen,
+        ), 10)
+        self.assertEqual(stream_tokens(
+            "agy", {"event": "result", "result": {"usage": {"input_tokens": 3, "output_tokens": 4, "cache_read_tokens": 3}}}, seen,
+        ), 10)
 
     def test_claude_model_id_validation(self):
         doc = json.loads(read("claude.json"))

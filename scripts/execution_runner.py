@@ -16,7 +16,7 @@ from datetime import datetime
 from execute_provider import provider_contract
 from execution_receipt import (ReceiptError, all_unknown, canonical_bytes, capture_before, now,
                                write_receipt)
-from observe_output import no_turn, observe, observe_self_reported, resolve_model_identity
+from observe_output import no_turn, observe, observe_self_reported, resolve_model_identity, token_figures
 from execution_spec import artifact_directory, SpecError, load_persisted, spec_sha256
 
 # Imported before any provider runs, so a worker's later edit to scripts/ledger.py
@@ -37,6 +37,24 @@ STALL_EXIT = 123
 
 def unknown_number():
     return {"value": None, "source": "unknown"}
+
+
+def append_event(repo, log, event):
+    """Append one event line; event logging must never affect run outcome."""
+    try:
+        path = artifact_directory(repo) / "events.jsonl"
+        line = (json.dumps({"at": now(), **event}, separators=(",", ":")) + "\n").encode("utf-8")
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+        try:
+            os.write(fd, line)
+        finally:
+            os.close(fd)
+    except (OSError, SpecError):
+        try:
+            with Path(log).open("a", encoding="utf-8") as handle:
+                handle.write("WARN: event not written\n")
+        except OSError:
+            pass
 
 
 def unknown_text():
@@ -94,12 +112,22 @@ def configured_text(value):
     return {"value": value, "source": "configured"}
 
 
+def git_argv(*args):
+    """Same prefix as git_safe.argv. Fixtures copy this file without git_safe.py."""
+    try:
+        import git_safe
+    except ImportError:
+        binary = "git"
+        return [binary, "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-c", "core.hooksPath=/dev/null", *args]
+    return git_safe.argv(*args)
+
+
 def base_registry_doors(repo, base_commit):
     if not isinstance(base_commit, str) or not base_commit or base_commit.startswith("-"):
         return {}
     try:
         result = subprocess.run(
-            ["git", "--no-replace-objects", "-C", str(repo), "cat-file", "blob", f"{base_commit}:harness-registry.json"],
+            git_argv("--no-replace-objects", "-C", str(repo), "cat-file", "blob", f"{base_commit}:harness-registry.json"),
             stdin=subprocess.DEVNULL, capture_output=True, timeout=30, check=False,
         )
     except (OSError, subprocess.SubprocessError):
@@ -113,6 +141,23 @@ def base_registry_doors(repo, base_commit):
     if not isinstance(registry, dict) or not isinstance(registry.get("doors"), dict):
         return {}
     return registry["doors"]
+
+
+def prompt_version(repo, base_commit, role):
+    path = {"brain": "scripts/brain_prompt.py", "worker": "scripts/spawn-worker.sh"}.get(role)
+    if path is None or not isinstance(base_commit, str) or not base_commit or base_commit.startswith("-"):
+        return None
+    try:
+        result = subprocess.run(
+            git_argv("--no-replace-objects", "-C", str(repo), "rev-parse", f"{base_commit}:{path}"),
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    blob = result.stdout.strip()
+    if result.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40,64}", blob):
+        return None
+    return f"{path}:{blob[:12]}"
 
 
 def registry_door_pool_and_billing(doors, provider, resolved_model):
@@ -142,6 +187,17 @@ def wall_time_seconds(started_at, finished_at):
     return max(0.0, (finished - started).total_seconds())
 
 
+def _ledger_subagents(observation):
+    unknown_flag = {"value": None, "source": "unknown"}
+    block = observation.get("subagents") or {}
+    calls = block.get("calls", unknown_flag)
+    tokens = block.get("tokens", unknown_flag)
+    return {
+        "calls": {"value": calls.get("value"), "source": calls.get("source", "unknown")},
+        "tokens": {"value": tokens.get("value"), "source": tokens.get("source", "unknown")},
+    }
+
+
 def build_ledger_row(spec, receipt, *, tier, self_reported_model=None):
     observation = receipt["observation"]
     usage = observation["usage"]
@@ -160,7 +216,8 @@ def build_ledger_row(spec, receipt, *, tier, self_reported_model=None):
     door, pool, billing_class = registry_door_pool_and_billing(doors, spec["provider"], door_model)
     mission = Path(spec["mission"]).name
     feature = receipt["feature"] if receipt.get("feature") else "unknown"
-    return {
+    tokens = observation.get("tokens")
+    row = {
         "schema_version": 2,
         "mission": mission,
         "feature": feature,
@@ -207,6 +264,7 @@ def build_ledger_row(spec, receipt, *, tier, self_reported_model=None):
             "value": usage["reasoning"]["value"],
             "source": usage["reasoning"]["source"],
         },
+        "subagents": _ledger_subagents(observation),
         "cost": {"value": None, "source": "unknown", "currency": "USD"},
         "quota_share": unknown_number(),
         "checks": [],
@@ -220,6 +278,14 @@ def build_ledger_row(spec, receipt, *, tier, self_reported_model=None):
         "escalation_reason": None,
         "outcome": receipt["outcome"],
     }
+    for field, source in (("tokens_total", "total"), ("tokens_without_cache", "without_cache"),
+                          ("tokens_cache_write", "cache_write")):
+        flag = tokens.get(source, unknown_number()) if isinstance(tokens, dict) else unknown_number()
+        row[field] = {"value": flag.get("value"), "source": flag.get("source", "unknown")}
+    if "role_tag" in receipt:
+        row["role_tag"] = receipt["role_tag"]
+    row["prompt_version"] = prompt_version(spec["repo"], spec["base_commit"], spec.get("role"))
+    return row
 
 
 def _atomic_create_ledger(path, data):
@@ -340,6 +406,10 @@ def run(args):
 
     started_at = now()
     before = capture_before(args.spec, args.spec_sha256)
+    event = {"run_id": spec["run_id"], "role": spec["role"], "seat": args.seat,
+             "work_unit": spec["work_unit"]}
+    append_event(spec["repo"], log, {"event": "run_start", **event})
+    events_path = Path(spec["repo"]) / ".tasks" / "events.jsonl"
     process = None
     received_signal = None
 
@@ -360,6 +430,7 @@ def run(args):
         log_offset = log.stat().st_size
     except OSError:
         log_offset = 0
+    observe_provider = "cursor" if spec["provider"] == "agent" else spec["provider"]
     try:
         try:
             with log.open("ab", buffering=0) as output:
@@ -368,7 +439,8 @@ def run(args):
                     stdin=subprocess.DEVNULL,
                     stdout=output,
                     stderr=subprocess.STDOUT,
-                    env={**os.environ, **env_overrides},
+                    env={**os.environ, **env_overrides, "PURRFECT_RUN_ID": spec["run_id"],
+                         "PURRFECT_EVENTS": str(events_path)},
                     start_new_session=True,
                 )
                 deadline = None if args.timeout == 0 else time.monotonic() + args.timeout
@@ -434,8 +506,8 @@ def run(args):
         with log.open("rb") as handle:
             handle.seek(log_offset)
             raw_output = handle.read()
-        observe_provider = "cursor" if spec["provider"] == "agent" else spec["provider"]
         observation = observe(observe_provider, raw_output)
+        observation["tokens"] = token_figures(observe_provider, raw_output)
         try:
             self_reported_model = observe_self_reported(observe_provider, raw_output)
         except Exception:
@@ -465,6 +537,8 @@ def run(args):
         tier=args.tier,
         observation=observation,
     )
+    append_event(spec["repo"], log, {"event": "run_exit", **event, "exit_code": exit_code,
+                 "outcome": outcome, "receipt": f".tasks/receipts/{receipt.name}"})
     try:
         receipt_doc = json.loads(receipt.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -489,6 +563,7 @@ def main():
     parser.add_argument("--idle-seconds", type=float, default=900)
     parser.add_argument("--task")
     parser.add_argument("--tier")
+    parser.add_argument("--seat", default="unknown")
     args = parser.parse_args()
     if not all(math.isfinite(value) for value in (args.timeout, args.stall_seconds, args.idle_seconds)):
         print("ERROR: timeout, stall and idle seconds must be finite numbers", file=sys.stderr)

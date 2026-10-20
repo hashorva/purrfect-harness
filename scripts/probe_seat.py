@@ -18,6 +18,7 @@ from execution_spec import CURRENT_PROVIDER_CONTRACT
 from observe_output import no_turn, observe
 import fleet_state
 from harness_registry import load_registry
+import git_safe
 
 
 CLASSES = ("ok", "no-turn", "mcp-init-wait", "permission-wait", "input-wait", "auth", "limit", "unknown")
@@ -251,7 +252,7 @@ def main(argv=None):
                          sort_keys=True))
         return 0
     folder = Path(tempfile.mkdtemp(prefix=f"probe-seat-{args.seat}-"))
-    subprocess.run(["git", "init", "-q"], cwd=folder, check=True)
+    subprocess.run(git_safe.argv("init", "-q"), cwd=folder, check=True)
     spec["repo"] = str(folder)
     command, _ = provider_contract(spec)
     mcp_command = [command[0], "mcp", "list"]

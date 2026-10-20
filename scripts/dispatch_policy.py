@@ -15,6 +15,8 @@ from execution_spec import artifact_directory, SpecError, validate_write_scope
 from fleet_state import CAPABILITIES, read_json, validate_fleet
 from harness_registry import RegistryError, canonical_provider, load_registry
 
+ROLE_EFFORTS = {"planning": "high", "review": "medium", "worker": "medium"}
+
 
 class PolicyError(ValueError):
     """The requested dispatch is not authorized by the current mission state."""
@@ -24,13 +26,23 @@ def fail(message):
     raise PolicyError(message)
 
 
+def git_argv(*args):
+    """Same prefix as git_safe.argv. Fixtures copy this file without git_safe.py."""
+    try:
+        import git_safe
+    except ImportError:
+        binary = "git"
+        return [binary, "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-c", "core.hooksPath=/dev/null", *args]
+    return git_safe.argv(*args)
+
+
 def git_root(value):
     path = Path(value)
     if not path.is_absolute() or not path.is_dir() or path != path.resolve():
         fail("workspace must be an existing canonical absolute directory")
     try:
         top = subprocess.check_output(
-            ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+            git_argv("-C", str(path), "rev-parse", "--show-toplevel"),
             text=True,
             stderr=subprocess.DEVNULL,
         ).strip()
@@ -155,7 +167,7 @@ def worker_write_scope(task):
 
 def clean_workspace(root):
     result = subprocess.run(
-        ["git", "-C", str(root), "status", "--porcelain=v1", "--untracked-files=all"],
+        git_argv("-C", str(root), "status", "--porcelain=v1", "--untracked-files=all"),
         text=True,
         capture_output=True,
         check=False,
@@ -216,6 +228,30 @@ def validate_capability(provider, effort, speed):
         fail("provider does not support the requested speed")
 
 
+def validate_role_effort(role, effort, fleet=None, seat=None):
+    want = ROLE_EFFORTS[role]
+    if role == "planning":
+        if effort != want:
+            fail(f"planning runs need effort high; got {effort}")
+        return
+    if not fleet or not seat:
+        fail(f"{role} runs need --fleet and --seat")
+    try:
+        with open(fleet, encoding="utf-8") as stream:
+            document = json.load(stream)
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise PolicyError("frozen fleet is unreadable") from exc
+    if not isinstance(document, dict) or document.get("schema_version") != 2:
+        return
+    seats = document.get("seats")
+    entry = seats.get(seat) if isinstance(seats, dict) else None
+    frozen = entry.get("effort") if isinstance(entry, dict) else None
+    if frozen != want:
+        fail(f"{role} runs need a seat frozen at effort {want}; {seat} is frozen at {frozen}")
+    if effort != frozen:
+        fail(f"launch effort {effort} differs from the frozen effort {frozen}")
+
+
 def validate_worker(args):
     root = git_root(args.root)
     workspace = git_root(args.workspace)
@@ -258,15 +294,17 @@ def validate_brain(args):
     if args.action in {"mission-init", "gate0"}:
         if status != "draft":
             fail(f"brain/{args.action} requires a draft mission")
-    elif args.action == "review":
+    elif args.action in {"review", "plan"}:
         if status not in {"in-progress", "awaiting-gate"}:
-            fail("brain/review requires an in-progress or awaiting-gate mission")
+            fail(f"brain/{args.action} requires an in-progress or awaiting-gate mission")
         approved_fleet(mission, mission_relative, args.fleet)
     else:
         fail("unknown brain dispatch action")
     clean_workspace(root)
     if args.action == "review":
         return [f"{mission_relative}/PROGRESS.md"]
+    if args.action == "plan":
+        return [f"{mission_relative}/tasks/*"]
     return [f"{mission_relative}/**"]
 
 
@@ -342,6 +380,7 @@ def main():
     worker = commands.add_parser("validate-worker")
     brain = commands.add_parser("validate-brain")
     capability = commands.add_parser("validate-capability")
+    role_effort = commands.add_parser("validate-role-effort")
     acquire = commands.add_parser("acquire-lock")
     release = commands.add_parser("release-lock")
     for command in (worker, brain, acquire, release):
@@ -359,6 +398,10 @@ def main():
     capability.add_argument("--provider", required=True)
     capability.add_argument("--effort", required=True)
     capability.add_argument("--speed", required=True)
+    role_effort.add_argument("--role", choices=ROLE_EFFORTS, required=True)
+    role_effort.add_argument("--effort", required=True)
+    role_effort.add_argument("--fleet")
+    role_effort.add_argument("--seat")
     release.add_argument("--lock", required=True)
     release.add_argument("--token", required=True)
     args = parser.parse_args()
@@ -371,6 +414,8 @@ def main():
             print(json.dumps({"write_scope": write_scope}, sort_keys=True, separators=(",", ":")))
         elif args.command == "validate-capability":
             validate_capability(args.provider, args.effort, args.speed)
+        elif args.command == "validate-role-effort":
+            validate_role_effort(args.role, args.effort, args.fleet, args.seat)
         elif args.command == "acquire-lock":
             acquire_lock(args)
         else:

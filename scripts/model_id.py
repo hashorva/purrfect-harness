@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Dependency-free model-id syntax and privacy validator shared by observation and ledger."""
 import re
+from run_id import UUID_SHAPE as MODEL_UUID_SHAPE
 
 MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}\Z")
 MODEL_SECRET_PATTERNS = tuple(re.compile(pattern) for pattern in (
@@ -10,7 +11,6 @@ MODEL_SECRET_PATTERNS = tuple(re.compile(pattern) for pattern in (
 ))
 MODEL_ABSOLUTE_PATH = re.compile(r"/Users/|/private/|/var/folders/|/home/|[A-Za-z]:\\", re.I)
 MODEL_SENSITIVE_PATH = re.compile(r"/tmp/|/etc/|(?<![\w.-])/(?:tmp|etc)\b|~[\w.-]*/|\$\{?HOME", re.I)
-MODEL_UUID_SHAPE = re.compile(r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
 
 
 def valid_model_id(value):

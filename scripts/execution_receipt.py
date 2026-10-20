@@ -21,7 +21,8 @@ from execution_spec import artifact_directory, SpecError, load_persisted, receip
 from observe_output import all_unknown
 
 
-OUTCOMES = {"completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed"}
+OUTCOMES = {"completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed", "budget_exceeded"}
+RECEIPT_OPTIONAL_FIELDS = frozenset({"token_budget", "role_tag"})
 CLAUDE_PROTECTED_FILES = ("settings.json", "settings.local.json", "CLAUDE.md", ".mcp.json")
 CLAUDE_PROTECTED_DIRS = ("commands", "agents", "hooks", "skills")
 HOME_PROTECTED_FILES = (
@@ -46,7 +47,7 @@ RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$")
 SOURCES = {"observed", "estimated", "unknown"}
 USAGE_FIELDS = ("input", "output", "cache", "reasoning")
 OBSERVATION_FIELDS = ("observed_model", "usage", "fast_state")
-OBSERVATION_OPTIONAL_FIELDS = ("subagents",)
+OBSERVATION_OPTIONAL_FIELDS = ("subagents", "tokens")
 SUBAGENT_FIELDS = ("calls", "tokens")
 FIELDS_V1 = {
     "schema_version", "run_id", "mission", "feature", "work_unit", "attempt", "role",
@@ -71,12 +72,31 @@ def now():
     return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
+def role_tag(role, work_unit):
+    if role == "worker":
+        return "worker"
+    if role == "brain":
+        return {"plan": "plan", "planning": "plan", "mission-init": "plan",
+                "review": "review", "gate": "gate", "gate0": "gate"}.get(work_unit, "brain")
+    fail("role is invalid")
+
+
 def canonical_bytes(value):
     return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode("utf-8")
 
 
+def git_argv(*args):
+    """Same prefix as git_safe.argv. Fixtures copy this file without git_safe.py."""
+    try:
+        import git_safe
+    except ImportError:
+        binary = "git"
+        return [binary, "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-c", "core.hooksPath=/dev/null", *args]
+    return git_safe.argv(*args)
+
+
 def git_bytes(repo, *args, check=True):
-    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, check=False)
+    result = subprocess.run(git_argv("-C", str(repo), *args), capture_output=True, check=False)
     if check and result.returncode != 0:
         fail(f"Git evidence command failed: {' '.join(args)}")
     return result
@@ -286,7 +306,7 @@ def protected_snapshot(repo):
                 path = Path(current) / name
                 _protected_file(snap, path, path.relative_to(repo).as_posix())
     config = subprocess.run(
-        ["git", "-C", str(repo), "config", "--includes", "--get-all", "core.excludesFile"],
+        git_argv("-C", str(repo), "config", "--includes", "--get-all", "core.excludesFile"),
         env={**os.environ, "HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config")},
         capture_output=True, check=False,
     )
@@ -547,6 +567,13 @@ def validate_observation(observation):
             fail("observation.subagents has invalid fields")
         for name in SUBAGENT_FIELDS:
             _validate_sourced_scalar(f"observation.subagents.{name}", subagents[name], "count")
+    if "tokens" in observation:
+        tokens = observation["tokens"]
+        from observe_output import TOKEN_FIGURE_FIELDS
+        if not isinstance(tokens, dict) or set(tokens) != set(TOKEN_FIGURE_FIELDS):
+            fail("observation.tokens has invalid fields")
+        for name in TOKEN_FIGURE_FIELDS:
+            _validate_sourced_scalar(f"observation.tokens.{name}", tokens[name], "count")
 
 
 def _validate_sourced_scalar(label, item, kind):
@@ -569,8 +596,23 @@ def _validate_sourced_scalar(label, item, kind):
         fail(f"{label} must be a non-negative integer")
 
 
+def validate_token_budget(block, outcome):
+    if not isinstance(block, dict) or set(block) != {"limit", "used", "overrun"}:
+        fail("token_budget is invalid")
+    limit, used, overrun = block["limit"], block["used"], block["overrun"]
+    for name, value in (("limit", limit), ("used", used), ("overrun", overrun)):
+        if isinstance(value, bool) or not isinstance(value, int):
+            fail("token_budget is invalid")
+    if limit < 1 or used < 0 or overrun < 0 or overrun != max(0, used - limit):
+        fail("token_budget is invalid")
+    if outcome == "budget_exceeded" and used <= 2 * limit:
+        fail("budget_exceeded outcome requires usage over twice the token budget")
+
+
 def build_receipt(*, spec_path, digest, before, started_at, finished_at, outcome,
                   exit_code, log_path, task=None, tier=None, observation=None, protected_before=None):
+    if outcome == "budget_exceeded":
+        fail("budget_exceeded is no longer written; it stays valid only in receipts written before 2026-10-19")
     spec, raw = load_persisted(spec_path)
     if spec_sha256(raw) != digest:
         fail("execution spec SHA-256 does not match exact persisted bytes")
@@ -610,6 +652,7 @@ def build_receipt(*, spec_path, digest, before, started_at, finished_at, outcome
         "work_unit": spec["work_unit"],
         "attempt": spec["attempt"],
         "role": spec["role"],
+        "role_tag": role_tag(spec["role"], spec["work_unit"]),
         "provider": spec["provider"],
         "model": spec["model"],
         "repo": spec["repo"],
@@ -655,8 +698,13 @@ def validate_receipt(receipt, receipt_path):
         if set(receipt) != FIELDS_V1:
             fail("receipt fields must exactly match ExecutionReceipt v1")
     elif version == 2:
-        if set(receipt) != FIELDS:
+        allowed = FIELDS | RECEIPT_OPTIONAL_FIELDS
+        if set(receipt) - allowed or FIELDS - set(receipt):
             fail("receipt fields must exactly match ExecutionReceipt v2")
+        if "token_budget" in receipt:
+            validate_token_budget(receipt["token_budget"], receipt["outcome"])
+        if "role_tag" in receipt and receipt["role_tag"] != role_tag(receipt["role"], receipt["work_unit"]):
+            fail("receipt role_tag does not match role and work_unit")
         validate_observation(receipt["observation"])
     else:
         fail("receipt schema_version must be 1 or 2")

@@ -1,0 +1,130 @@
+{
+  "harvest_head": "904dcda2ee9727aa1efa179dcaa48b9cc5ff3c5a",
+  "mission": "docs/missions/20261014-2a-foundation",
+  "placeholder": "@PURRFECT_ROOT@",
+  "runs": [
+    {
+      "accepted": true,
+      "accepted_record": "35ecb39a-5c22-4108-acef-41f7fc694ad6.json",
+      "argv_form": "current",
+      "contract": 6,
+      "feature": "F004",
+      "ledger_row": true,
+      "provider": "claude",
+      "role": "worker",
+      "run_id": "35ecb39a-5c22-4108-acef-41f7fc694ad6",
+      "spec_schema": 3,
+      "work_unit": "T-046"
+    },
+    {
+      "accepted": true,
+      "accepted_record": "fdf5dd38-1433-45eb-972b-823493f9e671.json",
+      "argv_form": "current",
+      "contract": 6,
+      "feature": "F005",
+      "ledger_row": true,
+      "provider": "codex",
+      "role": "worker",
+      "run_id": "fdf5dd38-1433-45eb-972b-823493f9e671",
+      "spec_schema": 3,
+      "work_unit": "T-042"
+    },
+    {
+      "accepted": true,
+      "accepted_record": "02e9c769-5c85-4204-9d8e-9933f8c3f819.json",
+      "argv_form": "current",
+      "contract": 9,
+      "feature": "F017",
+      "ledger_row": false,
+      "provider": "codex",
+      "role": "worker",
+      "run_id": "02e9c769-5c85-4204-9d8e-9933f8c3f819",
+      "spec_schema": 3,
+      "work_unit": "T-129"
+    },
+    {
+      "accepted": false,
+      "accepted_record": null,
+      "argv_form": "current",
+      "contract": 6,
+      "feature": "F005",
+      "ledger_row": true,
+      "provider": "agent",
+      "role": "worker",
+      "run_id": "f87755da-6925-41a0-80e8-bf7ee4d78002",
+      "spec_schema": 3,
+      "work_unit": "T-042"
+    },
+    {
+      "accepted": false,
+      "accepted_record": null,
+      "argv_form": "current",
+      "contract": 6,
+      "feature": null,
+      "ledger_row": true,
+      "provider": "claude",
+      "role": "brain",
+      "run_id": "5f1c114d-66d5-410e-b383-06108375ed7e",
+      "spec_schema": 3,
+      "work_unit": "review"
+    },
+    {
+      "accepted": false,
+      "accepted_record": null,
+      "argv_form": "historical-pre-T-071",
+      "contract": 9,
+      "feature": "F010",
+      "ledger_row": false,
+      "provider": "codex",
+      "role": "worker",
+      "run_id": "096620b5-a8b2-47b7-b719-620ae418be9c",
+      "spec_schema": 3,
+      "work_unit": "T-070-R2"
+    },
+    {
+      "accepted": false,
+      "accepted_record": null,
+      "argv_form": "current",
+      "contract": 8,
+      "feature": "F008",
+      "ledger_row": false,
+      "provider": "agy",
+      "role": "worker",
+      "run_id": "1607a786-94a9-4522-8a48-b91a1302c69b",
+      "spec_schema": 3,
+      "work_unit": "T-057"
+    },
+    {
+      "accepted": false,
+      "accepted_record": null,
+      "argv_form": "current",
+      "contract": 1,
+      "feature": "F007",
+      "ledger_row": false,
+      "provider": "codex",
+      "role": "worker",
+      "run_id": "74294c79-7522-4b76-8cce-9a19c2cd740c",
+      "spec_schema": 2,
+      "work_unit": "T-017"
+    }
+  ],
+  "scrub_rule": "Replace the live repo root with the placeholder in spec, receipt, argv, and verification bytes; home-path deny patterns are tested in tests/test-evidence-2a.py.",
+  "uncovered": [
+    {
+      "reason": "no completed 2A worker run in harvest set",
+      "what": "claude historical contracts 8–9"
+    },
+    {
+      "reason": "no ledger.jsonl row for accepted_run_id 02e9c769",
+      "what": "F017 ledger row"
+    },
+    {
+      "reason": "no ledger.jsonl row for 1607a786",
+      "what": "agy ledger row"
+    },
+    {
+      "reason": "execution-truth run 74294c79 not in mission ledger",
+      "what": "schema-v2 ledger row"
+    }
+  ]
+}

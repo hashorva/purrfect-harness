@@ -16,6 +16,7 @@ from model_id import valid_model_id
 PROVIDERS = ("claude", "codex", "cursor", "agy")
 ALIASES = {"agent": "cursor"}
 USAGE_FIELDS = ("input", "output", "cache", "reasoning")
+TOKEN_FIGURE_FIELDS = ("input", "output", "reasoning", "cache_read", "cache_write", "total", "without_cache")
 REGISTRY_PATH = Path(__file__).resolve().parent.parent / "harness-registry.json"
 CODEX_THREAD_ID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -39,13 +40,12 @@ def self_reported(value):
     return {"value": value, "source": "self_reported"}
 
 
-def observe_self_reported(provider, raw):
-    """Read only a well-formed self_reported_model from the final CLI answer."""
+def final_answer(provider, raw):
+    """Return the final answer text from one CLI run, or None."""
     name = ALIASES.get(provider, provider) if isinstance(provider, str) else None
     if name not in PARSERS or not isinstance(raw, bytes):
-        return unknown()
+        return None
     stream = events(raw)
-    final_text = None
     if name in ("claude", "cursor"):
         matches = [e for e in stream if e.get("type") == "result"]
         final_text = matches[-1].get("result") if matches else None
@@ -56,6 +56,12 @@ def observe_self_reported(provider, raw):
         matches = [e for e in stream if e.get("type") == "item.completed"
                    and dig(e, "item", "type") == "agent_message"]
         final_text = dig(matches[-1], "item", "text") if matches else None
+    return final_text if isinstance(final_text, str) else None
+
+
+def observe_self_reported(provider, raw):
+    """Read only a well-formed self_reported_model from the final CLI answer."""
+    final_text = final_answer(provider, raw)
     if not isinstance(final_text, str):
         return unknown()
     body = final_text.strip()
@@ -166,6 +172,82 @@ def field(value, check):
     return observed(checked) if checked is not None else unknown()
 
 
+def token_figures(provider, raw):
+    """Return provider-proven token parts and totals without estimating missing data."""
+    name = ALIASES.get(provider, provider) if isinstance(provider, str) else None
+    if name not in PARSERS:
+        raise ValueError("unknown provider")
+    stream = events(raw)
+    usage = []
+    if name == "codex":
+        usage = [e.get("usage") for e in stream if e.get("type") == "turn.completed"]
+    elif name in ("claude", "cursor"):
+        matches = [e for e in stream if e.get("type") == "result"]
+        usage = [matches[-1].get("usage")] if matches else []
+    else:
+        matches = [e for e in stream if e.get("event") == "result"]
+        usage = [dig(matches[-1], "result", "usage")] if matches else []
+
+    def part(key, source_key, nested=False):
+        values = []
+        for item in usage:
+            value = dig(item, *source_key) if nested else dig(item, source_key)
+            checked = count(value)
+            if checked is None:
+                return unknown()
+            values.append(checked)
+        return observed(sum(values)) if values else unknown()
+
+    if name == "claude":
+        usage = [usage[0] if usage else None]
+        parts = {"input": part("input", "input_tokens"), "output": part("output", "output_tokens"),
+                 "reasoning": part("reasoning", ("output_tokens_details", "thinking_tokens"), True),
+                 "cache_read": part("cache_read", "cache_read_input_tokens"),
+                 "cache_write": part("cache_write", "cache_creation_input_tokens")}
+        return _token_totals(parts, ("input", "cache_read", "cache_write", "output"),
+                             ("input", "cache_write", "output"))
+    if name == "codex":
+        parts = {"input": part("input", "input_tokens"), "output": part("output", "output_tokens"),
+                 "reasoning": part("reasoning", "reasoning_output_tokens"),
+                 "cache_read": part("cache_read", "cached_input_tokens"),
+                 "cache_write": part("cache_write", "cache_write_input_tokens")}
+        if parts["cache_write"]["value"] != 0 or parts["cache_read"]["value"] is None or parts["input"]["value"] is None or parts["cache_read"]["value"] > parts["input"]["value"]:
+            return _token_totals(parts, (), ())
+        return _token_totals(parts, ("input", "output"), ("input", "output"), subtract_cache=True)
+    if name == "cursor":
+        parts = {"input": part("input", "inputTokens"), "output": part("output", "outputTokens"),
+                 "reasoning": unknown(), "cache_read": part("cache_read", "cacheReadTokens"),
+                 "cache_write": part("cache_write", "cacheWriteTokens")}
+        if parts["cache_write"]["value"] != 0:
+            return _token_totals(parts, (), ())
+        return _token_totals(parts, ("input", "cache_read", "output"), ("input", "output"))
+    parts = {"input": part("input", "input_tokens"), "output": part("output", "output_tokens"),
+             "reasoning": part("reasoning", "thinking_tokens"), "cache_read": part("cache_read", "cache_read_tokens"),
+             "cache_write": unknown()}
+    if usage and isinstance(usage[0], dict):
+        reported_total = count(usage[0].get("total_tokens"))
+        input_value, output_value = parts["input"]["value"], parts["output"]["value"]
+        if reported_total is not None and (input_value is None or output_value is None or reported_total != input_value + output_value):
+            return _token_totals(parts, (), ())
+    return _token_totals(parts, ("input", "cache_read", "output"), ("input", "output"))
+
+
+def _token_totals(parts, total_terms, uncached_terms, subtract_cache=False):
+    def total(terms, subtract=False):
+        if not terms:
+            return unknown()
+        values = [parts[key]["value"] for key in terms]
+        if any(value is None for value in values):
+            return unknown()
+        value = sum(values)
+        if subtract:
+            value -= parts["cache_read"]["value"]
+        return observed(value)
+    return {"input": parts["input"], "output": parts["output"], "reasoning": parts["reasoning"],
+            "cache_read": parts["cache_read"], "cache_write": parts["cache_write"],
+            "total": total(total_terms), "without_cache": total(uncached_terms, subtract_cache)}
+
+
 def events(raw):
     parsed = []
     if not isinstance(raw, bytes):
@@ -191,6 +273,7 @@ def result(model, usage, fast_state):
         "observed_model": model,
         "usage": usage,
         "fast_state": fast_state,
+        "subagents": {"calls": unknown(), "tokens": unknown()},
     }
 
 
@@ -316,6 +399,8 @@ def claude(stream):
     subagents = _claude_subagents(stream)
     if subagents is not None:
         observation["subagents"] = subagents
+    elif usage["input"]["source"] == "observed" and usage["output"]["source"] == "observed":
+        observation["subagents"] = {"calls": observed(0), "tokens": observed(0)}
     return observation
 
 
@@ -413,6 +498,45 @@ def agy(stream):
 
 
 PARSERS = {"claude": claude, "codex": codex, "cursor": cursor, "agy": agy}
+
+
+def _stream_usage_total(usage, *keys):
+    if not isinstance(usage, dict):
+        return 0
+    parts = [count(usage.get(key)) for key in keys]
+    if any(part is None for part in parts):
+        return 0
+    return sum(parts)
+
+
+def stream_tokens(provider, event, seen):
+    """Tokens one parsed stream event adds (subagent messages and duplicate ids excluded)."""
+    if not isinstance(event, dict):
+        return 0
+    name = ALIASES.get(provider, provider) if isinstance(provider, str) else None
+    if name == "claude":
+        if event.get("type") == "assistant" and event.get("parent_tool_use_id") is None:
+            message_id = dig(event, "message", "id")
+            if isinstance(message_id, str) and message_id not in seen:
+                seen.add(message_id)
+                return _stream_usage_total(
+                    dig(event, "message", "usage"),
+                    "input_tokens", "output_tokens", "cache_read_input_tokens",
+                )
+        return 0
+    if name == "codex" and event.get("type") == "turn.completed":
+        return _stream_usage_total(
+            event.get("usage"), "input_tokens", "output_tokens", "cached_input_tokens",
+        )
+    if name == "cursor" and event.get("type") == "result":
+        return _stream_usage_total(
+            event.get("usage"), "inputTokens", "outputTokens", "cacheReadTokens",
+        )
+    if name == "agy" and event.get("event") == "result":
+        return _stream_usage_total(
+            dig(event, "result", "usage"), "input_tokens", "output_tokens", "cache_read_tokens",
+        )
+    return 0
 
 
 def observe(provider, raw):

@@ -1,0 +1,6 @@
+{"type":"seeded-calibration","reviewer":"grok-4.7-high","case":"A","task":"T-043","commit":"53fb0f5","planted":"marker pattern without re.M","caught":true,"evidence":".tasks/seeded/grok-A.out (local)"}
+{"type":"seeded-calibration","reviewer":"grok-4.7-high","case":"B","task":"T-042","commit":"0e3ceba","planted":"git read without --no-replace-objects","caught":true,"evidence":".tasks/seeded/grok-B.out (local)"}
+{"type":"seeded-calibration","reviewer":"grok-4.7-high","case":"C","task":"T-044","commit":"eb7e8c7","planted":"~name/ alternative removed from the sensitive-path rule","caught":true,"evidence":".tasks/seeded/grok-C.out (local)"}
+{"type":"seeded-calibration","reviewer":"gemini-4-argon-high (agy)","case":"A","task":"T-043","commit":"53fb0f5","planted":"marker pattern without re.M","caught":true,"evidence":".tasks/seeded/argon-A.out (local)"}
+{"type":"seeded-calibration","reviewer":"gemini-4-argon-high (agy)","case":"B","task":"T-042","commit":"0e3ceba","planted":"git read without --no-replace-objects","caught":true,"evidence":".tasks/seeded/argon-B.out (local)"}
+{"type":"seeded-calibration","reviewer":"gemini-4-argon-high (agy)","case":"C","task":"T-044","commit":"eb7e8c7","planted":"~name/ alternative removed","caught":true,"evidence":".tasks/seeded/argon-C.out (local)"}

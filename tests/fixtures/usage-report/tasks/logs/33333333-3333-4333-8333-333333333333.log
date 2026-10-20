@@ -1,0 +1,2 @@
+spawn-brain: header
+{"type": "system", "subtype": "init", "session_id": "hsess"}

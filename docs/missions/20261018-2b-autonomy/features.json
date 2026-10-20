@@ -1,151 +1,240 @@
 {
-  "mission": "2B Autonomy",
-  "rules": "Workers never edit this file. Only the orchestrator accepts a non-bootstrap feature using accept-feature.sh after a matching passing VerificationRecord exists, recording accepted_run_id, accepted_verification_sha256, accepted_at, and accepted_by with passes:true. Editing or removing approved descriptions/steps is unacceptable. Keep bootstrap on every feature: false (default) requires verified worker execution and separate acceptance; true exempts work no worker will ever run, such as mission scaffolding or orchestrator decisions. Set it when authoring; never add it after GATE 0 to excuse missing evidence.",
+  "mission": "2B The Dark Factory",
+  "rules": "Workers never edit this file. Only the orchestrator accepts a non-bootstrap feature using accept-feature.sh after a matching passing VerificationRecord exists, recording accepted_run_id, accepted_verification_sha256, accepted_at, and accepted_by with passes:true. Editing or removing approved descriptions/steps is unacceptable. Keep bootstrap on every feature: false (default) requires verified worker execution and separate acceptance; true exempts work no worker will ever run, such as mission scaffolding or orchestrator decisions. Set it when authoring; never add it after GATE 0 to excuse missing evidence. Features run in run_order; each feature's priority is its index in run_order.",
+  "run_order": [
+    "F000",
+    "F001",
+    "F002",
+    "F004",
+    "F003",
+    "F005",
+    "F006",
+    "F007",
+    "F008",
+    "F009",
+    "F010",
+    "F011",
+    "F012"
+  ],
   "features": [
     {
+      "id": "F000",
+      "category": "safety-net",
+      "priority": 0,
+      "bootstrap": false,
+      "description": "Safety net (owner change 2026-10-18, runs first). CI catches what 2A caught too late: a changed argv on an existing provider contract (the T-115 incident: T-071 changed codex argv for contracts 2-9 and 76 historic receipts stopped validating), lost 2A evidence, an untested Python version, a test file nobody wired, and run ids parsed five different ways. Promoted 2A lessons land in AGENTS.md and the skills, and the 2A PROGRESS.md is refreshed one last time and frozen.",
+      "steps": [
+        "tests/fixtures/provider-argv/golden.json holds the exact argv and env that provider_contract in scripts/execute_provider.py returns for one fixed spec per provider (codex, claude, agent, agy) at every accepted contract version (contract 1 plus PROVIDER_CONTRACTS_V3, 1 to 9 today); tests/test-provider-argv.py compares each with assertEqual and fails when any accepted contract lacks a golden entry for any provider; a fixture that changes one argv token of an existing contract fails it, and the same change shipped as contract 10 with new golden entries passes",
+        "scripts/check-golden-argv.py --base <git ref> exits non-zero when a golden entry for a contract that exists at <base> differs from <base> or is removed, and exits 0 when entries are only added; .github/workflows/ci.yml runs it against git merge-base HEAD origin/main and fails the build on a non-zero exit",
+        "verify-mission.sh accepts --receipts-dir <dir> (default .tasks/receipts); the 2A brain receipt and the receipt of every accepted 2A feature are committed byte-for-byte under tests/fixtures/mission-2a/receipts/ after the ledger privacy check passes on each file unmodified; CI runs bash scripts/verify-mission.sh --require-workers --receipts-dir tests/fixtures/mission-2a/receipts docs/missions/20261014-2a-foundation and it exits 0; a fixture copy with one receipt removed or one byte changed makes it exit non-zero",
+        "ci.yml runs lint-and-test on ubuntu-latest and macos-latest, each with actions/setup-python at Python 3.12 and 3.14 (four jobs), on push to main and mission/** and on pull requests; tests/run-tests.sh prints python3 --version first; gh run view for the gate commit shows four successful lint-and-test jobs whose logs show 3.12 and 3.14 on each OS",
+        "tests/run-tests.sh runs every tests/test-*.py and tests/test-*.sh found by glob in sorted order, with no manual file list; bash tests/run-tests.sh --list prints exactly that sorted list; a test copies the runner into a temporary tree with one extra passing and one extra failing test-*.py and shows the runner runs both and exits non-zero",
+        "scripts/run_id.py validate_run_id is the only run-id check: it accepts only a canonical lowercase 36-character UUID with the RFC 4122 variant, version 1 to 8, not nil, with no surrounding whitespace or trailing newline; execution_spec.py, verification_record.py, ledger.py, reconstruct_run.py, seat_smoke.py, accept-feature.sh and verify-mission.sh (through python3 scripts/run_id.py check) all call it; a table test feeds uppercase, braced, urn-prefixed, trailing-newline, nil, version-0 and wrong-variant ids to every one of these CLIs and each exits non-zero naming run_id; tests/test-run-id.py fails when any file under scripts/ other than run_id.py contains a UUID regex or calls uuid.UUID( (uuid.uuid4 generation stays allowed); every committed 2A VerificationRecord and ledger row still validates",
+        "docs/missions/20261018-2b-autonomy/lessons-promoted.json lists each lesson the owner confirmed at Gate 0 (the PROMOTE items of the 2A lesson proposal, plus: a changed adapter argv ships as a new provider contract number; tests synchronise on files, events or fake clocks, never on sleeps) with its target file (AGENTS.md or .agents/skills/<skill>/SKILL.md) and its rule line; a test checks each rule line appears verbatim in its target, that no DROP lesson's rule line appears in AGENTS.md or any skill, and that AGENTS.md has no consumer placeholder",
+        "The orchestrator (not a worker) refreshes docs/missions/20261014-2a-foundation/PROGRESS.md one last time: its Current status block lists F001 to F017 as accepted with each accepted_run_id from the 2A features.json and names the Day 6 report as final; docs/missions/20261014-2a-foundation/PROGRESS.md.sha256 records its hash; a test fails when the file's sha256 differs from that record or when a 2A feature with passes true is missing from the status block",
+        "shellcheck scripts/*.sh tests/*.sh and bash tests/run-tests.sh exit 0; the CI run for the F000 gate commit is green on all four jobs, including the golden-argv check and the 2A evidence audit"
+      ],
+      "passes": true,
+      "accepted_run_id": "eae40004-3719-47ed-bb33-ac99922ec562",
+      "accepted_verification_sha256": "0ca4dbb0fcbc66c95e0438dc3fc08dc61b3ecdbc481f4472373a8e9fd7bf0cbb",
+      "accepted_at": "2026-10-18T19:27:07.541360Z",
+      "accepted_by": "Zamir (owner approval 2026-10-18; front desk executed)"
+    },
+    {
       "id": "F001",
-      "category": "functional",
+      "category": "delegation",
       "priority": 1,
       "bootstrap": false,
-      "description": "Quota meter. drive-cli captures percent left and reset time per pool from claude /usage, codex /status, cursor-agent /usage, and the agy quota panel. Snapshots before and after each batch, a forecast logged before the batch, ledger quota_share from that forecast, the 98% rule on both windows, soonest-expiry choice, vendor ladder kept inside the vendor, pauses that end at the vendor-shown reset, and every parse kept as the training set. Unparsable text is unknown. Tests use fixtures, never live CLIs.",
+      "description": "Delegation and full ability (owner item a), measured. Planning and review runs delegate reading and searching to the explorer subagent, visible in receipts and ledger rows (subagent calls and tokens). The brain prompt states a token budget per run and tells the model to stay within it by delegating. A clean batch of 10 planning runs before the prompt change and 10 after compares tokens per run and done rate. Target: median planning-run total (input + output + cache read, the T-001 definition) under 1,000,000 tokens against the 2A baseline of 1,233,224 overall and 1,816,741 for Claude Opus planners, with no drop in review verdict quality.",
       "steps": [
-        "scripts/quota_meter.py parse_screen(cli, text) returns percent left and reset time per pool for tests/fixtures/quota/claude-usage.txt, codex-status.txt, cursor-usage.txt, and agy-panel.txt; python3 tests/test-quota-meter.py QuotaParserTests.test_claude_usage_percent_left_and_reset and the three sibling fixture methods exit 0",
-        "A 429 line containing resets in 4h53m, a block-character bar, an empty screen, a non-exact percent line, and a block whose reset line is not Resets plus an RFC3339 Z timestamp each return percent_left and reset_at with value null and source unknown, and the values do not contain a computed time; QuotaParserTests.test_unparsable_is_unknown exits 0 and the module does not import subprocess",
-        "A snapshot command stores percent left and reset time per pool before a batch and after it, using drive-cli only against a fake pane; a missing after-snapshot exits non-zero, and the suite does not start claude, codex, cursor-agent, or agy",
-        "A forecast is written before the batch; the run's ledger quota_share equals that forecast with source estimated, or value null and source unknown when the parse was unknown; no path writes a guessed number as observed",
-        "Dispatch exits non-zero unless percent left minus the forecast is greater than 2 on the 5-hour window and, by the same comparison, on the weekly window; 10 left and forecast 8 is refused, 10 left and forecast 7 is allowed; an unknown percent, window, or reset is refused; among allowed pools the soonest reset wins, and the seat's provider is that pool's provider (an agy pause does not select a claude seat)",
-        "pause_until is the reset time on the last observed usage screen, never a time from error text; after that time the next decision re-reads the screen; a read that is unknown or still over the rule sets the next probe 30 minutes later; every parse, including unknown, is appended to the training-set file and a second parse does not delete the first row"
+        "`python3 scripts/planning_stats.py docs/missions/20261014-2a-foundation/routing-data.jsonl` prints the 2A baseline: all 35 measured runs, median 1233224; claude.brain-planning / claude opus (high) 10 runs, median 1816741; 3 duplicates and 2 unmeasured rows left out; `python3 tests/test-planning-stats.py` exits 0 and is discovered by tests/run-tests.sh (F000 step 5)",
+        "Every brain and review receipt, and its ledger row, carries a subagent field (calls, tokens, source) taken from the receipt observation: a fixture claude stream with 2 Agent calls gives calls 2 and their summed tokens (observed), a stream with none gives calls 0 (observed), a CLI that reports nothing gives unknown; old receipts and ledger rows still validate; if recording it needs an argv change, the change ships as a new provider contract with new golden entries (F000 step 1); planning_stats.py reads planning rows from the ledger as well as from routing-data and reports subagent tokens separately from the parent total",
+        "Effort by role is enforced at launch: spawn-brain.sh refuses a planning run on a seat whose frozen effort is not high and a review run on a seat whose frozen effort is not medium; spawn-worker.sh refuses a worker whose frozen effort is not medium; each refusal is a fixture that exits non-zero before any provider starts",
+        "`python3 scripts/planning_stats.py batch <batch.json> <ledger or routing-data>` prints for a named batch of run ids: runs, median parent total, median parent-plus-subagent total, median subagent calls, and done rate (runs whose receipt outcome is done, over runs); it exits non-zero for a batch of 9 runs, a duplicate run id, or an unclean run (no completed receipt, unmeasured tokens, or failure class environment); docs/missions/20261018-2b-autonomy/batches/f001-before.json names 10 clean claude.brain-planning runs made with the pre-step-5 prompts (2B runs first, topped up with the latest clean 2A claude opus planning rows in routing-data.jsonl) and the command exits 0 on it",
+        "Brain and reviewer prompts are goal-style: a test renders the planning, review and gate prompts and finds the headings Goal, Resources, Budget and Acceptance checks; the Budget section states the role's token budget per run as a number (planning 1000000, review 400000) and tells the model to stay within it by delegating reading and searching; the claude prompts name the explorer subagent (.claude/agents/explorer.md, model haiku); a codex, cursor-agent or agy prompt names a delegation feature only when a committed real --help capture under evidence/ shows that feature",
+        "docs/missions/20261018-2b-autonomy/batches/f001-after.json names the first 10 clean claude.brain-planning runs made after step 5 was accepted, plus every claude review run in the same window; `python3 scripts/planning_stats.py compare <before.json> <after.json> <ledger>` exits 0 on them only when the after median parent total is under 1000000, the after median parent-plus-subagent total is below the before median of the same measure, every after planning and review run has subagent calls of at least 1 with source observed, and the after done rate is not below the before done rate (local-only check, like 2A F001 step 5); a fixture for each of the four failing conditions exits non-zero",
+        "Review verdict quality: a script replays the 2A seeded-defect set on every reviewer seat with the new prompts and exits 0 only when each seat catches every planted defect it caught in 2A (seeded-calibration rows); shellcheck scripts/*.sh tests/*.sh and bash tests/run-tests.sh exit 0"
       ],
       "passes": false
     },
     {
       "id": "F002",
-      "category": "functional",
+      "category": "quota",
       "priority": 2,
       "bootstrap": false,
-      "description": "Loop driver. scripts/mission-run.sh runs dispatch, then checks, then review, then fix, then re-review. The Front Desk starts it, watches it, and reports. State lives in files. The script stops at a human gate and resumes after a restart without a second receipt.",
+      "description": "Quota meter (owner item b). drive-cli reads the real usage screens (claude /usage, codex /status, cursor-agent /usage, the agy quota panel). Snapshots before and after each batch, a forecast logged before each batch, dispatch only if percent left minus the forecast stays above 2 on every window, expiring quota first, native-only pools, pauses that end at the vendor-shown reset, the ledger quota_share column filled, and every reading kept as the training set. Unparsable is unknown, with a probe after 30 minutes. Tests use committed captures, never live CLIs.",
       "steps": [
-        "On a fixture mission, scripts/mission-run.sh records the stages dispatch, checks, review, fix, re-review in that order in loop-state.json and exits 0 only when the order matches",
-        "The Front Desk skill names this script as what it starts, watches, and reports; a test shows the script does not write GOAL.md, features.json, or PROGRESS.md",
-        "A fixture mission sitting at a human gate makes the script exit 0 with state gate-wait and no further dispatch",
-        "Starting the script again after it stops between dispatch and checks does not write a second receipt for the same run id",
-        "The script asks the quota meter before dispatch and does not launch when the 98% rule fails; shellcheck and bash tests/run-tests.sh exit 0"
+        "One real screen per CLI, captured by drive-cli on the owner's Mac and scrubbed by the ledger privacy rules, is committed under tests/fixtures/quota/real/; scripts/quota_meter.py parse_screen returns percent left, window and reset time per pool for each capture with source observed; the module does not import subprocess; each QuotaParserTests method for the four captures exits 0",
+        "A 429 line with resets in 4h53m, a block-character bar, an empty screen, a near-miss percent line and a non-timestamp reset line each give percent_left and reset_at with value null and source unknown, and no unknown value contains a computed time; QuotaParserTests.test_unparsable_is_unknown exits 0",
+        "quota_meter.py snapshot captures every pool through drive-cli (a fake CLI in tests) before and after a batch; a missing after-snapshot exits non-zero; every parse, including unknown, is appended to the training-set file, and a second parse keeps the first row byte-identical",
+        "A forecast row is written before each batch; the batch's ledger rows carry quota_share equal to that forecast with source estimated, or value null and source unknown when the reading was unknown; no code path writes a forecast or guess as observed",
+        "The dispatch gate allows a seat only if percent left minus the forecast is greater than 2 on every window of that seat's own pool: 10 left with forecast 8 is refused, 10 left with forecast 7 is allowed, an unknown percent or reset is refused; among allowed pools the soonest reset wins; a seat maps only to its own vendor's pool (claude to anthropic, codex to openai, cursor-composer and cursor-grok to cursor, agy flash to google, agy argon to agy-argon), and an agy pause never selects a claude seat",
+        "pause_until is the reset time on the last observed usage screen, never a time from error text; after that time the next decision re-reads the screen; an unknown read or one still under the floor sets the next probe 30 minutes later; shellcheck and bash tests/run-tests.sh exit 0"
       ],
       "passes": false
     },
     {
       "id": "F003",
-      "category": "functional",
-      "priority": 3,
+      "category": "loop",
+      "priority": 4,
       "bootstrap": false,
-      "description": "Structured progress. progress.jsonl is append-only. scripts/progress.py add is the only writer and also writes the per-task brief. PROGRESS.md is generated and is not edited by hand.",
+      "description": "Loop driver (owner item c; runs after F004 so it records progress events from its first run). scripts/mission-run.sh runs dispatch, checks, review, fix, re-review until the goal or a real blocker, with no human input between gates. When a seat or a harness tool breaks, it repairs first: probe, then route around inside the vendor ladder or queue a fix task for the tool ahead of feature work. Resume state lives in loop-state.json; status lives only in progress.jsonl; restart resumes without a second receipt.",
       "steps": [
-        "schemas/progress-event.schema.json and scripts/progress.py reject a hostile row and name the field, one row each for an absolute path, a secret, a bad UUID, an unknown type, a status illegal for the type, a multi-line summary, a missing link, and a run id with no receipt",
-        "progress.py add sets seq and at, takes the workspace lock, appends one line, and renders PROGRESS.md; one hand edit makes progress.py render --check exit 1",
-        "progress.py brief --task on a fixture task prints at most 8 KB, includes that task, events of its feature and of features named on its Depends on line, the last 5 events, and active lessons whose category matches the feature",
-        "verify-mission.sh runs render --check; spawn-brain records with progress.py add and does not append PROGRESS.md by hand",
-        "Existing PROGRESS.md stays unread under progress-archive and is linked by one note event; shellcheck and bash tests/run-tests.sh exit 0"
+        "On a fixture mission with fake providers, mission-run.sh records the stages dispatch, checks, review, fix, re-review in that order in loop-state.json and as progress.jsonl events written through progress.py add, and exits 0 only when the order matches; a failing check produces a fix dispatch followed by a re-review of the fix; progress.py render --check exits 0 after the run",
+        "The loop ends only in a named terminal state: done (every feature passes true), gate-wait (a human gate), or blocked (ladder exhausted, every pool refused by the quota gate, or a 24-hour cap hit); a fixture for each ends with that state, one matching progress event and no further dispatch",
+        "A fixture seat whose launch fails with failure class environment makes the loop run probe-seat.sh for that seat before any other dispatch; a failed probe routes the task to the next healthy seat of the same vendor ladder, never to another vendor; a fixture harness tool that exits with a crash queues one tool-fix task ahead of every feature task",
+        "Restarting the script after it stops between dispatch and checks writes no second receipt and no second dispatch event for that run id and continues at checks",
+        "The loop asks the quota meter before every dispatch and launches nothing when the gate refuses; while F012 is not accepted in features.json the loop dispatches no claude worker seat (a fixture shows the task goes to the next eligible worker seat of another vendor, before any claude provider starts); a test shows the script never writes GOAL.md, features.json, fleet.json or PROGRESS.md directly",
+        "The loop never accepts a feature: acceptance stays the orchestrator's accept-feature.sh after verify-mission.sh; shellcheck and bash tests/run-tests.sh exit 0"
       ],
       "passes": false
     },
     {
       "id": "F004",
-      "category": "functional",
-      "priority": 4,
+      "category": "progress",
+      "priority": 3,
       "bootstrap": false,
-      "description": "Worker inner loop. ruff and the Python type checker ty are dev tools installed with uv tool install. The runtime stays the standard library. The worker's own attempt runs ruff, ty, and shellcheck. Lint or type failures get a resumed repair round. Logic failures get a fresh run one rung up inside the same vendor.",
+      "description": "Structured progress (owner item d; runs before F003). progress.jsonl is append-only; scripts/progress.py add is the only writer and also writes the per-task brief; PROGRESS.md is generated and never edited by hand. From F004 acceptance on, 2B status is generated from progress.jsonl, never hand-written.",
       "steps": [
-        "uv tool install ruff and uv tool install ty are the documented install paths; a test shows no file under scripts/ imports ruff or ty",
-        "A worker attempt runs ruff, ty, and shellcheck on its allow-list before it finishes; a fixture attempt that skips any of the three is a failed attempt",
-        "A lint or type failure resumes the same session with those errors, increments ledger repair_round, and stays the same rollout; a second repair is allowed only when the error count fell, otherwise the failure class becomes logic",
-        "A failing test starts a fresh run in a clean worktree with a short failure summary, one rung up inside the same vendor, and does not resume the session",
-        "shellcheck and bash tests/run-tests.sh exit 0"
+        "schemas/progress-event.schema.json and progress.py reject one hostile row each, naming the field: an absolute path, a secret, a bad UUID (checked with scripts/run_id.py), an unknown type, a status illegal for its type, a multi-line summary, a missing link, and a run id without a receipt",
+        "progress.py add sets seq and at, takes the workspace lock, appends one line and renders PROGRESS.md; on a fixture mission 3 add calls give a PROGRESS.md byte-identical to a committed golden file; one hand edit makes progress.py render --check exit 1",
+        "progress.py render writes the Status section of PROGRESS.md (current feature in run_order, last gate and its verdict, next action) only from progress.jsonl events and features.json; render --check exits 1 when the GOAL.md front-matter status differs from the status of the latest status or gate event; a test shows no script or prompt under scripts/ writes PROGRESS.md except progress.py",
+        "progress.py brief --task on a fixture task prints at most 8 KB and includes the task, the events of its feature and of features on its Depends on line, the last 5 events, and active lessons whose category matches the feature",
+        "verify-mission.sh runs render --check; spawn-brain.sh records with progress.py add and no longer appends PROGRESS.md by hand; the brain review write scope is progress.jsonl, PROGRESS.md and reviews/<run_id>*.md",
+        "The hand-written 2B PROGRESS.md (F000 to F002 and Gates 0 to 2) is frozen under progress-archive/ and linked by one note event; shellcheck and bash tests/run-tests.sh exit 0"
       ],
       "passes": false
     },
     {
       "id": "F005",
-      "category": "functional",
+      "category": "inner-loop",
       "priority": 5,
       "bootstrap": false,
-      "description": "Task-size signal. More than 2 review rounds on one task sends it back to the planner to split. The miss is recorded as a decomposition miss. The loop does not dispatch another fix for that task.",
+      "description": "Worker inner loop (owner item e). ruff, a Python type checker (ty, installed with uv tool install; dev only) and shellcheck run inside the worker's own attempt. Lint or type failures get a resumed repair round in the same session; logic failures get a fresh run one rung up inside the same vendor. The runtime stays the standard library.",
       "steps": [
-        "A fixture task with 2 review rounds may still receive one fix dispatch; a fixture task with 3 review rounds receives none",
-        "The third review round writes one progress.py add decision event whose summary starts with decomposition-miss and names the task and its class, with a link to reviews/<task>-split.md",
-        "The loop's next action for that task id is a planner split, and a test shows no T-xxx fix task is created for it",
-        "shellcheck and bash tests/run-tests.sh exit 0"
+        "uv tool install ruff and uv tool install ty are the documented install paths, backed by committed real --help captures under evidence/; a test shows no file under scripts/ imports ruff or ty",
+        "A worker attempt runs ruff, ty and shellcheck on its allow-listed files before it finishes, and the receipt records each exit code; a fixture attempt that skips any of the three is a failed attempt",
+        "A lint or type failure resumes the same session with the exact errors, increments ledger repair_round and keeps the same rollout; a second repair round runs only when the error count fell, otherwise the failure class becomes logic",
+        "A failing test starts a fresh run in a clean worktree with a short failure summary, one rung up inside the same vendor (haiku to sonnet to opus, luna to terra to sol, composer to grok, flash to argon), and never resumes the old session",
+        "shellcheck scripts/*.sh tests/*.sh and bash tests/run-tests.sh exit 0"
       ],
       "passes": false
     },
     {
       "id": "F006",
-      "category": "functional",
+      "category": "decomposition",
       "priority": 6,
       "bootstrap": false,
-      "description": "Parallel lanes, minimum slice. Two disjoint tasks, two providers, one serial merge. No second lane of the same provider, no Codex lane, no brain run while a lane is active.",
+      "description": "Task-size signal (owner item f). More than 2 review rounds on one task sends it back to the planner to split; the miss is recorded as a decomposition miss with its task class, and no further fix is dispatched for that task.",
       "steps": [
-        "Admission refuses, before any launch, overlapping allow-lists, a Depends-on edge, the same provider twice, a Codex lane, and a brain run while a lane is active",
-        "Two admitted tasks on two providers produce receipts whose started_at to finished_at intervals overlap, and each receipt scope is pass in its own worktree",
-        "Snapshots show the root checkout and the other worktree unchanged across each run",
-        "The orchestrator merges each lane with git merge --no-ff in admission order; a content conflict stops the merge and is not auto-resolved",
-        "bash tests/run-tests.sh exits 0 on the merged HEAD, and both lane commits stay ancestors of that HEAD",
-        "shellcheck and bash tests/run-tests.sh exit 0"
+        "A fixture task with 2 review rounds may still receive one fix dispatch; a fixture task with 3 review rounds receives none",
+        "The third review round writes one decision event whose summary starts with decomposition-miss and names the task and its class, linked to reviews/<task>-split.md",
+        "The loop's next action for that task id is a planner split request, and a test shows no fix task is created for it",
+        "shellcheck scripts/*.sh tests/*.sh and bash tests/run-tests.sh exit 0"
       ],
       "passes": false
     },
     {
       "id": "F007",
-      "category": "functional",
+      "category": "lanes",
       "priority": 7,
       "bootstrap": false,
-      "description": "Static HTML board, readable on a phone, regenerated from progress events and quota snapshots, opened from disk. No server. Gate actions are copy text. The board never runs a command.",
+      "description": "Parallel lanes, the Architect's minimum slice (owner item g). Two disjoint tasks on two providers in two worktrees, one serial orchestrator merge. No second lane of one provider, no Codex lane, no brain run while a lane is active.",
       "steps": [
-        "The generator writes one HTML file that contains meta http-equiv refresh content 15, a viewport width=device-width, and the Tailwind v4 browser build, and a test shows the generator does not listen on a port",
-        "The fixture HTML contains each pool's percent left and the next gate as text, and contains no min-width whose number is greater than 390",
-        "Gate actions are command text inside a copy control, and the HTML contains no script that runs a command or calls fetch",
-        "A new progress event can rebuild the file; shellcheck and bash tests/run-tests.sh exit 0"
+        "Admission refuses, before any lock, spec or provider launch, each of: overlapping allow-lists, a Depends on edge, the same provider twice, a Codex lane, and a brain run while a lane is active",
+        "Two admitted tasks on two providers produce receipts whose started_at to finished_at intervals overlap, and each receipt has scope pass in its own worktree",
+        "Snapshots show the root checkout and the other worktree unchanged across each lane run",
+        "The orchestrator merges each lane with git merge --no-ff in admission order; a content conflict stops the merge and is not auto-resolved",
+        "bash tests/run-tests.sh exits 0 on the merged HEAD, both lane commits stay ancestors of that HEAD, and verify-mission.sh --require-workers exits 0 after both acceptances",
+        "shellcheck scripts/*.sh tests/*.sh and bash tests/run-tests.sh exit 0"
       ],
       "passes": false
     },
     {
       "id": "F008",
-      "category": "functional",
+      "category": "board",
       "priority": 8,
       "bootstrap": false,
-      "description": "Held-out benchmark, run every 2 to 4 weeks and on a harness release. A task set and a mission set, graded only by scripts, version v1 never edited.",
+      "description": "Phone-readable static HTML board (owner item h, part 1), regenerated from progress events and quota snapshots and opened from disk. No server. Gate actions are copy text; the board never runs a command.",
       "steps": [
-        "The task set has 10 to 20 tasks and the mission set has 2 to 3 goals; a test fails if a lesson or skill file quotes a benchmark item id",
-        "Each item is graded only by a script, names a pinned commit, and has no network step",
-        "The runner refuses to change the v1 file hash and writes pass rate, tokens per pass, quota per pass, and wall time",
-        "A fixture dated 13 days after the last report does not run; a fixture dated 28 days does; a harness release also runs it",
-        "shellcheck and bash tests/run-tests.sh exit 0"
+        "The generator writes one HTML file with meta http-equiv refresh content 15 and viewport width=device-width; a test shows the generator opens no socket",
+        "The fixture HTML holds each pool's percent left with its source flag and the next gate as text, and no CSS min-width greater than 390px",
+        "Gate actions are command text inside a copy control, and the HTML has no script that calls fetch, XMLHttpRequest or a command",
+        "A new progress event rebuilds the file byte-identically to a golden fixture; shellcheck and bash tests/run-tests.sh exit 0"
       ],
       "passes": false
     },
     {
       "id": "F009",
-      "category": "functional",
+      "category": "benchmark",
       "priority": 9,
       "bootstrap": false,
-      "description": "Front Desk skills for every CLI the harness drives: Claude Code, Codex, Cursor, and Antigravity. Each skill tells the Front Desk how to start mission-run.sh, watch it, and report.",
+      "description": "Held-out benchmark (owner item h, part 2), run every 2 to 4 weeks and on a harness release: a task set and a mission set graded only by scripts, version v1 never edited, scheduled into quota that would otherwise expire.",
       "steps": [
-        "A Front Desk skill for claude, one for codex, one for cursor, and one for agy each name scripts/mission-run.sh and the verbs start, watch, and report",
-        "harness-manifest.json lists each skill under canonical_skills, and each skill path sits in that provider's discovery directory from harness-registry.json",
-        "Each skill says the Front Desk writes nothing in the repository while a run is in progress, and does not parse reset times from error text",
-        "shellcheck and bash tests/run-tests.sh exit 0"
+        "The v1 task set has 10 to 20 tasks harvested from accepted work (parent commit plus its tests) and the mission set has 2 to 3 goals; a test fails if any lesson or skill file quotes a benchmark item id",
+        "Each item is graded only by a script, names a pinned commit and has no network step",
+        "The runner refuses a changed v1 file hash and writes pass rate, tokens per pass, quota per pass and wall time per lane",
+        "A fixture dated 13 days after the last report does not run; one dated 28 days does; a harness release tag also runs it; the runner dispatches only through the quota gate",
+        "shellcheck scripts/*.sh tests/*.sh and bash tests/run-tests.sh exit 0"
       ],
       "passes": false
     },
     {
       "id": "F010",
-      "category": "functional",
+      "category": "skills",
       "priority": 10,
       "bootstrap": false,
-      "description": "Prediction model after a few hundred kept readings (draft threshold 300, confirmed at Gate 0). It trains on the quota meter's training set. It does not dispatch and does not override the 98% rule.",
+      "description": "Front Desk skills for every CLI (owner item h, part 3): Claude Code, Codex, Cursor and Antigravity. Each skill tells the Front Desk how to start mission-run.sh, watch it and report, without writing into the repository during a run.",
       "steps": [
-        "The trainer reads only the append-only training set from F001 and exits non-zero when that file has fewer than 300 rows, writing no model file",
-        "At 300 rows it writes a model file whose numbers use source estimated; dispatch still compares the meter's percent left minus the meter forecast with the floor of 2",
-        "A fixture of 300 rows emits a forecast; removing one row makes the trainer exit non-zero and leaves the dispatch forecast unchanged",
+        "One Front Desk skill each for claude, codex, cursor and agy names scripts/mission-run.sh and the verbs start, watch and report",
+        "harness-manifest.json lists each skill under canonical_skills, and each skill sits in that provider's discovery directory from harness-registry.json",
+        "Each skill says the Front Desk writes nothing in the repository while a run is in progress and never parses reset times from error text",
+        "shellcheck scripts/*.sh tests/*.sh and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F011",
+      "category": "prediction",
+      "priority": 11,
+      "bootstrap": false,
+      "description": "Prediction model (owner item h, part 4), trained once the training set holds 300 kept batch forecasts with before and after readings. It improves the forecast only; it never dispatches and never overrides the 2% floor.",
+      "steps": [
+        "The trainer reads only the F002 append-only training set and exits non-zero, writing no model file, when it has fewer than 300 complete rows",
+        "At 300 rows it writes a model file whose numbers carry source estimated; the dispatch gate still compares the meter's percent left minus the forecast with the floor of 2",
+        "Removing one row of a 300-row fixture makes the trainer exit non-zero and leaves the dispatch forecast unchanged",
+        "shellcheck scripts/*.sh tests/*.sh and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F012",
+      "category": "sandbox",
+      "priority": 12,
+      "bootstrap": false,
+      "description": "OS-level Bash sandbox for Claude bypassPermissions workers (owner item h, part 5; the 2A residual risk). On macOS the claude worker runs under sandbox-exec with a generated profile; a host without a supported sandbox refuses bypassPermissions instead of running unsandboxed.",
+      "steps": [
+        "On Darwin, spawn-worker.sh wraps the claude bypassPermissions argv in sandbox-exec with a profile generated from the task's workspace; the change ships as a new provider contract number with new golden entries (F000 step 1), existing golden entries are unchanged, and every older receipt still validates",
+        "The profile generator is a pure function with a unit test (runs on Linux and macOS CI): writes are allowed under the workspace and the root .tasks/ only, and denied for HOME dotfiles, ~/Library/LaunchAgents, the repository's parent directory and .git/hooks",
+        "A local-only verification command on the owner's Mac runs a fixture worker inside the profile: a write to the workspace succeeds, and writes to HOME/.zshrc, ~/Library/LaunchAgents and the repository's parent each fail",
+        "On a host without sandbox-exec or a container runtime, a claude bypassPermissions launch exits non-zero before the provider starts",
+        "evidence/claude-unlock-residual-risk.md lists which residual risks are closed by the profile and which remain; shellcheck and bash tests/run-tests.sh exit 0"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F013",
+      "category": "goal-style",
+      "priority": 0,
+      "bootstrap": false,
+      "description": "Goal-style harness and event-driven Front Desk (owner direction 2026-10-19, steps 0-4 and 6; step 5 phone skipped): computed subagent stats, runner-enforced token budgets, events.jsonl, mission-run.sh, usage report.",
+      "steps": [
+        "Step 0 audit table and manual marks committed",
+        "Receipts carry computed subagent_stats; ledger/routing rows computed; planning_stats ignores manual rows",
+        "Runner enforces token budgets (overrun recorded, 2x stops)",
+        "events.jsonl run start/exit events and gated SubagentStop hook",
+        "mission-run.sh loop driver with round limit",
+        "usage report script and measured Front Desk token drop",
         "shellcheck and bash tests/run-tests.sh exit 0"
       ],
       "passes": false

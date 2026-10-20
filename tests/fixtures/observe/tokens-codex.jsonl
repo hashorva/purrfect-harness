@@ -1,0 +1,2 @@
+{"type":"turn.completed","usage":{"input_tokens":637380,"cached_input_tokens":605952,"cache_write_input_tokens":0,"output_tokens":4791,"reasoning_output_tokens":1232}}
+{"type":"turn.completed","usage":{"input_tokens":517194,"cached_input_tokens":472832,"cache_write_input_tokens":0,"output_tokens":5577,"reasoning_output_tokens":1089}}

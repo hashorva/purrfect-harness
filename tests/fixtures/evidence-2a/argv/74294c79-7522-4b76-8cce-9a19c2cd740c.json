@@ -1,0 +1,1 @@
+["codex","exec","-C","@PURRFECT_ROOT@","-s","workspace-write","-m","gpt-5.6-luna","-c","model_reasoning_effort=\"medium\"","Read docs/missions/20260821-execution-truth/tasks/T-017.md and complete it exactly. Follow AGENTS.md and the skills the task names. Do not touch files outside the allow-list. Append a PROGRESS.md entry in the mission folder."]

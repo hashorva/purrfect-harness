@@ -4,8 +4,8 @@
 # Without a brain receipt, verify-mission.sh will not greenlight the mission.
 #
 # Usage (from consuming repo root):
-#   bash scripts/spawn-brain.sh <mission-dir|slug> <mission-init|gate0|review>
-#       [--provider codex|claude|cursor|agent|agy] [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N] [--seat SEAT]
+#   bash scripts/spawn-brain.sh <mission-dir|slug> <mission-init|gate0|review|plan>
+#       [--provider codex|claude|cursor|agent|agy] [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N] [--seat SEAT] [--request FILE (plan-only)]
 set -euo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 _HARNESS_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,6 +29,7 @@ done
 LOCK_PATH=""
 LOCK_TOKEN=""
 RUNNER_PID=""
+PLAN_CLONE=""
 
 # shellcheck disable=SC2317,SC2329  # invoked indirectly by the EXIT trap (old and new code)
 cleanup() {
@@ -46,6 +47,7 @@ cleanup() {
     fi
     wait "$RUNNER_PID" 2>/dev/null || true
   fi
+  [ -z "$PLAN_CLONE" ] || rm -rf -- "$PLAN_CLONE" || echo "WARN: scratch clone not removed: $PLAN_CLONE" >&2
   if [ -n "$LOCK_PATH" ] && [ -n "$LOCK_TOKEN" ]; then
     PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" release-lock \
       --root "$ROOT" --workspace "$WORKSPACE" --lock "$LOCK_PATH" --token "$LOCK_TOKEN" \
@@ -63,7 +65,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 usage() {
-  echo "Usage: spawn-brain.sh <mission> <mission-init|gate0|review> [--provider NAME] [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N] [--seat SEAT]" >&2
+  echo "Usage: spawn-brain.sh <mission> <mission-init|gate0|review|plan> [--provider NAME] [--model ID] [--effort VALUE] [--speed VALUE] [--attempt N] [--seat SEAT] [--request FILE (plan-only)]" >&2
   exit 2
 }
 
@@ -79,6 +81,7 @@ SPEED=""
 ATTEMPT="1"
 SEAT="brain"
 SEAT_SET="false"
+REQUEST=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --provider) PROVIDER="${2:?}"; shift 2 ;;
@@ -86,12 +89,20 @@ while [ $# -gt 0 ]; do
     --effort) EFFORT="${2:?}"; shift 2 ;;
     --speed) SPEED="${2:?}"; shift 2 ;;
     --attempt) ATTEMPT="${2:?}"; shift 2 ;;
+    --request) REQUEST="${2:?}"; shift 2 ;;
     --seat) SEAT="${2:?}"; SEAT_SET="true"; shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 case "$SEAT" in brain|brain_argon|brain_codex|brain_fable) ;; *) echo "ERROR: --seat must be brain, brain_argon, brain_codex, or brain_fable" >&2; exit 2 ;; esac
-[ "$ACTION" = review ] || [ "$SEAT_SET" = false ] || { echo "ERROR: --seat applies to review only" >&2; exit 2; }
+[ "$ACTION" = review ] || [ "$ACTION" = plan ] || [ "$SEAT_SET" = false ] || { echo "ERROR: --seat applies to review and plan only" >&2; exit 2; }
+if [ "$ACTION" = plan ]; then
+  if ! { [ -n "$REQUEST" ] && [ -f "$REQUEST" ] && [ -r "$REQUEST" ] && [ -s "$REQUEST" ]; }; then
+    echo "ERROR: plan needs --request <readable non-empty file>" >&2; exit 2
+  fi
+else
+  [ -z "$REQUEST" ] || { echo "ERROR: --request applies to plan only" >&2; exit 2; }
+fi
 if [ -n "$PROVIDER" ]; then
   ROOT="$(pwd -P)"
   PROVIDER="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/harness_registry.py" persisted-name "$PROVIDER")" || exit $?
@@ -115,7 +126,7 @@ WORKSPACE="$ROOT"
 FLEET="$MISSION_ABS/fleet.json"
 
 case "$ACTION" in
-  mission-init|gate0|review) ;;
+  mission-init|gate0|review|plan) ;;
   *) echo "ERROR: unknown action '$ACTION'" >&2; usage ;;
 esac
 
@@ -125,7 +136,7 @@ POLICY_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.
   --root "$ROOT" --workspace "$WORKSPACE" --mission "$MISSION" --fleet "$FLEET" --action "$ACTION")" || exit $?
 WRITE_SCOPE_JSON="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["write_scope"],separators=(",",":")))' <<<"$POLICY_JSON")"
 
-if [ "$ACTION" = review ]; then
+if [ "$ACTION" = review ] || [ "$ACTION" = plan ]; then
   RESOLVE_ARGS=(python3 "$ROOT/scripts/fleet_state.py" resolve
     --fleet "$FLEET" --seat "$SEAT" --mission-path "$MISSION" --inventory "$ROOT/.tasks/fleet-inventory.json" --root "$ROOT")
   [ -z "$PROVIDER" ] || RESOLVE_ARGS+=(--provider "$PROVIDER")
@@ -151,7 +162,17 @@ else
   [ -n "$SPEED" ] || { [ "$PROVIDER" = agent ] && SPEED="standard" || SPEED="unknown"; }
 fi
 
+if [ "$ACTION" = review ]; then
+  ROLE_EFFORT_ARGS=(--role review --fleet "$FLEET" --seat "$SEAT")
+else
+  ROLE_EFFORT_ARGS=(--role planning)
+fi
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-role-effort "${ROLE_EFFORT_ARGS[@]}" --effort "$EFFORT"
+
 case "$PROVIDER" in codex|claude|agent|agy) ;; *) echo "ERROR: --provider must be codex, claude, cursor, agent, or agy" >&2; exit 2 ;; esac
+if [ "$ACTION" = plan ] && [ "$PROVIDER" != claude ] && [ "$PROVIDER" != agy ]; then
+  echo "ERROR: plan runs only on claude or agy seats: $PROVIDER argv names the live repo" >&2; exit 2
+fi
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py" validate-capability \
   --provider "$PROVIDER" --effort "$EFFORT" --speed "$SPEED"
 
@@ -160,19 +181,26 @@ LOCK_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/dispatch_policy.py
 LOCK_PATH="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["path"])' <<<"$LOCK_JSON")"
 LOCK_TOKEN="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])' <<<"$LOCK_JSON")"
 export PURRFECT_DISPATCH_LOCK_PATH="$LOCK_PATH"
+RUN_DIR="$ROOT"
+if [ "$ACTION" = plan ]; then
+  PLAN_CLONE="$(mktemp -d "${TMPDIR:-/tmp}/purrfect-plan.XXXXXX")"
+  PLAN_CLONE="$(cd "$PLAN_CLONE" && pwd -P)"
+  git clone -q --no-hardlinks --no-checkout "$ROOT" "$PLAN_CLONE"
+  git -C "$PLAN_CLONE" checkout -q --detach "$(git -C "$ROOT" rev-parse HEAD)"
+  git -C "$PLAN_CLONE" remote remove origin
+  RUN_DIR="$PLAN_CLONE"
+fi
 
 mkdir -p "$ROOT/.tasks/logs" "$ROOT/.tasks/receipts"
 RUN_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
 LOG_REL=".tasks/logs/${RUN_ID}.log"
 LOG="$ROOT/$LOG_REL"
 
-PROMPT="You are the mission BRAIN for ${MISSION}. Action: ${ACTION}.
-Goal for mission-init: GOAL.md, features.json, PROGRESS.md and tasks/T-001.md exist (templates in docs/missions/templates/) and the status stays draft until Gate 0. Goal for gate0: the feature list and the fleet-inventory map are ready for the owner; no worker is dispatched. Goal for review: a verdict on the worker's change, judged by its effects against the task's exit criteria.
-Context: AGENTS.md, docs/missions/ORCHESTRATION.md, docs/missions/MODEL_ROUTING.md, the mission folder, and the repo skills in .agents/skills (mission-init, dispatch-worker).
-Resources: your CLI's native tools, web search, and subagents where your CLI has them (Claude Code: explorer on Haiku and the read-only code-reviewer; codex: Luna; cursor: Composer; agy: Flash). Delegate wide reading and searching to a cheap subagent and make the decisions yourself.
-Acceptance checks: shellcheck scripts/*.sh tests/*.sh, bash tests/run-tests.sh, and bash scripts/verify-mission.sh ${MISSION} (ruff and a type check join when the repo adds them). A worker run counts only when .tasks/receipts/ proves it.
-Budget: this one run, under the runner's timeout. Run your checks before you finish and stop when the goal is met. Your log: ${LOG_REL}."
-
+if [ "$ACTION" = plan ]; then
+  PROMPT="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/brain_prompt.py" planning "$MISSION" --provider "$PROVIDER" --log "$LOG_REL" --request "$REQUEST")" || exit $?
+else
+PROMPT="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/brain_prompt.py" "$ACTION" "$MISSION" --provider "$PROVIDER" --log "$LOG_REL")" || exit $?
+fi
 SPEC_JSON="$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execution_spec.py" construct --run-id "$RUN_ID" --write-scope-json "$WRITE_SCOPE_JSON" --role brain --mission "$MISSION" --work-unit "$ACTION" --attempt "$ATTEMPT" --provider "$PROVIDER" --model "$MODEL" --effort "$EFFORT" --speed "$SPEED" --repo "$ROOT" --prompt "$PROMPT")" || exit $?
 RUN_ID="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["run_id"])' <<<"$SPEC_JSON")"
 SPEC_PATH="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["path"])' <<<"$SPEC_JSON")"
@@ -180,16 +208,17 @@ SPEC_SHA256="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["sha256"]
 
 {
   echo "spawn-brain: action=$ACTION provider=$PROVIDER model=$MODEL mission=$MISSION run_id=$RUN_ID log=$LOG_REL"
+  [ -z "$PLAN_CLONE" ] || echo "plan: clone=$PLAN_CLONE request=$REQUEST"
   echo "prompt: $PROMPT"
   echo "----"
 } | tee "$LOG"
 
 SPAWN_BRAIN_TIMEOUT_SECS="${SPAWN_BRAIN_TIMEOUT_SECS:-2400}"
 set +e
-PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execution_runner.py" \
+(cd "$RUN_DIR" && PYTHONDONTWRITEBYTECODE=1 exec python3 "$ROOT/scripts/execution_runner.py" \
   --spec "$SPEC_PATH" --spec-sha256 "$SPEC_SHA256" --log "$LOG" \
   --timeout "$SPAWN_BRAIN_TIMEOUT_SECS" \
-  --stall-seconds "${SPAWN_BRAIN_STALL_SECS:-90}" --idle-seconds "${SPAWN_BRAIN_IDLE_SECS:-900}" &
+  --stall-seconds "${SPAWN_BRAIN_STALL_SECS:-90}" --idle-seconds "${SPAWN_BRAIN_IDLE_SECS:-900}" --seat "$SEAT") &
 RUNNER_PID=$!
 wait "$RUNNER_PID"
 EC=$?
@@ -201,7 +230,15 @@ if ! PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/execution_receipt.py" vali
   EC=125
 fi
 
+if [ "$ACTION" = plan ] && [ "$EC" -ne 125 ]; then
+  if ! python3 -c 'import json,sys; sys.exit(1 if json.load(open(sys.argv[1]))["workspace_changed"] else 0)' "$RECEIPT_PATH"; then
+    echo "ERROR: plan run changed the live tree; see the receipt" >&2
+    EC=1
+  fi
+fi
+
 echo "----" | tee -a "$LOG"
 echo "exit=$EC" | tee -a "$LOG"
 echo "tail:"; tail -20 "$LOG"
+[ "$ACTION" != plan ] || echo "run_id=$RUN_ID"
 exit "$EC"

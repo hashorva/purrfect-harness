@@ -1,0 +1,1 @@
+[{"databaseId": 1, "name": "ubuntu", "workflowName": "CI", "status": "completed", "conclusion": "success", "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, {"databaseId": 2, "name": "macos", "workflowName": "CI", "status": "completed", "conclusion": "failure", "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]

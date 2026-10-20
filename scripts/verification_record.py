@@ -14,8 +14,29 @@ import tempfile
 
 from execution_receipt import ReceiptError, canonical_bytes, load_receipt, snapshot
 from execution_spec import SpecError, load_persisted, spec_sha256
+from run_id import validate_run_id
 
-UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+
+def git_command(*args):
+    """Git argv for verification: gc and maintenance off, repository hooks left on.
+
+    The shared helper also disables hooks. Drop that one pair. A post-checkout
+    hook that dirties a verification worktree must still run. Fixtures copy this
+    file without git_safe.py and build the same argv.
+    """
+    try:
+        import git_safe
+    except ImportError:
+        git_safe = None
+    if git_safe is not None:
+        command = git_safe.argv(*args)
+        index = command.index("core.hooksPath=/dev/null")
+        del command[index - 1:index + 1]
+        return command
+    binary = "git"
+    return [binary, "-c", "gc.auto=0", "-c", "maintenance.auto=false", *args]
+
+
 HEX = re.compile(r"^[0-9a-f]{64}$")
 COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
 RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$")
@@ -56,6 +77,26 @@ def matches(pattern, value):
     return isinstance(value, str) and pattern.fullmatch(value) is not None
 
 
+def is_run_id(value):
+    """True only for a canonical run id; the rule lives in run_id.py."""
+    try:
+        validate_run_id(value)
+    except ValueError:
+        return False
+    return True
+
+
+def receipt_link_ok(value):
+    prefix, suffix = ".tasks/receipts/", ".json"
+    return (isinstance(value, str) and value.startswith(prefix) and value.endswith(suffix)
+            and is_run_id(value[len(prefix):-len(suffix)]))
+
+
+def require_run_id(run_id):
+    """Refuse a non-canonical run id before it reaches any path, glob or existence check."""
+    if not is_run_id(run_id): fail("run_id must be a canonical RFC UUID")
+
+
 def safe_task_path(value):
     """Match the receipt's repository-relative task contract, plus line safety."""
     return (isinstance(value, str) and bool(value) and value.strip() == value and
@@ -71,13 +112,24 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def failure_report(index, argv, exit_code, stdout, stderr, lines=20):
+    """Human-readable tail of a failed verification command (stderr then stdout)."""
+    header = "VERIFY FAIL DETAIL: " + json.dumps({"command": index, "argv": argv, "exit_code": exit_code})
+    stderr_lines = stderr.decode("utf-8", "replace").splitlines()
+    stdout_lines = stdout.decode("utf-8", "replace").splitlines()
+    tail = (stderr_lines + stdout_lines)[-lines:]
+    if not tail:
+        return header
+    return header + "\n" + "\n".join(f"  | {line}" for line in tail)
+
+
 def canonical(value):
     return canonical_bytes(value)
 
 
 def root_path():
     root = Path.cwd().resolve()
-    if subprocess.run(["git", "-C", str(root), "rev-parse", "--show-toplevel"], capture_output=True).returncode:
+    if subprocess.run(git_command("-C", str(root), "rev-parse", "--show-toplevel"), capture_output=True).returncode:
         fail("current directory must be a Git worktree root")
     return root
 
@@ -134,7 +186,7 @@ def task_at_base(root, receipt):
     expected = f"{receipt['mission']}/tasks/{receipt['work_unit']}.md"
     if task != expected:
         fail("receipt task does not exactly match mission work unit")
-    got = subprocess.run(["git", "-C", str(root), "show", f"{receipt['git_before']['head']}:{task}"], capture_output=True)
+    got = subprocess.run(git_command("-C", str(root), "show", f"{receipt['git_before']['head']}:{task}"), capture_output=True)
     if got.returncode:
         fail("task is absent from the receipt base commit")
     raw = got.stdout
@@ -172,7 +224,7 @@ def task_at_base(root, receipt):
 
 
 def bind(root, mission, run_id):
-    if not UUID.fullmatch(run_id): fail("run_id must be a canonical RFC UUID")
+    if not is_run_id(run_id): fail("run_id must be a canonical RFC UUID")
     receipt_path = root / ".tasks/receipts" / f"{run_id}.json"
     try: receipt = load_receipt(receipt_path)
     except (ReceiptError, SpecError) as exc: raise VerificationError(str(exc)) from exc
@@ -190,6 +242,7 @@ def bind(root, mission, run_id):
 
 
 def verify(root, mission, run_id):
+    require_run_id(run_id)
     record_dir = mission / "verification"
     base = record_dir / f"{run_id}.json"
     destination = base
@@ -202,7 +255,7 @@ def verify(root, mission, run_id):
     if receipt["git_after"]["status_entry_count"] != 0 or receipt["git_after"]["dirty_paths"]:
         fail("worktree verification needs a clean receipt git_after")
 
-    subprocess.run(["git", "-C", str(root), "worktree", "prune"], check=True,
+    subprocess.run(git_command("-C", str(root), "worktree", "prune"), check=True,
                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     temporary_root = Path(tempfile.mkdtemp(prefix="purrfect-verify-"))
     worktree = temporary_root / "wt"
@@ -216,8 +269,8 @@ def verify(root, mission, run_id):
             raise SystemExit(143)
 
         prev_sigterm = signal.signal(signal.SIGTERM, on_sigterm)
-        subprocess.run(["git", "-C", str(root), "worktree", "add", "--detach", "--quiet",
-                        str(worktree), receipt["git_after"]["head"]], check=True,
+        subprocess.run(git_command("-C", str(root), "worktree", "add", "--detach", "--quiet",
+                        str(worktree), receipt["git_after"]["head"]), check=True,
                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         added = True
         before = snapshot(worktree)
@@ -244,19 +297,21 @@ def verify(root, mission, run_id):
                 print(f"VERIFY SKIP: command {len(outcomes) + 1} {json.dumps(argv)[:200]} reported skipped checks ({SKIP_REASONS[skipped]})", file=sys.stderr)
             outcomes.append(outcome)
             passed = passed and exit_code == 0 and not skipped
+            if exit_code != 0 and not skipped:
+                sys.stderr.write(failure_report(len(outcomes), argv, exit_code, stdout, stderr) + "\n")
         after = snapshot(worktree)
         if after != receipt["git_after"]: passed = False
     finally:
         cleanup_failed = False
         if added:
             try:
-                subprocess.run(["git", "-C", str(root), "worktree", "remove", "--force", str(worktree)],
+                subprocess.run(git_command("-C", str(root), "worktree", "remove", "--force", str(worktree)),
                                check=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE)
             except (OSError, subprocess.CalledProcessError):
                 cleanup_failed = True
         try:
-            subprocess.run(["git", "-C", str(root), "worktree", "prune"], check=True,
+            subprocess.run(git_command("-C", str(root), "worktree", "prune"), check=True,
                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except (OSError, subprocess.CalledProcessError):
             cleanup_failed = True
@@ -283,14 +338,14 @@ def verify(root, mission, run_id):
 
 def validate_record(record):
     if not isinstance(record, dict) or set(record) != RECORD_FIELDS or record.get("schema_version") != 1: fail("VerificationRecord has invalid fields")
-    if not matches(UUID, record["run_id"]) or not isinstance(record["result"], str) or record["result"] not in {"pass", "fail"}: fail("VerificationRecord has invalid identity or result")
+    if not is_run_id(record["run_id"]) or not isinstance(record["result"], str) or record["result"] not in {"pass", "fail"}: fail("VerificationRecord has invalid identity or result")
     for field in ("mission", "feature", "work_unit"):
         if not isinstance(record[field], str) or not record[field]: fail("VerificationRecord has invalid identity")
     if isinstance(record["attempt"], bool) or not isinstance(record["attempt"], int) or record["attempt"] < 1: fail("VerificationRecord attempt is invalid")
     for item in (record["execution_spec"], record["execution_receipt"], record["task"]):
         if not isinstance(item, dict) or not isinstance(item.get("path"), str) or not matches(HEX, item.get("sha256")): fail("VerificationRecord link is invalid")
     if set(record["execution_spec"]) != {"path", "sha256"} or not Path(record["execution_spec"]["path"]).is_absolute(): fail("VerificationRecord spec link is invalid")
-    if set(record["execution_receipt"]) != {"path", "sha256"} or not matches(re.compile(r"\.tasks/receipts/" + UUID.pattern[1:-1] + r"\.json"), record["execution_receipt"]["path"]): fail("VerificationRecord receipt link is invalid")
+    if set(record["execution_receipt"]) != {"path", "sha256"} or not receipt_link_ok(record["execution_receipt"]["path"]): fail("VerificationRecord receipt link is invalid")
     if set(record["task"]) != {"path", "sha256", "git_commit"} or not safe_task_path(record["task"]["path"]) or not matches(COMMIT, record["task"]["git_commit"]): fail("VerificationRecord task link is invalid")
     for name in ("receipt_git_after", "verification_git_before", "verification_git_after"):
         state = record[name]
@@ -322,6 +377,7 @@ def load_record(path):
 
 def run_records(mission, run_id):
     """Return a run's numbered record paths, rejecting noncanonical suffixes."""
+    require_run_id(run_id)
     record_dir = mission / "verification"
     paths = {}
     base = record_dir / f"{run_id}.json"
@@ -374,6 +430,7 @@ def revalidate_record(root, mission, record):
 
 
 def accept(root, mission, run_id, expected_hash, accepted_by):
+    require_run_id(run_id)
     if not matches(HEX, expected_hash) or not isinstance(accepted_by, str) or not accepted_by.strip() or accepted_by.strip() != accepted_by: fail("verification hash or accepted_by is invalid")
     lock_dir = root / ".tasks/locks"
     if os.environ.get("PURRFECT_DISPATCH_LOCK_PATH") or (lock_dir.is_dir() and list(lock_dir.glob("*.lock"))):
@@ -401,7 +458,7 @@ def audit(root, mission, require_workers=False):
     receipt_dir = root / ".tasks/receipts"
     if receipt_dir.is_dir():
         for path in receipt_dir.glob("*.json"):
-            if not UUID.fullmatch(path.stem):
+            if not is_run_id(path.stem):
                 continue
             try:
                 candidate = load_receipt(path)
@@ -424,7 +481,7 @@ def audit(root, mission, require_workers=False):
                 continue
             if any(k not in feature for k in required):
                 failures.append(f"feature {feature.get('id')}: missing acceptance evidence"); continue
-            if (not matches(UUID, feature["accepted_run_id"]) or not matches(HEX, feature["accepted_verification_sha256"])
+            if (not is_run_id(feature["accepted_run_id"]) or not matches(HEX, feature["accepted_verification_sha256"])
                     or not isinstance(feature["accepted_at"], str) or not RFC3339.fullmatch(feature["accepted_at"])
                     or not isinstance(feature["accepted_by"], str) or not feature["accepted_by"].strip()
                     or feature["accepted_by"].strip() != feature["accepted_by"]):
@@ -452,6 +509,8 @@ def main():
     accept_p = subs.add_parser("accept"); accept_p.add_argument("--run-id", required=True); accept_p.add_argument("--verification-sha256", required=True); accept_p.add_argument("--accepted-by", required=True); accept_p.add_argument("mission")
     audit_p = subs.add_parser("audit"); audit_p.add_argument("--require-workers", action="store_true"); audit_p.add_argument("mission")
     args = parser.parse_args()
+    if args.command in ("verify", "accept") and not is_run_id(args.run_id):
+        print("VERIFY FAIL: run_id must be a canonical RFC UUID", file=sys.stderr); return 2
     try:
         root = root_path(); mission = mission_path(root, args.mission)
         if args.command == "verify":

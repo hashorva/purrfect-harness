@@ -1,0 +1,1 @@
+{"run_id": "r-b", "task": "T-001", "cli": "codex", "tier": "economy", "role_tag": "worker", "prompt_version": "scripts/spawn-worker.sh:bbbbbbbbbbbb", "tokens_total": {"value": 3000, "source": "observed"}, "tokens_without_cache": {"value": 300, "source": "observed"}}

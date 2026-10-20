@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Mounted real-wrapper contracts for immutable execution specs and receipts."""
+import copy
 import hashlib
 import json
 import os
@@ -19,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OBSERVE_FIXTURES = ROOT / "tests/fixtures/observe"
 PROVIDERS = ("codex", "claude", "agent", "agy")
 sys.path.insert(0, str(ROOT / "scripts"))
-from observe_output import observe  # noqa: E402
+from observe_output import observe, token_figures  # noqa: E402
 import fleet_state  # noqa: E402
 from execute_provider import CLAUDE_DISALLOWED_TOOLS, CODEX_CONFIG_OVERRIDES  # noqa: E402
 
@@ -43,9 +44,9 @@ class WrapperIntegration(unittest.TestCase):
         self.root.mkdir()
         (self.root / "scripts").mkdir()
         for name in ("execution_spec.py", "execution_receipt.py", "execution_runner.py",
-                     "execute_provider.py", "observe_output.py", "model_id.py", "fleet_state.py", "dispatch_policy.py",
+                     "execute_provider.py", "observe_output.py", "model_id.py", "run_id.py", "fleet_state.py", "dispatch_policy.py",
                      "harness_registry.py", "ledger.py",
-                     "spawn-worker.sh", "spawn-brain.sh", "verify-mission.sh", "verification_record.py",
+                     "spawn-worker.sh", "spawn-brain.sh", "brain_prompt.py", "verify-mission.sh", "verification_record.py",
                      "accept-feature.sh", "write-receipt.sh"):
             shutil.copy2(ROOT / "scripts" / name, self.root / "scripts" / name)
         shutil.copy2(ROOT / "harness-registry.json", self.root / "harness-registry.json")
@@ -87,6 +88,7 @@ pathlib.Path('.tasks/invoked.json').write_text(json.dumps({
     'lock_existed': pathlib.Path(os.environ.get('PURRFECT_DISPATCH_LOCK_PATH', '')).is_dir(),
     'pid': os.getpid(),
     'python_dont_write_bytecode': os.environ.get('PYTHONDONTWRITEBYTECODE'),
+    'purrfect': [os.environ.get('PURRFECT_RUN_ID'), os.environ.get('PURRFECT_EVENTS')],
 }))
 child_path = os.environ.get('PROVIDER_CHILD_PID_PATH')
 if child_path:
@@ -212,7 +214,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.commit_fixture("frozen fleet")
         return doc
 
-    def write_v2_fleet_and_inventory(self, model):
+    def write_v2_fleet_and_inventory(self, model, *, effort="medium"):
         (self.root / ".tasks").mkdir(exist_ok=True)
         providers = {}
         for name in fleet_state.PROVIDERS:
@@ -232,8 +234,8 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             "inventory": {"sha256": "0" * 64, "probed_at": "2026-08-21T00:00:00Z"},
             "approval": {"status": "approved", "approved_by": "human", "approved_at": "2026-08-21T00:00:00Z"},
             "policy": {"billing_classes": ["included"], "fast": False, "no_zdr": "allow"},
-            "seats": {"codex.economy": {"family": "luna", "effort": "medium", "speed": "unknown", "doors": ["codex"],
-                                             "approved_resolution": {"provider": "codex", "model": "gpt-5.6-luna", "effort": "medium", "speed": "unknown"}}},
+            "seats": {"codex.economy": {"family": "luna", "effort": effort, "speed": "unknown", "doors": ["codex"],
+                                             "approved_resolution": {"provider": "codex", "model": "gpt-5.6-luna", "effort": effort, "speed": "unknown"}}},
         }
         path = self.mission / "fleet.json"
         if path.exists():
@@ -242,7 +244,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         path.chmod(0o444)
         self.commit_fixture("frozen v2 fleet")
 
-    def write_v2_brain_fleet_and_inventory(self, *, claude_ok, agy_models):
+    def write_v2_brain_fleet_and_inventory(self, *, claude_ok, agy_models, effort="medium"):
         """Legacy brain seat with agy first, used to prove foreign doors are skipped (F013)."""
         (self.root / ".tasks").mkdir(exist_ok=True)
         providers = {}
@@ -265,8 +267,8 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             "inventory": {"sha256": "0" * 64, "probed_at": "2026-10-16T00:00:00Z"},
             "approval": {"status": "approved", "approved_by": "human", "approved_at": "2026-10-16T00:00:00Z"},
             "policy": {"billing_classes": ["included"], "fast": False, "no_zdr": "allow"},
-            "seats": {"brain": {"family": "opus", "effort": "high", "speed": "unknown", "doors": ["agy", "claude"],
-                                "approved_resolution": {"provider": "claude", "model": "opus", "effort": "high", "speed": "unknown"}}},
+            "seats": {"brain": {"family": "opus", "effort": effort, "speed": "unknown", "doors": ["agy", "claude"],
+                                "approved_resolution": {"provider": "claude", "model": "opus", "effort": effort, "speed": "unknown"}}},
         }
         path = self.mission / "fleet.json"
         if path.exists():
@@ -334,7 +336,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
 
     @staticmethod
     def prompt_worker():
-        return ("Goal: docs/missions/fixture/tasks/T-001.md is done when its verification commands pass and one scoped commit leaves a clean tree; the Front Desk runs the full suite, you do not. Scope: the task's allow-list; PROGRESS.md and features.json belong to the Front Desk. Budget: the task's max_attempts and long-command rule; the runner stops a stalled or overlong run. Resources: your CLI's native tools, the repo skills in .agents/skills, web search, and subagents where your CLI has them (Claude Code: explorer on Haiku; codex: Luna; cursor: Composer; agy: Flash). Delegate wide reading and searching to a cheap subagent, run the task's checks yourself before you finish, and stop when they pass. End with a short plain-text report: what you changed and the exit code of each check you ran.")
+        return ("Goal: docs/missions/fixture/tasks/T-001.md is done when its verification commands pass and one scoped commit leaves a clean tree; the Front Desk runs the full suite, you do not. Resources: your CLI's native tools, the repo skills in .agents/skills, web search, and the subagents your CLI offers (Claude Code: the explorer agent, .claude/agents/explorer.md, model haiku). Permissions: the task's allow-list, max_attempts and long-command rule; PROGRESS.md and features.json belong to the Front Desk. Acceptance checks: the task's verification commands. End with a short plain-text report: what you changed and the exit code of each check you ran.")
 
     def expected_argv(self, provider, model, effort, speed, prompt):
         repo = self.physical_root
@@ -380,6 +382,11 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                 "reasoning": {"value": None, "source": "unknown"},
             },
             "fast_state": {"value": None, "source": "unknown"},
+            "subagents": {
+                "calls": {"value": None, "source": "unknown"},
+                "tokens": {"value": None, "source": "unknown"},
+            },
+            "tokens": token_figures("cursor" if provider == "agent" else provider, b""),
         })
         self.assertEqual(receipt["outcome"], "completed")
         self.assertEqual(receipt["exit_code"], 0)
@@ -1273,7 +1280,7 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.write_v2_brain_fleet_and_inventory(claude_ok=True, agy_models=agy_models)
         stays = self.invoke(brain)
         self.assertEqual(stays.returncode, 0, stays.stderr + stays.stdout)
-        self.linked(role="brain", provider="claude", model="opus", effort="high", speed="unknown",
+        self.linked(role="brain", provider="claude", model="opus", effort="medium", speed="unknown",
                     work_unit="review", feature=None)
         self.assertFalse(drift_path.exists())
         self.drop_run_artifacts()
@@ -1289,6 +1296,33 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             path = self.root / ".tasks" / dirname
             self.assertFalse(list(path.glob("*")) if path.exists() else [], dirname)
         self.assertFalse(drift_path.exists())
+
+    def test_effort_by_role_is_refused_before_any_spec(self):
+        def refused(args, message):
+            result = self.invoke(args)
+            self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn(message, result.stderr)
+            self.assertFalse((self.root / ".tasks/invoked.json").exists())
+            for dirname in ("specs", "logs", "receipts", "locks"):
+                path = self.root / ".tasks" / dirname
+                self.assertFalse(list(path.glob("*")) if path.exists() else [], dirname)
+            self.clean_runs()
+
+        self.set_status("draft")
+        for action in ("mission-init", "gate0"):
+            refused(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", action,
+                     "--provider", "codex", "--model", "draft-model", "--effort", "medium", "--speed", "unknown"],
+                    "planning runs need effort high; got medium")
+
+        self.set_status("in-progress")
+        self.write_v2_brain_fleet_and_inventory(claude_ok=True, agy_models=["gemini-3.8-flash-low"], effort="high")
+        refused(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"],
+                "review runs need a seat frozen at effort medium; brain is frozen at high")
+
+        self.write_v2_fleet_and_inventory("gpt-5.6-luna", effort="high")
+        refused(["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                 "--feature", "F001", "--effort", "high", "--speed", "unknown"],
+                "worker runs need a seat frozen at effort medium; codex.economy is frozen at high")
 
     def test_v2_worker_fails_before_artifacts_when_drift_directory_is_unwritable(self):
         self.set_status("in-progress")
@@ -1415,6 +1449,66 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                              "--model", "cursor-test", "--feature", "F001", "--effort", "medium", "--speed", "fast"])
         self.assert_prelaunch_refused(result, provider="cursor", prefix=".agents/", pattern=".agents/skills/x/SKILL.md")
 
+    def install_plan_provider(self):
+        probe, path = self.parent / "plan-probe.json", self.bin / "claude"
+        path.write_text(f'''#!/usr/bin/env python3
+import json, os, pathlib, subprocess, sys
+g = lambda *a: subprocess.run(["git", *a], capture_output=True, text=True).stdout
+pathlib.Path({str(probe)!r}).write_text(json.dumps({{"cwd": os.getcwd(), "argv": sys.argv[1:], "remotes": g("remote"), "head": g("rev-parse", "HEAD").strip()}}))
+pathlib.Path("scratch-write.txt").write_text("x")
+p = os.environ.get("PLAN_LIVE_WRITE")
+p and pathlib.Path(p).write_text("x")
+sys.stdout.buffer.write(pathlib.Path({str(OBSERVE_FIXTURES / "claude-subagent.jsonl")!r}).read_bytes())
+''')
+        path.chmod(0o755)
+        return probe
+
+    def test_plan_runs_in_a_scratch_clone_with_receipt_and_ledger_row(self):
+        from execute_provider import provider_contract
+        probe = self.install_plan_provider()
+        self.write_fleet("claude", "plan-model", "high", "unknown", seat_name="brain")
+        (request := self.parent / "request.md").write_text("Do X.\n")
+        result = self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "plan", "--request", str(request)])
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        spec = json.loads(next((self.root / ".tasks/specs").glob("*.json")).read_text())
+        rid = spec["run_id"]
+        self.assertEqual(result.stdout.strip().splitlines()[-1], f"run_id={rid}")
+        self.assertEqual([spec[k] for k in ("role", "work_unit", "effort", "provider_contract_version")], ["brain", "plan", "high", 9])
+        self.assertIn("Role: planning.", spec["prompt"])
+        self.assertTrue(spec["prompt"].endswith("\n## Request\nDo X."))
+        seen = json.loads(probe.read_text())
+        self.assertEqual(seen["argv"], provider_contract(spec)[0][1:])
+        self.assertEqual((seen["cwd"] == self.physical_root, Path(seen["cwd"]).exists()), (False, False))
+        self.assertEqual((seen["remotes"], seen["head"]), ("", spec["base_commit"]))
+        self.assertEqual(((self.root / "scratch-write.txt").exists(), self.git("status", "--porcelain", "--untracked-files=all").stdout), (False, ""))
+        receipt = json.loads((self.root / f".tasks/receipts/{rid}.json").read_text())
+        self.assertEqual((receipt["outcome"], receipt["workspace_changed"], receipt["scope"]["result"]), ("completed", False, "pass"))
+        row = json.loads((self.root / f".tasks/ledger/{rid}.json").read_text())
+        self.assertEqual((row["task"], row["subagents"]["calls"]), ("plan", {"value": 2, "source": "observed"}))
+        self.assertIn("clone=" + seen["cwd"], (self.root / f".tasks/logs/{rid}.log").read_text())
+
+    def test_plan_refusals_start_no_provider(self):
+        self.write_fleet("claude", "plan-model", "high", "unknown", seat_name="brain")
+        (request := self.parent / "request.md").write_text("Do X.")
+        base = ["bash", "scripts/spawn-brain.sh", "docs/missions/fixture"]
+        for args in (["plan"], ["plan", "--request", str(request) + ".missing"], ["review", "--request", str(request)]):
+            self.assert_brain_rejected(base + args)
+        for provider, effort, message in (("claude", "medium", "planning runs need effort high; got medium"), ("codex", "high", "plan runs only on claude or agy seats: codex")):
+            self.write_fleet(provider, "plan-model", effort, "unknown", seat_name="brain")
+            args = base + ["plan", "--request", str(request)]
+            self.assert_brain_rejected(args)
+            self.assertIn(message, self.invoke(args).stderr)
+
+    def test_plan_run_that_writes_the_live_tree_fails(self):
+        self.install_plan_provider()
+        self.write_fleet("claude", "plan-model", "high", "unknown", seat_name="brain")
+        (request := self.parent / "request.md").write_text("Do X.")
+        result = self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "plan", "--request", str(request)], env={"PLAN_LIVE_WRITE": str(self.task.parent / "T-901.md")})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("plan run changed the live tree", result.stderr)
+        receipt = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())
+        self.assertTrue(receipt["workspace_changed"])
+
     def install_fixture_emitting_provider(self, provider, fixture_name):
         binary = "cursor-agent" if provider == "agent" else provider
         fixture = OBSERVE_FIXTURES / fixture_name
@@ -1454,7 +1548,9 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                 ])
                 self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
                 observe_name = "cursor" if provider == "agent" else provider
-                expected = observe(observe_name, (OBSERVE_FIXTURES / fixture_name).read_bytes())
+                raw = (OBSERVE_FIXTURES / fixture_name).read_bytes()
+                expected = observe(observe_name, raw)
+                expected["tokens"] = token_figures(observe_name, raw)
                 receipt = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())
                 self.assertEqual(receipt["observation"], expected)
                 if fixture_name == "cursor.jsonl":
@@ -1462,6 +1558,27 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
                     self.assertNotEqual(receipt["model"], "Composer 2.5")
                 if fixture_name == "codex.jsonl":
                     self.assertEqual(receipt["observation"]["observed_model"]["source"], "unknown")
+                self.clean_runs()
+
+    def test_brain_receipt_and_ledger_row_carry_subagents(self):
+        observed_two = {"calls": {"value": 2, "source": "observed"}, "tokens": {"value": 1234, "source": "observed"}}
+        observed_zero = {"calls": {"value": 0, "source": "observed"}, "tokens": {"value": 0, "source": "observed"}}
+        unknown_block = {"calls": {"value": None, "source": "unknown"}, "tokens": {"value": None, "source": "unknown"}}
+        cases = (
+            ("claude", "claude-subagent.jsonl", observed_two),
+            ("claude", "claude.json", observed_zero),
+            ("codex", "codex.jsonl", unknown_block),
+        )
+        for provider, fixture, expected in cases:
+            with self.subTest(provider=provider, fixture=fixture):
+                self.install_fixture_emitting_provider(provider, fixture)
+                self.write_fleet(provider, "fixture-model", "medium", "unknown", seat_name="brain")
+                result = self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"])
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                receipt = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())
+                self.assertEqual(receipt["observation"]["subagents"], expected)
+                ledger_path = self.root / ".tasks/ledger" / f"{receipt['run_id']}.json"
+                self.assertEqual(json.loads(ledger_path.read_text())["subagents"], expected)
                 self.clean_runs()
 
     def test_stall_watchdog_stops_silent_providers_for_worker_and_brain(self):
@@ -1505,6 +1622,63 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
             receipt = self.latest_receipt()
             self.assertEqual(receipt["outcome"], "completed")
             self.assertEqual(self.log_text(receipt["run_id"]).count("tick\n"), 25)
+
+    def test_run_events_pair_start_and_exit_and_skip_runs_without_receipt(self):
+        self.write_fleet("codex", "events-model", "medium", "unknown", include_brain=True)
+        self.set_status("in-progress")
+        worker = ["bash", "scripts/spawn-worker.sh", "codex", "docs/missions/fixture/tasks/T-001.md",
+                  "--model", "events-model", "--feature", "F001"]
+        self.assertEqual(self.invoke(worker).returncode, 0)
+        first = self.latest_receipt()
+        invoked = json.loads((self.root / ".tasks/invoked.json").read_text())
+        self.assertEqual(invoked["purrfect"], [first["run_id"], str((self.root / ".tasks/events.jsonl").resolve())])
+        self.assertEqual(self.invoke(worker, env={"PROVIDER_EXIT": "7"}).returncode, 7)
+        codex = self.bin / "codex"
+        stub = codex.read_bytes(); codex.unlink()
+        try:
+            self.assertEqual(self.invoke(worker, env={"PATH": "/usr/bin:/bin"}).returncode, 127)
+        finally:
+            codex.write_bytes(stub); codex.chmod(0o755)
+        self.assertEqual(self.invoke(["bash", "scripts/spawn-brain.sh", "docs/missions/fixture", "review"]).returncode, 0)
+        events_path = self.root / ".tasks/events.jsonl"
+        rows = [json.loads(line) for line in events_path.read_text().splitlines()]
+        self.assertEqual([r["event"] for r in rows], ["run_start", "run_exit"] * 4)
+        exits = rows[1::2]
+        self.assertEqual([(r["role"], r["seat"], r["exit_code"], r["outcome"]) for r in exits], [
+            ("worker", "codex.economy", 0, "completed"), ("worker", "codex.economy", 7, "failed"),
+            ("worker", "codex.economy", 127, "launch_failed"), ("brain", "brain", 0, "completed")])
+        for start, end in zip(rows[::2], exits):
+            self.assertEqual([start[k] for k in ("run_id", "role", "seat", "work_unit")],
+                             [end[k] for k in ("run_id", "role", "seat", "work_unit")])
+            self.assertLessEqual(start["at"], end["at"])
+            self.assertEqual(end["receipt"], f".tasks/receipts/{end['run_id']}.json")
+            self.assertTrue((self.root / end["receipt"]).is_file())
+        spec_path = self.root / ".tasks/specs" / f"{first['run_id']}.json"
+        spec_sha = hashlib.sha256(spec_path.read_bytes()).hexdigest()
+        result = self.invoke([sys.executable, "scripts/execution_runner.py", "--spec", str(spec_path),
+                              "--spec-sha256", "0" * 64, "--log", str(self.root / first["log_path"])])
+        self.assertEqual(result.returncode, 125)
+        self.assertEqual(len(events_path.read_text().splitlines()), 8)
+
+    def test_subagent_stop_hook_appends_only_inside_a_harness_run(self):
+        hook = json.loads((ROOT / ".claude/settings.json").read_text())["hooks"]["SubagentStop"][0]["hooks"][0]["command"]
+        with tempfile.TemporaryDirectory() as directory:
+            events = Path(directory) / "events.jsonl"
+            env = {k: v for k, v in os.environ.items() if not k.startswith("PURRFECT_")}
+            calls = [{}, {"PURRFECT_EVENTS": str(events)},
+                     {"PURRFECT_RUN_ID": "123e4567-e89b-12d3-a456-426614174000", "PURRFECT_EVENTS": str(events)}] * 1
+            calls.append({"PURRFECT_RUN_ID": "123e4567-e89b-12d3-a456-426614174000", "PURRFECT_EVENTS": str(events)})
+            for extra in calls:
+                result = subprocess.run(["bash", "-c", hook], input='{"hook_event_name":"SubagentStop","agent_type":"explorer"}',
+                                        text=True, env={**env, **extra}, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(events.exists(), bool(extra.get("PURRFECT_RUN_ID")))
+            rows = [json.loads(line) for line in events.read_text().splitlines()]
+            self.assertEqual(len(rows), 2)
+            for row in rows:
+                self.assertEqual({k: v for k, v in row.items() if k != "at"},
+                                 {"event": "subagent_stop", "run_id": "123e4567-e89b-12d3-a456-426614174000", "agent": "explorer"})
+                self.assertRegex(row["at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
 
     def test_zero_turn_output_turns_a_completed_run_into_a_failure(self):
         cases = [
@@ -1649,11 +1823,123 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertNotIn("NO-TURN:", self.log_text(receipt["run_id"]))
         self.clean_runs()
 
+    def test_token_use_never_stops_a_run_and_new_receipts_carry_no_token_budget(self):
+        path = self.bin / "claude"
+        path.write_text(
+            """#!/usr/bin/env python3
+import json, os, sys, time
+fake_tokens = int(os.environ.get("FAKE_TOKENS", "0"))
+fake_messages = int(os.environ.get("FAKE_MESSAGES", "0"))
+for i in range(fake_messages):
+    event = {
+        "type": "assistant",
+        "parent_tool_use_id": None,
+        "message": {
+            "id": f"msg_{i}",
+            "usage": {"input_tokens": fake_tokens, "output_tokens": 0, "cache_read_input_tokens": 0},
+            "content": [],
+        },
+    }
+    line = json.dumps(event) + "\\n"
+    sys.stdout.write(line)
+    sys.stdout.write(line)
+    sys.stdout.write(json.dumps({
+        "type": "assistant",
+        "parent_tool_use_id": "toolu_sub",
+        "message": {"id": f"sub_{i}", "usage": event["message"]["usage"], "content": []},
+    }) + "\\n")
+    sys.stdout.flush()
+    time.sleep(0.3)
+total = fake_tokens * fake_messages
+sys.stdout.write(json.dumps({
+    "type": "result",
+    "usage": {"input_tokens": total, "output_tokens": 0, "cache_read_input_tokens": 0},
+    "num_turns": fake_messages,
+}) + "\\n")
+sys.stdout.flush()
+raise SystemExit(0)
+"""
+        )
+        path.chmod(0o755)
+        self.write_fleet("claude", "budget-model", "medium", "unknown")
+        self.set_status("in-progress")
+        worker = [
+            "bash", "scripts/spawn-worker.sh", "claude", "docs/missions/fixture/tasks/T-001.md",
+            "--model", "budget-model", "--effort", "medium", "--speed", "unknown", "--feature", "F001",
+        ]
+        import execution_receipt
+
+        result = self.invoke(worker, env={"FAKE_TOKENS": "300000", "FAKE_MESSAGES": "3"})
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        receipt_path = next((self.root / ".tasks/receipts").glob("*.json"))
+        receipt = json.loads(receipt_path.read_text())
+        self.assertEqual(receipt["outcome"], "completed")
+        self.assertEqual(receipt["exit_code"], 0)
+        self.assertNotIn("token_budget", receipt)
+        row = json.loads((self.root / ".tasks/ledger" / f"{receipt['run_id']}.json").read_text())
+        self.assertNotIn("tokens_overrun", row)
+        self.assertNotIn("BUDGET:", self.log_text(receipt["run_id"]))
+        old_receipt = copy.deepcopy(receipt)
+        old_receipt["outcome"] = "budget_exceeded"
+        old_receipt["exit_code"] = 121
+        old_receipt["token_budget"] = {"limit": 400000, "used": 900000, "overrun": 500000}
+        execution_receipt.validate_receipt(old_receipt, None)
+        with self.assertRaisesRegex(execution_receipt.ReceiptError, "budget_exceeded is no longer written"):
+            execution_receipt.build_receipt(
+                spec_path=receipt["execution_spec_path"], digest=receipt["execution_spec_sha256"],
+                before=receipt["git_before"], started_at=receipt["started_at"],
+                finished_at=receipt["finished_at"], outcome="budget_exceeded", exit_code=121,
+                log_path=receipt["log_path"],
+            )
+
+    def test_receipt_and_ledger_row_carry_token_figures_role_tag_and_prompt_version(self):
+        path = self.bin / "claude"
+        path.write_text(
+            """#!/usr/bin/env python3
+import json, os, sys
+total = int(os.environ.get('FAKE_TOKENS', '0'))
+print(json.dumps({'type': 'result', 'usage': {'input_tokens': total, 'output_tokens': 0,
+    'cache_read_input_tokens': 0, 'cache_creation_input_tokens': 0}, 'num_turns': 1}), flush=True)
+"""
+        )
+        path.chmod(0o755)
+        self.write_fleet("claude", "budget-model", "medium", "unknown")
+        self.set_status("in-progress")
+        worker = [
+            "bash", "scripts/spawn-worker.sh", "claude", "docs/missions/fixture/tasks/T-001.md",
+            "--model", "budget-model", "--effort", "medium", "--speed", "unknown", "--feature", "F001",
+        ]
+        result = self.invoke(worker, env={"FAKE_TOKENS": "3456"})
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        receipt_path = next((self.root / ".tasks/receipts").glob("*.json"))
+        receipt = json.loads(receipt_path.read_text())
+        self.assertEqual(receipt["observation"]["tokens"]["total"], {"value": 3456, "source": "observed"})
+        self.assertEqual(receipt["observation"]["tokens"]["without_cache"], {"value": 3456, "source": "observed"})
+        self.assertEqual(receipt["role_tag"], "worker")
+        row = json.loads((self.root / ".tasks/ledger" / f"{receipt['run_id']}.json").read_text())
+        self.assertEqual(row["tokens_total"], {"value": 3456, "source": "observed"})
+        self.assertEqual(row["role_tag"], "worker")
+        self.assertTrue(row["prompt_version"].startswith("scripts/spawn-worker.sh:"), row)
+
+        def check_missing_role_tag():
+            self.clean_runs()
+            retry = self.invoke(worker, env={"FAKE_TOKENS": "3456"})
+            self.assertEqual(retry.returncode, 0, retry.stderr + retry.stdout)
+            retry_receipt = self.latest_receipt()
+            retry_row = json.loads((self.root / ".tasks/ledger" / f"{retry_receipt['run_id']}.json").read_text())
+            self.assertEqual(retry_row.get("role_tag"), "worker")
+
+        self.prove_runner_mutation_fails(
+            '    if "role_tag" in receipt:\n        row["role_tag"] = receipt["role_tag"]\n',
+            '    if "role_tag" in receipt:\n        pass\n',
+            check_missing_role_tag,
+        )
+
     def test_outcome_enums_match_across_runner_receipt_ledger_and_schemas(self):
         import execution_receipt
         import ledger
 
-        expected_outcomes = ("completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed")
+        expected_outcomes = ("completed", "failed", "timed_out", "stalled", "interrupted", "launch_failed", "budget_exceeded")
         receipt_schema = json.loads((ROOT / "schemas/execution-receipt.schema.json").read_text(encoding="utf-8"))
         receipt_enum = receipt_schema["$defs"]["receiptBody"]["properties"]["outcome"]["enum"]
         ledger_schema = json.loads((ROOT / "schemas/ledger-row.schema.json").read_text(encoding="utf-8"))
@@ -1664,9 +1950,11 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertEqual(tuple(ledger_enum), expected_outcomes)
 
         runner_code = (ROOT / "scripts/execution_runner.py").read_text(encoding="utf-8")
-        runner_outcomes = set(re.findall(r'"(completed|failed|timed_out|stalled|interrupted|launch_failed)"', runner_code))
+        runner_outcomes = set(re.findall(
+            r'"(completed|failed|timed_out|stalled|interrupted|launch_failed)"', runner_code,
+        ))
         self.assertEqual(execution_receipt.OUTCOMES, set(ledger.OUTCOMES))
-        self.assertEqual(runner_outcomes, set(ledger.OUTCOMES))
+        self.assertEqual(runner_outcomes, set(ledger.OUTCOMES) - {"budget_exceeded"})
 
     def test_failed_run_still_writes_receipt_observation(self):
         self.install_fixture_emitting_provider("codex", "codex.jsonl")
@@ -1678,7 +1966,10 @@ raise SystemExit(int(os.environ.get('PROVIDER_EXIT', '0')))
         self.assertEqual(result.returncode, 7, result.stderr + result.stdout)
         receipt = json.loads(next((self.root / ".tasks/receipts").glob("*.json")).read_text())
         self.assertEqual(receipt["outcome"], "failed")
-        self.assertEqual(receipt["observation"], observe("codex", (OBSERVE_FIXTURES / "codex.jsonl").read_bytes()))
+        raw = (OBSERVE_FIXTURES / "codex.jsonl").read_bytes()
+        expected = observe("codex", raw)
+        expected["tokens"] = token_figures("codex", raw)
+        self.assertEqual(receipt["observation"], expected)
 
     def test_closed_stdin_finishes_eof_reading_provider(self):
         (self.bin / "codex").write_text("#!/usr/bin/env bash\nwhile IFS= read -r _; do :; done\nexit 0\n")

@@ -11,6 +11,7 @@ HARNESS="$(pwd)"
 # shellcheck source=scripts/harness-path.sh disable=SC1091
 . "$HARNESS/scripts/harness-path.sh"
 [ -f "$HARNESS/CHANGELOG.md" ] || { echo "Run from the kit root."; exit 1; }
+echo "== python $(python3 -c 'import platform; print(platform.python_version())')"
 
 FAIL=0
 check() { # check <description> <command...>
@@ -74,6 +75,35 @@ documentation_truth_negative() { # documentation_truth_negative <repository-root
   rm -rf "$fixture"
 }
 
+# Test files are discovered, not listed: every tests/test-*.py runs under python3 and
+# every tests/test-*.sh under bash, from the kit root with no arguments. A new file
+# runs without editing this script; any other tests/test-* file is reported.
+run_test_files() {
+  local file found=0
+  echo "== test files (discovered)"
+  for file in tests/test-*; do
+    [ -e "$file" ] || [ -L "$file" ] || continue
+    found=1
+    case "$file" in
+      *.py)
+        check "$file is valid Python" python3 -c 'import ast, sys; ast.parse(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1])' "$file"
+        check "$file" python3 "$file" ;;
+      *.sh)
+        check "$file is valid bash" bash -n "$file"
+        check "$file" bash "$file" ;;
+      *) check "$file is a .py or .sh test" false ;;
+    esac
+  done
+  check "test discovery found test files" test "$found" -eq 1
+  check "test files leave no bytecode" bash -c "test ! -e scripts/__pycache__ && test ! -e tests/__pycache__"
+}
+
+# --files-only runs just the discovered test files.
+if [ "${1:-}" = "--files-only" ]; then
+  run_test_files
+  if [ "$FAIL" -eq 1 ]; then echo "TESTS FAILED"; exit 1; else echo "ALL TESTS PASSED"; exit 0; fi
+fi
+
 # ---- kit version consistency (same extraction as .github/workflows/ci.yml) ----
 # Catch README/CHANGELOG drift before push. CI remains the backstop; this fails in
 # seconds locally. Forgotten twice at v2.2.4 and v2.2.5 — that is the bar.
@@ -95,42 +125,12 @@ rm -rf "$VERSION_MISMATCH"
 echo "== documentation truth"
 check "documentation matches instruction and ownership truth" check_documentation_truth "$HARNESS"
 check "documentation guard rejects an enforced-permissions claim" documentation_truth_negative "$HARNESS"
+check "CI workflow matrix and suite Python header" python3 "${HARNESS}/tests/test-ci-workflow.py"
 
-echo "== immutable execution spec and provider adapter"
-check "ExecutionSpec and provider adapter contracts" python3 tests/test-execution-spec.py
-check "immutable spec integration through real wrappers" python3 tests/test-execution-integration.py
-check "VerificationRecord and acceptance real-entry contracts" python3 tests/test-verification-record.py
-check "ExecutionSpec focused test leaves no scripts bytecode" test ! -e "$HARNESS/scripts/__pycache__"
-
-echo "== frozen fleet policy"
-check "fleet inventory retention and frozen resolution" python3 tests/test-fleet-state.py
-check "fleet v2 policy seat validation" python3 tests/test-fleet-v2.py
-check "registry and fleet-state legacy parity" python3 tests/test-registry.py
+echo "== harness PATH helper"
 # shellcheck disable=SC2016  # bash -c body must expand $py at runtime
 check "harness PATH helper prepends existing tool directories once under set -u" bash -c 'set -u; py="$(command -v python3)"; unset PATH; . scripts/harness-path.sh; . scripts/harness-path.sh; "$py" -c '\''import os,pathlib; p=os.environ["PATH"].split(":"); expected=[d for d in ("/opt/homebrew/bin","/usr/local/bin") if pathlib.Path(d).is_dir()]; assert p[:len(expected)] == expected and all(p.count(d)==1 for d in expected), p'\'''
-check "fleet doctor identity and login checks" python3 tests/test-fleet-doctor.py
-check "seat smoke scratch clone and dry-run plan" python3 tests/test-seat-smoke.py
-check "one frozen seat probe and classifications" python3 tests/test-probe-seat.py
-
-echo "== observed CLI output (F003)"
-check "observed model and usage parser over real CLI samples" python3 tests/test-observe-output.py
-check "observe parser focused test leaves no scripts bytecode" test ! -e "$HARNESS/scripts/__pycache__"
-check "execution receipt v1 and v2 observation validation" python3 tests/test-execution-receipt.py
-check "execution receipt focused test leaves no scripts bytecode" test ! -e "$HARNESS/scripts/__pycache__"
-
-echo "== ledger row v1 (F005)"
-check "ledger row schema, source flags and validator contract" python3 tests/test-ledger.py
-check "task-plan and review verdict schema validation" python3 tests/test-verdict.py
-check "ledger focused test leaves no scripts or tests bytecode" bash -c "test ! -e '$HARNESS/scripts/__pycache__' && test ! -e '$HARNESS/tests/__pycache__'"
-
-echo "== run evidence reconstruction (F007)"
-check "reconstruction reports complete and missing evidence" python3 tests/test-reconstruct.py
-check "reconstruction focused test leaves no bytecode" bash -c "test ! -e '$HARNESS/scripts/__pycache__' && test ! -e '$HARNESS/tests/__pycache__'"
-
-echo "== drive-cli autopilot (F009)"
-check "drive-cli rule matcher unit tests" python3 tests/test-drive-cli-rules.py
-check "drive-cli tmux driver and fake-cli integration" bash tests/test-drive-cli.sh
-check "drive-cli focused test leaves no bytecode" bash -c "test ! -e '$HARNESS/scripts/__pycache__' && test ! -e '$HARNESS/tests/__pycache__'"
+run_test_files
 
 # F006 regressions must use the public propagation/release entry points. Tagged
 # and untagged source state is always isolated so this suite is independent of
@@ -492,7 +492,7 @@ CODEX_STUB_PID="$TARGET/.codex-stub-pid"
 printf '#!/usr/bin/env bash\nset -euo pipefail\nprintf "%%s\\n" "$$" > "%s"\nwhile IFS= read -r _codex_stdin_line; do :; done\ntouch "%s"\nprintf "%%s\\n" "$(basename "$0")" "$@" > "%s"\nexit 0\n' "$CODEX_STUB_PID" "$CODEX_EOF_MARK" "$CODEX_OUT" > "$STUBBIN/codex"
 chmod +x "$STUBBIN/codex"
 CODEX_MODEL="codex-test-model"
-CODEX_PROMPT="Goal: docs/missions/20990101-fixture/tasks/T-001.md is done when its verification commands pass and one scoped commit leaves a clean tree; the Front Desk runs the full suite, you do not. Scope: the task's allow-list; PROGRESS.md and features.json belong to the Front Desk. Budget: the task's max_attempts and long-command rule; the runner stops a stalled or overlong run. Resources: your CLI's native tools, the repo skills in .agents/skills, web search, and subagents where your CLI has them (Claude Code: explorer on Haiku; codex: Luna; cursor: Composer; agy: Flash). Delegate wide reading and searching to a cheap subagent, run the task's checks yourself before you finish, and stop when they pass. End with a short plain-text report: what you changed and the exit code of each check you ran."
+CODEX_PROMPT="Goal: docs/missions/20990101-fixture/tasks/T-001.md is done when its verification commands pass and one scoped commit leaves a clean tree; the Front Desk runs the full suite, you do not. Resources: your CLI's native tools, the repo skills in .agents/skills, web search, and the subagents your CLI offers (Claude Code: the explorer agent, .claude/agents/explorer.md, model haiku). Permissions: the task's allow-list, max_attempts and long-command rule; PROGRESS.md and features.json belong to the Front Desk. Acceptance checks: the task's verification commands. End with a short plain-text report: what you changed and the exit code of each check you ran."
 CODEX_EXPECTED="$TARGET/.codex-expected"
 printf '%s\n' codex exec --json -C "$TARGET_CANONICAL" -s workspace-write --add-dir "$TARGET_CANONICAL/.git" -m "$CODEX_MODEL" \
   '-c' 'model_reasoning_effort="medium"' \
@@ -528,26 +528,20 @@ rm -f "$CODEX_EOF_MARK" "$CODEX_STUB_PID"
 mkfifo "$CODEX_FIFO"
 exec 9<>"$CODEX_FIFO"
 set +e
-( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=0 \
+( cd "$TARGET" && PATH="$STUBBIN:$PATH" SPAWN_WORKER_TIMEOUT_SECS=60 \
     bash scripts/spawn-worker.sh codex docs/missions/20990101-fixture/tasks/T-001.md \
       --tier economy --model "$CODEX_MODEL" --feature F001 ) <"$CODEX_FIFO" >/dev/null 2>&1 &
 CODEX_PID=$!
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  [ -f "$CODEX_EOF_MARK" ] && break
-  sleep 0.1
-done
+wait "$CODEX_PID"
+CODEX_WAIT_STATUS=$?
 if [ -f "$CODEX_EOF_MARK" ]; then
-  wait "$CODEX_PID"
-  CODEX_STDIN_EOF=$?
+  CODEX_STDIN_EOF=$CODEX_WAIT_STATUS
 else
   CODEX_STUB_PID_VALUE=""
   if [ -f "$CODEX_STUB_PID" ]; then
     CODEX_STUB_PID_VALUE="$(<"$CODEX_STUB_PID")"
   fi
   if [ -n "$CODEX_STUB_PID_VALUE" ]; then kill "$CODEX_STUB_PID_VALUE" 2>/dev/null || true; fi
-  kill "$CODEX_PID" 2>/dev/null || true
-  exec 9>&-
-  wait "$CODEX_PID" 2>/dev/null || true
   CODEX_STDIN_EOF=1
 fi
 set -e
