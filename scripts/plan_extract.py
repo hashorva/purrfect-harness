@@ -78,6 +78,30 @@ def _blocks(text):
             out.append(("p", rel, body)); continue
         i += 1
     return out
+STANDING = {"tests/run-tests.sh"}
+
+def _scope_problems(content):
+    """Every repository path a verification command uses must be on the task's allow-list (standing checks excepted)."""
+    import re, json as _json
+    _, _, rest = content.partition("## Files you MAY touch")
+    allowed, _, _ = rest.partition("## Files you MUST NOT touch")
+    allow = {m.split(" ")[0].rstrip("/") for m in re.findall(r"^- `([^`]+)`", allowed, re.M)}
+    verification = content.split("## Verification commands", 1)[1].split("\n## ", 1)[0] if "## Verification commands" in content else ""
+    used = set()
+    for line in verification.splitlines():
+        if not line.startswith("- `[\""): continue
+        try: argv = _json.loads(line[3:-1])
+        except ValueError: continue
+        for arg in argv:
+            used.update(re.findall(r"(?:tests|scripts|schemas|docs|\.agents|\.claude)/[A-Za-z0-9_./-]+", arg))
+    bad = []
+    for path in sorted(used):
+        path = path.rstrip("/")
+        if path in STANDING or "__pycache__" in path: continue
+        if path in allow or any(path.startswith(a + "/") for a in allow): continue
+        bad.append(path)
+    return bad
+
 def extract(arg, out_dir):
     text = _final(arg); tasks, mission = _tasks(out_dir); cwd = Path.cwd(); blocks = _blocks(text)
     if not blocks: refuse("no task blocks")
@@ -90,6 +114,9 @@ def extract(arg, out_dir):
         if dest in paths: refuse("duplicate target path")
         if dest.exists(): refuse("target already exists")
         ids.add(tid); paths.add(dest); plan.append((tid, dest, _body(body)))
+    for tid, dest, content in plan:
+        problems = _scope_problems(content)
+        if problems: refuse(f"{tid}: verification commands use files outside the allow-list: {', '.join(problems)}")
     for tid, dest, content in plan:
         dest.parent.mkdir(parents=True, exist_ok=True); dest.write_text(content, encoding="utf-8"); print(tid)
 
