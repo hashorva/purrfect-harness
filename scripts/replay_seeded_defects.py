@@ -3,6 +3,7 @@
 import argparse, json, re, subprocess, sys, tempfile
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import git_safe
 import brain_prompt, observe_output, probe_seat, validate_verdict
 from execute_provider import provider_contract
 from execution_spec import CURRENT_PROVIDER_CONTRACT
@@ -50,7 +51,7 @@ def required(path):
 def plant(source, case, dest):
     dest = Path(dest)
     def git(args, subcommand):
-        result = subprocess.run(["git", "-c", "core.hooksPath=/dev/null", *args], stdin=subprocess.DEVNULL, capture_output=True)
+        result = subprocess.run(git_safe.argv(*args), stdin=subprocess.DEVNULL, capture_output=True)
         if result.returncode:
             raise ReplayError(f"case {case['id']}: git {subcommand} failed")
     git(["clone", "-q", "--no-checkout", str(source), str(dest)], "clone")

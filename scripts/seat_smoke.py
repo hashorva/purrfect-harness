@@ -29,6 +29,7 @@ from execution_receipt import load_receipt, snapshot
 from fleet_state import PolicyError, canonical, read_json, resolve_v2, validate_fleet, validate_inventory
 from harness_registry import canonical_provider, load_registry
 from run_id import validate_run_id
+import git_safe
 
 FIXTURE_DIR = "docs/missions/00000000-seat-smoke"
 F007_DIR = "docs/missions/00000000-f007-smoke"
@@ -61,7 +62,7 @@ def live_root():
 
 
 def git(args, cwd):
-    result = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, check=False)
+    result = subprocess.run(git_safe.argv("-C", str(cwd), *args), capture_output=True, text=True, check=False)
     if result.returncode:
         fail(f"git {args[0]} failed: {result.stderr.strip()}")
     return result.stdout

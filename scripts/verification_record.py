@@ -16,6 +16,27 @@ from execution_receipt import ReceiptError, canonical_bytes, load_receipt, snaps
 from execution_spec import SpecError, load_persisted, spec_sha256
 from run_id import validate_run_id
 
+
+def git_command(*args):
+    """Git argv for verification: gc and maintenance off, repository hooks left on.
+
+    The shared helper also disables hooks. Drop that one pair. A post-checkout
+    hook that dirties a verification worktree must still run. Fixtures copy this
+    file without git_safe.py and build the same argv.
+    """
+    try:
+        import git_safe
+    except ImportError:
+        git_safe = None
+    if git_safe is not None:
+        command = git_safe.argv(*args)
+        index = command.index("core.hooksPath=/dev/null")
+        del command[index - 1:index + 1]
+        return command
+    binary = "git"
+    return [binary, "-c", "gc.auto=0", "-c", "maintenance.auto=false", *args]
+
+
 HEX = re.compile(r"^[0-9a-f]{64}$")
 COMMIT = re.compile(r"^[0-9a-f]{40,64}$")
 RFC3339 = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$")
@@ -97,7 +118,7 @@ def canonical(value):
 
 def root_path():
     root = Path.cwd().resolve()
-    if subprocess.run(["git", "-C", str(root), "rev-parse", "--show-toplevel"], capture_output=True).returncode:
+    if subprocess.run(git_command("-C", str(root), "rev-parse", "--show-toplevel"), capture_output=True).returncode:
         fail("current directory must be a Git worktree root")
     return root
 
@@ -154,7 +175,7 @@ def task_at_base(root, receipt):
     expected = f"{receipt['mission']}/tasks/{receipt['work_unit']}.md"
     if task != expected:
         fail("receipt task does not exactly match mission work unit")
-    got = subprocess.run(["git", "-C", str(root), "show", f"{receipt['git_before']['head']}:{task}"], capture_output=True)
+    got = subprocess.run(git_command("-C", str(root), "show", f"{receipt['git_before']['head']}:{task}"), capture_output=True)
     if got.returncode:
         fail("task is absent from the receipt base commit")
     raw = got.stdout
@@ -223,7 +244,7 @@ def verify(root, mission, run_id):
     if receipt["git_after"]["status_entry_count"] != 0 or receipt["git_after"]["dirty_paths"]:
         fail("worktree verification needs a clean receipt git_after")
 
-    subprocess.run(["git", "-C", str(root), "worktree", "prune"], check=True,
+    subprocess.run(git_command("-C", str(root), "worktree", "prune"), check=True,
                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     temporary_root = Path(tempfile.mkdtemp(prefix="purrfect-verify-"))
     worktree = temporary_root / "wt"
@@ -237,8 +258,8 @@ def verify(root, mission, run_id):
             raise SystemExit(143)
 
         prev_sigterm = signal.signal(signal.SIGTERM, on_sigterm)
-        subprocess.run(["git", "-C", str(root), "worktree", "add", "--detach", "--quiet",
-                        str(worktree), receipt["git_after"]["head"]], check=True,
+        subprocess.run(git_command("-C", str(root), "worktree", "add", "--detach", "--quiet",
+                        str(worktree), receipt["git_after"]["head"]), check=True,
                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         added = True
         before = snapshot(worktree)
@@ -283,13 +304,13 @@ def verify(root, mission, run_id):
         cleanup_failed = False
         if added:
             try:
-                subprocess.run(["git", "-C", str(root), "worktree", "remove", "--force", str(worktree)],
+                subprocess.run(git_command("-C", str(root), "worktree", "remove", "--force", str(worktree)),
                                check=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE)
             except (OSError, subprocess.CalledProcessError):
                 cleanup_failed = True
         try:
-            subprocess.run(["git", "-C", str(root), "worktree", "prune"], check=True,
+            subprocess.run(git_command("-C", str(root), "worktree", "prune"), check=True,
                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except (OSError, subprocess.CalledProcessError):
             cleanup_failed = True
